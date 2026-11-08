@@ -2,13 +2,7 @@
 use super::super::DawApp;
 use gpui::{Context, IntoElement, MouseButton, div, prelude::*, px, rgb};
 
-pub(super) const TRACK_NAMES: [&str; 8] = [
-    "Kick", "Snare", "Hi-Hat", "Tom", "Bass", "Keys", "FX", "Vox",
-];
 pub(super) const DEMO_LEVELS: [i32; 8] = [78, 65, 52, 48, 70, 58, 42, 55];
-const TRACK_TYPES: [&str; 8] = [
-    "Drum", "Drum", "Drum", "Drum", "Synth", "Synth", "Effect", "Audio",
-];
 const PANS: [i32; 8] = [50, 50, 30, 50, 50, 70, 50, 50];
 
 impl DawApp {
@@ -18,6 +12,7 @@ impl DawApp {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let ds = &self.ds;
+        let track = &self.tracks[i];
         let color = [
             ds.accent, ds.success, ds.warning, ds.danger, ds.cyan, ds.orange, ds.pink, ds.accent,
         ][i];
@@ -64,12 +59,22 @@ impl DawApp {
                     .flex()
                     .items_center()
                     .justify_between()
-                    .child(div().text_xs().text_color(rgb(color)).child(TRACK_NAMES[i]))
+                    .child(div().text_xs().text_color(rgb(color)).child(track.name))
                     .child(
                         div()
                             .text_xs()
-                            .text_color(rgb(ds.muted))
-                            .child(if has_audio { "Audio" } else { TRACK_TYPES[i] }),
+                            .text_color(rgb(if track.instrument.is_some() {
+                                ds.accent
+                            } else {
+                                ds.muted
+                            }))
+                            .child(if track.instrument == Some(self.instrument.id()) {
+                                self.instrument.descriptor().name
+                            } else if has_audio {
+                                "Audio"
+                            } else {
+                                track.kind.label()
+                            }),
                     ),
             )
             .child(
@@ -145,8 +150,8 @@ impl DawApp {
                             .text_color(rgb(ds.accent))
                             .on_mouse_down(
                                 MouseButton::Left,
-                                cx.listener(|this, _, _, cx| {
-                                    this.open_palette();
+                                cx.listener(move |this, _, _, cx| {
+                                    this.open_palette_for_track(i);
                                     cx.stop_propagation();
                                     cx.notify();
                                 }),

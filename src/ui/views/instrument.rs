@@ -8,6 +8,10 @@ impl DawApp {
     pub(in crate::ui) fn render_instrument(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let ds = &self.ds;
         let descriptor = self.instrument.descriptor();
+        let assigned_track = self
+            .tracks
+            .iter()
+            .position(|track| track.instrument == Some(self.instrument.id()));
         let heading = div()
             .flex_shrink_0()
             .p(px(ds.padding_lg))
@@ -25,6 +29,19 @@ impl DawApp {
                     .text_xs()
                     .text_color(rgb(ds.muted))
                     .child(descriptor.summary),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(rgb(if assigned_track.is_some() {
+                        ds.success
+                    } else {
+                        ds.warning
+                    }))
+                    .child(match assigned_track {
+                        Some(index) => format!("Pista: {}", self.tracks[index].name),
+                        None => "Sin pista asignada · usa [+] en una cabecera".to_string(),
+                    }),
             )
             .child(
                 div()

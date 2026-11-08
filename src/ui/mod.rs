@@ -12,6 +12,7 @@ mod views;
 use crate::audio::{DrumPlayer, Player};
 use crate::instruments::Piano;
 use design::DesignSystem;
+use elevate::musical::track::{TRACK_COUNT, Track};
 use gpui::{FocusHandle, ScrollHandle};
 use palette::Palette;
 use pattern_editor::PatternEditor;
@@ -48,6 +49,7 @@ struct DawApp {
     focus_handle: FocusHandle,
     timeline: Timeline,
     pattern_editor: PatternEditor,
+    tracks: [Track; TRACK_COUNT],
     track_scroll: ScrollHandle,
     mode: VimMode,
     center_view: CenterView,

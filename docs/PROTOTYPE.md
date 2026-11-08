@@ -14,6 +14,8 @@
   transporte en frames y plan NoteOn/NoteOff con offsets por buffer.
 - Buscador tipo rofi con `[+]`, `a` o `:add`: filtra instrumentos, primitivos, componentes
   y acciones sin distinguir acentos. Navegación con ↑/↓, Enter y Escape.
+- El `[+]` asigna el piano a su pista y la cabecera muestra `Piano vertical`; la vista
+  Instrument indica la pista activa. `a`/`:add` usan la pista seleccionada.
 - Piano desacoplado de la vista: `src/instruments/piano.rs` posee reproductor, notas
   sostenidas y ratón; la vista pinta el descriptor de `elevate::catalog`.
 - Demo offline `sequencer` y contratos de fronteras, IDs, errores e invariancia por tamaño de buffer.
@@ -25,8 +27,8 @@
 - Los cuatro instrumentos son síntesis provisional; todavía no cargan samples del usuario.
 - Clip, piano y percusión abren streams excluyentes. Al iniciar uno se detiene el anterior;
   la audición del patrón se detiene al salir de su vista.
-- Solo existe una instancia de piano. El buscador abre esa instancia; todavía no crea
-  instrumentos ni los asigna a pistas. `Volume` y `Componente serial` son metadatos.
+- Solo existe una instancia de piano. El buscador la asigna a una pista y la mueve al
+  reasignarla; todavía no crea instancias nuevas. `Volume` y `Componente serial` son metadatos.
 - Las acciones del catálogo usan comandos string provisionales; no son todavía el
   sistema de acciones definitivo.
 - No hay chase de notas sostenidas, tempo editable desde la UI ni map de tempo.
@@ -44,9 +46,9 @@
 
 ## Orden recomendado
 
-1. **Instancias por pista:** convertir el piano único en una instancia asignada a una
-   pista, permitir varias y conectar el `[+]` con esa asignación. Separar identidad de
-   instrumento, datos de ejecución y vista; después generalizar el catálogo.
+1. **Varias instancias por pista:** la asignación única y el `[+]` ya están conectados;
+   falta crear instancias independientes, decidir si cada una abre su stream o comparte
+   motor y generalizar el catálogo. Separar identidad, datos de ejecución y vista.
 2. **Motor único:** extraer procesadores del clip, piano y percusión, abrir una salida y
    definir el contrato `procesar bloque + eventos`. Resolver frecuencia de samples y motor.
 3. **Puente RT:** aprobar `rtrb`, limitar comandos por bloque y decidir saturación,

@@ -14,6 +14,7 @@ main.rs → ui::run
           ├── input.rs ─────────────┐
           ├── views/* ──────────────┼→ pattern_editor.rs → musical/model.rs
           │                         ├→ palette.rs → catalog::search
+          │                         │              → musical/track.rs
           │                         └→ audio_actions.rs
           ├── design.rs                          │
           └── timeline/*                         ├→ instruments::Piano → audio/piano
@@ -44,7 +45,8 @@ El descriptor que pinta la vista procede de `elevate::catalog`.
 | Notas del patrón | `Pattern`, contenido en `ui::PatternEditor` | Sin coordenadas visuales ni voces |
 | Selección, modo, vista | `DawApp` | Estado de workspace, no proyecto musical |
 | Catálogo y búsqueda | `elevate::catalog` | Metadatos y comandos; sin GPUI/CPAL |
-| Búsqueda abierta | `ui::Palette` | Query, selección y resultados; no ejecuta audio |
+| Búsqueda abierta | `ui::Palette` | Query, selección, pista destino y resultados; no ejecuta audio |
+| Pistas y asignación | `elevate::musical::track`, en `DawApp` | `Track.instrument` guarda identidad; no abre audio |
 | Notas sostenidas y ratón | `instruments::Piano` | Fuera de `DawApp`; la vista solo lee estado |
 | Zoom/cursor/arrastre | `Timeline` | Convierte píxeles ↔ beats, no gobierna audio |
 | Clip cargado | `Timeline::clip`, provisional | Un único clip; mover al proyecto al ampliar |
@@ -63,15 +65,18 @@ primitivos, componentes y acciones. Cada entrada declara ID, nombre, resumen y p
 clave. `search` pliega acentos y prioriza coincidencias al inicio del nombre. El catálogo
 no conoce GPUI, CPAL ni instancias.
 
-`ui/palette.rs` conserva query y selección; `views/palette.rs` dibuja el overlay. El botón
-`[+]` de cada cabecera, la tecla `a` o el comando `:add` abren el buscador. Las entradas
-`Invoke("...")` se traducen al comando provisional existente en `ui/input.rs`; las entradas
-`Unavailable` explican por qué todavía no se pueden instanciar.
+`ui/palette.rs` conserva query, selección y pista destino; `views/palette.rs` dibuja el
+overlay. El botón `[+]` de cada cabecera apunta a esa pista; la tecla `a` y el comando
+`:add` apuntan a la pista seleccionada. Las entradas `Invoke("...")` se traducen al comando
+provisional existente en `ui/input.rs`; las entradas `Unavailable` explican por qué todavía
+no se pueden instanciar.
 
-Solo el piano tiene implementación y una única instancia. `Volume` y `Componente serial`
-aparecen como metadatos: el buscador aún no crea primitivos, componentes ni instrumentos
-por pista. Ese paso pertenece al futuro host de plugins y al sistema de acciones, no a
-esta paleta.
+Al elegir un instrumento, `ui/palette.rs` llama a `musical/track.rs::assign_instrument`,
+que asigna su identidad a la pista destino y la retira de cualquier otra. La cabecera y la
+vista Instrument muestran esa asignación. Solo el piano tiene implementación y una única
+instancia: moverlo de pista lo reasigna. `Volume` y `Componente serial` aparecen como
+metadatos: el buscador aún no crea primitivos, componentes ni instancias nuevas. Ese paso
+pertenece al futuro host de plugins y al sistema de acciones, no a esta paleta.
 
 ## Contrato musical actual
 

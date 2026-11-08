@@ -19,7 +19,8 @@
 7. `src/instruments/` no importa GPUI. Posee el estado de ejecución (notas, ratón,
    reproductor); las vistas no deben importar `audio::piano` ni `rustysynth`.
 8. `src/catalog.rs` es headless: no importa GPUI ni CPAL. Indexa metadatos y comandos;
-   no instancia plugins ni asigna instrumentos a pistas.
+   no instancia plugins. La asignación instrumento → pista vive en `src/musical/track.rs`
+   y la coordina `ui/palette.rs`.
 9. Las vistas llaman controladores; teclado y ratón comparten la misma operación.
 10. No crear módulos vacíos, sistemas de plugins prematuros ni un segundo transporte.
 11. No confundir el piano clicable con un piano roll, el mixer mock con mezcla real,

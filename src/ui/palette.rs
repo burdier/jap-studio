@@ -1,10 +1,14 @@
 //! Estado del buscador de instrumentos, primitivos, componentes y acciones.
 //! La UI solo presenta resultados; el catálogo y las acciones viven fuera de GPUI.
-use super::DawApp;
-use elevate::catalog::{self, CatalogAction, CatalogEntry, EntryKind};
+use super::{CenterView, DawApp};
+use elevate::{
+    catalog::{self, CatalogAction, CatalogEntry, EntryKind},
+    musical::track::assign_instrument,
+};
 
 pub(super) struct Palette {
     open: bool,
+    target_track: Option<usize>,
     query: String,
     selected: usize,
     results: Vec<&'static CatalogEntry>,
@@ -14,6 +18,7 @@ impl Palette {
     pub fn new() -> Self {
         Self {
             open: false,
+            target_track: None,
             query: String::new(),
             selected: 0,
             results: catalog::search(""),
@@ -22,6 +27,10 @@ impl Palette {
 
     pub fn is_open(&self) -> bool {
         self.open
+    }
+
+    pub fn target_track(&self) -> Option<usize> {
+        self.target_track
     }
 
     pub fn query(&self) -> &str {
@@ -36,14 +45,16 @@ impl Palette {
         self.selected
     }
 
-    pub fn open(&mut self) {
+    pub fn open_for_track(&mut self, track: usize) {
         self.open = true;
+        self.target_track = Some(track);
         self.query.clear();
         self.refresh();
     }
 
     pub fn close(&mut self) {
         self.open = false;
+        self.target_track = None;
         self.query.clear();
         self.selected = 0;
     }
@@ -84,8 +95,14 @@ impl Palette {
 
 impl DawApp {
     pub(super) fn open_palette(&mut self) {
-        self.palette.open();
-        self.status_message = "Buscador · instrumentos, primitivos, componentes y acciones".into();
+        self.open_palette_for_track(self.cursor_row);
+    }
+
+    pub(super) fn open_palette_for_track(&mut self, track: usize) {
+        let track = track.min(self.tracks.len() - 1);
+        self.cursor_row = track;
+        self.palette.open_for_track(track);
+        self.status_message = format!("Buscador · añadir a la pista {}", self.tracks[track].name);
     }
 
     pub(super) fn handle_palette_key(&mut self, key: &str, text: bool) {
@@ -102,7 +119,19 @@ impl DawApp {
     }
 
     pub(super) fn activate_catalog_entry(&mut self, entry: &'static CatalogEntry) {
+        let target_track = self.palette.target_track();
         self.palette.close();
+        if entry.kind == EntryKind::Instrument {
+            if let Some(track) = target_track {
+                match entry.action {
+                    CatalogAction::Invoke(_) => self.assign_instrument_to_track(track, entry),
+                    CatalogAction::Unavailable(reason) => {
+                        self.status_message = format!("{} · {reason}", entry.name);
+                    }
+                }
+                return;
+            }
+        }
         match entry.action {
             CatalogAction::Invoke(command) => {
                 self.execute_command(command);
@@ -115,6 +144,28 @@ impl DawApp {
             }
         }
     }
+
+    fn assign_instrument_to_track(&mut self, track: usize, entry: &'static CatalogEntry) {
+        if track >= self.tracks.len() {
+            self.status_message = "Pista inválida".into();
+            return;
+        }
+        if entry.id != "instrument.piano" {
+            self.status_message = format!("{} · instrumento sin implementación", entry.name);
+            return;
+        }
+        let previous = assign_instrument(&mut self.tracks, track, self.instrument.id());
+        self.cursor_row = track;
+        self.set_center_view(CenterView::Instrument);
+        let name = self.tracks[track].name;
+        self.status_message = match previous {
+            Some(previous) => format!(
+                "{} movido de {} a {}",
+                entry.name, self.tracks[previous].name, name
+            ),
+            None => format!("{} asignado a {}", entry.name, name),
+        };
+    }
 }
 
 #[cfg(test)]
@@ -125,7 +176,7 @@ mod tests {
     #[test]
     fn palette_filters_by_accent_insensitive_query_and_resets_selection() {
         let mut palette = Palette::new();
-        palette.open();
+        palette.open_for_track(0);
         assert!(palette.results().len() > 1);
         for key in "reproduccion".chars() {
             palette.handle_key(&key.to_string(), true);
@@ -138,7 +189,7 @@ mod tests {
     #[test]
     fn backspace_restores_the_catalog_and_enter_returns_the_first_match() {
         let mut palette = Palette::new();
-        palette.open();
+        palette.open_for_track(0);
         for key in "volume".chars() {
             palette.handle_key(&key.to_string(), true);
         }
@@ -152,5 +203,14 @@ mod tests {
             .handle_key("enter", true)
             .expect("catálogo no vacío");
         assert_eq!(entry.id, "instrument.piano");
+    }
+
+    #[test]
+    fn palette_remembers_the_target_track_and_forgets_it_on_close() {
+        let mut palette = Palette::new();
+        palette.open_for_track(3);
+        assert_eq!(palette.target_track(), Some(3));
+        palette.close();
+        assert_eq!(palette.target_track(), None);
     }
 }

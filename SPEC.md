@@ -71,16 +71,17 @@ un plan por frames, transporte en el callback y percusión sintetizada. Clip, pi
 abren streams excluyentes. Mixer sigue siendo mock. El piano está desacoplado de la vista:
 `src/instruments/piano.rs` posee el reproductor y las notas sostenidas, y la UI pinta el
 descriptor de `elevate::catalog`. El botón `[+]`, la tecla `a` y `:add` abren un buscador
-headless de instrumentos, primitivos, componentes y acciones. El código está separado en
-`src/ui/`, `src/instruments/`, `src/audio/`, `src/musical/` y `src/catalog.rs`; `main.rs`
-solo arranca la aplicación.
-**Límites actuales:** 120 BPM, un clip en memoria, un patrón, una instancia de piano,
-percusión sin samples, plan inmutable durante la reproducción, buscador sin host de plugins
-ni asignación de instrumentos a pistas, salida a la frecuencia original del archivo o
-predeterminada del dispositivo; sin remuestreo, mezcla multipista, MIDI externo, grabación
+headless de instrumentos, primitivos, componentes y acciones; elegir el piano lo asigna a
+la pista destino mediante `musical::track`. El código está separado en `src/ui/`,
+`src/instruments/`, `src/audio/`, `src/musical/` y `src/catalog.rs`; `main.rs` solo arranca
+la aplicación.
+**Límites actuales:** 120 BPM, un clip en memoria, un patrón, una instancia de piano que se
+mueve entre pistas, percusión sin samples, plan inmutable durante la reproducción, buscador
+sin host de plugins ni creación de instancias, salida a la frecuencia original del archivo
+o predeterminada del dispositivo; sin remuestreo, mezcla multipista, MIDI externo, grabación
 ni guardado. Las próximas bibliotecas se elegirán junto al usuario.
 **Prioridad:** secuenciador nativo inspirado en Hydrogen. Un motor musical independiente
-de sus vistas, un transporte y una salida CPAL común. Convertir el piano en una instancia
+de sus vistas, un transporte y una salida CPAL común. Permitir varias instancias de piano
 por pista, unificar audio y comunicación RT, sustituir la síntesis por samples de percusión,
 permitir cambios de plan en caliente y añadir loop configurable y persistencia versionada.
 Hydrogen sirve de referencia; no hay integración FFI ni código suyo incorporado.

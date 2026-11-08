@@ -1,6 +1,6 @@
 //! Mock visual explícito. Estos medidores no representan audio del dispositivo.
 use super::super::{DawApp, DesignSystem};
-use super::tracks::{DEMO_LEVELS, TRACK_NAMES};
+use super::tracks::DEMO_LEVELS;
 use gpui::{IntoElement, div, prelude::*, px, rgb};
 
 impl DawApp {
@@ -14,7 +14,7 @@ impl DawApp {
             .flex_1()
             .p_4()
             .gap_3()
-            .children(TRACK_NAMES.iter().enumerate().map(|(i, name)| {
+            .children(self.tracks.iter().enumerate().map(|(i, track)| {
                 div()
                     .flex_1()
                     .flex()
@@ -25,7 +25,7 @@ impl DawApp {
                             .text_center()
                             .text_xs()
                             .text_color(rgb(colors[i]))
-                            .child(*name),
+                            .child(track.name),
                     )
                     .child(meter(DEMO_LEVELS[i] / 10, colors[i], ds.border, ds))
                     .child(

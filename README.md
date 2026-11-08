@@ -195,14 +195,17 @@ El catálogo headless vive en [`src/catalog.rs`](src/catalog.rs) y distingue cua
 categorías: instrumento, primitivo, componente y acción. El overlay y su estado están en
 `ui/views/palette.rs` y `ui/palette.rs`; las acciones se traducen a los comandos existentes.
 
-- **Piano vertical** abre el piano actual; es el único instrumento implementado.
+- **Piano vertical** asigna el piano a la pista seleccionada y abre la vista Instrument;
+  es el único instrumento implementado. La cabecera muestra `Piano vertical` en esa pista.
 - **Volume** y **Componente serial** aparecen como metadatos: todavía no se instancian
   desde el buscador ni se asignan a una pista.
 - **Reproducción**, **Detener**, **Patrón**, **Arrangement**, **Mixer** y **Recargar diseño**
   son acciones ejecutables.
 
-El `[+]` aún no crea una instancia nueva ni modifica la pista: el modelo de pistas sigue
-siendo de demostración. Esa es la siguiente frontera, no una capacidad ya terminada.
+El `[+]` de una cabecera apunta a esa pista; **a** y **:add** apuntan a la pista
+seleccionada. Como solo existe una instancia de piano, asignarlo a otra pista lo mueve.
+El buscador todavía no crea instancias nuevas ni es un host de plugins. La asignación
+vive en `elevate::musical::track`, no en la vista.
 
 ## Primer instrumento: piano
 

@@ -1,7 +1,10 @@
 //! Estado de ejecución del piano: voces, notas sostenidas y ratón.
 //! No importa GPUI. La vista consulta este objeto; el audio vive en `audio/piano`.
 use crate::audio::piano::PianoPlayer;
-use elevate::catalog::{self, CatalogEntry};
+use elevate::{
+    catalog::{self, CatalogEntry},
+    musical::model::InstrumentId,
+};
 use std::collections::HashSet;
 
 const ENTRY_ID: &str = "instrument.piano";
@@ -41,6 +44,11 @@ impl Piano {
             held: HashSet::new(),
             mouse: None,
         }
+    }
+
+    /// Identidad estable de la única instancia del prototipo.
+    pub fn id(&self) -> InstrumentId {
+        InstrumentId(1)
     }
 
     pub fn descriptor(&self) -> &'static CatalogEntry {

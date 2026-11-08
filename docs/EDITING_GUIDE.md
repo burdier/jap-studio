@@ -12,6 +12,7 @@
 | Ciclo de render | `src/ui/render.rs` | Nunca avanzar aquí el transporte musical |
 | Play/Stop/importación | `src/ui/audio_actions.rs` | `src/audio/` |
 | Catálogo de instrumentos/acciones | `src/catalog.rs` | `tests/catalog.rs` |
+| Pistas y asignación de instrumento | `src/musical/track.rs` | `ui/palette.rs`, `views/tracks.rs` |
 | Buscador: estado y teclas | `src/ui/palette.rs` | `ui/input.rs` |
 | Buscador: overlay | `src/ui/views/palette.rs` | `[+]` en `views/tracks.rs` |
 | Estado del piano | `src/instruments/piano.rs` | `audio/piano/`, `views/instrument.rs` |
@@ -51,8 +52,9 @@
 No interpretar nombres de archivos como garantías: `scheduler` planifica una pasada;
 el loop y la percusión viven en `audio/drums/stream.rs`; `PatternAction` no es un bus;
 `output` comparte configuración, todavía no mezcla. `catalog` indexa metadatos: no
-instancia primitivos, componentes ni instrumentos. El buscador solo abre el piano actual;
-insertar instrumentos en pistas requiere el futuro host.
+instancia primitivos, componentes ni instrumentos. El buscador asigna el piano actual a la
+pista destino mediante `musical/track.rs`; crear varias instancias requiere el futuro host.
+La asignación es estado musical: no la guardes en la vista ni en `instruments::Piano`.
 
 La vista del piano no debe importar `audio::piano` ni `rustysynth`. El estado de ejecución
 (note-on/off, ratón, voces abiertas) pertenece a `src/instruments/piano.rs`; la UI solo

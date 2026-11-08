@@ -4,6 +4,7 @@ use super::{
     timeline::Timeline,
 };
 use crate::instruments::{Piano, piano};
+use elevate::musical::track::DEMO_TRACKS;
 use gpui::{
     App, AppContext, Bounds, Context, ScrollHandle, WindowBounds, WindowOptions, point, px, size,
 };
@@ -40,6 +41,7 @@ impl DawApp {
         Self {
             timeline: Timeline::new(ds.timeline_pixels_per_beat),
             pattern_editor: PatternEditor::new(),
+            tracks: DEMO_TRACKS,
             player: None,
             pattern_player: None,
             instrument: Piano::new(),

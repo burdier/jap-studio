@@ -1,6 +1,5 @@
 //! Layout Arrangement y adaptación de eventos de puntero al timeline.
 use super::super::{DawApp, timeline::TimelineArea};
-use super::tracks::TRACK_NAMES;
 use gpui::{Context, IntoElement, MouseButton, MouseDownEvent, div, prelude::*, px, rgb};
 
 impl DawApp {
@@ -31,7 +30,7 @@ impl DawApp {
                             .border_color(rgb(ds.border))
                             .child(div().text_xs().text_color(rgb(ds.muted)).child("TRACK")),
                     )
-                    .child(self.render_timeline_area(TimelineArea::Ruler, TRACK_NAMES.len(), cx)),
+                    .child(self.render_timeline_area(TimelineArea::Ruler, self.tracks.len(), cx)),
             )
             .child(
                 div()
@@ -44,7 +43,7 @@ impl DawApp {
                         div()
                             .flex()
                             .w_full()
-                            .h(px(TRACK_NAMES.len() as f32 * ds.track_header_height))
+                            .h(px(self.tracks.len() as f32 * ds.track_header_height))
                             .child(
                                 div()
                                     .w(px(ds.track_header_width))
@@ -55,13 +54,13 @@ impl DawApp {
                                     .border_r_1()
                                     .border_color(rgb(ds.border))
                                     .children(
-                                        (0..TRACK_NAMES.len())
+                                        (0..self.tracks.len())
                                             .map(|i| self.render_track_header(i, cx)),
                                     ),
                             )
                             .child(self.render_timeline_area(
                                 TimelineArea::Lanes,
-                                TRACK_NAMES.len(),
+                                self.tracks.len(),
                                 cx,
                             )),
                     ),
