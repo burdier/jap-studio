@@ -136,6 +136,9 @@ impl MidiCapture {
             MidiMessage::AllNotesOff => {
                 self.flush_active(now_ns, bpm);
             }
+            MidiMessage::ControlChange { .. }
+            | MidiMessage::PitchBend { .. }
+            | MidiMessage::ProgramChange { .. } => {}
         }
     }
 

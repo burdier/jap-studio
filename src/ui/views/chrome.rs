@@ -1,5 +1,9 @@
 //! Barras de título y estado. No abrir dispositivos ni ejecutar DSP aquí.
-use super::super::{CenterView, DawApp, VimMode, cursor_fx::CursorFxMode};
+use super::super::{
+    CenterView, DawApp, VimMode,
+    components::button::{MAMEY_LOGO_COLOR, brand_logo},
+    cursor_fx::CursorFxMode,
+};
 use gpui::{Context, IntoElement, MouseButton, SharedString, div, prelude::*, px, rgb};
 
 impl DawApp {
@@ -38,13 +42,15 @@ impl DawApp {
         };
         div()
             .h(px(ds.title_bar_height))
+            .mb(px(5.0))
             .flex_shrink_0()
             .flex()
             .items_center()
             .justify_between()
             .px_4()
             .bg(rgb(ds.panel_dark))
-            .border_b_1()
+            .rounded(px(ds.radius_lg))
+            .border_1()
             .border_color(rgb(ds.border))
             .child(
                 div()
@@ -53,10 +59,18 @@ impl DawApp {
                     .gap_3()
                     .child(
                         div()
-                            .text_color(rgb(ds.accent))
-                            .text_lg()
-                            .font_weight(gpui::FontWeight::BOLD)
-                            .child("◈ Hay"),
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .cursor_pointer()
+                            .child(brand_logo(18.0))
+                            .child(
+                                div()
+                                    .text_color(rgb(MAMEY_LOGO_COLOR))
+                                    .text_lg()
+                                    .font_weight(gpui::FontWeight::BOLD)
+                                    .child("Hay"),
+                            ),
                     )
                     .child(div().text_color(rgb(ds.muted)).child("/"))
                     .child(div().text_color(rgb(ds.text)).child("Untitled Session"))
@@ -76,7 +90,28 @@ impl DawApp {
                 div()
                     .flex()
                     .items_center()
-                    .gap_4()
+                    .gap_3()
+                    .child(
+                        div()
+                            .px_2()
+                            .py(px(2.0))
+                            .rounded(px(ds.radius_sm))
+                            .bg(rgb(ds.panel))
+                            .border_1()
+                            .border_color(rgb(ds.border))
+                            .text_xs()
+                            .text_color(rgb(ds.pink))
+                            .cursor_pointer()
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _, _, cx| {
+                                    this.cycle_theme();
+                                    cx.stop_propagation();
+                                    cx.notify();
+                                }),
+                            )
+                            .child(format!("🎨 {}", ds.theme.label())),
+                    )
                     .child(
                         div()
                             .px_2()
@@ -131,13 +166,15 @@ impl DawApp {
         let ds = &self.ds;
         div()
             .h(px(ds.status_bar_height))
+            .mt(px(5.0))
             .flex_shrink_0()
             .flex()
             .items_center()
             .justify_between()
             .px_3()
             .bg(rgb(ds.panel_dark))
-            .border_t_1()
+            .rounded(px(ds.radius_lg))
+            .border_1()
             .border_color(rgb(ds.border))
             .child(
                 div()

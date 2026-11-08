@@ -6,9 +6,11 @@ mod instrument_params;
 mod mixer;
 mod palette;
 mod pattern;
+mod piano_roll;
 mod settings;
 pub(super) mod tracks;
 mod transport;
+mod workspace;
 
 use super::{CenterView, DawApp};
 use gpui::{Context, IntoElement, div, prelude::*, px, rgb};
@@ -34,6 +36,7 @@ impl DawApp {
             .min_w_0()
             .flex()
             .flex_col()
+            .gap(px(4.0))
             .bg(rgb(ds.bg))
             .child(
                 div()
@@ -44,19 +47,58 @@ impl DawApp {
                     .justify_between()
                     .px_3()
                     .bg(rgb(ds.panel))
-                    .border_b_1()
+                    .rounded(px(ds.radius_lg))
+                    .border_1()
                     .border_color(rgb(ds.border))
                     .child(div().text_xs().text_color(rgb(ds.accent)).child(label))
                     .child(div().text_xs().text_color(rgb(ds.muted)).child(help)),
             )
             .child(match self.center_view {
-                CenterView::Arrangement => self.render_arrangement(cx).into_any_element(),
-                CenterView::Instrument if self.instrument_detached() => {
-                    self.render_instrument_placeholder(cx).into_any_element()
-                }
-                CenterView::Instrument => self.render_instrument(cx).into_any_element(),
-                CenterView::Session => self.render_pattern(cx).into_any_element(),
-                CenterView::Mixer => self.render_mixer().into_any_element(),
+                CenterView::Arrangement => self.render_arrangement_workspace(cx).into_any_element(),
+                CenterView::Instrument if self.instrument_detached() => div()
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .flex_col()
+                    .rounded(px(ds.radius_lg))
+                    .border_1()
+                    .border_color(rgb(ds.border))
+                    .overflow_hidden()
+                    .child(self.render_instrument_placeholder(cx))
+                    .into_any_element(),
+                CenterView::Instrument => div()
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .flex_col()
+                    .rounded(px(ds.radius_lg))
+                    .border_1()
+                    .border_color(rgb(ds.border))
+                    .overflow_hidden()
+                    .child(self.render_instrument(cx))
+                    .into_any_element(),
+                CenterView::Session => div()
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .flex_col()
+                    .rounded(px(ds.radius_lg))
+                    .border_1()
+                    .border_color(rgb(ds.border))
+                    .overflow_hidden()
+                    .child(self.render_pattern(cx))
+                    .into_any_element(),
+                CenterView::Mixer => div()
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .flex_col()
+                    .rounded(px(ds.radius_lg))
+                    .border_1()
+                    .border_color(rgb(ds.border))
+                    .overflow_hidden()
+                    .child(self.render_mixer())
+                    .into_any_element(),
             })
     }
 }

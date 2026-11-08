@@ -151,9 +151,14 @@ fn read_bank_metadata(path: PathBuf) -> SoundFontBank {
             .map(|dir| dir.join("readme.txt"))
             .unwrap_or_default(),
     ];
+    let engine_label = if super::fluidsynth::is_available() {
+        "motor FluidSynth (C)"
+    } else {
+        "motor RustySynth"
+    };
     for readme in readme_candidates {
         if let Ok(text) = fs::read_to_string(&readme)
-            && let Some((title, credits)) = parse_readme(&text)
+            && let Some((title, credits)) = parse_readme(&text, engine_label)
         {
             return SoundFontBank {
                 path,
@@ -165,11 +170,11 @@ fn read_bank_metadata(path: PathBuf) -> SoundFontBank {
     SoundFontBank {
         path,
         name: stem,
-        credits: "Banco SoundFont (FreePats) · motor RustySynth".into(),
+        credits: format!("Banco SoundFont (FreePats) · {engine_label}"),
     }
 }
 
-fn parse_readme(text: &str) -> Option<(String, String)> {
+fn parse_readme(text: &str, engine_label: &str) -> Option<(String, String)> {
     let mut paragraphs = Vec::new();
     let mut current = Vec::new();
     for raw_line in text.lines() {
@@ -208,7 +213,7 @@ fn parse_readme(text: &str) -> Option<(String, String)> {
     let summary = truncate_sentence(&body, 140);
     Some((
         title,
-        format!("{summary} · FreePats ({license}) · motor RustySynth"),
+        format!("{summary} · FreePats ({license}) · {engine_label}"),
     ))
 }
 

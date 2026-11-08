@@ -14,16 +14,29 @@ impl DawApp {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let ds = &self.ds;
-        let items = SPECS.iter().map(|spec| {
+        let items = SPECS.iter().enumerate().map(|(index, spec)| {
             let id = spec.id;
+            let param_idx = index as u8;
             let value = self.instrument.param(id);
             let on_set: FractionSet = Rc::new(cx.listener(move |this, fraction: &f32, _, cx| {
-                let spec = crate::instruments::piano_params::spec_of(id);
-                this.set_piano_param(id, spec.from_fraction(*fraction));
+                if this.midi_mapper.learn_mode() {
+                    this.arm_midi_learn(
+                        elevate::musical::midi_map::MidiBindTarget::InstrumentParam(param_idx),
+                    );
+                } else {
+                    let spec = crate::instruments::piano_params::spec_of(id);
+                    this.set_piano_param(id, spec.from_fraction(*fraction));
+                }
                 cx.notify();
             }));
             let on_reset: Reset = Rc::new(cx.listener(move |this, _: &(), _, cx| {
-                this.set_piano_param(id, crate::instruments::piano_params::spec_of(id).default);
+                if this.midi_mapper.learn_mode() {
+                    this.arm_midi_learn(
+                        elevate::musical::midi_map::MidiBindTarget::InstrumentParam(param_idx),
+                    );
+                } else {
+                    this.set_piano_param(id, crate::instruments::piano_params::spec_of(id).default);
+                }
                 cx.notify();
             }));
             if spec.is_toggle() {

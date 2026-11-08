@@ -10,9 +10,67 @@ use std::collections::HashSet;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MidiMessage {
-    NoteOn { note: u8, velocity: u8 },
-    NoteOff { note: u8 },
+    NoteOn {
+        note: u8,
+        velocity: u8,
+    },
+    NoteOff {
+        note: u8,
+    },
+    ControlChange {
+        cc: u8,
+        value: u8,
+    },
+    /// Pitch bend de 14 bits centrado en 0 (`-8192..=8191`).
+    PitchBend {
+        bend: i16,
+    },
+    ProgramChange {
+        program: u8,
+    },
     AllNotesOff,
+}
+
+impl MidiMessage {
+    /// Decodifica bytes MIDI 1.0 en vivo usando `wmidi`.
+    /// Trata `NoteOn` con velocity 0 como `NoteOff`, y CC 120/123 como `AllNotesOff`.
+    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        let parsed = wmidi::MidiMessage::try_from(bytes).ok()?;
+        match parsed {
+            wmidi::MidiMessage::NoteOn(_, note, velocity) => {
+                let note = u8::from(note);
+                let velocity = u8::from(velocity);
+                if velocity == 0 {
+                    Some(Self::NoteOff { note })
+                } else {
+                    Some(Self::NoteOn { note, velocity })
+                }
+            }
+            wmidi::MidiMessage::NoteOff(_, note, _) => Some(Self::NoteOff {
+                note: u8::from(note),
+            }),
+            wmidi::MidiMessage::ControlChange(_, cc, value) => {
+                let cc = u8::from(cc);
+                let value = u8::from(value);
+                if cc == 120 || cc == 123 {
+                    Some(Self::AllNotesOff)
+                } else {
+                    Some(Self::ControlChange { cc, value })
+                }
+            }
+            wmidi::MidiMessage::PitchBendChange(_, bend) => {
+                let raw = u16::from(bend);
+                Some(Self::PitchBend {
+                    bend: (raw as i32 - 8192).clamp(-8192, 8191) as i16,
+                })
+            }
+            wmidi::MidiMessage::ProgramChange(_, program) => Some(Self::ProgramChange {
+                program: u8::from(program),
+            }),
+            wmidi::MidiMessage::Reset => Some(Self::AllNotesOff),
+            _ => None,
+        }
+    }
 }
 
 /// Identidad de cualquier cliente capaz de recibir MIDI.
@@ -103,6 +161,30 @@ impl MidiServer {
                         }
                     }
                 }
+                MidiMessage::ControlChange { cc, value } => {
+                    if let Some(target) = self.active_target {
+                        routed.push(RoutedMidi {
+                            target,
+                            message: MidiMessage::ControlChange { cc, value },
+                        });
+                    }
+                }
+                MidiMessage::PitchBend { bend } => {
+                    if let Some(target) = self.active_target {
+                        routed.push(RoutedMidi {
+                            target,
+                            message: MidiMessage::PitchBend { bend },
+                        });
+                    }
+                }
+                MidiMessage::ProgramChange { program } => {
+                    if let Some(target) = self.active_target {
+                        routed.push(RoutedMidi {
+                            target,
+                            message: MidiMessage::ProgramChange { program },
+                        });
+                    }
+                }
                 MidiMessage::AllNotesOff => {
                     routed.extend(self.release_all());
                 }
@@ -189,5 +271,28 @@ mod tests {
             velocity: 90,
         }]);
         assert!(routed.is_empty());
+    }
+
+    #[test]
+    fn raw_midi_bytes_parse_notes_cc_and_pitch_bend() {
+        assert_eq!(
+            MidiMessage::from_bytes(&[0x90, 60, 100]),
+            Some(MidiMessage::NoteOn {
+                note: 60,
+                velocity: 100
+            })
+        );
+        assert_eq!(
+            MidiMessage::from_bytes(&[0x90, 60, 0]),
+            Some(MidiMessage::NoteOff { note: 60 })
+        );
+        assert_eq!(
+            MidiMessage::from_bytes(&[0xB0, 64, 127]),
+            Some(MidiMessage::ControlChange { cc: 64, value: 127 })
+        );
+        assert_eq!(
+            MidiMessage::from_bytes(&[0xE0, 0x00, 0x40]),
+            Some(MidiMessage::PitchBend { bend: 0 })
+        );
     }
 }

@@ -6,13 +6,14 @@ use symphonia::core::{
     io::MediaSourceStream,
 };
 
-pub(crate) const PEAK_FRAMES: usize = 256;
+pub(crate) const PEAK_FRAMES: usize = 64;
 
 pub(crate) struct AudioFile {
     pub name: String,
     pub sample_rate: u32,
     pub frames: Vec<StereoFrame>,
     pub peaks: Vec<[f32; 2]>,
+    pub max_peak: f32,
 }
 
 impl AudioFile {
@@ -77,7 +78,7 @@ impl AudioFile {
         if frames.is_empty() {
             return Err("El archivo no contiene muestras".into());
         }
-        let peaks = frames
+        let peaks: Vec<[f32; 2]> = frames
             .chunks(PEAK_FRAMES)
             .map(|block| {
                 block
@@ -88,6 +89,9 @@ impl AudioFile {
                     })
             })
             .collect();
+        let max_peak = peaks.iter().fold(0.05_f32, |acc, &[low, high]| {
+            acc.max(low.abs()).max(high.abs())
+        });
         Ok(Self {
             name: path
                 .file_name()
@@ -97,6 +101,7 @@ impl AudioFile {
             sample_rate,
             frames,
             peaks,
+            max_peak,
         })
     }
 }

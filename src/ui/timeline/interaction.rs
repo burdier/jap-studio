@@ -70,6 +70,35 @@ impl Timeline {
     }
     pub(crate) fn end_clip_drag(&mut self) {
         self.clip_drag = None;
+        self.hover_dragging = false;
+    }
+    pub(crate) fn hover_track(&self) -> Option<usize> {
+        self.hover_track
+    }
+    pub(crate) fn hover_dragging(&self) -> bool {
+        self.hover_dragging || self.clip_drag.is_some()
+    }
+    pub(crate) fn update_hover(
+        &mut self,
+        position: Point<Pixels>,
+        dragging: bool,
+        track_height: f32,
+        track_count: usize,
+    ) -> bool {
+        let bounds = self.lanes_bounds.get();
+        let y_rel = f32::from(position.y - bounds.top());
+        let x_ok = position.x >= px(0.0) && position.x <= bounds.right();
+        let next_track = if x_ok && y_rel >= 0.0 && track_height > 0.0 {
+            let idx = (y_rel / track_height).floor() as usize;
+            (idx < track_count).then_some(idx)
+        } else {
+            None
+        };
+        let next_drag = next_track.is_some() && (dragging || self.clip_drag.is_some());
+        let changed = self.hover_track != next_track || self.hover_dragging != next_drag;
+        self.hover_track = next_track;
+        self.hover_dragging = next_drag;
+        changed
     }
     pub(crate) fn place_cursor(
         &mut self,

@@ -1,11 +1,13 @@
 //! Coordinación UI → adaptadores de audio; decodificación en background.
 use super::{CenterView, DawApp, pattern_editor::PatternAction};
 use crate::audio::{AudioClip, AudioFile, BEATS_PER_SECOND, DrumPlayer, Player};
-use crate::instruments::piano_params::{self, Applies, ParamId};
+use crate::instruments::piano_params::{self, Applies, ParamId, SPECS};
 use elevate::musical::{
     controller::DEFAULT_VELOCITY,
     midi::{MidiMessage, MidiTarget, RoutedMidi},
+    midi_map::{MappedEffect, MidiAction, MidiBindTarget},
     pitch::note_name,
+    smf::parse_smf_to_clip,
     time::DEFAULT_BPM,
     track::assign_instrument,
 };
@@ -48,11 +50,89 @@ impl DawApp {
             None => "Sin cliente",
         }
     }
-    /// Publica mensajes de cualquier controlador en el servidor MIDI y despacha
-    /// cada evento enrutado a su cliente correspondiente.
+    /// Publica mensajes de cualquier controlador en el servidor MIDI, evalúa mapeos/MIDI Learn
+    /// y despacha cada evento enrutado a su cliente correspondiente.
     pub(super) fn apply_midi(&mut self, messages: impl IntoIterator<Item = MidiMessage>) {
-        let routed = self.midi_server.publish(messages);
+        let mut to_publish = Vec::new();
+        for msg in messages {
+            let effects = self.midi_mapper.process(msg);
+            let mut learned = false;
+            for effect in effects {
+                if matches!(effect, MappedEffect::Learned { .. }) {
+                    learned = true;
+                }
+                self.apply_mapped_effect(effect);
+            }
+            if !learned {
+                to_publish.push(msg);
+            }
+        }
+        let routed = self.midi_server.publish(to_publish);
         self.dispatch_routed_midi(routed);
+    }
+    fn apply_mapped_effect(&mut self, effect: MappedEffect) {
+        match effect {
+            MappedEffect::Learned { source, target } => {
+                self.status_message = format!(
+                    "🎯 MIDI Learn: {} vinculado a {}",
+                    source.label(),
+                    target.label()
+                );
+            }
+            MappedEffect::SetNormalized { target, fraction } => match target {
+                MidiBindTarget::TrackVolume(idx) if idx < self.track_levels.len() => {
+                    self.track_levels[idx] = (fraction * 100.0).round() as i32;
+                    if self.timeline.clip.as_ref().is_some_and(|c| c.track == idx) {
+                        let target_gain = (fraction * 2.0).clamp(0.0, 2.0);
+                        self.change_gain(target_gain - self.gain);
+                    } else {
+                        self.status_message =
+                            format!("{}: {}%", self.tracks[idx].name, self.track_levels[idx]);
+                    }
+                }
+                MidiBindTarget::TrackPan(idx) if idx < self.track_pans.len() => {
+                    self.track_pans[idx] = (fraction * 100.0).round() as i32;
+                    let signed = self.track_pans[idx] - 50;
+                    self.status_message = format!("{} · Pan: {signed:+}", self.tracks[idx].name);
+                }
+                MidiBindTarget::MasterGain => {
+                    let target_gain = (fraction * 2.0).clamp(0.0, 2.0);
+                    self.change_gain(target_gain - self.gain);
+                }
+                MidiBindTarget::InstrumentParam(idx) => {
+                    if let Some(spec) = SPECS.get(usize::from(idx)) {
+                        self.set_piano_param(spec.id, spec.from_fraction(fraction));
+                    }
+                }
+                _ => {}
+            },
+            MappedEffect::TriggerAction(action) => match action {
+                MidiAction::PlayToggle => self.play_context(),
+                MidiAction::Stop => self.stop_all(),
+                MidiAction::RecordToggle => self.toggle_midi_record(),
+                MidiAction::CaptureMidi => self.capture_midi_to_track(),
+                MidiAction::NextBank => self.step_soundfont_bank(1),
+                MidiAction::PrevBank => self.step_soundfont_bank(-1),
+                MidiAction::NextPreset => self.step_soundfont_preset(1),
+                MidiAction::PrevPreset => self.step_soundfont_preset(-1),
+            },
+        }
+    }
+    pub(super) fn toggle_midi_learn(&mut self) {
+        let on = self.midi_mapper.toggle_learn_mode();
+        self.status_message = if on {
+            "🎯 MIDI Learn ACTIVO · haz clic en una perilla/slider y mueve un CC o pulsa ' (CC21)"
+                .into()
+        } else {
+            "MIDI Learn desactivado".into()
+        };
+    }
+    pub(super) fn arm_midi_learn(&mut self, target: MidiBindTarget) {
+        self.midi_mapper.arm_target(target);
+        self.status_message = format!(
+            "🎯 Esperando CC/Nota MIDI para «{}» (pulsa ' para probar con CC21)…",
+            target.label()
+        );
     }
     fn dispatch_routed_midi(&mut self, routed: impl IntoIterator<Item = RoutedMidi>) {
         for RoutedMidi { target, message } in routed {
@@ -60,6 +140,14 @@ impl DawApp {
                 MidiTarget::Instrument(id) if id == self.instrument.id() => match message {
                     MidiMessage::NoteOn { note, velocity } => self.note_on_velocity(note, velocity),
                     MidiMessage::NoteOff { note } => self.note_off(note),
+                    MidiMessage::ControlChange { .. } => {}
+                    MidiMessage::PitchBend { bend } => {
+                        let norm = (f32::from(bend) / 8192.0).clamp(-1.0, 1.0);
+                        self.set_piano_param(ParamId::PitchBend, norm);
+                    }
+                    MidiMessage::ProgramChange { program } => {
+                        self.instrument.select_preset(usize::from(program));
+                    }
                     MidiMessage::AllNotesOff => {
                         self.instrument.all_notes_off();
                     }
@@ -188,7 +276,7 @@ impl DawApp {
         let note_count = clip.notes().len();
         let duration = clip.duration_beats();
         assign_instrument(&mut self.tracks, target_track, self.instrument.id());
-        self.timeline.midi_clip = Some(clip);
+        self.timeline.insert_midi_clip(clip);
         self.sync_midi_focus();
         self.status_message = format!(
             "Clip MIDI insertado en {} ({note_count} notas, {duration:.1} negras) · Space: reproducir",
@@ -329,6 +417,42 @@ impl DawApp {
     ) {
         self.stop_audio();
         self.stop_pattern();
+        let is_midi = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("mid") || ext.eq_ignore_ascii_case("midi"));
+        if is_midi {
+            match std::fs::read(&path) {
+                Ok(bytes) => {
+                    let name = path
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("MIDI")
+                        .to_string();
+                    match parse_smf_to_clip(&bytes, name, track, start_beat, self.instrument.id()) {
+                        Ok(clip) => {
+                            let notes = clip.notes().len();
+                            let beats = clip.duration_beats();
+                            assign_instrument(&mut self.tracks, track, self.instrument.id());
+                            self.timeline.insert_midi_clip(clip);
+                            self.cursor_row = track;
+                            self.timeline.set_edit_beat(start_beat);
+                            self.sync_midi_focus();
+                            self.status_message = format!(
+                                "Archivo MIDI importado en {} ({notes} notas, {beats:.1} negras) · Space: reproducir",
+                                self.tracks[track].name
+                            );
+                        }
+                        Err(err) => self.status_message = format!("Importación MIDI: {err}"),
+                    }
+                }
+                Err(err) => {
+                    self.status_message = format!("No se pudo leer {}: {err}", path.display())
+                }
+            }
+            cx.notify();
+            return;
+        }
         self.status_message = format!("Decodificando {}…", path.display());
         let decode = cx.background_spawn(async move { AudioFile::decode(&path) });
         self.import_task = Some(cx.spawn(async move |this, cx| {

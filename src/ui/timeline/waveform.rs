@@ -3,7 +3,7 @@ use super::{DesignSystem, viewport::Viewport};
 use crate::audio::{AudioClip, BEATS_PER_SECOND, PEAK_FRAMES};
 use elevate::musical::{clip::MidiClip, time::PPQ};
 use gpui::{
-    App, Bounds, ContentMask, Pixels, TextAlign, TextRun, Window, fill, point, px, rgb, size,
+    App, Bounds, ContentMask, Pixels, TextAlign, TextRun, Window, fill, point, px, rgb, rgba, size,
 };
 
 pub(super) fn paint(
@@ -22,6 +22,17 @@ pub(super) fn paint(
     if right <= left {
         return;
     }
+    let track_colors = [
+        design.accent,
+        design.success,
+        design.warning,
+        design.danger,
+        design.cyan,
+        design.orange,
+        design.pink,
+        design.accent,
+    ];
+    let track_color = track_colors[clip.track.min(track_colors.len() - 1)];
     let top = bounds.top() + px(clip.track as f32 * design.track_header_height + 3.0);
     let height = px((design.track_header_height - 6.0).max(1.0));
     let clip_bounds = Bounds::new(
@@ -33,41 +44,91 @@ pub(super) fn paint(
             bounds: clip_bounds,
         }),
         |window| {
-            window.paint_quad(fill(clip_bounds, rgb(design.accent_dim)));
-            let center = top + height * 0.6;
-            let amplitude = height * 0.32;
-            for column in (left.floor() as usize)..(right.ceil() as usize) {
-                let frame_at = |x| {
+            // Fondo gris pizarra neutro + barra superior del color de la pista
+            window
+                .paint_quad(fill(clip_bounds, rgba(0x32363de8)).corner_radii(px(design.radius_sm)));
+            window.paint_quad(fill(
+                Bounds::new(clip_bounds.origin, size(clip_bounds.size.width, px(2.0))),
+                rgb(track_color),
+            ));
+
+            let header_h = design.font_size_xs + 4.0;
+            let wave_top = f32::from(top) + header_h;
+            let wave_h = (f32::from(height) - header_h - 2.0).max(8.0);
+            let center_y = wave_top + wave_h * 0.5;
+            let amplitude = wave_h * 0.46;
+            let norm_scale = 1.0 / clip.file.max_peak.max(0.05);
+
+            // Línea central horizontal continua (zero-crossing baseline)
+            window.paint_quad(fill(
+                Bounds::new(
+                    point(clip_bounds.left(), px(center_y - 0.75)),
+                    size(clip_bounds.size.width, px(1.5)),
+                ),
+                rgb(design.text),
+            ));
+
+            // Agujas verticales discretas (estilo transientes con micro-separación)
+            let start_col = left.floor() as usize;
+            let end_col = right.ceil() as usize;
+            let mut column = start_col;
+            while column < end_col {
+                let frame_at = |x: f64| {
                     ((viewport.beat_at(x) - clip.start_beat).max(0.0) / BEATS_PER_SECOND
                         * f64::from(clip.file.sample_rate)) as usize
                 };
                 let first_peak = (frame_at(column as f64) / PEAK_FRAMES).min(clip.file.peaks.len());
                 let last_peak =
-                    (frame_at(column as f64 + 1.0) / PEAK_FRAMES + 1).min(clip.file.peaks.len());
-                let [low, high] = clip
+                    (frame_at((column + 2) as f64) / PEAK_FRAMES + 1).min(clip.file.peaks.len());
+                let slice = clip
                     .file
                     .peaks
                     .get(first_peak..last_peak)
-                    .unwrap_or_default()
-                    .iter()
-                    .fold([0.0_f32, 0.0_f32], |[low, high], peak| {
-                        [low.min(peak[0]), high.max(peak[1])]
-                    });
-                window.paint_quad(fill(
-                    Bounds::new(
-                        point(
-                            bounds.left() + px(column as f32),
-                            center - amplitude * high.clamp(0.0, 1.0),
-                        ),
-                        size(
-                            px(1.0),
-                            (amplitude * (high.clamp(0.0, 1.0) - low.clamp(-1.0, 0.0)))
-                                .max(px(1.0)),
-                        ),
-                    ),
-                    rgb(design.accent),
-                ));
+                    .unwrap_or_default();
+                if !slice.is_empty() {
+                    let mut min_v = 0.0_f32;
+                    let mut max_v = 0.0_f32;
+                    let mut sum_pos = 0.0_f32;
+                    let mut sum_neg = 0.0_f32;
+                    for &[lo, hi] in slice {
+                        min_v = min_v.min(lo);
+                        max_v = max_v.max(hi);
+                        sum_neg += lo.abs();
+                        sum_pos += hi.abs();
+                    }
+                    let count = slice.len() as f32;
+                    let hi_peak = (max_v * norm_scale).clamp(0.0, 1.0).powf(0.85) * amplitude;
+                    let lo_peak = (min_v.abs() * norm_scale).clamp(0.0, 1.0).powf(0.85) * amplitude;
+                    let hi_rms =
+                        ((sum_pos / count) * norm_scale).clamp(0.0, 1.0).powf(0.85) * amplitude;
+                    let lo_rms =
+                        ((sum_neg / count) * norm_scale).clamp(0.0, 1.0).powf(0.85) * amplitude;
+
+                    let x_pos = bounds.left() + px(column as f32);
+                    // Espiga exterior de pico (transiente fino)
+                    if hi_peak + lo_peak >= 0.8 {
+                        window.paint_quad(fill(
+                            Bounds::new(
+                                point(x_pos, px(center_y - hi_peak)),
+                                size(px(1.15), px((hi_peak + lo_peak).max(1.5))),
+                            ),
+                            rgba((design.text << 8) | 0xdc),
+                        ));
+                    }
+                    // Núcleo interior de energía (RMS más denso y brillante)
+                    if hi_rms + lo_rms >= 0.8 {
+                        window.paint_quad(fill(
+                            Bounds::new(
+                                point(x_pos, px(center_y - hi_rms)),
+                                size(px(1.55), px((hi_rms + lo_rms).max(1.8))),
+                            ),
+                            rgb(0xffffff),
+                        ));
+                    }
+                }
+                column += 2;
             }
+
             let name = clip.file.name.replace(['\n', '\r'], " ");
             let run = TextRun {
                 len: name.len(),
@@ -82,7 +143,7 @@ pub(super) fn paint(
                     .text_system()
                     .shape_line(name.into(), px(design.font_size_xs), &[run], None);
             if let Err(error) = label.paint(
-                point(clip_bounds.left() + px(4.0), top),
+                point(clip_bounds.left() + px(4.0), top + px(1.0)),
                 px(design.font_size_xs + 4.0),
                 TextAlign::Left,
                 None,

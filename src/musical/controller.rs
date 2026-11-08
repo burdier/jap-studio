@@ -9,6 +9,12 @@ const OCTAVE_DOWN_KEY: &str = "z";
 const OCTAVE_UP_KEY: &str = "x";
 const VELOCITY_DOWN_KEY: &str = "c";
 const VELOCITY_UP_KEY: &str = "v";
+const SUSTAIN_TOGGLE_KEY: &str = "/";
+const BEND_DOWN_KEY: &str = "-";
+const BEND_UP_KEY: &str = "=";
+const MOD_DOWN_KEY: &str = ",";
+const MOD_UP_KEY: &str = ".";
+const MACRO_CC_KEY: &str = "'";
 /// Teclas de una octava y media a partir de la nota base: a w s e d f t g y h u j k o l p ;
 const NOTE_KEYS: [&str; 17] = [
     "a", "w", "s", "e", "d", "f", "t", "g", "y", "h", "u", "j", "k", "o", "l", "p", ";",
@@ -16,16 +22,20 @@ const NOTE_KEYS: [&str; 17] = [
 const BASE_NOTE: i16 = 60;
 const MAX_OCTAVE_SHIFT: i8 = 4;
 const VELOCITY_STEP: u8 = 20;
+const MOD_STEP: u8 = 16;
 pub const DEFAULT_VELOCITY: u8 = 100;
 
 pub const HINT: &str =
-    "M: teclado MIDI · a w s e d f t g y h u j k o l p ; = notas · Z/X: octava · C/V: velocity";
+    "M: MIDI · a..; notas · Z/X oct · C/V vel · / sustain · -/= bend · ,/. mod · ' macro CC21";
 
 #[derive(Debug)]
 pub struct ComputerKeyboard {
     enabled: bool,
     octave_shift: i8,
     velocity: u8,
+    sustain: bool,
+    modulation: u8,
+    macro_cc: u8,
     /// Tecla física → nota que disparó, para soltar la correcta aunque cambie la octava.
     held: HashMap<String, u8>,
 }
@@ -36,6 +46,9 @@ impl Default for ComputerKeyboard {
             enabled: false,
             octave_shift: 0,
             velocity: DEFAULT_VELOCITY,
+            sustain: false,
+            modulation: 0,
+            macro_cc: 64,
             held: HashMap::new(),
         }
     }
@@ -48,6 +61,14 @@ impl ComputerKeyboard {
 
     pub fn velocity(&self) -> u8 {
         self.velocity
+    }
+
+    pub fn sustain(&self) -> bool {
+        self.sustain
+    }
+
+    pub fn modulation(&self) -> u8 {
+        self.modulation
     }
 
     /// Número de octava de la nota más grave (`4` para C4).
@@ -108,13 +129,51 @@ impl ComputerKeyboard {
             OCTAVE_UP_KEY => self.shift_octave(1),
             VELOCITY_DOWN_KEY => self.velocity = self.velocity.saturating_sub(VELOCITY_STEP).max(1),
             VELOCITY_UP_KEY => self.velocity = (self.velocity + VELOCITY_STEP).min(127),
+            SUSTAIN_TOGGLE_KEY if !repeat => {
+                self.sustain = !self.sustain;
+                return Some(vec![MidiMessage::ControlChange {
+                    cc: 64,
+                    value: if self.sustain { 127 } else { 0 },
+                }]);
+            }
+            BEND_DOWN_KEY if !repeat => {
+                return Some(vec![MidiMessage::PitchBend { bend: -4096 }]);
+            }
+            BEND_UP_KEY if !repeat => {
+                return Some(vec![MidiMessage::PitchBend { bend: 4096 }]);
+            }
+            MOD_DOWN_KEY => {
+                self.modulation = self.modulation.saturating_sub(MOD_STEP);
+                return Some(vec![MidiMessage::ControlChange {
+                    cc: 1,
+                    value: self.modulation,
+                }]);
+            }
+            MOD_UP_KEY => {
+                self.modulation = (self.modulation + MOD_STEP).min(127);
+                return Some(vec![MidiMessage::ControlChange {
+                    cc: 1,
+                    value: self.modulation,
+                }]);
+            }
+            MACRO_CC_KEY => {
+                self.macro_cc = (self.macro_cc + 16) % 128;
+                return Some(vec![MidiMessage::ControlChange {
+                    cc: 21,
+                    value: self.macro_cc,
+                }]);
+            }
+            SUSTAIN_TOGGLE_KEY | BEND_DOWN_KEY | BEND_UP_KEY => {}
             _ => return None,
         }
         Some(Vec::new())
     }
 
-    /// Suelta la nota de la tecla si estaba sonando; también con el controlador apagado.
+    /// Suelta la nota de la tecla si estaba sonando (o centra el pitch bend).
     pub fn key_up(&mut self, key: &str) -> Option<MidiMessage> {
+        if self.enabled && (key == BEND_DOWN_KEY || key == BEND_UP_KEY) {
+            return Some(MidiMessage::PitchBend { bend: 0 });
+        }
         self.held
             .remove(key)
             .map(|note| MidiMessage::NoteOff { note })

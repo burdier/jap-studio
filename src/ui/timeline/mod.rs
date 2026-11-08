@@ -1,5 +1,6 @@
 //! Estado de navegación del Arrangement. El canvas está en paint.rs.
 mod interaction;
+mod midi_clips;
 mod paint;
 mod particles;
 #[cfg(test)]
@@ -31,9 +32,12 @@ pub(crate) enum DragKind {
 
 pub(crate) struct Timeline {
     clip_drag: Option<(Point<Pixels>, f64, bool, DragKind)>,
+    hover_track: Option<usize>,
+    hover_dragging: bool,
     // Clips provisionales. Migrar al modelo de proyecto al introducir múltiples clips.
     pub clip: Option<AudioClip>,
     pub midi_clip: Option<MidiClip>,
+    other_midi_clips: Vec<MidiClip>,
     pub playhead: Option<f64>,
     viewport: Viewport,
     edit_beat: f64,
@@ -46,8 +50,11 @@ impl Timeline {
     pub(crate) fn new(pixels_per_beat: f32) -> Self {
         Self {
             clip_drag: None,
+            hover_track: None,
+            hover_dragging: false,
             clip: None,
             midi_clip: None,
+            other_midi_clips: Vec::new(),
             playhead: None,
             viewport: Viewport {
                 first_beat: 0.0,

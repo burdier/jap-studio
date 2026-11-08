@@ -1,4 +1,5 @@
-//! Adaptador provisional RustySynth → Volume → CPAL. La UI solo usa esta fachada.
+//! Adaptador SoundFont (`libfluidsynth` C por `dlopen` con respaldo `RustySynth`) → Volume → CPAL.
+mod fluidsynth;
 mod render;
 mod soundfont;
 
@@ -12,6 +13,8 @@ use elevate::musical::{
     scheduler::PreparedPattern,
     time::{PPQ, Tick, TimeBase},
 };
+pub(crate) use fluidsynth::is_available as fluidsynth_available;
+use rtrb::{Producer, RingBuffer};
 pub(crate) use soundfont::{
     PresetEntry, SoundFontBank, discover as discover_soundfonts, load_path as load_soundfont,
     preload, presets_of,
@@ -19,11 +22,12 @@ pub(crate) use soundfont::{
 use std::{
     path::Path,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
-        mpsc::{self, Sender},
     },
 };
+
+const COMMAND_QUEUE_CAP: usize = 512;
 
 #[derive(Clone)]
 enum NoteCommand {
@@ -35,13 +39,15 @@ enum NoteCommand {
         note: u8,
     },
     AllOff,
-    /// Mensaje MIDI de canal tal cual lo entiende RustySynth.
+    /// Mensaje MIDI de canal.
     Midi {
         command: u8,
         data1: u8,
         data2: u8,
     },
     MasterVolume(f32),
+    Polyphony(usize),
+    Effects(bool),
     PlayPlan {
         plan: Arc<PreparedPattern>,
         start_frame: u64,
@@ -76,7 +82,7 @@ struct InstrumentState {
 
 pub(crate) struct PianoPlayer {
     _stream: cpal::Stream,
-    commands: Sender<NoteCommand>,
+    commands: Mutex<Producer<NoteCommand>>,
     state: Arc<InstrumentState>,
     pub sample_rate: u32,
 }
@@ -102,38 +108,42 @@ impl PianoPlayer {
             plan_playing: AtomicBool::new(false),
             plan_finished: AtomicBool::new(false),
         });
-        // Adaptador heredado. Sustituir por una cola RT acotada al unificar el motor.
-        let (commands, receiver) = mpsc::channel();
+        let (producer, consumer) = RingBuffer::new(COMMAND_QUEUE_CAP);
+        let sf_path = soundfont_path.to_path_buf();
         let stream = match config.sample_format() {
             SampleFormat::F32 => render::build_stream::<f32>(
                 &device,
                 config.into(),
+                &sf_path,
                 sound_font,
-                receiver,
+                consumer,
                 state.clone(),
                 settings,
             ),
             SampleFormat::I16 => render::build_stream::<i16>(
                 &device,
                 config.into(),
+                &sf_path,
                 sound_font,
-                receiver,
+                consumer,
                 state.clone(),
                 settings,
             ),
             SampleFormat::I32 => render::build_stream::<i32>(
                 &device,
                 config.into(),
+                &sf_path,
                 sound_font,
-                receiver,
+                consumer,
                 state.clone(),
                 settings,
             ),
             SampleFormat::U16 => render::build_stream::<u16>(
                 &device,
                 config.into(),
+                &sf_path,
                 sound_font,
-                receiver,
+                consumer,
                 state.clone(),
                 settings,
             ),
@@ -142,29 +152,40 @@ impl PianoPlayer {
         stream.play().map_err(|error| error.to_string())?;
         Ok(Self {
             _stream: stream,
-            commands,
+            commands: Mutex::new(producer),
             state,
             sample_rate,
         })
     }
+    fn push(&self, cmd: NoteCommand) {
+        if let Ok(mut guard) = self.commands.lock() {
+            let _ = guard.push(cmd);
+        }
+    }
     pub fn note_on(&self, note: u8, velocity: u8) {
-        let _ = self.commands.send(NoteCommand::On { note, velocity });
+        self.push(NoteCommand::On { note, velocity });
     }
     pub fn note_off(&self, note: u8) {
-        let _ = self.commands.send(NoteCommand::Off { note });
+        self.push(NoteCommand::Off { note });
     }
     pub fn all_notes_off(&self) {
-        let _ = self.commands.send(NoteCommand::AllOff);
+        self.push(NoteCommand::AllOff);
     }
     pub fn midi(&self, command: u8, data1: u8, data2: u8) {
-        let _ = self.commands.send(NoteCommand::Midi {
+        self.push(NoteCommand::Midi {
             command,
             data1,
             data2,
         });
     }
     pub fn set_master_volume(&self, volume: f32) {
-        let _ = self.commands.send(NoteCommand::MasterVolume(volume));
+        self.push(NoteCommand::MasterVolume(volume));
+    }
+    pub fn set_polyphony(&self, polyphony: usize) {
+        self.push(NoteCommand::Polyphony(polyphony));
+    }
+    pub fn set_effects(&self, enabled: bool) {
+        self.push(NoteCommand::Effects(enabled));
     }
     /// Compila `pattern` fuera del callback y ordena su reproducción sample-accurate.
     pub fn play_pattern(
@@ -183,15 +204,13 @@ impl PianoPlayer {
         self.state.plan_frame.store(start_frame, Ordering::Relaxed);
         self.state.plan_finished.store(false, Ordering::Relaxed);
         self.state.plan_playing.store(true, Ordering::Relaxed);
-        let _ = self
-            .commands
-            .send(NoteCommand::PlayPlan { plan, start_frame });
+        self.push(NoteCommand::PlayPlan { plan, start_frame });
         Ok(())
     }
     pub fn stop_pattern(&self) {
         self.state.plan_playing.store(false, Ordering::Relaxed);
         self.state.plan_finished.store(false, Ordering::Relaxed);
-        let _ = self.commands.send(NoteCommand::StopPlan);
+        self.push(NoteCommand::StopPlan);
     }
     pub fn plan_playing(&self) -> bool {
         self.state.plan_playing.load(Ordering::Relaxed)

@@ -4,19 +4,23 @@ use super::{
     cursor_fx::CursorFx,
     palette::Palette,
     pattern_editor::PatternEditor,
+    piano_roll::PianoRoll,
     settings::SettingsUi,
     timeline::Timeline,
     views::tracks::{DEMO_LEVELS, DEMO_PANS},
 };
+use crate::audio::MidiHardwareIn;
 use crate::instruments::{Piano, piano};
 use elevate::musical::{
     clip::MidiCapture,
     controller::ComputerKeyboard,
     midi::{MidiServer, MidiTarget},
+    midi_map::MidiMapper,
     track::DEMO_TRACKS,
 };
 use gpui::{
-    App, AppContext, Bounds, Context, ScrollHandle, WindowBounds, WindowOptions, point, px, size,
+    App, AppContext, Bounds, Context, ScrollHandle, TitlebarOptions, WindowBounds, WindowOptions,
+    point, px, size,
 };
 use gpui_platform::application;
 use std::time::Instant;
@@ -27,6 +31,11 @@ pub(crate) fn run() {
         if let Err(error) = cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
+                titlebar: Some(TitlebarOptions {
+                    title: Some("Hay DAW".into()),
+                    ..Default::default()
+                }),
+                app_id: Some("hay-daw".to_string()),
                 ..Default::default()
             },
             |window, cx| {
@@ -54,6 +63,9 @@ impl DawApp {
         Self {
             timeline: Timeline::new(ds.timeline_pixels_per_beat),
             pattern_editor: PatternEditor::new(),
+            piano_roll: PianoRoll::default(),
+            piano_roll_focus: cx.focus_handle(),
+            piano_roll_window: None,
             tracks: DEMO_TRACKS,
             track_levels: DEMO_LEVELS,
             track_pans: DEMO_PANS,
@@ -62,6 +74,8 @@ impl DawApp {
             instrument,
             controller: ComputerKeyboard::default(),
             midi_server: MidiServer::new(initial_target),
+            midi_mapper: MidiMapper::new(),
+            midi_hw: MidiHardwareIn::connect_all(),
             midi_capture: MidiCapture::new(),
             session_epoch: Instant::now(),
             instrument_window: None,
@@ -69,6 +83,8 @@ impl DawApp {
             palette: Palette::new(),
             settings: SettingsUi::new(),
             cursor_fx: CursorFx::new(ds.cursor_fx),
+            split_drag: None,
+            workspace_split_ratio: 0.38,
             _soundfont_task: Some(soundfont_task),
             import_task: None,
             gain: 1.0,

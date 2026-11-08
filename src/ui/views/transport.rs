@@ -1,5 +1,8 @@
 //! Controles de reproducción actuales; el transporte headless está en musical/time.rs.
-use super::super::{CenterView, DawApp, DesignSystem};
+use super::super::{
+    CenterView, DawApp,
+    components::button::{icon_button, pill_button},
+};
 use elevate::musical::time::DEFAULT_BPM;
 use gpui::{Context, IntoElement, MouseButton, div, prelude::*, px, rgb};
 
@@ -14,93 +17,73 @@ impl DawApp {
             .justify_between()
             .px_4()
             .bg(rgb(ds.panel))
-            .border_b_1()
+            .rounded(px(ds.radius_lg))
+            .border_1()
             .border_color(rgb(ds.border))
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap_2()
+                    .child(icon_button(ds, "⏮", ds.muted).on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, cx| {
+                            this.stop_all();
+                            this.timeline.go_to_start();
+                            cx.notify();
+                        }),
+                    ))
+                    .child(icon_button(ds, "▶", ds.success).on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, cx| {
+                            this.play_context();
+                            cx.notify();
+                        }),
+                    ))
+                    .child(icon_button(ds, "■", ds.text).on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, cx| {
+                            this.stop_all();
+                            this.status_message = "Detenido".into();
+                            cx.notify();
+                        }),
+                    ))
                     .child(
-                        div()
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(|this, _, _, cx| {
-                                    this.stop_all();
-                                    this.timeline.go_to_start();
-                                    cx.notify();
-                                }),
-                            )
-                            .child(transport_btn("⏮", ds.muted, ds)),
+                        icon_button(
+                            ds,
+                            "●",
+                            if self.midi_capture.is_recording() {
+                                ds.danger
+                            } else {
+                                ds.muted
+                            },
+                        )
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|this, _, _, cx| {
+                                this.toggle_midi_record();
+                                cx.notify();
+                            }),
+                        ),
                     )
                     .child(
-                        div()
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(|this, _, _, cx| {
-                                    this.play_context();
-                                    cx.notify();
-                                }),
-                            )
-                            .child(transport_btn("▶", ds.success, ds)),
-                    )
-                    .child(
-                        div()
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(|this, _, _, cx| {
-                                    this.stop_all();
-                                    this.status_message = "Detenido".into();
-                                    cx.notify();
-                                }),
-                            )
-                            .child(transport_btn("■", ds.text, ds)),
-                    )
-                    .child(
-                        div()
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(|this, _, _, cx| {
-                                    this.toggle_midi_record();
-                                    cx.notify();
-                                }),
-                            )
-                            .child(transport_btn(
-                                "●",
-                                if self.midi_capture.is_recording() {
-                                    ds.danger
-                                } else {
-                                    ds.muted
-                                },
-                                ds,
-                            )),
-                    )
-                    .child(
-                        div()
-                            .px_2()
-                            .py_1()
-                            .text_xs()
-                            .rounded(px(ds.radius_sm))
-                            .border_1()
-                            .border_color(rgb(ds.border))
-                            .bg(rgb(ds.panel_dark))
-                            .text_color(rgb(if self.midi_capture.has_notes() {
+                        pill_button(
+                            ds,
+                            format!("↶ Recuperar MIDI ({})", self.midi_capture.note_count()),
+                            false,
+                            if self.midi_capture.has_notes() {
                                 ds.cyan
                             } else {
                                 ds.muted
-                            }))
-                            .cursor_pointer()
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(|this, _, _, cx| {
-                                    this.capture_midi_to_track();
-                                    cx.notify();
-                                }),
-                            )
-                            .child(format!(
-                                "↶ Recuperar MIDI ({})",
-                                self.midi_capture.note_count()
-                            )),
+                            },
+                        )
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|this, _, _, cx| {
+                                this.capture_midi_to_track();
+                                cx.notify();
+                            }),
+                        ),
                     )
                     .child(
                         div()
@@ -118,28 +101,20 @@ impl DawApp {
                             .text_color(rgb(ds.accent))
                             .child(format!("Volume {:.2}x", self.gain)),
                     )
-                    .child(
-                        div()
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(|this, _, _, cx| {
-                                    this.change_gain(-0.1);
-                                    cx.notify();
-                                }),
-                            )
-                            .child(transport_btn("−", ds.text, ds)),
-                    )
-                    .child(
-                        div()
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(|this, _, _, cx| {
-                                    this.change_gain(0.1);
-                                    cx.notify();
-                                }),
-                            )
-                            .child(transport_btn("+", ds.text, ds)),
-                    )
+                    .child(icon_button(ds, "−", ds.text).on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, cx| {
+                            this.change_gain(-0.1);
+                            cx.notify();
+                        }),
+                    ))
+                    .child(icon_button(ds, "+", ds.text).on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, cx| {
+                            this.change_gain(0.1);
+                            cx.notify();
+                        }),
+                    ))
                     .child(
                         div()
                             .text_xs()
@@ -181,19 +156,4 @@ impl DawApp {
                     ),
             )
     }
-}
-
-fn transport_btn(icon: &'static str, color: u32, ds: &DesignSystem) -> impl IntoElement {
-    div()
-        .w(px(ds.transport_btn_size))
-        .h(px(ds.transport_btn_size))
-        .flex()
-        .items_center()
-        .justify_center()
-        .bg(rgb(ds.panel_dark))
-        .border_1()
-        .border_color(rgb(ds.border))
-        .rounded(px(ds.radius_sm))
-        .text_color(rgb(color))
-        .child(icon)
 }

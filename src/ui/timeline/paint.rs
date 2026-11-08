@@ -19,7 +19,10 @@ impl Timeline {
         let design = *design;
         let clip = self.clip.clone();
         let midi_clip = self.midi_clip.clone();
+        let other_midi_clips = self.other_midi_clips.clone();
         let playhead = self.playhead;
+        let hover_track = self.hover_track;
+        let hover_dragging = self.hover_dragging();
         let particles = if area == TimelineArea::Lanes {
             self.particles.snapshot()
         } else {
@@ -73,6 +76,16 @@ impl Timeline {
                         }),
                     ));
                     if area == TimelineArea::Lanes {
+                        let track_colors = [
+                            design.accent,
+                            design.success,
+                            design.warning,
+                            design.danger,
+                            design.cyan,
+                            design.orange,
+                            design.pink,
+                            design.accent,
+                        ];
                         for track in 0..track_count {
                             let top = bounds.top() + px(track as f32 * design.track_header_height);
                             let lane = Bounds::new(
@@ -87,6 +100,27 @@ impl Timeline {
                                 design.panel_dark
                             };
                             window.paint_quad(fill(lane, rgb(color)));
+                            if hover_track == Some(track) {
+                                let t_color = track_colors[track.min(track_colors.len() - 1)];
+                                let alpha = if hover_dragging { 0x32 } else { 0x12 };
+                                window.paint_quad(fill(lane, rgba((t_color << 8) | alpha)));
+                                if hover_dragging {
+                                    window.paint_quad(fill(
+                                        Bounds::new(
+                                            point(lane.left(), lane.top()),
+                                            size(lane.size.width, px(1.5)),
+                                        ),
+                                        rgb(t_color),
+                                    ));
+                                    window.paint_quad(fill(
+                                        Bounds::new(
+                                            point(lane.left(), lane.bottom() - px(1.5)),
+                                            size(lane.size.width, px(1.5)),
+                                        ),
+                                        rgb(t_color),
+                                    ));
+                                }
+                            }
                             window.paint_quad(fill(
                                 Bounds::new(
                                     point(lane.left(), lane.bottom() - px(1.0)),
@@ -127,6 +161,9 @@ impl Timeline {
                     if area == TimelineArea::Lanes {
                         if let Some(clip) = &clip {
                             waveform::paint(clip, viewport, bounds, &design, window, cx);
+                        }
+                        for clip in &other_midi_clips {
+                            waveform::paint_midi(clip, viewport, bounds, &design, window, cx);
                         }
                         if let Some(midi_clip) = &midi_clip {
                             waveform::paint_midi(midi_clip, viewport, bounds, &design, window, cx);

@@ -8,13 +8,15 @@ mod detached;
 mod input;
 mod palette;
 mod pattern_editor;
+mod piano_roll;
 mod render;
 mod settings;
 mod timeline;
 mod views;
 
-use crate::audio::{DrumPlayer, Player};
+use crate::audio::{DrumPlayer, MidiHardwareIn, Player};
 use crate::instruments::Piano;
+use components::splitter::SplitDrag;
 use cursor_fx::CursorFx;
 use design::DesignSystem;
 use detached::DetachedPanel;
@@ -22,11 +24,13 @@ use elevate::musical::{
     clip::MidiCapture,
     controller::ComputerKeyboard,
     midi::MidiServer,
+    midi_map::MidiMapper,
     track::{TRACK_COUNT, Track},
 };
 use gpui::{FocusHandle, ScrollHandle, WindowHandle};
 use palette::Palette;
 use pattern_editor::PatternEditor;
+use piano_roll::{DetachedPianoRoll, PianoRoll};
 use settings::SettingsUi;
 use std::time::Instant;
 use timeline::Timeline;
@@ -55,6 +59,8 @@ struct DawApp {
     instrument: Piano,
     controller: ComputerKeyboard,
     midi_server: MidiServer,
+    midi_mapper: MidiMapper,
+    midi_hw: MidiHardwareIn,
     midi_capture: MidiCapture,
     session_epoch: Instant,
     instrument_window: Option<WindowHandle<DetachedPanel>>,
@@ -62,6 +68,8 @@ struct DawApp {
     palette: Palette,
     settings: SettingsUi,
     cursor_fx: CursorFx,
+    split_drag: Option<SplitDrag>,
+    workspace_split_ratio: f32,
     _soundfont_task: Option<gpui::Task<Result<(), String>>>,
     import_task: Option<gpui::Task<()>>,
     gain: f32,
@@ -70,6 +78,9 @@ struct DawApp {
     focus_handle: FocusHandle,
     timeline: Timeline,
     pattern_editor: PatternEditor,
+    piano_roll: PianoRoll,
+    piano_roll_focus: FocusHandle,
+    piano_roll_window: Option<WindowHandle<DetachedPianoRoll>>,
     tracks: [Track; TRACK_COUNT],
     track_levels: [i32; TRACK_COUNT],
     track_pans: [i32; TRACK_COUNT],

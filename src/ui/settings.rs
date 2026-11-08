@@ -2,6 +2,7 @@
 use super::{
     DawApp,
     cursor_fx::CursorFxMode,
+    design::ThemePreset,
     views::tracks::{TcpControlStyle, TcpLayoutPreset, TcpWidget},
 };
 
@@ -57,6 +58,18 @@ impl DawApp {
         if key == "escape" {
             self.close_settings_overlay();
         }
+    }
+
+    pub(super) fn set_theme(&mut self, theme: ThemePreset) {
+        self.ds.apply_theme(theme);
+        self.status_message = format!("Tema: {} ({})", theme.label(), theme.token());
+    }
+
+    pub(super) fn cycle_theme(&mut self) {
+        let all = ThemePreset::ALL;
+        let idx = all.iter().position(|t| *t == self.ds.theme).unwrap_or(0);
+        let next = all[(idx + 1) % all.len()];
+        self.set_theme(next);
     }
 
     pub(super) fn set_cursor_fx(&mut self, mode: CursorFxMode) {

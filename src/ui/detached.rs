@@ -157,6 +157,7 @@ fn open_instrument_window(app: Entity<DawApp>, cx: &mut App) {
                 title: Some(name.clone().into()),
                 ..Default::default()
             }),
+            app_id: Some("hay-daw".to_string()),
             ..Default::default()
         },
         |window, cx| cx.new(|cx| DetachedPanel::new(panel_app, window, cx)),

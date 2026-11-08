@@ -1,12 +1,19 @@
 //! Render raíz y ciclo visual. El refresco de GPUI nunca avanza el transporte musical.
-use super::{CenterView, DawApp, VimMode};
+use super::{
+    CenterView, DawApp, VimMode,
+    components::splitter::{SplitDrag, horizontal_splitter},
+};
 use gpui::{
     Context, IntoElement, KeyDownEvent, KeyUpEvent, MouseButton, Render, SharedString, Window, div,
-    prelude::*, rgb,
+    prelude::*, px, rgb,
 };
 
 impl Render for DawApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let hw_midi = self.midi_hw.drain();
+        if !hw_midi.is_empty() {
+            self.apply_midi(hw_midi);
+        }
         if let Some(player) = &self.player {
             self.timeline.playhead = Some(player.beat());
             if player.failed() || player.finished() {
@@ -50,6 +57,7 @@ impl Render for DawApp {
         if self.player.is_some()
             || self.instrument.clip_playing()
             || self.pattern_player.is_some()
+            || self.midi_hw.has_ports()
             || particles_alive
             || cursor_fx_alive
         {
@@ -76,11 +84,17 @@ impl Render for DawApp {
             .is_visible()
             .then(|| self.render_settings_overlay(cx).into_any_element());
         let cursor_overlay = self.cursor_fx.render().map(|el| el.into_any_element());
+        let clip_menu = self
+            .piano_roll
+            .menu
+            .is_some()
+            .then(|| self.render_midi_clip_menu(cx).into_any_element());
         div()
             .id("hay")
             .track_focus(&self.focus_handle)
             .relative()
             .size_full()
+            .p(px(5.0))
             .flex()
             .flex_col()
             .bg(rgb(ds.bg))
@@ -92,14 +106,14 @@ impl Render for DawApp {
                     window.focus(&this.focus_handle, cx);
                     this.sync_midi_focus();
                     this.cursor_fx.on_mouse_down(event.position);
-                    if f32::from(event.position.x) <= 88.0 && f32::from(event.position.y) <= 36.0 {
+                    if f32::from(event.position.x) <= 96.0 && f32::from(event.position.y) <= 44.0 {
                         this.open_settings();
                     }
                     cx.notify();
                 }),
             )
-            .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
-                this.handle_key(event);
+            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                this.handle_key(event, window, cx);
                 this.sync_windows(cx);
                 cx.notify();
             }))
@@ -108,46 +122,123 @@ impl Render for DawApp {
                 cx.notify();
             }))
             .child(self.render_title_bar(mode_label.clone(), mode_color, cx))
-            .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
-                this.cursor_fx.on_mouse_move(event.position);
-                if !event.dragging() {
-                    this.timeline.end_clip_drag();
-                    if this.cursor_fx.mode() != super::cursor_fx::CursorFxMode::Off {
+            .on_mouse_move(
+                cx.listener(|this, event: &gpui::MouseMoveEvent, window, cx| {
+                    this.cursor_fx.on_mouse_move(event.position);
+                    if let Some(drag) = this.split_drag {
+                        if !event.dragging() {
+                            this.split_drag = None;
+                            cx.notify();
+                            return;
+                        }
+                        match drag {
+                            SplitDrag::TrackHeaders {
+                                start_x,
+                                start_width,
+                            } => {
+                                let dx = f32::from(event.position.x) - start_x;
+                                this.ds.track_header_width = (start_width + dx).clamp(140.0, 380.0);
+                            }
+                            SplitDrag::WorkspaceVertical {
+                                start_y,
+                                start_ratio,
+                            } => {
+                                let vh = f32::from(window.viewport_size().height).max(300.0);
+                                let dy = f32::from(event.position.y) - start_y;
+                                this.workspace_split_ratio =
+                                    (start_ratio + dy / vh).clamp(0.22, 0.75);
+                            }
+                            SplitDrag::TransportHeight {
+                                start_y,
+                                start_height,
+                            } => {
+                                let dy = f32::from(event.position.y) - start_y;
+                                this.ds.transport_height = (start_height + dy).clamp(36.0, 68.0);
+                            }
+                        }
                         cx.notify();
+                        return;
                     }
-                    return;
-                }
-                if this.center_view == CenterView::Arrangement
-                    && let Some(track) =
-                        this.timeline
-                            .move_clip(event.position, this.ds.track_header_height, 8)
-                {
-                    this.cursor_row = track;
-                    this.status_message = format!(
-                        "Clip · pista {} · {}",
-                        track + 1,
-                        this.timeline.position_label()
-                    );
-                }
-                cx.notify();
-            }))
+                    let hover_changed = this.center_view == CenterView::Arrangement
+                        && this.timeline.update_hover(
+                            event.position,
+                            event.dragging(),
+                            this.ds.track_header_height,
+                            8,
+                        );
+                    if !event.dragging() {
+                        this.timeline.end_clip_drag();
+                        if hover_changed
+                            || this.cursor_fx.mode() != super::cursor_fx::CursorFxMode::Off
+                        {
+                            cx.notify();
+                        }
+                        return;
+                    }
+                    if this.center_view == CenterView::Arrangement
+                        && let Some(track) =
+                            this.timeline
+                                .move_clip(event.position, this.ds.track_header_height, 8)
+                    {
+                        this.cursor_row = track;
+                        this.status_message = format!(
+                            "Clip · pista {} · {}",
+                            track + 1,
+                            this.timeline.position_label()
+                        );
+                    }
+                    cx.notify();
+                }),
+            )
             .on_mouse_up(
                 MouseButton::Left,
-                cx.listener(|this, _, _, _| {
+                cx.listener(|this, _, _, cx| {
                     this.release_mouse_note();
                     this.timeline.end_clip_drag();
+                    if this.split_drag.take().is_some() {
+                        cx.notify();
+                    }
                 }),
             )
             .on_mouse_up_out(
                 MouseButton::Left,
-                cx.listener(|this, _, _, _| {
+                cx.listener(|this, _, _, cx| {
                     this.release_mouse_note();
                     this.timeline.end_clip_drag();
+                    if this.split_drag.take().is_some() {
+                        cx.notify();
+                    }
                 }),
             )
             .child(self.render_transport(cx))
+            .child(
+                horizontal_splitter(
+                    &self.ds,
+                    matches!(self.split_drag, Some(SplitDrag::TransportHeight { .. })),
+                )
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
+                        this.split_drag = Some(SplitDrag::TransportHeight {
+                            start_y: f32::from(event.position.y),
+                            start_height: this.ds.transport_height,
+                        });
+                        cx.stop_propagation();
+                        cx.notify();
+                    }),
+                )
+                .on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(|this, _, _, cx| {
+                        this.ds.transport_height = 44.0;
+                        cx.stop_propagation();
+                        cx.notify();
+                    }),
+                ),
+            )
             .child(self.render_center(cx))
             .child(self.render_status_bar(mode_label, mode_color))
+            .when_some(clip_menu, |root, menu| root.child(menu))
             .when_some(palette, |root, palette| root.child(palette))
             .when_some(settings_overlay, |root, overlay| root.child(overlay))
             .when_some(cursor_overlay, |root, cursor| root.child(cursor))

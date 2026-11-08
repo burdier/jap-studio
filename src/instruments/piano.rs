@@ -2,8 +2,8 @@
 //! No importa GPUI. La vista consulta este objeto; el audio vive en `audio/piano`.
 use super::piano_params::{self, Applies, Control, ParamId, PianoParams};
 use crate::audio::piano::{
-    PianoPlayer, PianoSettings, PresetEntry, SoundFontBank, discover_soundfonts, load_soundfont,
-    presets_of,
+    PianoPlayer, PianoSettings, PresetEntry, SoundFontBank, discover_soundfonts,
+    fluidsynth_available, load_soundfont, presets_of,
 };
 use elevate::{
     catalog::{self, CatalogEntry},
@@ -182,6 +182,16 @@ impl Piano {
             Applies::Live => {
                 if let Some(player) = &self.player {
                     send(player, id, value);
+                }
+                false
+            }
+            Applies::Restart if fluidsynth_available() => {
+                if let Some(player) = &self.player {
+                    match id {
+                        ParamId::Polyphony => player.set_polyphony(value as usize),
+                        ParamId::Effects => player.set_effects(value >= 0.5),
+                        _ => {}
+                    }
                 }
                 false
             }

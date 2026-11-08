@@ -2,13 +2,19 @@
 use super::{
     CenterView, DawApp, VimMode,
     cursor_fx::CursorFxMode,
+    design::ThemePreset,
     pattern_editor::PatternAction,
     views::tracks::{TcpControlStyle, TcpLayoutPreset},
 };
-use gpui::{KeyDownEvent, KeyUpEvent};
+use gpui::{Context, KeyDownEvent, KeyUpEvent, Window};
 
 impl DawApp {
-    pub(super) fn handle_key(&mut self, event: &KeyDownEvent) {
+    pub(super) fn handle_key(
+        &mut self,
+        event: &KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let key = event
             .keystroke
             .key_char
@@ -26,6 +32,17 @@ impl DawApp {
         }
         if self.settings.is_visible() {
             self.handle_settings_key(key);
+            return;
+        }
+        if self.piano_roll.menu.is_some() {
+            match key {
+                "escape" => self.piano_roll.menu = None,
+                "enter" => {
+                    self.insert_midi_clip_from_menu();
+                    self.focus_piano_roll(window, cx);
+                }
+                _ => {}
+            }
             return;
         }
         if self.mode == VimMode::Normal && self.controller_key_down(key, event.is_held) {
@@ -169,6 +186,25 @@ impl DawApp {
             "reload" => {
                 self.reload();
                 self.status_message = "Design reloaded".into();
+            }
+            "learn" => {
+                self.toggle_midi_learn();
+            }
+            "midi-scan" => {
+                self.midi_hw.reconnect();
+                let ports = self.midi_hw.port_names();
+                self.status_message = if ports.is_empty() {
+                    "Sin controladores MIDI USB detectados".into()
+                } else {
+                    format!("MIDI Hardware conectado: {}", ports.join(", "))
+                };
+            }
+            "theme" => {
+                self.cycle_theme();
+            }
+            other if other.starts_with("theme ") => {
+                let arg = other.trim_start_matches("theme ").trim();
+                self.set_theme(ThemePreset::from_token(arg));
             }
             other if other.starts_with("cursor ") => {
                 let arg = other.trim_start_matches("cursor ").trim();

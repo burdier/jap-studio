@@ -3,12 +3,14 @@
 
 mod assets;
 pub(crate) mod drums;
+mod midi_in;
 mod output;
 pub(crate) mod piano;
 mod playback;
 
 pub(crate) use assets::{AudioClip, AudioFile, PEAK_FRAMES};
 pub(crate) use drums::DrumPlayer;
+pub(crate) use midi_in::MidiHardwareIn;
 pub(crate) use playback::Player;
 
 // Adaptador temporal del reproductor de clips, hasta conectar el transporte común.

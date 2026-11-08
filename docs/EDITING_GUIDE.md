@@ -7,8 +7,12 @@
 | Arranque/ventana | `src/ui/app.rs` | `src/main.rs` solo llama `ui::run()` |
 | Estado de UI | `src/ui/mod.rs` | Mantenerlo privado al árbol UI |
 | Teclas y comandos | `src/ui/input.rs` | Controlador que ejecuta la acción |
-| Teclado del ordenador como MIDI (teclas, octava, velocity, on/off) | `src/musical/controller.rs` | `ui/audio_actions.rs`, `ui/input.rs` |
-| Mensajes y servidor MIDI (servidor/cliente) | `src/musical/midi.rs` | `ui/audio_actions.rs` |
+| Teclado del ordenador como MIDI (teclas, octava, velocity, sustain, bend, mod) | `src/musical/controller.rs` | `ui/audio_actions.rs`, `ui/input.rs` |
+| Mensajes (`wmidi`) y servidor MIDI (servidor/cliente) | `src/musical/midi.rs` | `ui/audio_actions.rs` |
+| Mapeo MIDI (`MidiMapper`) y `MIDI Learn` (CC/Nota → perilla/slider/acción) | `src/musical/midi_map.rs` | `ui/audio_actions.rs`, `views/{tracks,instrument_params}.rs` |
+| Importación de archivos `.mid` (`midly` SMF → `MidiClip`) | `src/musical/smf.rs` | `ui/audio_actions.rs` |
+| Entrada MIDI Hardware USB/ALSA (`midir` + `rtrb`) | `src/audio/midi_in.rs` | `ui/render.rs`, `ui/input.rs` (`:midi-scan`) |
+| Motor SoundFont C aislado (`libfluidsynth` vía `dlopen` + respaldo `RustySynth`) | `src/audio/piano/fluidsynth.rs` | `audio/piano/render.rs`, `instruments/piano.rs` |
 | Componente `MidiClip` y captura/grabación MIDI | `src/musical/clip.rs` | `ui/audio_actions.rs`, `ui/timeline/waveform.rs` |
 | Rango del teclado (C3–B5) | `src/instruments/piano.rs` | `musical/keyboard.rs` |
 | Geometría y etiquetas de octava | `src/musical/keyboard.rs` | `ui/components/keyboard.rs` |
@@ -25,6 +29,10 @@
 | Parámetros del piano (lista, rangos, traducción a MIDI/RPN) | `src/instruments/piano_params.rs` | `audio/piano/render.rs` |
 | Panel de parámetros y slider/toggle genéricos | `src/ui/views/instrument_params.rs` | `ui/components/slider.rs` |
 | Perilla rotatoria (knob) nativa en GPU | `src/ui/components/knob.rs` | `views/tracks.rs`, `KNOB_SIZE` en `design.rs` |
+| Botones, píldoras, chips y etiquetas reutilizables | `src/ui/components/button.rs` | `views/{transport,tracks,mixer,instrument,settings,palette}.rs` |
+| Medidores verticales y barras horizontales | `src/ui/components/meter.rs` | `views/{tracks,mixer}.rs` |
+| Fondo modal oscurecido reutilizable | `src/ui/components/modal.rs` | `views/{palette,settings}.rs` |
+| Separadores y redimensionado de módulos (`SplitDrag`) | `src/ui/components/splitter.rs` | `ui/render.rs`, `views/{arrangement,workspace}.rs` |
 | Estado del piano | `src/instruments/piano.rs` | `audio/piano/`, `views/instrument.rs` |
 | Editar pasos/velocity | `src/ui/pattern_editor.rs` | `src/musical/model.rs` |
 | Dibujar pasos | `src/ui/views/pattern.rs` | Controlador anterior |

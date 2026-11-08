@@ -9,16 +9,26 @@ use elevate::{
 pub(super) struct Palette {
     open: bool,
     target_track: Option<usize>,
+    category: Option<EntryKind>,
     query: String,
     selected: usize,
     results: Vec<&'static CatalogEntry>,
 }
 
 impl Palette {
+    pub const CATEGORIES: [Option<EntryKind>; 5] = [
+        None,
+        Some(EntryKind::Instrument),
+        Some(EntryKind::Primitive),
+        Some(EntryKind::Component),
+        Some(EntryKind::Action),
+    ];
+
     pub fn new() -> Self {
         Self {
             open: false,
             target_track: None,
+            category: None,
             query: String::new(),
             selected: 0,
             results: catalog::search(""),
@@ -31,6 +41,24 @@ impl Palette {
 
     pub fn target_track(&self) -> Option<usize> {
         self.target_track
+    }
+
+    pub fn category(&self) -> Option<EntryKind> {
+        self.category
+    }
+
+    pub fn set_category(&mut self, category: Option<EntryKind>) {
+        self.category = category;
+        self.refresh();
+    }
+
+    pub fn cycle_category(&mut self) {
+        let idx = Self::CATEGORIES
+            .iter()
+            .position(|c| *c == self.category)
+            .unwrap_or(0);
+        self.category = Self::CATEGORIES[(idx + 1) % Self::CATEGORIES.len()];
+        self.refresh();
     }
 
     pub fn query(&self) -> &str {
@@ -48,6 +76,7 @@ impl Palette {
     pub fn open_for_track(&mut self, track: usize) {
         self.open = true;
         self.target_track = Some(track);
+        self.category = None;
         self.query.clear();
         self.refresh();
     }
@@ -55,6 +84,7 @@ impl Palette {
     pub fn close(&mut self) {
         self.open = false;
         self.target_track = None;
+        self.category = None;
         self.query.clear();
         self.selected = 0;
     }
@@ -62,6 +92,7 @@ impl Palette {
     /// Devuelve la entrada elegida al pulsar Enter. El llamador decide cómo actuar.
     pub fn handle_key(&mut self, key: &str, text: bool) -> Option<&'static CatalogEntry> {
         match key {
+            "tab" => self.cycle_category(),
             "up" => {
                 if !self.results.is_empty() {
                     self.selected = (self.selected + self.results.len() - 1) % self.results.len();
@@ -88,7 +119,10 @@ impl Palette {
     }
 
     fn refresh(&mut self) {
-        self.results = catalog::search(&self.query);
+        self.results = catalog::search(&self.query)
+            .into_iter()
+            .filter(|entry| self.category.is_none_or(|kind| entry.kind == kind))
+            .collect();
         self.selected = 0;
     }
 }

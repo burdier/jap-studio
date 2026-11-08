@@ -2,7 +2,10 @@
 //! La vista solicita notas y cambios de banco a `instruments`; no contiene síntesis.
 use super::super::{
     DawApp,
-    components::keyboard::{NotePress, midi_keyboard},
+    components::{
+        button::{chip_option, pill_button},
+        keyboard::{NotePress, midi_keyboard},
+    },
 };
 use gpui::{AnyElement, Context, IntoElement, MouseButton, SharedString, div, prelude::*, px, rgb};
 use std::rc::Rc;
@@ -34,6 +37,7 @@ impl DawApp {
                             .flex()
                             .gap_2()
                             .child(self.render_midi_button(cx))
+                            .child(self.render_midi_learn_button(cx))
                             .child(self.render_record_button(cx))
                             .child(self.render_capture_button(cx))
                             .child(self.render_window_button(cx)),
@@ -218,17 +222,8 @@ impl DawApp {
             .map(|(index, bank)| {
                 let selected = index == current;
                 let title = SharedString::from(bank.name.clone());
-                div()
+                chip_option(ds, title, selected, ds.accent)
                     .id(("sf2-bank", index))
-                    .px_2()
-                    .py(px(2.0))
-                    .text_xs()
-                    .rounded(px(ds.radius_sm))
-                    .border_1()
-                    .border_color(rgb(if selected { ds.accent } else { ds.border }))
-                    .bg(rgb(if selected { ds.accent } else { ds.panel_dark }))
-                    .text_color(rgb(if selected { ds.bg } else { ds.text }))
-                    .cursor_pointer()
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |this, _, _, cx| {
@@ -236,7 +231,6 @@ impl DawApp {
                             cx.notify();
                         }),
                     )
-                    .child(title)
                     .into_any_element()
             });
         div()
@@ -256,18 +250,8 @@ impl DawApp {
         cx: &mut Context<Self>,
         action: F,
     ) -> impl IntoElement + use<F> {
-        let ds = &self.ds;
-        div()
+        pill_button(&self.ds, label, false, self.ds.accent)
             .id(id)
-            .px_2()
-            .py_1()
-            .text_xs()
-            .rounded(px(ds.radius_sm))
-            .border_1()
-            .border_color(rgb(ds.border))
-            .bg(rgb(ds.panel))
-            .text_color(rgb(ds.accent))
-            .cursor_pointer()
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, _, _, cx| {
@@ -275,23 +259,17 @@ impl DawApp {
                     cx.notify();
                 }),
             )
-            .child(label)
     }
 
     fn render_midi_button(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let ds = &self.ds;
         let on = self.controller.enabled();
-        div()
+        let label = if on {
+            "Teclado MIDI: ON"
+        } else {
+            "Teclado MIDI: OFF"
+        };
+        pill_button(&self.ds, label, on, self.ds.accent)
             .id("controller-toggle")
-            .px_2()
-            .py_1()
-            .text_xs()
-            .rounded(px(ds.radius_lg))
-            .border_1()
-            .border_color(rgb(ds.border))
-            .bg(rgb(if on { ds.accent } else { ds.panel }))
-            .text_color(rgb(if on { ds.bg } else { ds.accent }))
-            .cursor_pointer()
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, _, _, cx| {
@@ -299,27 +277,35 @@ impl DawApp {
                     cx.notify();
                 }),
             )
-            .child(if on {
-                "Teclado MIDI: ON"
-            } else {
-                "Teclado MIDI: OFF"
-            })
+    }
+
+    fn render_midi_learn_button(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let learning = self.midi_mapper.learn_mode();
+        let label = if learning {
+            "🎯 MIDI Learn: ACTIVO"
+        } else {
+            "🎯 MIDI Learn"
+        };
+        pill_button(&self.ds, label, learning, self.ds.warning)
+            .id("midi-learn-toggle")
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _, _, cx| {
+                    this.toggle_midi_learn();
+                    cx.notify();
+                }),
+            )
     }
 
     fn render_record_button(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let ds = &self.ds;
         let recording = self.midi_capture.is_recording();
-        div()
+        let label = if recording {
+            "● Grabando MIDI (Detener)"
+        } else {
+            "● Grabar MIDI"
+        };
+        pill_button(&self.ds, label, recording, self.ds.danger)
             .id("midi-record-toggle")
-            .px_2()
-            .py_1()
-            .text_xs()
-            .rounded(px(ds.radius_lg))
-            .border_1()
-            .border_color(rgb(if recording { ds.danger } else { ds.border }))
-            .bg(rgb(if recording { ds.danger } else { ds.panel }))
-            .text_color(rgb(if recording { ds.bg } else { ds.danger }))
-            .cursor_pointer()
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, _, _, cx| {
@@ -327,56 +313,40 @@ impl DawApp {
                     cx.notify();
                 }),
             )
-            .child(if recording {
-                "● Grabando MIDI (Detener)"
-            } else {
-                "● Grabar MIDI"
-            })
     }
 
     fn render_capture_button(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let ds = &self.ds;
         let count = self.midi_capture.note_count();
-        div()
-            .id("midi-capture-insert")
-            .px_2()
-            .py_1()
-            .text_xs()
-            .rounded(px(ds.radius_lg))
-            .border_1()
-            .border_color(rgb(ds.border))
-            .bg(rgb(ds.panel))
-            .text_color(rgb(if count > 0 { ds.cyan } else { ds.muted }))
-            .cursor_pointer()
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|this, _, _, cx| {
-                    this.capture_midi_to_track();
-                    cx.notify();
-                }),
-            )
-            .child(format!("↶ Recuperar MIDI a pista ({count})"))
+        let color = if count > 0 {
+            self.ds.cyan
+        } else {
+            self.ds.muted
+        };
+        pill_button(
+            &self.ds,
+            format!("↶ Recuperar MIDI a pista ({count})"),
+            false,
+            color,
+        )
+        .id("midi-capture-insert")
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(|this, _, _, cx| {
+                this.capture_midi_to_track();
+                cx.notify();
+            }),
+        )
     }
 
     fn render_window_button(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let ds = &self.ds;
         let label = if self.instrument_detached() {
             "Acoplar"
         } else {
             "Separar en ventana"
         };
-        div()
+        pill_button(&self.ds, label, false, self.ds.accent)
             .id("instrument-window-toggle")
             .self_start()
-            .px_2()
-            .py_1()
-            .text_xs()
-            .rounded(px(ds.radius_lg))
-            .border_1()
-            .border_color(rgb(ds.border))
-            .bg(rgb(ds.panel))
-            .text_color(rgb(ds.accent))
-            .cursor_pointer()
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, _, _, cx| {
@@ -384,7 +354,6 @@ impl DawApp {
                     cx.notify();
                 }),
             )
-            .child(label)
     }
 
     /// Marcador del centro mientras el instrumento vive en su propia ventana.
