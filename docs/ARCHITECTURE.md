@@ -46,7 +46,9 @@ El descriptor que pinta la vista procede de `elevate::catalog`.
 | Selección, modo, vista | `DawApp` | Estado de workspace, no proyecto musical |
 | Catálogo y búsqueda | `elevate::catalog` | Metadatos y comandos; sin GPUI/CPAL |
 | Búsqueda abierta | `ui::Palette` | Query, selección, pista destino y resultados; no ejecuta audio |
+| Configuración/ayuda | `ui::SettingsUi` | Visibilidad de panel y overlay; no modifica bindings |
 | Pistas y asignación | `elevate::musical::track`, en `DawApp` | `Track.instrument` guarda identidad; no abre audio |
+| Ventana separada | `ui::detached::DetachedPanel` | Solo presenta `render_instrument` y reenvía entrada a `DawApp`; no posee audio |
 | Notas sostenidas y ratón | `instruments::Piano` | Fuera de `DawApp`; la vista solo lee estado |
 | Zoom/cursor/arrastre | `Timeline` | Convierte píxeles ↔ beats, no gobierna audio |
 | Clip cargado | `Timeline::clip`, provisional | Un único clip; mover al proyecto al ampliar |
@@ -135,3 +137,24 @@ es todavía una solicitud síncrona de cambio, no un bus de notificaciones.
 `elevate::catalog` es el primer índice de instrumentos, primitivos, componentes y acciones;
 sus comandos son strings provisionales hasta que exista el sistema de acciones descrito
 en el README. El futuro host conectará eventos musicales y DSP sin importar tipos de GPUI.
+
+## Entrada MIDI reutilizable
+
+Capas, de dato a pantalla; ninguna importa a la siguiente:
+
+1. `musical/midi.rs` (hecho): `MidiMessage` (NoteOn/NoteOff/AllNotesOff), `MidiTarget`
+   (Instrumento o Sequencer) y `MidiServer` (arquitectura servidor/cliente). Los controladores
+   publican mensajes en el servidor sin saber quién escucha; cuando el foco cambia de cliente,
+   `MidiServer` emite automáticamente los `NoteOff` pendientes al cliente anterior para que
+   ningún instrumento se quede secuestrando el MIDI ni con notas colgadas.
+2. `musical/controller.rs` (hecho): `ComputerKeyboard`, teclado del ordenador como MIDI estilo
+   Ableton: `M` activa/desactiva, `a w s e d f t g y h u j k o l p ;` notas, `Z`/`X` octava,
+   `C`/`V` velocity. Estado propio (octava, velocity, teclas sostenidas); produce mensajes.
+   Desactivado, solo reacciona a `M`. Un controlador nuevo (MIDI físico, pad XY) produce los
+   mismos `MidiMessage`.
+3. `ui/audio_actions.rs`: `apply_midi` publica en `MidiServer` y despacha los `RoutedMidi` al
+   cliente activo (`Instrument` o `Sequencer`); `sync_midi_focus` actualiza el cliente suscrito
+   al cambiar de vista, pista o ventana.
+4. `musical/keyboard.rs` + `ui/components/keyboard.rs` (hecho): teclado clicable reutilizable
+   con barra de octavas; emite la nota por callback.
+5. Pendiente: pitch bend / CC y su mapa fuente → destino; MIDI físico (`midir`, requiere aprobar).

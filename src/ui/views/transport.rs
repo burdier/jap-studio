@@ -58,6 +58,52 @@ impl DawApp {
                     )
                     .child(
                         div()
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _, _, cx| {
+                                    this.toggle_midi_record();
+                                    cx.notify();
+                                }),
+                            )
+                            .child(transport_btn(
+                                "●",
+                                if self.midi_capture.is_recording() {
+                                    ds.danger
+                                } else {
+                                    ds.muted
+                                },
+                                ds,
+                            )),
+                    )
+                    .child(
+                        div()
+                            .px_2()
+                            .py_1()
+                            .text_xs()
+                            .rounded(px(ds.radius_sm))
+                            .border_1()
+                            .border_color(rgb(ds.border))
+                            .bg(rgb(ds.panel_dark))
+                            .text_color(rgb(if self.midi_capture.has_notes() {
+                                ds.cyan
+                            } else {
+                                ds.muted
+                            }))
+                            .cursor_pointer()
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _, _, cx| {
+                                    this.capture_midi_to_track();
+                                    cx.notify();
+                                }),
+                            )
+                            .child(format!(
+                                "↶ Recuperar MIDI ({})",
+                                self.midi_capture.note_count()
+                            )),
+                    )
+                    .child(
+                        div()
                             .ml_4()
                             .text_color(rgb(ds.accent))
                             .font_weight(gpui::FontWeight::BOLD)

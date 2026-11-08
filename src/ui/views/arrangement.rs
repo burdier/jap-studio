@@ -1,10 +1,14 @@
 //! Layout Arrangement y adaptación de eventos de puntero al timeline.
-use super::super::{DawApp, timeline::TimelineArea};
+use super::{
+    super::{DawApp, timeline::TimelineArea},
+    tracks::TRACK_ADD_GUTTER_WIDTH,
+};
 use gpui::{Context, IntoElement, MouseButton, MouseDownEvent, div, prelude::*, px, rgb};
 
 impl DawApp {
     pub(in crate::ui) fn render_arrangement(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let ds = &self.ds;
+        let header_total_width = ds.track_header_width + TRACK_ADD_GUTTER_WIDTH;
         div()
             .flex()
             .flex_col()
@@ -19,7 +23,7 @@ impl DawApp {
                     .bg(rgb(ds.panel))
                     .child(
                         div()
-                            .w(px(ds.track_header_width))
+                            .w(px(header_total_width))
                             .h_full()
                             .flex_shrink_0()
                             .flex()
@@ -46,11 +50,11 @@ impl DawApp {
                             .h(px(self.tracks.len() as f32 * ds.track_header_height))
                             .child(
                                 div()
-                                    .w(px(ds.track_header_width))
+                                    .w(px(header_total_width))
                                     .flex_shrink_0()
                                     .flex()
                                     .flex_col()
-                                    .bg(rgb(ds.panel))
+                                    .bg(rgb(ds.panel_dark))
                                     .border_r_1()
                                     .border_color(rgb(ds.border))
                                     .children(

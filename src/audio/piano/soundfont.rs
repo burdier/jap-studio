@@ -1,57 +1,225 @@
-//! Descubrimiento y precarga del banco; sin dispositivo ni widgets.
+//! Descubrimiento, lectura de créditos y caché de bancos SoundFont (.sf2).
+//! Sin dispositivos ni widgets: `audio/piano` lo usa para abrir el sintetizador.
 use rustysynth::SoundFont;
 use std::{
-    fs::File,
+    collections::HashMap,
+    fs::{self, File},
     path::{Path, PathBuf},
-    sync::{Arc, OnceLock},
+    sync::{Arc, Mutex, OnceLock},
 };
 
-const SOUNDFONT_FILE: &str = "UprightPianoKW-20220221.sf2";
-static SOUNDFONT: OnceLock<Result<Arc<SoundFont>, String>> = OnceLock::new();
+const DEFAULT_SOUNDFONT: &str = "UprightPianoKW-20220221.sf2";
+static CACHE: OnceLock<Mutex<HashMap<PathBuf, Arc<SoundFont>>>> = OnceLock::new();
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SoundFontBank {
+    pub path: PathBuf,
+    pub name: String,
+    pub credits: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PresetEntry {
+    pub bank: u8,
+    pub patch: u8,
+    pub name: String,
+}
 
 pub(crate) fn preload() -> Result<(), String> {
-    load().map(|_| ())
+    let banks = discover();
+    let first = banks
+        .first()
+        .ok_or_else(|| format!("No se encontró {DEFAULT_SOUNDFONT} ni otros bancos .sf2"))?;
+    load_path(&first.path).map(|_| ())
 }
 
-pub(super) fn load() -> Result<Arc<SoundFont>, String> {
-    SOUNDFONT
-        .get_or_init(|| {
-            let path = find_soundfont()?;
-            let mut file = File::open(&path).map_err(|error| {
-                format!("No se pudo abrir el SoundFont {}: {error}", path.display())
-            })?;
-            let sound_font = SoundFont::new(&mut file)
-                .map_err(|error| format!("SoundFont inválido ({}): {error}", path.display()))?;
-            Ok(Arc::new(sound_font))
-        })
-        .clone()
-}
-
-fn find_soundfont() -> Result<PathBuf, String> {
-    if let Some(path) = std::env::var_os("HAY_SOUNDFONT") {
-        return Ok(PathBuf::from(path));
+pub(crate) fn load_path(path: &Path) -> Result<Arc<SoundFont>, String> {
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Ok(guard) = cache.lock()
+        && let Some(sound_font) = guard.get(path)
+    {
+        return Ok(sound_font.clone());
     }
-    let mut candidates = vec![
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("assets/soundfonts")
-            .join(SOUNDFONT_FILE),
-        Path::new("assets/soundfonts").join(SOUNDFONT_FILE),
+    let mut file = File::open(path)
+        .map_err(|error| format!("No se pudo abrir el SoundFont {}: {error}", path.display()))?;
+    let sound_font = Arc::new(
+        SoundFont::new(&mut file)
+            .map_err(|error| format!("SoundFont inválido ({}): {error}", path.display()))?,
+    );
+    if let Ok(mut guard) = cache.lock() {
+        guard.insert(path.to_path_buf(), sound_font.clone());
+    }
+    Ok(sound_font)
+}
+
+pub(crate) fn presets_of(sound_font: &SoundFont) -> Vec<PresetEntry> {
+    let mut presets: Vec<PresetEntry> = sound_font
+        .get_presets()
+        .iter()
+        .filter_map(|preset| {
+            let bank = u8::try_from(preset.get_bank_number()).ok()?;
+            let patch = u8::try_from(preset.get_patch_number()).ok()?;
+            Some(PresetEntry {
+                bank,
+                patch,
+                name: preset.get_name().trim().to_string(),
+            })
+        })
+        .collect();
+    presets.sort_by_key(|preset| (preset.bank, preset.patch));
+    presets
+}
+
+/// Descubre todos los bancos `.sf2` en `assets/soundfonts` y `assets/soundfonts/freepats`,
+/// colocando el piano vertical por defecto en primer lugar.
+pub(crate) fn discover() -> Vec<SoundFontBank> {
+    let mut files = Vec::new();
+    if let Some(custom) = std::env::var_os("HAY_SOUNDFONT") {
+        let path = PathBuf::from(custom);
+        if path.is_file() {
+            files.push(path);
+        }
+    }
+    for root in candidate_roots() {
+        collect_sf2(&root, &mut files);
+        collect_sf2(&root.join("freepats"), &mut files);
+    }
+    let mut seen = Vec::new();
+    let mut banks = Vec::new();
+    for path in files {
+        let canonical = fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+        if seen.contains(&canonical) {
+            continue;
+        }
+        seen.push(canonical);
+        banks.push(read_bank_metadata(path));
+    }
+    banks.sort_by(|left, right| {
+        let left_default = left
+            .path
+            .file_name()
+            .is_some_and(|name| name == DEFAULT_SOUNDFONT);
+        let right_default = right
+            .path
+            .file_name()
+            .is_some_and(|name| name == DEFAULT_SOUNDFONT);
+        right_default
+            .cmp(&left_default)
+            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+    });
+    banks
+}
+
+fn candidate_roots() -> Vec<PathBuf> {
+    let mut roots = vec![
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/soundfonts"),
+        PathBuf::from("assets/soundfonts"),
     ];
     if let Ok(executable) = std::env::current_exe()
         && let Some(directory) = executable.parent()
     {
-        candidates.push(directory.join("assets/soundfonts").join(SOUNDFONT_FILE));
+        roots.push(directory.join("assets/soundfonts"));
     }
-    candidates
+    roots
+}
+
+fn collect_sf2(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file()
+            && path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("sf2"))
+        {
+            out.push(path);
+        }
+    }
+}
+
+fn read_bank_metadata(path: PathBuf) -> SoundFontBank {
+    let stem = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("SoundFont")
+        .to_string();
+    let readme_candidates = [
+        path.with_extension("readme.txt"),
+        path.parent()
+            .map(|dir| dir.join("readme.txt"))
+            .unwrap_or_default(),
+    ];
+    for readme in readme_candidates {
+        if let Ok(text) = fs::read_to_string(&readme)
+            && let Some((title, credits)) = parse_readme(&text)
+        {
+            return SoundFontBank {
+                path,
+                name: title,
+                credits,
+            };
+        }
+    }
+    SoundFontBank {
+        path,
+        name: stem,
+        credits: "Banco SoundFont (FreePats) · motor RustySynth".into(),
+    }
+}
+
+fn parse_readme(text: &str) -> Option<(String, String)> {
+    let mut paragraphs = Vec::new();
+    let mut current = Vec::new();
+    for raw_line in text.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            if !current.is_empty() {
+                paragraphs.push(current.join(" "));
+                current.clear();
+            }
+            continue;
+        }
+        if line.chars().all(|ch| ch == '-' || ch == '=') {
+            continue;
+        }
+        current.push(line.to_string());
+    }
+    if !current.is_empty() {
+        paragraphs.push(current.join(" "));
+    }
+    let title = paragraphs.first()?.clone();
+    let body = paragraphs
         .iter()
-        .find(|path| path.is_file())
+        .skip(1)
+        .find(|para| !para.starts_with("Version "))
         .cloned()
-        .ok_or_else(|| {
-            let paths = candidates
-                .iter()
-                .map(|path| path.display().to_string())
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("No se encontró {SOUNDFONT_FILE}; define HAY_SOUNDFONT o colócalo en: {paths}")
-        })
+        .unwrap_or_else(|| "FreePats project".into());
+    let license = if text.contains("CC0") {
+        "CC0"
+    } else if text.contains("General Public License") {
+        "GPLv3+ con excepción FreePats"
+    } else if text.contains("Attribution") {
+        "CC-BY"
+    } else {
+        "FreePats"
+    };
+    let summary = truncate_sentence(&body, 140);
+    Some((
+        title,
+        format!("{summary} · FreePats ({license}) · motor RustySynth"),
+    ))
+}
+
+fn truncate_sentence(text: &str, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        return text.to_string();
+    }
+    let cut: String = text.chars().take(max_chars).collect();
+    if let Some((head, _)) = cut.rsplit_once(". ") {
+        format!("{head}.")
+    } else {
+        format!("{}…", cut.trim_end())
+    }
 }

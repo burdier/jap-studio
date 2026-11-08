@@ -1,6 +1,7 @@
-//! Waveform del clip: consume picos preparados; nunca decodifica audio.
+//! Dibujo de clips de audio y MIDI en el Arrangement. Nunca decodifica audio.
 use super::{DesignSystem, viewport::Viewport};
 use crate::audio::{AudioClip, BEATS_PER_SECOND, PEAK_FRAMES};
+use elevate::musical::{clip::MidiClip, time::PPQ};
 use gpui::{
     App, Bounds, ContentMask, Pixels, TextAlign, TextRun, Window, fill, point, px, rgb, size,
 };
@@ -90,6 +91,87 @@ pub(super) fn paint(
             ) {
                 eprintln!("No se pudo dibujar el nombre del clip: {error}");
             }
+        },
+    );
+}
+
+pub(super) fn paint_midi(
+    clip: &MidiClip,
+    viewport: Viewport,
+    bounds: Bounds<Pixels>,
+    design: &DesignSystem,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let width = f64::from(f32::from(bounds.size.width));
+    let left = viewport.x_at(clip.start_beat).max(0.0);
+    let right = viewport.x_at(clip.end_beat()).min(width);
+    if right <= left {
+        return;
+    }
+    let top = bounds.top() + px(clip.track as f32 * design.track_header_height + 3.0);
+    let height = px((design.track_header_height - 6.0).max(1.0));
+    let clip_bounds = Bounds::new(
+        point(bounds.left() + px(left as f32), top),
+        size(px((right - left) as f32), height),
+    );
+    window.with_content_mask(
+        Some(ContentMask {
+            bounds: clip_bounds,
+        }),
+        |window| {
+            window.paint_quad(fill(clip_bounds, rgb(design.panel_hover)));
+            window.paint_quad(fill(
+                Bounds::new(clip_bounds.origin, size(clip_bounds.size.width, px(2.0))),
+                rgb(design.cyan),
+            ));
+            let notes = clip.notes();
+            let min_pitch = notes.iter().map(|n| n.pitch).min().unwrap_or(48);
+            let max_pitch = notes.iter().map(|n| n.pitch).max().unwrap_or(84);
+            let span = f32::from((max_pitch.saturating_sub(min_pitch)).max(12));
+            let inner_top = f32::from(top) + design.font_size_xs + 6.0;
+            let inner_height = (f32::from(height) - (design.font_size_xs + 10.0)).max(6.0);
+            for note in notes {
+                let start_beat = clip.start_beat + note.start.0 as f64 / PPQ as f64;
+                let end_beat = start_beat + (note.duration.0 as f64 / PPQ as f64).max(0.05);
+                let x0 = viewport.x_at(start_beat).max(left);
+                let x1 = viewport.x_at(end_beat).min(right);
+                if x1 <= x0 {
+                    continue;
+                }
+                let norm = 1.0 - f32::from(note.pitch.saturating_sub(min_pitch)) / span;
+                let y = inner_top + norm.clamp(0.0, 1.0) * (inner_height - 4.0);
+                window.paint_quad(fill(
+                    Bounds::new(
+                        point(bounds.left() + px(x0 as f32), px(y)),
+                        size(px(((x1 - x0) as f32).max(2.0)), px(3.0)),
+                    ),
+                    rgb(design.cyan),
+                ));
+            }
+            let title = format!("🎹 {} ({} notas)", clip.name, notes.len());
+            let run = TextRun {
+                len: title.len(),
+                font: window.text_style().font(),
+                color: rgb(design.text).into(),
+                background_color: None,
+                underline: None,
+                strikethrough: None,
+            };
+            let label = window.text_system().shape_line(
+                title.into(),
+                px(design.font_size_xs),
+                &[run],
+                None,
+            );
+            let _ = label.paint(
+                point(clip_bounds.left() + px(4.0), top + px(2.0)),
+                px(design.font_size_xs + 4.0),
+                TextAlign::Left,
+                None,
+                window,
+                cx,
+            );
         },
     );
 }

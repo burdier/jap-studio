@@ -8,3 +8,6 @@
 # Registros y archivos del sistema
 *.log
 .DS_Store
+
+# Bancos descargados con scripts/fetch_soundfonts.sh (GB; no se versionan)
+/assets/soundfonts/freepats/

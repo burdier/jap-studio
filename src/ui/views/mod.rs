@@ -2,10 +2,12 @@
 mod arrangement;
 mod chrome;
 mod instrument;
+mod instrument_params;
 mod mixer;
 mod palette;
 mod pattern;
-mod tracks;
+mod settings;
+pub(super) mod tracks;
 mod transport;
 
 use super::{CenterView, DawApp};
@@ -19,7 +21,7 @@ impl DawApp {
                 "ARRANGEMENT",
                 "Click: cursor | Shift+wheel: scroll | Ctrl+wheel: zoom",
             ),
-            CenterView::Instrument => ("INSTRUMENT", self.instrument.keyboard_hint()),
+            CenterView::Instrument => ("INSTRUMENT", elevate::musical::controller::HINT),
             CenterView::Session => (
                 "PATTERN / PROTOTIPO",
                 "Click/Enter: nota | rueda: velocity | Space: play/stop",
@@ -49,6 +51,9 @@ impl DawApp {
             )
             .child(match self.center_view {
                 CenterView::Arrangement => self.render_arrangement(cx).into_any_element(),
+                CenterView::Instrument if self.instrument_detached() => {
+                    self.render_instrument_placeholder(cx).into_any_element()
+                }
                 CenterView::Instrument => self.render_instrument(cx).into_any_element(),
                 CenterView::Session => self.render_pattern(cx).into_any_element(),
                 CenterView::Mixer => self.render_mixer().into_any_element(),

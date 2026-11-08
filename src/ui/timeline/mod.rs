@@ -9,6 +9,7 @@ mod waveform;
 
 use super::DesignSystem;
 use crate::audio::AudioClip;
+use elevate::musical::clip::MidiClip;
 use gpui::{Bounds, Pixels, Point};
 use particles::ParticleTrail;
 use std::{cell::Cell, rc::Rc};
@@ -22,10 +23,17 @@ pub(crate) enum TimelineArea {
     Lanes,
 }
 
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum DragKind {
+    Audio,
+    Midi,
+}
+
 pub(crate) struct Timeline {
-    clip_drag: Option<(Point<Pixels>, f64, bool)>,
-    // Clip provisional. Migrar al modelo de proyecto al introducir múltiples clips.
+    clip_drag: Option<(Point<Pixels>, f64, bool, DragKind)>,
+    // Clips provisionales. Migrar al modelo de proyecto al introducir múltiples clips.
     pub clip: Option<AudioClip>,
+    pub midi_clip: Option<MidiClip>,
     pub playhead: Option<f64>,
     viewport: Viewport,
     edit_beat: f64,
@@ -39,6 +47,7 @@ impl Timeline {
         Self {
             clip_drag: None,
             clip: None,
+            midi_clip: None,
             playhead: None,
             viewport: Viewport {
                 first_beat: 0.0,

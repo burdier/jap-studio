@@ -49,9 +49,19 @@ pub const CATALOG: &[CatalogEntry] = &[
     CatalogEntry {
         id: "instrument.piano",
         kind: EntryKind::Instrument,
-        name: "Piano vertical",
-        summary: "Upright Piano KW · RustySynth · SoundFont CC0",
-        keywords: &["piano", "teclado", "keys", "soundfont", "instrumento"],
+        name: "Upright Piano KW",
+        summary: "Kawai vertical grabado por Gonzalo y Roberto (FreePats) · CC0 · motor RustySynth",
+        keywords: &[
+            "piano",
+            "upright",
+            "kw",
+            "kawai",
+            "freepats",
+            "teclado",
+            "keys",
+            "soundfont",
+            "instrumento",
+        ],
         action: CatalogAction::Invoke("piano"),
     },
     CatalogEntry {

@@ -18,6 +18,7 @@ impl Timeline {
         let edit_beat = self.edit_beat;
         let design = *design;
         let clip = self.clip.clone();
+        let midi_clip = self.midi_clip.clone();
         let playhead = self.playhead;
         let particles = if area == TimelineArea::Lanes {
             self.particles.snapshot()
@@ -123,10 +124,13 @@ impl Timeline {
                             rgb(color),
                         ));
                     }
-                    if area == TimelineArea::Lanes
-                        && let Some(clip) = &clip
-                    {
-                        waveform::paint(clip, viewport, bounds, &design, window, cx);
+                    if area == TimelineArea::Lanes {
+                        if let Some(clip) = &clip {
+                            waveform::paint(clip, viewport, bounds, &design, window, cx);
+                        }
+                        if let Some(midi_clip) = &midi_clip {
+                            waveform::paint_midi(midi_clip, viewport, bounds, &design, window, cx);
+                        }
                     }
                     for (origin, label) in labels {
                         if let Err(error) = label.paint(

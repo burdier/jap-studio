@@ -1,12 +1,13 @@
 //! Barras de título y estado. No abrir dispositivos ni ejecutar DSP aquí.
-use super::super::{CenterView, DawApp, VimMode};
-use gpui::{IntoElement, SharedString, div, prelude::*, px, rgb};
+use super::super::{CenterView, DawApp, VimMode, cursor_fx::CursorFxMode};
+use gpui::{Context, IntoElement, MouseButton, SharedString, div, prelude::*, px, rgb};
 
 impl DawApp {
     pub(in crate::ui) fn render_title_bar(
         &self,
         mode_label: SharedString,
         mode_color: u32,
+        cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let ds = &self.ds;
         let view_label = match self.center_view {
@@ -20,7 +21,7 @@ impl DawApp {
         } else if let Some(player) = &self.player {
             format!("{} Hz", player.sample_rate)
         } else if let Some(rate) = self.instrument.sample_rate() {
-            format!("{} · {rate} Hz", self.instrument.descriptor().name)
+            format!("{} · {rate} Hz", self.instrument.active_name())
         } else if let Some(clip) = &self.timeline.clip {
             format!("{} Hz", clip.file.sample_rate)
         } else {
@@ -76,6 +77,41 @@ impl DawApp {
                     .flex()
                     .items_center()
                     .gap_4()
+                    .child(
+                        div()
+                            .px_2()
+                            .py(px(2.0))
+                            .rounded(px(ds.radius_sm))
+                            .bg(rgb(ds.panel))
+                            .border_1()
+                            .border_color(rgb(ds.border))
+                            .text_xs()
+                            .text_color(rgb(if self.cursor_fx.mode() == CursorFxMode::Off {
+                                ds.muted
+                            } else {
+                                ds.orange
+                            }))
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
+                                    let all = CursorFxMode::ALL;
+                                    let idx = all
+                                        .iter()
+                                        .position(|m| *m == this.cursor_fx.mode())
+                                        .unwrap_or(0);
+                                    let next = all[(idx + 1) % all.len()];
+                                    this.set_cursor_fx(next);
+                                    this.cursor_fx.on_mouse_down(event.position);
+                                    cx.stop_propagation();
+                                    cx.notify();
+                                }),
+                            )
+                            .child(format!(
+                                "{} {}",
+                                self.cursor_fx.mode().badge(),
+                                self.cursor_fx.mode().label()
+                            )),
+                    )
                     .child(div().text_xs().text_color(rgb(ds.muted)).child(view_label))
                     .child(div().text_xs().text_color(rgb(ds.muted)).child(audio_label))
                     .child(
@@ -114,6 +150,25 @@ impl DawApp {
                             .text_color(rgb(mode_color))
                             .font_weight(gpui::FontWeight::BOLD)
                             .child(mode_label),
+                    )
+                    .child(
+                        div()
+                            .text_color(rgb(if self.controller.enabled() {
+                                ds.success
+                            } else {
+                                ds.muted
+                            }))
+                            .child(if self.controller.enabled() {
+                                format!(
+                                    "MIDI ON → {} · octava {} ({}) · vel {} · z/x:octava · m:off",
+                                    self.midi_target_label(),
+                                    self.controller.octave(),
+                                    self.controller.base_label(),
+                                    self.controller.velocity()
+                                )
+                            } else {
+                                "MIDI off · m:on".to_string()
+                            }),
                     )
                     .children(
                         [

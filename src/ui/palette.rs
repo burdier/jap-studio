@@ -157,6 +157,7 @@ impl DawApp {
         let previous = assign_instrument(&mut self.tracks, track, self.instrument.id());
         self.cursor_row = track;
         self.set_center_view(CenterView::Instrument);
+        self.sync_midi_focus();
         let name = self.tracks[track].name;
         self.status_message = match previous {
             Some(previous) => format!(

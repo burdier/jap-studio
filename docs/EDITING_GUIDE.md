@@ -7,7 +7,12 @@
 | Arranque/ventana | `src/ui/app.rs` | `src/main.rs` solo llama `ui::run()` |
 | Estado de UI | `src/ui/mod.rs` | Mantenerlo privado al árbol UI |
 | Teclas y comandos | `src/ui/input.rs` | Controlador que ejecuta la acción |
-| Teclado C4–C5 | `src/instruments/piano.rs` | `views/instrument.rs`, `musical/pitch.rs` |
+| Teclado del ordenador como MIDI (teclas, octava, velocity, on/off) | `src/musical/controller.rs` | `ui/audio_actions.rs`, `ui/input.rs` |
+| Mensajes y servidor MIDI (servidor/cliente) | `src/musical/midi.rs` | `ui/audio_actions.rs` |
+| Componente `MidiClip` y captura/grabación MIDI | `src/musical/clip.rs` | `ui/audio_actions.rs`, `ui/timeline/waveform.rs` |
+| Rango del teclado (C3–B5) | `src/instruments/piano.rs` | `musical/keyboard.rs` |
+| Geometría y etiquetas de octava | `src/musical/keyboard.rs` | `ui/components/keyboard.rs` |
+| Teclado MIDI reutilizable (UI) | `src/ui/components/keyboard.rs` | `views/instrument.rs` |
 | Colores/dimensiones | `src/ui/design.rs` | `~/.jaybu.profile` |
 | Ciclo de render | `src/ui/render.rs` | Nunca avanzar aquí el transporte musical |
 | Play/Stop/importación | `src/ui/audio_actions.rs` | `src/audio/` |
@@ -15,10 +20,17 @@
 | Pistas y asignación de instrumento | `src/musical/track.rs` | `ui/palette.rs`, `views/tracks.rs` |
 | Buscador: estado y teclas | `src/ui/palette.rs` | `ui/input.rs` |
 | Buscador: overlay | `src/ui/views/palette.rs` | `[+]` en `views/tracks.rs` |
+| Configuración/atajos Vim-like | `src/ui/settings.rs` | `views/settings.rs`, `views/chrome.rs` |
+| Ventana separada de instrumento (`:detach`/`:dock`) | `src/ui/detached.rs` | `views/instrument.rs` |
+| Parámetros del piano (lista, rangos, traducción a MIDI/RPN) | `src/instruments/piano_params.rs` | `audio/piano/render.rs` |
+| Panel de parámetros y slider/toggle genéricos | `src/ui/views/instrument_params.rs` | `ui/components/slider.rs` |
+| Perilla rotatoria (knob) nativa en GPU | `src/ui/components/knob.rs` | `views/tracks.rs`, `KNOB_SIZE` en `design.rs` |
 | Estado del piano | `src/instruments/piano.rs` | `audio/piano/`, `views/instrument.rs` |
 | Editar pasos/velocity | `src/ui/pattern_editor.rs` | `src/musical/model.rs` |
 | Dibujar pasos | `src/ui/views/pattern.rs` | Controlador anterior |
 | Layout Arrangement | `src/ui/views/arrangement.rs` | `views/tracks.rs` |
+| Track Headers configurables (TCP estilo REAPER) | `src/ui/views/tracks.rs` | `design.rs`, `views/settings.rs` |
+| Puntero GPU / efectos de cursor (`Fueguito`, etc.) | `src/ui/cursor_fx.rs` | `render.rs`, `views/settings.rs`, `views/chrome.rs` |
 | Piano clicable | `src/ui/views/instrument.rs` | `instruments/piano.rs` |
 | Mixer de ejemplo | `src/ui/views/mixer.rs` | Es mock, no medidores reales |
 | Título/estado | `src/ui/views/chrome.rs` | `views/transport.rs` para botones |
@@ -32,7 +44,9 @@
 | Reproducir patrón | `src/audio/drums/mod.rs` | `drums/stream.rs` |
 | Sintetizar percusión | `src/audio/drums/voice.rs` | Mapeo instrumento → voz |
 | Resaltar paso sonando | `src/ui/pattern_editor.rs` | `views/pattern.rs` |
-| Cargar SoundFont | `src/audio/piano/soundfont.rs` | `HAY_SOUNDFONT` |
+| Ejecutar la app | `scripts/run.sh` | `scripts/check.sh` |
+| Descargar bancos FreePats | `scripts/fetch_soundfonts.sh` | `scripts/soundfonts.txt`, `assets/soundfonts/freepats/` |
+| Descubrir/cargar SoundFonts y créditos | `src/audio/piano/soundfont.rs` | `HAY_SOUNDFONT`, `instruments/piano.rs` |
 | Render del piano | `src/audio/piano/render.rs` | Fachada `piano/mod.rs` |
 | Notas/validaciones | `src/musical/model.rs` | `tests/musical.rs` |
 | Conversión tick/frame | `src/musical/time.rs` | Scheduler y tests temporales |

@@ -1,5 +1,10 @@
 //! Teclas y comandos de texto. Ratón y teclado comparten acciones de edición.
-use super::{CenterView, DawApp, VimMode, pattern_editor::PatternAction};
+use super::{
+    CenterView, DawApp, VimMode,
+    cursor_fx::CursorFxMode,
+    pattern_editor::PatternAction,
+    views::tracks::{TcpControlStyle, TcpLayoutPreset},
+};
 use gpui::{KeyDownEvent, KeyUpEvent};
 
 impl DawApp {
@@ -19,13 +24,11 @@ impl DawApp {
             self.handle_palette_key(key, text);
             return;
         }
-        if self.mode == VimMode::Normal
-            && self.center_view == CenterView::Instrument
-            && let Some(note) = self.instrument.keyboard_note(key)
-        {
-            if !event.is_held {
-                self.note_on(note);
-            }
+        if self.settings.is_visible() {
+            self.handle_settings_key(key);
+            return;
+        }
+        if self.mode == VimMode::Normal && self.controller_key_down(key, event.is_held) {
             return;
         }
         match self.mode {
@@ -44,8 +47,8 @@ impl DawApp {
             .key_char
             .as_deref()
             .unwrap_or(&event.keystroke.key);
-        if let Some(note) = self.instrument.keyboard_note(key) {
-            self.note_off(note);
+        if let Some(message) = self.controller.key_up(key) {
+            self.apply_midi([message]);
         }
     }
     fn handle_normal_key(&mut self, key: &str) {
@@ -60,7 +63,7 @@ impl DawApp {
                     } else {
                         self.play_pattern();
                     }
-                } else if self.player.is_some() {
+                } else if self.player.is_some() || self.instrument.clip_playing() {
                     self.stop_audio();
                     self.status_message = "Detenido".into();
                 } else {
@@ -154,14 +157,32 @@ impl DawApp {
                 self.stop_all();
                 self.status_message = "Detenido".into();
             }
-            "record" => self.status_message = "Grabación todavía no implementada".into(),
+            "record" | "rec" => self.toggle_midi_record(),
+            "capture" | "dump" => self.capture_midi_to_track(),
             "arrangement" | "arr" => self.set_center_view(CenterView::Arrangement),
             "piano" | "instrument" | "inst" => self.set_center_view(CenterView::Instrument),
             "session" | "pat" | "pattern" => self.set_center_view(CenterView::Session),
             "mixer" | "mix" => self.set_center_view(CenterView::Mixer),
+            "midi" | "kbd" => self.toggle_controller(),
+            "detach" | "float" => self.window_request = Some(true),
+            "dock" | "attach" => self.window_request = Some(false),
             "reload" => {
                 self.reload();
                 self.status_message = "Design reloaded".into();
+            }
+            other if other.starts_with("cursor ") => {
+                let arg = other.trim_start_matches("cursor ").trim();
+                self.set_cursor_fx(CursorFxMode::from_token(arg));
+            }
+            other if other.starts_with("tcp ") => {
+                let arg = other.trim_start_matches("tcp ").trim();
+                if matches!(arg, "knobs" | "perillas" | "bars" | "barras") {
+                    self.set_tcp_control_style(TcpControlStyle::from_token(arg));
+                } else if let Some(preset) = TcpLayoutPreset::from_token(arg) {
+                    self.set_tcp_preset(preset);
+                } else {
+                    self.status_message = format!("? tcp {arg}");
+                }
             }
             _ => self.status_message = format!("? {cmd}"),
         }

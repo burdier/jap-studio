@@ -1,4 +1,5 @@
 //! Tokens de ~/.jaybu.profile. Valores musicales y preferencias no pertenecen aquí.
+use super::{cursor_fx::CursorFxMode, views::tracks::TrackHeaderConfig};
 use std::{collections::HashMap, fs};
 
 #[derive(Clone, Copy)]
@@ -29,6 +30,7 @@ pub(super) struct DesignSystem {
     pub pan_bar_width: f32,
     pub vol_bar_width: f32,
     pub control_bar_height: f32,
+    pub knob_size: f32,
     pub transport_btn_size: f32,
     pub font_size_xs: f32,
     pub padding_xs: f32,
@@ -43,6 +45,8 @@ pub(super) struct DesignSystem {
     pub playhead_particle_speed: f32,
     pub playhead_particle_gravity: f32,
     pub playhead_particle_color: u32,
+    pub cursor_fx: CursorFxMode,
+    pub track_header: TrackHeaderConfig,
 }
 
 impl DesignSystem {
@@ -76,6 +80,16 @@ impl DesignSystem {
                 .unwrap_or(default)
         };
         let success = color("SUCCESS", 0x52c77a);
+        let cursor_fx = map
+            .get("CURSOR_FX")
+            .copied()
+            .map(CursorFxMode::from_token)
+            .unwrap_or_default();
+        let track_header = TrackHeaderConfig::from_profile(
+            map.get("TRACK_HEADER_LAYOUT").copied(),
+            map.get("TRACK_HEADER_HIDE").copied(),
+            map.get("TRACK_CONTROL_STYLE").copied(),
+        );
         Self {
             bg: color("BG", 0x141618),
             panel: color("PANEL", 0x1c1e20),
@@ -94,7 +108,7 @@ impl DesignSystem {
             pink: color("PINK", 0xd98bc7),
             grid: color("GRID", 0x3a3d40),
             track_header_width: get("TRACK_HEADER_WIDTH", 200.0),
-            track_header_height: get("TRACK_HEADER_HEIGHT", 72.0).max(1.0),
+            track_header_height: get("TRACK_HEADER_HEIGHT", 76.0).max(1.0),
             timeline_bar_height: get("TIMELINE_BAR_HEIGHT", 28.0).max(1.0),
             timeline_pixels_per_beat: get("TIMELINE_PIXELS_PER_BEAT", 32.0),
             title_bar_height: get("TITLE_BAR_HEIGHT", 36.0),
@@ -103,6 +117,7 @@ impl DesignSystem {
             pan_bar_width: get("PAN_BAR_WIDTH", 40.0),
             vol_bar_width: get("VOL_BAR_WIDTH", 40.0),
             control_bar_height: get("CONTROL_BAR_HEIGHT", 6.0),
+            knob_size: get("KNOB_SIZE", 22.0).clamp(14.0, 36.0),
             transport_btn_size: get("TRANSPORT_BTN_SIZE", 28.0),
             font_size_xs: get("FONT_SIZE_XS", 11.0),
             padding_xs: get("PADDING_XS", 4.0),
@@ -117,6 +132,8 @@ impl DesignSystem {
             playhead_particle_speed: get("PLAYHEAD_PARTICLE_SPEED", 70.0).min(1000.0),
             playhead_particle_gravity: get("PLAYHEAD_PARTICLE_GRAVITY", 60.0).min(1000.0),
             playhead_particle_color: color("PLAYHEAD_PARTICLE_COLOR", success),
+            cursor_fx,
+            track_header,
         }
     }
 }
@@ -124,10 +141,14 @@ impl DesignSystem {
 #[cfg(test)]
 mod tests {
     use super::DesignSystem;
+    use crate::ui::{
+        cursor_fx::CursorFxMode,
+        views::tracks::{TcpLayoutPreset, TcpWidget},
+    };
     #[test]
     fn profile_dimensions_are_decimal_and_colors_are_hexadecimal() {
         let design = DesignSystem::from_profile(
-            "TRACK_HEADER_WIDTH=200\nTRACK_HEADER_HEIGHT=72\nTIMELINE_PIXELS_PER_BEAT=48\nBG=141618\nACCENT=5b9cf6\nRADIUS_SM=3.5\nFONT_SIZE_XS=NaN",
+            "TRACK_HEADER_WIDTH=200\nTRACK_HEADER_HEIGHT=72\nTIMELINE_PIXELS_PER_BEAT=48\nBG=141618\nACCENT=5b9cf6\nRADIUS_SM=3.5\nFONT_SIZE_XS=NaN\nCURSOR_FX=neon\nTRACK_HEADER_LAYOUT=compact\nTRACK_HEADER_HIDE=rec",
         );
         assert_eq!(design.track_header_width, 200.0);
         assert_eq!(design.track_header_height, 72.0);
@@ -136,5 +157,8 @@ mod tests {
         assert_eq!(design.accent, 0x5b9cf6);
         assert_eq!(design.radius_sm, 3.5);
         assert_eq!(design.font_size_xs, 11.0);
+        assert_eq!(design.cursor_fx, CursorFxMode::NeonComet);
+        assert_eq!(design.track_header.preset(), Some(TcpLayoutPreset::Compact));
+        assert!(!design.track_header.is_visible(TcpWidget::Rec));
     }
 }

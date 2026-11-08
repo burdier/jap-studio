@@ -18,11 +18,20 @@ impl Render for DawApp {
                 .into();
                 self.stop_audio();
             }
+        } else if let Some(midi_clip) = &self.timeline.midi_clip {
+            if self.instrument.clip_playing() {
+                self.timeline.playhead = self
+                    .instrument
+                    .clip_beat(midi_clip.start_beat, elevate::musical::time::DEFAULT_BPM);
+            } else if self.instrument.clip_finished() {
+                self.status_message = "Fin del clip MIDI".into();
+                self.stop_audio();
+            }
         }
         if self.instrument.failed() {
             self.status_message = format!(
                 "La salida de {} falló; consulta la consola",
-                self.instrument.descriptor().name
+                self.instrument.active_name()
             );
             self.stop_instrument();
         }
@@ -37,7 +46,13 @@ impl Render for DawApp {
         let particles_alive = self
             .timeline
             .advance_particles(&self.ds, self.center_view == CenterView::Arrangement);
-        if self.player.is_some() || self.pattern_player.is_some() || particles_alive {
+        let cursor_fx_alive = self.cursor_fx.advance();
+        if self.player.is_some()
+            || self.instrument.clip_playing()
+            || self.pattern_player.is_some()
+            || particles_alive
+            || cursor_fx_alive
+        {
             cx.on_next_frame(window, |_, _, cx| cx.notify());
             window.request_animation_frame();
         }
@@ -56,6 +71,11 @@ impl Render for DawApp {
             .palette
             .is_open()
             .then(|| self.render_palette(cx).into_any_element());
+        let settings_overlay = self
+            .settings
+            .is_visible()
+            .then(|| self.render_settings_overlay(cx).into_any_element());
+        let cursor_overlay = self.cursor_fx.render().map(|el| el.into_any_element());
         div()
             .id("hay")
             .track_focus(&self.focus_handle)
@@ -68,20 +88,33 @@ impl Render for DawApp {
             .font_family("monospace")
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(|this, _, window, cx| window.focus(&this.focus_handle, cx)),
+                cx.listener(|this, event: &gpui::MouseDownEvent, window, cx| {
+                    window.focus(&this.focus_handle, cx);
+                    this.sync_midi_focus();
+                    this.cursor_fx.on_mouse_down(event.position);
+                    if f32::from(event.position.x) <= 88.0 && f32::from(event.position.y) <= 36.0 {
+                        this.open_settings();
+                    }
+                    cx.notify();
+                }),
             )
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
                 this.handle_key(event);
+                this.sync_windows(cx);
                 cx.notify();
             }))
             .on_key_up(cx.listener(|this, event: &KeyUpEvent, _, cx| {
                 this.handle_key_up(event);
                 cx.notify();
             }))
-            .child(self.render_title_bar(mode_label.clone(), mode_color))
+            .child(self.render_title_bar(mode_label.clone(), mode_color, cx))
             .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
+                this.cursor_fx.on_mouse_move(event.position);
                 if !event.dragging() {
                     this.timeline.end_clip_drag();
+                    if this.cursor_fx.mode() != super::cursor_fx::CursorFxMode::Off {
+                        cx.notify();
+                    }
                     return;
                 }
                 if this.center_view == CenterView::Arrangement
@@ -95,8 +128,8 @@ impl Render for DawApp {
                         track + 1,
                         this.timeline.position_label()
                     );
-                    cx.notify();
                 }
+                cx.notify();
             }))
             .on_mouse_up(
                 MouseButton::Left,
@@ -116,5 +149,7 @@ impl Render for DawApp {
             .child(self.render_center(cx))
             .child(self.render_status_bar(mode_label, mode_color))
             .when_some(palette, |root, palette| root.child(palette))
+            .when_some(settings_overlay, |root, overlay| root.child(overlay))
+            .when_some(cursor_overlay, |root, cursor| root.child(cursor))
     }
 }

@@ -195,8 +195,8 @@ El catálogo headless vive en [`src/catalog.rs`](src/catalog.rs) y distingue cua
 categorías: instrumento, primitivo, componente y acción. El overlay y su estado están en
 `ui/views/palette.rs` y `ui/palette.rs`; las acciones se traducen a los comandos existentes.
 
-- **Piano vertical** asigna el piano a la pista seleccionada y abre la vista Instrument;
-  es el único instrumento implementado. La cabecera muestra `Piano vertical` en esa pista.
+- **Upright Piano KW** asigna el piano a la pista seleccionada y abre la vista Instrument;
+  es el único instrumento implementado. La cabecera muestra `Upright Piano KW` en esa pista.
 - **Volume** y **Componente serial** aparecen como metadatos: todavía no se instancian
   desde el buscador ni se asignan a una pista.
 - **Reproducción**, **Detener**, **Patrón**, **Arrangement**, **Mixer** y **Recargar diseño**
@@ -207,11 +207,21 @@ seleccionada. Como solo existe una instancia de piano, asignarlo a otra pista lo
 El buscador todavía no crea instancias nuevas ni es un host de plugins. La asignación
 vive en `elevate::musical::track`, no en la vista.
 
+Haz clic en **◈ Hay** para abrir **Configuración**. Su primera opción muestra un overlay
+translúcido con los atajos y motions Vim-like disponibles en las vistas actuales; **Esc**
+lo cierra. La ayuda se mantiene sincronizada con los bindings existentes, no añade
+comandos nuevos.
+
 ## Primer instrumento: piano
 
 La vista **INSTRUMENT** (tecla **4** o **Tab**) contiene un piano de dos octavas.
 Usa **RustySynth 1.3.8** como motor SoundFont y el banco **Upright Piano KW** de FreePats,
 incluido en [`assets/soundfonts/UprightPianoKW-20220221.sf2`](assets/soundfonts/) bajo **CC0**.
+
+**Créditos:** *Upright Piano KW* es un Kawai vertical grabado en enero de 2017 por Gonzalo y Roberto
+(proyecto [FreePats](http://freepats.zenvoid.org/Piano/acoustic-grand-piano.html#UprightKW)),
+con la colaboración de Inma Martínez de Miguel, que cedió su piano. Publicado bajo CC0.
+RustySynth es solo el motor: no incluye instrumentos propios.
 El SoundFont se precarga en segundo plano; se puede sustituir con la variable `HAY_SOUNDFONT`.
 
 La vista ya no conoce RustySynth ni CPAL: pinta el descriptor del catálogo y envía notas a

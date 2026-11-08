@@ -2,5 +2,6 @@
 //! Hoy solo existe el piano; el catálogo ya permite que otros se registren después.
 
 pub(crate) mod piano;
+pub(crate) mod piano_params;
 
 pub(crate) use piano::Piano;
