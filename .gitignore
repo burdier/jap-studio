@@ -1,0 +1,10 @@
+# Artefactos de compilación
+/target/
+
+# Metadatos locales del IDE y del agente
+/.idea/
+/.codex/
+
+# Registros y archivos del sistema
+*.log
+.DS_Store
