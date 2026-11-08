@@ -1,44 +1,48 @@
-//! Teclado gráfico: solicita notas al controlador; no contiene síntesis.
-use super::super::{DawApp, piano_keys::note_name};
+//! Teclado gráfico: solicita notas al instrumento; no contiene síntesis ni identidad.
+//! La vista lee el descriptor del catálogo y el estado de ejecución de `instruments`.
+use super::super::DawApp;
+use elevate::musical::pitch::note_name;
 use gpui::{Context, IntoElement, MouseButton, div, prelude::*, px, relative, rgb};
-
-const WHITE_NOTES: [u8; 14] = [60, 62, 64, 65, 67, 69, 71, 72, 74, 76, 77, 79, 81, 83];
-const BLACK_NOTES: [u8; 10] = [61, 63, 66, 68, 70, 73, 75, 78, 80, 82];
 
 impl DawApp {
     pub(in crate::ui) fn render_instrument(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let ds = &self.ds;
-        let heading =
-            div()
-                .flex_shrink_0()
-                .p(px(ds.padding_lg))
-                .flex()
-                .flex_col()
-                .gap_2()
-                .child(
-                    div()
-                        .text_lg()
-                        .text_color(rgb(ds.accent))
-                        .child("Piano · Upright Piano KW"),
-                )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(rgb(ds.muted))
-                        .child("RustySynth · SoundFont CC0 · instrumento → Volume → Master → CPAL"),
-                )
-                .child(div().text_xs().text_color(rgb(ds.muted)).child(
-                    "Teclado: a w s e d f t g y h u j k = C4…C5 · click: nota · Space: liberar",
-                ))
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(rgb(ds.success))
-                        .child(self.status_message.clone()),
-                );
+        let descriptor = self.instrument.descriptor();
+        let heading = div()
+            .flex_shrink_0()
+            .p(px(ds.padding_lg))
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(
+                div()
+                    .text_lg()
+                    .text_color(rgb(ds.accent))
+                    .child(descriptor.name),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(rgb(ds.muted))
+                    .child(descriptor.summary),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(rgb(ds.muted))
+                    .child(self.instrument.keyboard_hint()),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(rgb(ds.success))
+                    .child(self.status_message.clone()),
+            );
+        let white_notes = self.instrument.white_notes();
+        let black_notes = self.instrument.black_notes();
         let keyboard = div().relative().flex_1().flex().gap(px(2.0)).children(
-            WHITE_NOTES.iter().enumerate().map(|(index, &note)| {
-                let black = (index + 1 < WHITE_NOTES.len() && BLACK_NOTES.contains(&(note + 1)))
+            white_notes.iter().enumerate().map(|(index, &note)| {
+                let black = (index + 1 < white_notes.len() && black_notes.contains(&(note + 1)))
                     .then_some(note + 1);
                 self.render_piano_key(note, black, cx)
             }),
@@ -69,7 +73,7 @@ impl DawApp {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let ds = &self.ds;
-        let pressed = self.held_notes.contains(&note);
+        let pressed = self.instrument.held(note);
         let white_key = div()
             .absolute()
             .top_0()
@@ -89,7 +93,7 @@ impl DawApp {
                 MouseButton::Left,
                 cx.listener(move |this, _, _, cx| {
                     this.release_mouse_note();
-                    this.mouse_note = Some(note);
+                    this.instrument.set_mouse_note(Some(note));
                     this.note_on(note);
                     cx.notify();
                 }),
@@ -106,7 +110,7 @@ impl DawApp {
             .h_full()
             .child(white_key)
             .when_some(black, |key, black| {
-                let pressed = self.held_notes.contains(&black);
+                let pressed = self.instrument.held(black);
                 key.child(
                     div()
                         .absolute()
@@ -122,7 +126,7 @@ impl DawApp {
                             MouseButton::Left,
                             cx.listener(move |this, _, _, cx| {
                                 this.release_mouse_note();
-                                this.mouse_note = Some(black);
+                                this.instrument.set_mouse_note(Some(black));
                                 this.note_on(black);
                                 cx.notify();
                             }),

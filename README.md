@@ -101,7 +101,9 @@ Prototipo de DAW en Rust + GPUI. [Visión del proyecto](SPEC.md).
 - [Instrucciones para agentes](AGENTS.md).
 
 `main.rs` solo arranca la aplicación. `src/ui/` contiene vistas/controladores,
-`src/audio/` los adaptadores y `src/musical/` el núcleo headless exportado por Elevate.
+`src/instruments/` el estado de ejecución de los instrumentos, `src/audio/` los adaptadores
+y `src/musical/` el núcleo headless exportado por Elevate. `src/catalog.rs` es el índice
+headless de instrumentos, primitivos, componentes y acciones.
 La vista **2 / Pattern** edita notas y velocity y las reproduce en loop con percusión
 sintetizada; sus samples reales siguen pendientes. `examples/sequencer.rs` muestra la
 programación de eventos offline.
@@ -183,18 +185,44 @@ Esta audición usa síntesis provisional para validar el scheduler; todavía no 
 samples ni permite cambiar el BPM desde la interfaz. Los detalles y límites están en
 [`docs/PROTOTYPE.md`](docs/PROTOTYPE.md).
 
+## Buscador de instrumentos, componentes y acciones
+
+El botón **`[+]`** de cada cabecera de pista, la tecla **a** o el comando **`:add`** abren
+un buscador superpuesto al estilo rofi. Escribe para filtrar; **↑/↓** mueven la selección,
+**Enter** abre la entrada y **Esc** cierra. La búsqueda ignora acentos.
+
+El catálogo headless vive en [`src/catalog.rs`](src/catalog.rs) y distingue cuatro
+categorías: instrumento, primitivo, componente y acción. El overlay y su estado están en
+`ui/views/palette.rs` y `ui/palette.rs`; las acciones se traducen a los comandos existentes.
+
+- **Piano vertical** abre el piano actual; es el único instrumento implementado.
+- **Volume** y **Componente serial** aparecen como metadatos: todavía no se instancian
+  desde el buscador ni se asignan a una pista.
+- **Reproducción**, **Detener**, **Patrón**, **Arrangement**, **Mixer** y **Recargar diseño**
+  son acciones ejecutables.
+
+El `[+]` aún no crea una instancia nueva ni modifica la pista: el modelo de pistas sigue
+siendo de demostración. Esa es la siguiente frontera, no una capacidad ya terminada.
+
 ## Primer instrumento: piano
 
-La vista **INSTRUMENT / PIANO** (tecla **4** o **Tab**) contiene un piano de dos octavas.
+La vista **INSTRUMENT** (tecla **4** o **Tab**) contiene un piano de dos octavas.
 Usa **RustySynth 1.3.8** como motor SoundFont y el banco **Upright Piano KW** de FreePats,
 incluido en [`assets/soundfonts/UprightPianoKW-20220221.sf2`](assets/soundfonts/) bajo **CC0**.
 El SoundFont se precarga en segundo plano; se puede sustituir con la variable `HAY_SOUNDFONT`.
+
+La vista ya no conoce RustySynth ni CPAL: pinta el descriptor del catálogo y envía notas a
+[`src/instruments/piano.rs`](src/instruments/piano.rs), que posee el reproductor, las notas
+sostenidas y la nota del ratón. La primera nota abre el dispositivo.
 
 ```text
 Acción: Note On / Note Off
              │
              ▼
-     Piano (RustySynth)
+  instruments::Piano (notas sostenidas)
+             │
+             ▼
+  audio/piano (RustySynth)
        SoundFont 48 kHz
              │ L/R
              ▼

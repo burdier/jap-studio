@@ -12,6 +12,10 @@
   inicia/detiene desde la vista Pattern; el paso que suena se resalta.
 - Biblioteca musical sin GPUI/CPAL: patrón variable, notas simultáneas, tempo constante,
   transporte en frames y plan NoteOn/NoteOff con offsets por buffer.
+- Buscador tipo rofi con `[+]`, `a` o `:add`: filtra instrumentos, primitivos, componentes
+  y acciones sin distinguir acentos. Navegación con ↑/↓, Enter y Escape.
+- Piano desacoplado de la vista: `src/instruments/piano.rs` posee reproductor, notas
+  sostenidas y ratón; la vista pinta el descriptor de `elevate::catalog`.
 - Demo offline `sequencer` y contratos de fronteras, IDs, errores e invariancia por tamaño de buffer.
 
 ## Limitaciones de esta audición
@@ -21,6 +25,10 @@
 - Los cuatro instrumentos son síntesis provisional; todavía no cargan samples del usuario.
 - Clip, piano y percusión abren streams excluyentes. Al iniciar uno se detiene el anterior;
   la audición del patrón se detiene al salir de su vista.
+- Solo existe una instancia de piano. El buscador abre esa instancia; todavía no crea
+  instrumentos ni los asigna a pistas. `Volume` y `Componente serial` son metadatos.
+- Las acciones del catálogo usan comandos string provisionales; no son todavía el
+  sistema de acciones definitivo.
 - No hay chase de notas sostenidas, tempo editable desde la UI ni map de tempo.
 
 ## Todavía pendiente
@@ -36,17 +44,20 @@
 
 ## Orden recomendado
 
-1. **Motor único:** extraer procesadores del clip, piano y percusión, abrir una salida y
+1. **Instancias por pista:** convertir el piano único en una instancia asignada a una
+   pista, permitir varias y conectar el `[+]` con esa asignación. Separar identidad de
+   instrumento, datos de ejecución y vista; después generalizar el catálogo.
+2. **Motor único:** extraer procesadores del clip, piano y percusión, abrir una salida y
    definir el contrato `procesar bloque + eventos`. Resolver frecuencia de samples y motor.
-2. **Puente RT:** aprobar `rtrb`, limitar comandos por bloque y decidir saturación,
+3. **Puente RT:** aprobar `rtrb`, limitar comandos por bloque y decidir saturación,
    prioridad de Stop/AllOff y devolución de recursos fuera del callback.
-3. **Samples reales:** sustituir la síntesis provisional por cuatro samples cargados
+4. **Samples reales:** sustituir la síntesis provisional por cuatro samples cargados
    fuera del callback y un pool de voces acotado, conservando los offsets verificados.
-4. **Transporte conectado:** GPUI observa snapshots. Loop configurable y cambios de plan
+5. **Transporte conectado:** GPUI observa snapshots. Loop configurable y cambios de plan
    en caliente; edición de BPM y preparación de planes coherentes.
-5. **Persistencia:** aprobar Serde/JSON y guardado temporal; versionar datos musicales
+6. **Persistencia:** aprobar Serde/JSON y guardado temporal; versionar datos musicales
    separadamente del layout, nunca serializar voces/streams.
-6. Swing/probabilidad/microtiming, más vistas y extensiones sobre esos contratos.
+7. Swing/probabilidad/microtiming, más vistas y extensiones sobre esos contratos.
 
 La futura arquitectura completa se mantiene como dirección; estos puntos son tareas
 concretas, no módulos vacíos ya creados.

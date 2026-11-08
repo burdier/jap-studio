@@ -1,3 +1,4 @@
+pub mod catalog;
 pub mod component;
 pub mod musical;
 pub mod primitives;

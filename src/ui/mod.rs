@@ -3,17 +3,18 @@ mod app;
 mod audio_actions;
 mod design;
 mod input;
+mod palette;
 mod pattern_editor;
-mod piano_keys;
 mod render;
 mod timeline;
 mod views;
 
-use crate::audio::{DrumPlayer, Player, piano::PianoPlayer};
+use crate::audio::{DrumPlayer, Player};
+use crate::instruments::Piano;
 use design::DesignSystem;
 use gpui::{FocusHandle, ScrollHandle};
+use palette::Palette;
 use pattern_editor::PatternEditor;
-use std::collections::HashSet;
 use timeline::Timeline;
 
 pub(crate) use app::run;
@@ -37,9 +38,8 @@ enum CenterView {
 struct DawApp {
     player: Option<Player>,
     pattern_player: Option<DrumPlayer>,
-    piano: Option<PianoPlayer>,
-    held_notes: HashSet<u8>,
-    mouse_note: Option<u8>,
+    instrument: Piano,
+    palette: Palette,
     _soundfont_task: Option<gpui::Task<Result<(), String>>>,
     import_task: Option<gpui::Task<()>>,
     gain: f32,

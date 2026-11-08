@@ -19,8 +19,8 @@ impl DawApp {
             format!("Patrón {} Hz", player.sample_rate)
         } else if let Some(player) = &self.player {
             format!("{} Hz", player.sample_rate)
-        } else if let Some(piano) = &self.piano {
-            format!("Piano {} Hz", piano.sample_rate)
+        } else if let Some(rate) = self.instrument.sample_rate() {
+            format!("{} · {rate} Hz", self.instrument.descriptor().name)
         } else if let Some(clip) = &self.timeline.clip {
             format!("{} Hz", clip.file.sample_rate)
         } else {
@@ -30,8 +30,8 @@ impl DawApp {
             "● DRUMS"
         } else if self.player.is_some() {
             "● AUDIO"
-        } else if self.piano.is_some() {
-            "● PIANO"
+        } else if self.instrument.is_running() {
+            "● INSTRUMENT"
         } else {
             "○ STOP"
         };
@@ -120,6 +120,7 @@ impl DawApp {
                             "h j k l",
                             "i:insert",
                             "::cmd",
+                            "a:buscar",
                             "Tab:view",
                             "+/-:zoom",
                             "R:reload",

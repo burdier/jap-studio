@@ -1,7 +1,5 @@
 //! Teclas y comandos de texto. Ratón y teclado comparten acciones de edición.
-use super::{
-    CenterView, DawApp, VimMode, pattern_editor::PatternAction, piano_keys::keyboard_note,
-};
+use super::{CenterView, DawApp, VimMode, pattern_editor::PatternAction};
 use gpui::{KeyDownEvent, KeyUpEvent};
 
 impl DawApp {
@@ -16,9 +14,14 @@ impl DawApp {
         } else {
             key.to_string()
         };
+        if self.palette.is_open() {
+            let text = !event.keystroke.modifiers.control && !event.keystroke.modifiers.alt;
+            self.handle_palette_key(key, text);
+            return;
+        }
         if self.mode == VimMode::Normal
             && self.center_view == CenterView::Instrument
-            && let Some(note) = keyboard_note(key)
+            && let Some(note) = self.instrument.keyboard_note(key)
         {
             if !event.is_held {
                 self.note_on(note);
@@ -41,7 +44,7 @@ impl DawApp {
             .key_char
             .as_deref()
             .unwrap_or(&event.keystroke.key);
-        if let Some(note) = keyboard_note(key) {
+        if let Some(note) = self.instrument.keyboard_note(key) {
             self.note_off(note);
         }
     }
@@ -72,6 +75,7 @@ impl DawApp {
             }
             "[" => self.change_gain(-0.1),
             "]" => self.change_gain(0.1),
+            "a" | "insert" => self.open_palette(),
             "b" => self.toggle_bypass(),
             "escape" => {
                 self.all_notes_off();
@@ -142,8 +146,9 @@ impl DawApp {
             _ => {}
         }
     }
-    fn execute_command(&mut self, cmd: &str) {
+    pub(super) fn execute_command(&mut self, cmd: &str) {
         match cmd.to_lowercase().as_str() {
+            "add" | "browse" | "insert" => self.open_palette(),
             "play" => self.play_context(),
             "stop" => {
                 self.stop_all();

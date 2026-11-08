@@ -1,13 +1,13 @@
 //! Arranque, carga del perfil y cambios de vista. El render vive en render.rs.
 use super::{
-    CenterView, DawApp, DesignSystem, VimMode, pattern_editor::PatternEditor, timeline::Timeline,
+    CenterView, DawApp, DesignSystem, VimMode, palette::Palette, pattern_editor::PatternEditor,
+    timeline::Timeline,
 };
-use crate::audio::piano;
+use crate::instruments::{Piano, piano};
 use gpui::{
     App, AppContext, Bounds, Context, ScrollHandle, WindowBounds, WindowOptions, point, px, size,
 };
 use gpui_platform::application;
-use std::collections::HashSet;
 
 pub(crate) fn run() {
     application().run(|cx: &mut App| {
@@ -42,9 +42,8 @@ impl DawApp {
             pattern_editor: PatternEditor::new(),
             player: None,
             pattern_player: None,
-            piano: None,
-            held_notes: HashSet::new(),
-            mouse_note: None,
+            instrument: Piano::new(),
+            palette: Palette::new(),
             _soundfont_task: Some(soundfont_task),
             import_task: None,
             gain: 1.0,

@@ -68,16 +68,21 @@ Elevate conserva su biblioteca headless, cadena serial y demo offline. También 
 `musical`: patrones en ticks, tiempo de tempo constante y scheduler por ventanas de frames.
 La vista Pattern edita notas/velocity de cuatro slots y las reproduce en loop mediante
 un plan por frames, transporte en el callback y percusión sintetizada. Clip, piano y patrón
-abren streams excluyentes. Mixer sigue siendo mock. El código está separado en
-`src/ui/`, `src/audio/` y `src/musical/`; `main.rs` solo arranca la aplicación.
-**Límites actuales:** 120 BPM, un clip en memoria, un patrón, percusión sin samples, plan
-inmutable durante la reproducción, salida a la frecuencia original del archivo o predeterminada
-del dispositivo; sin remuestreo, mezcla multipista, MIDI externo, grabación ni guardado.
-Las próximas bibliotecas se elegirán junto al usuario.
+abren streams excluyentes. Mixer sigue siendo mock. El piano está desacoplado de la vista:
+`src/instruments/piano.rs` posee el reproductor y las notas sostenidas, y la UI pinta el
+descriptor de `elevate::catalog`. El botón `[+]`, la tecla `a` y `:add` abren un buscador
+headless de instrumentos, primitivos, componentes y acciones. El código está separado en
+`src/ui/`, `src/instruments/`, `src/audio/`, `src/musical/` y `src/catalog.rs`; `main.rs`
+solo arranca la aplicación.
+**Límites actuales:** 120 BPM, un clip en memoria, un patrón, una instancia de piano,
+percusión sin samples, plan inmutable durante la reproducción, buscador sin host de plugins
+ni asignación de instrumentos a pistas, salida a la frecuencia original del archivo o
+predeterminada del dispositivo; sin remuestreo, mezcla multipista, MIDI externo, grabación
+ni guardado. Las próximas bibliotecas se elegirán junto al usuario.
 **Prioridad:** secuenciador nativo inspirado en Hydrogen. Un motor musical independiente
-de sus vistas, un transporte y una salida CPAL común. Unificar audio y comunicación RT,
-sustituir la síntesis por samples de percusión, permitir cambios de plan en caliente y
-añadir loop configurable y persistencia versionada.
+de sus vistas, un transporte y una salida CPAL común. Convertir el piano en una instancia
+por pista, unificar audio y comunicación RT, sustituir la síntesis por samples de percusión,
+permitir cambios de plan en caliente y añadir loop configurable y persistencia versionada.
 Hydrogen sirve de referencia; no hay integración FFI ni código suyo incorporado.
 Debugger, hosting de plugins y scripting vendrán después. La inspección utilizará snapshots.
 

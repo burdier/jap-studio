@@ -16,17 +16,22 @@
    no cortar funciones arbitrariamente para cumplir un número.
 5. `src/musical/` no importa GPUI, CPAL, RustySynth ni tipos de `ui/` o `audio/`.
 6. `src/audio/` no importa GPUI. Decodificar y preparar recursos fuera del callback.
-7. Las vistas llaman controladores; teclado y ratón comparten la misma operación.
-8. No crear módulos vacíos, sistemas de plugins prematuros ni un segundo transporte.
-9. No confundir el piano clicable con un piano roll, el mixer mock con mezcla real,
-   ni la percusión sintetizada de audición con un sampler de samples implementado.
-10. No usar temporizadores de GPUI para programar notas. El audio avanza por frames.
-11. No hacer E/S, reservas/destrucciones costosas o trabajo sin límite en el futuro
+7. `src/instruments/` no importa GPUI. Posee el estado de ejecución (notas, ratón,
+   reproductor); las vistas no deben importar `audio::piano` ni `rustysynth`.
+8. `src/catalog.rs` es headless: no importa GPUI ni CPAL. Indexa metadatos y comandos;
+   no instancia plugins ni asigna instrumentos a pistas.
+9. Las vistas llaman controladores; teclado y ratón comparten la misma operación.
+10. No crear módulos vacíos, sistemas de plugins prematuros ni un segundo transporte.
+11. No confundir el piano clicable con un piano roll, el mixer mock con mezcla real,
+    ni la percusión sintetizada de audición con un sampler de samples implementado.
+    El buscador `[+]` tampoco es todavía un host de plugins.
+12. No usar temporizadores de GPUI para programar notas. El audio avanza por frames.
+13. No hacer E/S, reservas/destrucciones costosas o trabajo sin límite en el futuro
     motor RT. `audio/drums/stream.rs` no debe asignar memoria por bloque ni por nota.
     El adaptador `audio/piano` aún usa mpsc: su sustitución está pendiente.
-12. El plan de percusión es inmutable. Editar el patrón no actualiza el audio activo;
+14. El plan de percusión es inmutable. Editar el patrón no actualiza el audio activo;
     para escucharlo hay que detener y volver a pulsar Play. No ocultar esa limitación.
-13. Actualizar el mapa de archivos y el estado si cambia una frontera o una capacidad.
+15. Actualizar el mapa de archivos y el estado si cambia una frontera o una capacidad.
 
 ## Verificación
 

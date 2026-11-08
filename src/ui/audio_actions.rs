@@ -1,68 +1,58 @@
 //! Coordinación UI → adaptadores de audio; decodificación en background.
-use super::{CenterView, DawApp, piano_keys::note_name};
-use crate::audio::{
-    AudioClip, AudioFile, BEATS_PER_SECOND, DrumPlayer, Player, piano::PianoPlayer,
-};
-use elevate::musical::time::DEFAULT_BPM;
+use super::{CenterView, DawApp};
+use crate::audio::{AudioClip, AudioFile, BEATS_PER_SECOND, DrumPlayer, Player};
+use elevate::musical::{pitch::note_name, time::DEFAULT_BPM};
 use gpui::{AppContext, Context};
 use std::{path::PathBuf, sync::Arc};
 
 impl DawApp {
     pub(super) fn note_on(&mut self, note: u8) {
-        if note > 127 || self.held_notes.contains(&note) {
+        if note > 127 || self.instrument.held(note) {
             return;
         }
-        if self.piano.is_none() {
+        if !self.instrument.is_running() {
             self.stop_audio();
             self.stop_pattern();
-            match PianoPlayer::start(self.gain, self.bypass) {
-                Ok(piano) => {
-                    self.piano = Some(piano);
-                }
-                Err(error) => {
-                    self.status_message = format!("No se pudo iniciar el piano: {error}");
-                    return;
-                }
+        }
+        match self.instrument.note_on(note, 100, self.gain, self.bypass) {
+            Ok(true) => {
+                self.status_message = format!(
+                    "Note On {} · {}",
+                    note_name(note),
+                    self.instrument.descriptor().name
+                );
+            }
+            Ok(false) => {}
+            Err(error) => {
+                self.status_message = format!(
+                    "No se pudo iniciar {}: {error}",
+                    self.instrument.descriptor().name
+                );
             }
         }
-        if let Some(piano) = &self.piano {
-            piano.note_on(note, 100);
-        }
-        self.held_notes.insert(note);
-        self.status_message = format!("Note On {} · orden enviada al piano", note_name(note));
     }
     pub(super) fn note_off(&mut self, note: u8) {
-        if !self.held_notes.remove(&note) {
+        if !self.instrument.note_off(note) {
             return;
         }
-        if let Some(piano) = &self.piano {
-            piano.note_off(note);
-        }
-        self.status_message = format!("Note Off {} · orden enviada al piano", note_name(note));
+        self.status_message = format!(
+            "Note Off {} · {}",
+            note_name(note),
+            self.instrument.descriptor().name
+        );
     }
     pub(super) fn release_mouse_note(&mut self) {
-        if let Some(note) = self.mouse_note.take() {
+        if let Some(note) = self.instrument.take_mouse_note() {
             self.note_off(note);
         }
     }
     pub(super) fn all_notes_off(&mut self) {
-        if self.held_notes.is_empty() && self.mouse_note.is_none() {
-            return;
+        if self.instrument.all_notes_off() {
+            self.status_message = "Todas las notas liberadas".into();
         }
-        if let Some(piano) = &self.piano {
-            piano.all_notes_off();
-        }
-        self.held_notes.clear();
-        self.mouse_note = None;
-        self.status_message = "Todas las notas liberadas".into();
     }
     pub(super) fn stop_instrument(&mut self) {
-        if let Some(piano) = &self.piano {
-            piano.all_notes_off();
-        }
-        self.piano = None;
-        self.held_notes.clear();
-        self.mouse_note = None;
+        self.instrument.stop();
     }
     /// Audición en loop del patrón. El plan se compila al pulsar Play.
     pub(super) fn play_pattern(&mut self) {
@@ -174,9 +164,7 @@ impl DawApp {
         if let Some(player) = &self.pattern_player {
             player.set_gain(self.gain);
         }
-        if let Some(piano) = &self.piano {
-            piano.set_gain(self.gain);
-        }
+        self.instrument.set_gain(self.gain);
         self.status_message = format!("Volume: {:.2}x", self.gain);
     }
     pub(super) fn toggle_bypass(&mut self) {
@@ -187,8 +175,6 @@ impl DawApp {
         if let Some(player) = &self.pattern_player {
             player.set_bypass(self.bypass);
         }
-        if let Some(piano) = &self.piano {
-            piano.set_bypass(self.bypass);
-        }
+        self.instrument.set_bypass(self.bypass);
     }
 }

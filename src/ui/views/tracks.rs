@@ -140,9 +140,18 @@ impl DawApp {
                     .child(
                         div()
                             .ml_auto()
+                            .px_1()
                             .text_xs()
                             .text_color(rgb(ds.accent))
-                            .child("|+|"),
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _, _, cx| {
+                                    this.open_palette();
+                                    cx.stop_propagation();
+                                    cx.notify();
+                                }),
+                            )
+                            .child("[+]"),
                     ),
             )
     }

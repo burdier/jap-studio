@@ -2,8 +2,8 @@
 
 ## Dos targets, un paquete
 
-- Biblioteca `elevate` (`src/elevate.rs`): DSP y núcleo musical headless.
-- Binario `daw-gpui` (`src/main.rs`): adaptadores de audio + interfaz GPUI.
+- Biblioteca `elevate` (`src/elevate.rs`): DSP, núcleo musical y catálogo headless.
+- Binario `daw-gpui` (`src/main.rs`): instrumentos, adaptadores de audio e interfaz GPUI.
 - `--no-default-features` permite trabajar en la biblioteca sin compilar GPUI/CPAL.
 - No se necesita un workspace de ocho crates para mantener estas fronteras.
 
@@ -11,12 +11,13 @@
 main.rs → ui::run
              │
         DawApp (ui/mod.rs)
-          ├── input.rs ─────────┐
-          ├── views/* ─────────┼→ pattern_editor.rs → musical/model.rs
-          │                    └→ audio_actions.rs → audio/*
-          ├── design.rs                     │
-          └── timeline/*                    ├→ Symphonia / RustySynth / DrumKit
-                                            └→ Elevate Volume → CPAL
+          ├── input.rs ─────────────┐
+          ├── views/* ──────────────┼→ pattern_editor.rs → musical/model.rs
+          │                         ├→ palette.rs → catalog::search
+          │                         └→ audio_actions.rs
+          ├── design.rs                          │
+          └── timeline/*                         ├→ instruments::Piano → audio/piano
+                                                 └→ audio/{playback,drums} → CPAL
 
 Biblioteca headless:
 musical/model.rs → scheduler::compile(TimeBase) → PreparedPattern
@@ -32,7 +33,9 @@ Transport::advance(frames) → FrameWindow → events_in()
 
 La ruta del patrón ya está conectada al callback de percusión. Clip y piano conservan
 sus adaptadores separados; unificarlos es el siguiente incremento. `examples/sequencer.rs`
-sigue mostrando el plan sin abrir audio.
+sigue mostrando el plan sin abrir audio. La vista del piano no conoce RustySynth ni CPAL:
+pide notas a `instruments::Piano`, que posee el reproductor y las notas sostenidas.
+El descriptor que pinta la vista procede de `elevate::catalog`.
 
 ## Responsabilidades y propiedad del estado
 
@@ -40,6 +43,9 @@ sigue mostrando el plan sin abrir audio.
 |---|---|---|
 | Notas del patrón | `Pattern`, contenido en `ui::PatternEditor` | Sin coordenadas visuales ni voces |
 | Selección, modo, vista | `DawApp` | Estado de workspace, no proyecto musical |
+| Catálogo y búsqueda | `elevate::catalog` | Metadatos y comandos; sin GPUI/CPAL |
+| Búsqueda abierta | `ui::Palette` | Query, selección y resultados; no ejecuta audio |
+| Notas sostenidas y ratón | `instruments::Piano` | Fuera de `DawApp`; la vista solo lee estado |
 | Zoom/cursor/arrastre | `Timeline` | Convierte píxeles ↔ beats, no gobierna audio |
 | Clip cargado | `Timeline::clip`, provisional | Un único clip; mover al proyecto al ampliar |
 | Archivo decodificado | `Arc<AudioFile>` | Preparado fuera del callback |
@@ -49,6 +55,23 @@ sigue mostrando el plan sin abrir audio.
 | Posición de transporte | `Transport` en cada callback / demo headless | Avanzar con frames procesados |
 | Posición del patrón | `AtomicU64` en `DrumState` | Snapshot de solo lectura para la UI |
 | Partículas | `ParticleTrail` | Tiempo visual; no afecta al scheduler |
+
+## Catálogo y buscador
+
+`elevate::catalog` es un índice estático y headless de cuatro categorías: instrumentos,
+primitivos, componentes y acciones. Cada entrada declara ID, nombre, resumen y palabras
+clave. `search` pliega acentos y prioriza coincidencias al inicio del nombre. El catálogo
+no conoce GPUI, CPAL ni instancias.
+
+`ui/palette.rs` conserva query y selección; `views/palette.rs` dibuja el overlay. El botón
+`[+]` de cada cabecera, la tecla `a` o el comando `:add` abren el buscador. Las entradas
+`Invoke("...")` se traducen al comando provisional existente en `ui/input.rs`; las entradas
+`Unavailable` explican por qué todavía no se pueden instanciar.
+
+Solo el piano tiene implementación y una única instancia. `Volume` y `Componente serial`
+aparecen como metadatos: el buscador aún no crea primitivos, componentes ni instrumentos
+por pista. Ese paso pertenece al futuro host de plugins y al sistema de acciones, no a
+esta paleta.
 
 ## Contrato musical actual
 
@@ -81,6 +104,12 @@ sigue mostrando el plan sin abrir audio.
 poseen streams separados y excluyentes. El clip exige la frecuencia del archivo;
 piano y percusión siguen la del dispositivo. El master actual es un clamp, no un limitador.
 
+`instruments::Piano` envuelve `audio::piano::PianoPlayer` y conserva las notas sostenidas,
+la nota del ratón y el descriptor del catálogo. La UI ya no importa el reproductor ni
+decide cuándo abrir el dispositivo: solo llama a `note_on`/`note_off`, y el instrumento
+abre CPAL en la primera nota. La exclusividad con clip y percusión sigue coordinada por
+`ui/audio_actions.rs`.
+
 `drums/mod.rs` compila el plan y abre el stream. `drums/stream.rs` avanza `Transport`
 por frames, segmenta en el loop y entrega offsets exactos a `DrumKit`; `Volume` procesa
 el bloque antes de CPAL. La síntesis es deliberadamente provisional (sin samples) y el
@@ -98,4 +127,6 @@ es un sampler con cuatro samples y reemplazo de plan en caliente.
 Elevate mantiene `Primitive`, `Component`, parámetros y `NodeId`. `ControlEvent`
 es todavía una solicitud síncrona de cambio, no un bus de notificaciones.
 `PatternAction` es una operación compartida de UI, no el catálogo global de acciones.
-El futuro host conectará eventos musicales y DSP sin importar tipos de GPUI.
+`elevate::catalog` es el primer índice de instrumentos, primitivos, componentes y acciones;
+sus comandos son strings provisionales hasta que exista el sistema de acciones descrito
+en el README. El futuro host conectará eventos musicales y DSP sin importar tipos de GPUI.

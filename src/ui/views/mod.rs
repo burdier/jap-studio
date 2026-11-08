@@ -3,6 +3,7 @@ mod arrangement;
 mod chrome;
 mod instrument;
 mod mixer;
+mod palette;
 mod pattern;
 mod tracks;
 mod transport;
@@ -18,10 +19,7 @@ impl DawApp {
                 "ARRANGEMENT",
                 "Click: cursor | Shift+wheel: scroll | Ctrl+wheel: zoom",
             ),
-            CenterView::Instrument => (
-                "INSTRUMENT / PIANO",
-                "a w s e d f t g y h u j k: notas | click: notas | 1-4: views",
-            ),
+            CenterView::Instrument => ("INSTRUMENT", self.instrument.keyboard_hint()),
             CenterView::Session => (
                 "PATTERN / PROTOTIPO",
                 "Click/Enter: nota | rueda: velocity | Space: play/stop",

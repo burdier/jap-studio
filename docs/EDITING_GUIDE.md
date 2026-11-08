@@ -7,14 +7,18 @@
 | Arranque/ventana | `src/ui/app.rs` | `src/main.rs` solo llama `ui::run()` |
 | Estado de UI | `src/ui/mod.rs` | Mantenerlo privado al árbol UI |
 | Teclas y comandos | `src/ui/input.rs` | Controlador que ejecuta la acción |
-| Teclado C4–C5 | `src/ui/piano_keys.rs` | `views/instrument.rs` |
+| Teclado C4–C5 | `src/instruments/piano.rs` | `views/instrument.rs`, `musical/pitch.rs` |
 | Colores/dimensiones | `src/ui/design.rs` | `~/.jaybu.profile` |
 | Ciclo de render | `src/ui/render.rs` | Nunca avanzar aquí el transporte musical |
 | Play/Stop/importación | `src/ui/audio_actions.rs` | `src/audio/` |
+| Catálogo de instrumentos/acciones | `src/catalog.rs` | `tests/catalog.rs` |
+| Buscador: estado y teclas | `src/ui/palette.rs` | `ui/input.rs` |
+| Buscador: overlay | `src/ui/views/palette.rs` | `[+]` en `views/tracks.rs` |
+| Estado del piano | `src/instruments/piano.rs` | `audio/piano/`, `views/instrument.rs` |
 | Editar pasos/velocity | `src/ui/pattern_editor.rs` | `src/musical/model.rs` |
 | Dibujar pasos | `src/ui/views/pattern.rs` | Controlador anterior |
 | Layout Arrangement | `src/ui/views/arrangement.rs` | `views/tracks.rs` |
-| Piano clicable | `src/ui/views/instrument.rs` | `ui/audio_actions.rs` |
+| Piano clicable | `src/ui/views/instrument.rs` | `instruments/piano.rs` |
 | Mixer de ejemplo | `src/ui/views/mixer.rs` | Es mock, no medidores reales |
 | Título/estado | `src/ui/views/chrome.rs` | `views/transport.rs` para botones |
 | Zoom y conversión visual | `src/ui/timeline/viewport.rs` | `timeline/mod.rs` |
@@ -46,7 +50,14 @@
 
 No interpretar nombres de archivos como garantías: `scheduler` planifica una pasada;
 el loop y la percusión viven en `audio/drums/stream.rs`; `PatternAction` no es un bus;
-`output` comparte configuración, todavía no mezcla.
+`output` comparte configuración, todavía no mezcla. `catalog` indexa metadatos: no
+instancia primitivos, componentes ni instrumentos. El buscador solo abre el piano actual;
+insertar instrumentos en pistas requiere el futuro host.
+
+La vista del piano no debe importar `audio::piano` ni `rustysynth`. El estado de ejecución
+(note-on/off, ratón, voces abiertas) pertenece a `src/instruments/piano.rs`; la UI solo
+presenta el descriptor del catálogo y llama al controlador. Al añadir un instrumento,
+registra su entrada en `src/catalog.rs` y evita duplicar comandos entre teclado y ratón.
 
 La percusión usa un plan inmutable y síntesis provisional. Si cambias el modelo de notas,
 detén y vuelve a pulsar Play para escuchar el plan nuevo. No añadas asignaciones,
@@ -78,7 +89,8 @@ No añadir librerías para conseguir una comprobación que ya resuelve Cargo o l
 
 - `src/main.rs` de 1839 líneas → `src/ui/` + arranque de seis líneas.
 - `src/audio.rs` → `src/audio/{assets,output,playback}.rs`.
-- `src/instrument.rs` → `src/audio/piano/` y `src/ui/piano_keys.rs`.
+- `src/instrument.rs` → `src/audio/piano/` y `src/instruments/piano.rs`.
+- `src/ui/piano_keys.rs` → `src/instruments/piano.rs` y `src/musical/pitch.rs`.
 - `src/timeline.rs` → `src/ui/timeline/`.
 
 Biblioteca `elevate`, contratos DSP, SoundFont y comandos de ejecución conservan sus nombres.

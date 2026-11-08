@@ -1,6 +1,5 @@
 //! Render raíz y ciclo visual. El refresco de GPUI nunca avanza el transporte musical.
 use super::{CenterView, DawApp, VimMode};
-use crate::audio::piano::PianoPlayer;
 use gpui::{
     Context, IntoElement, KeyDownEvent, KeyUpEvent, MouseButton, Render, SharedString, Window, div,
     prelude::*, rgb,
@@ -20,8 +19,11 @@ impl Render for DawApp {
                 self.stop_audio();
             }
         }
-        if self.piano.as_ref().is_some_and(PianoPlayer::failed) {
-            self.status_message = "La salida del piano falló; consulta la consola".into();
+        if self.instrument.failed() {
+            self.status_message = format!(
+                "La salida de {} falló; consulta la consola",
+                self.instrument.descriptor().name
+            );
             self.stop_instrument();
         }
         if self
@@ -50,9 +52,14 @@ impl Render for DawApp {
             VimMode::Insert => ds.accent,
             VimMode::Command => ds.pink,
         };
+        let palette = self
+            .palette
+            .is_open()
+            .then(|| self.render_palette(cx).into_any_element());
         div()
             .id("hay")
             .track_focus(&self.focus_handle)
+            .relative()
             .size_full()
             .flex()
             .flex_col()
@@ -108,5 +115,6 @@ impl Render for DawApp {
             .child(self.render_transport(cx))
             .child(self.render_center(cx))
             .child(self.render_status_bar(mode_label, mode_color))
+            .when_some(palette, |root, palette| root.child(palette))
     }
 }
