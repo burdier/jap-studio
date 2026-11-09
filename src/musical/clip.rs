@@ -7,30 +7,126 @@ use super::{
     time::{PPQ, Tick},
 };
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Identidad de instancia durante la sesión; clonar para dibujar conserva el ID.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ClipId(u64);
+
+impl ClipId {
+    fn fresh() -> Self {
+        static NEXT: AtomicU64 = AtomicU64::new(1);
+        Self(NEXT.fetch_add(1, Ordering::Relaxed))
+    }
+}
+
+/// Propiedades individuales por clip (estilo Media Item de REAPER).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ClipProps {
+    pub muted: bool,
+    pub locked: bool,
+    pub looped: bool,
+    pub gain_db: f32,
+    pub pitch_semitones: i8,
+    pub color_index: Option<u8>,
+}
+
+impl Default for ClipProps {
+    fn default() -> Self {
+        Self {
+            muted: false,
+            locked: false,
+            looped: false,
+            gain_db: 0.0,
+            pitch_semitones: 0,
+            color_index: None,
+        }
+    }
+}
+
+impl ClipProps {
+    pub fn gain_linear(self) -> f32 {
+        if self.muted {
+            0.0
+        } else {
+            10.0_f32.powf(self.gain_db / 20.0)
+        }
+    }
+}
 
 /// Componente clip MIDI ubicado en un carril del Arrangement.
 /// Las funciones avanzadas de edición (piano roll, split, loop interno) llegarán en
 /// etapas posteriores; esta primera etapa almacena el `Pattern` mapeado y su posición.
 #[derive(Debug, Clone)]
 pub struct MidiClip {
+    pub id: ClipId,
     pub name: String,
     pub track: usize,
     pub start_beat: f64,
     pub pattern: Pattern,
+    pub props: ClipProps,
+    /// Recorte no destructivo: beats del patrón omitidos al inicio.
+    pub trim_start: f64,
+    /// Recorte no destructivo: beats visibles; `None` = hasta el final del patrón.
+    pub trim_len: Option<f64>,
 }
 
 impl MidiClip {
     pub fn new(name: impl Into<String>, track: usize, start_beat: f64, pattern: Pattern) -> Self {
         Self {
+            id: ClipId::fresh(),
             name: name.into(),
             track,
             start_beat: start_beat.max(0.0),
             pattern,
+            props: ClipProps::default(),
+            trim_start: 0.0,
+            trim_len: None,
         }
     }
 
-    pub fn duration_beats(&self) -> f64 {
+    /// Copia editable con identidad nueva; no confundir con un snapshot de render.
+    pub fn duplicate(&self) -> Self {
+        let mut copy = self.clone();
+        copy.id = ClipId::fresh();
+        copy
+    }
+
+    /// Longitud completa del patrón, sin recorte.
+    pub fn pattern_beats(&self) -> f64 {
         self.pattern.length().0 as f64 / PPQ as f64
+    }
+
+    /// Longitud visible en el Arrangement (patrón recortado).
+    pub fn duration_beats(&self) -> f64 {
+        let available = (self.pattern_beats() - self.trim_start).max(0.0);
+        self.trim_len.map_or(available, |len| len.min(available))
+    }
+
+    /// Patrón a reproducir: solo la ventana visible, sin modificar el original.
+    pub fn playback_pattern(&self) -> Pattern {
+        if self.trim_start == 0.0 && self.trim_len.is_none() {
+            return self.pattern.clone();
+        }
+        let window_start = (self.trim_start * PPQ as f64).round() as i64;
+        let window_len = (self.duration_beats() * PPQ as f64).round().max(1.0) as i64;
+        let Ok(mut trimmed) = Pattern::new(Tick(window_len)) else {
+            return self.pattern.clone();
+        };
+        for note in self.pattern.notes() {
+            let start = note.start.0.max(window_start);
+            let end = (note.start.0 + note.duration.0).min(window_start + window_len);
+            if end > start {
+                let _ = trimmed.add_note(
+                    note.instrument,
+                    Tick(start - window_start),
+                    Tick(end - start),
+                    note.pitch,
+                    note.velocity,
+                );
+            }
+        }
+        trimmed
     }
 
     pub fn end_beat(&self) -> f64 {

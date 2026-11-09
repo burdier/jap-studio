@@ -5,10 +5,12 @@ use elevate::{
     catalog::{self, CatalogAction, CatalogEntry, EntryKind},
     musical::track::assign_instrument,
 };
+use gpui::{Context, Window};
 
 pub(super) struct Palette {
     open: bool,
     target_track: Option<usize>,
+    pub(super) fx_target: Option<super::fx::FxTarget>,
     category: Option<EntryKind>,
     query: String,
     selected: usize,
@@ -28,6 +30,7 @@ impl Palette {
         Self {
             open: false,
             target_track: None,
+            fx_target: None,
             category: None,
             query: String::new(),
             selected: 0,
@@ -76,6 +79,7 @@ impl Palette {
     pub fn open_for_track(&mut self, track: usize) {
         self.open = true;
         self.target_track = Some(track);
+        self.fx_target = None;
         self.category = None;
         self.query.clear();
         self.refresh();
@@ -84,6 +88,7 @@ impl Palette {
     pub fn close(&mut self) {
         self.open = false;
         self.target_track = None;
+        self.fx_target = None;
         self.category = None;
         self.query.clear();
         self.selected = 0;
@@ -133,28 +138,83 @@ impl DawApp {
     }
 
     pub(super) fn open_palette_for_track(&mut self, track: usize) {
+        if self.tracks.is_empty() {
+            self.palette.open_for_track(0);
+            self.palette.target_track = None;
+            self.status_message = "Buscador · inserta una pista o elige un instrumento".into();
+            return;
+        }
         let track = track.min(self.tracks.len() - 1);
         self.cursor_row = track;
         self.palette.open_for_track(track);
+        let id = self.tracks[track].id;
+        self.palette.fx_target = Some(
+            self.fx
+                .current
+                .filter(|target| target.track == id && self.fx.width > 0.0)
+                .unwrap_or(super::fx::FxTarget {
+                    track: id,
+                    node: None,
+                }),
+        );
         self.status_message = format!("Buscador · añadir a la pista {}", self.tracks[track].name);
     }
 
-    pub(super) fn handle_palette_key(&mut self, key: &str, text: bool) {
+    pub(super) fn handle_palette_key(
+        &mut self,
+        key: &str,
+        text: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if key == "escape" {
             self.palette.close();
             self.status_message = "Buscador cerrado".into();
             return;
         }
         if let Some(entry) = self.palette.handle_key(key, text) {
-            self.activate_catalog_entry(entry);
+            self.activate_catalog_entry(entry, window, cx);
         } else if key == "enter" {
             self.status_message = "El buscador no tiene resultados".into();
         }
     }
 
-    pub(super) fn activate_catalog_entry(&mut self, entry: &'static CatalogEntry) {
-        let target_track = self.palette.target_track();
+    pub(super) fn activate_catalog_entry(
+        &mut self,
+        entry: &'static CatalogEntry,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let mut target_track = self.palette.target_track();
+        let fx_target = self.palette.fx_target;
+        if elevate::devices::find(entry.id).is_some() {
+            if let Some(target) = fx_target.or_else(|| self.selected_fx_target()) {
+                self.palette.close();
+                if let Err(error) = self.insert_fx(target, entry.id) {
+                    self.status_message = error;
+                }
+                cx.notify();
+                return;
+            }
+            self.palette.close();
+            self.status_message = "Añade una pista antes de insertar efectos".into();
+            return;
+        }
+        if entry.kind == EntryKind::Instrument && self.tracks.is_empty() {
+            self.edit_track_structure(elevate::musical::track::TrackEdit::Insert);
+            target_track = Some(self.cursor_row);
+        }
         self.palette.close();
+        if let CatalogAction::Invoke(command) = entry.action {
+            if command.starts_with("fx.") && command != "fx.show" {
+                if let Some(target) = fx_target.or_else(|| self.selected_fx_target()) {
+                    if let Err(error) = self.execute_fx_at(target, command) {
+                        self.status_message = error;
+                    }
+                    return;
+                }
+            }
+        }
         if entry.kind == EntryKind::Instrument {
             if let Some(track) = target_track {
                 match entry.action {
@@ -168,7 +228,18 @@ impl DawApp {
         }
         match entry.action {
             CatalogAction::Invoke(command) => {
-                self.execute_command(command);
+                if let Some(spec) = entry.action.parameters() {
+                    self.open_action_form(entry, spec, window, cx);
+                } else if matches!(command, "clip.rename" | "clip.gain" | "clip.color") {
+                    self.open_clip_catalog_page(
+                        command,
+                        window.mouse_position(),
+                        window.viewport_size(),
+                    );
+                    cx.notify();
+                } else {
+                    self.execute_command(command);
+                }
                 if entry.kind == EntryKind::Instrument {
                     self.status_message = format!("Instrumento abierto · {}", entry.name);
                 }
@@ -184,6 +255,15 @@ impl DawApp {
             self.status_message = "Pista inválida".into();
             return;
         }
+        if !self.track_accepts_clips(track) {
+            self.status_message =
+                "El grupo recibe sus pistas hijas; no admite un instrumento MIDI directo".into();
+            return;
+        }
+        if entry.id == "instrument.sampler" {
+            self.add_sampler(track);
+            return;
+        }
         if entry.id != "instrument.piano" {
             self.status_message = format!("{} · instrumento sin implementación", entry.name);
             return;
@@ -192,7 +272,7 @@ impl DawApp {
         self.cursor_row = track;
         self.set_center_view(CenterView::Instrument);
         self.sync_midi_focus();
-        let name = self.tracks[track].name;
+        let name = self.tracks[track].name.clone();
         self.status_message = match previous {
             Some(previous) => format!(
                 "{} movido de {} a {}",
@@ -228,7 +308,7 @@ mod tests {
         for key in "volume".chars() {
             palette.handle_key(&key.to_string(), true);
         }
-        assert_eq!(palette.results().len(), 1);
+        assert!(!palette.results().is_empty());
         assert_eq!(palette.results()[0].id, "primitive.volume");
         for _ in 0.."volume".len() {
             palette.handle_key("backspace", true);

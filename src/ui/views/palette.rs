@@ -18,16 +18,19 @@ impl DawApp {
         let active_category = self.palette.category();
         let results = self.palette.results();
         let target_track = self.palette.target_track().unwrap_or(self.cursor_row);
-        let track_colors = [
-            ds.accent, ds.success, ds.warning, ds.danger, ds.cyan, ds.orange, ds.pink, ds.accent,
-        ];
-        let liquid_color = track_colors[target_track.min(track_colors.len() - 1)];
-        let track_name = self
+        let liquid_color = ds.track_color(target_track);
+        let mut track_name = self
             .tracks
             .get(target_track)
-            .map(|t| t.name)
-            .unwrap_or("Proyecto");
+            .map(|t| t.name.to_string())
+            .unwrap_or_else(|| "Proyecto".into());
 
+        if let Some(target) = self.palette.fx_target {
+            if let Some(node) = self.fx_node(target) {
+                track_name.push_str(" / ");
+                track_name.push_str(&node.name);
+            }
+        }
         let count = results.len();
         let count_label = if count == 1 {
             "1 resultado".to_string()
@@ -60,13 +63,17 @@ impl DawApp {
                         .gap_3()
                         .px_3()
                         .py_2()
-                        .bg(rgb(if active { ds.accent_dim } else { ds.panel }))
+                        .bg(rgb(if active {
+                            ds.selection_background()
+                        } else {
+                            ds.panel
+                        }))
                         .border_b_1()
                         .border_color(rgb(ds.border))
                         .on_mouse_down(
                             MouseButton::Left,
-                            cx.listener(move |this, _, _, cx| {
-                                this.activate_catalog_entry(entry);
+                            cx.listener(move |this, _, window, cx| {
+                                this.activate_catalog_entry(entry, window, cx);
                                 cx.stop_propagation();
                                 cx.notify();
                             }),
@@ -106,7 +113,15 @@ impl DawApp {
                                 } else {
                                     liquid_color
                                 }))
-                                .child(if unavailable { "pronto" } else { "+ añadir" }),
+                                .child(if unavailable {
+                                    "pronto"
+                                } else if entry.action.parameters().is_some() {
+                                    "↵ parámetros"
+                                } else if entry.kind == EntryKind::Action {
+                                    "↵ ejecutar"
+                                } else {
+                                    "+ añadir"
+                                }),
                         )
                 }))
                 .into_any_element()

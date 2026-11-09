@@ -10,6 +10,40 @@
 > Esta filosofía guía las próximas implementaciones. Ahora estamos organizando la arquitectura;
 > el registro de plugins, el sistema común de acciones/eventos y los mapeos aún no están implementados.
 
+## Explorador de bibliotecas
+
+El explorador de bibliotecas se abre con **e en modo Normal**, a la izquierda del Arrangement.
+Su separador permite reducirlo hasta ocultarlo; e lo recupera. «Añadir biblioteca» guarda
+accesos a carpetas hasta quitarlos explícitamente. Doble clic o Enter sobre audio/MIDI lo
+inserta en la pista activa, en el cursor; la operación también está en el catálogo y los
+iconos como `explorer.insert` o `file.import` (con ruta). «Recargar» actualiza los archivos
+tras cambios externos. El árbol headless y su entidad visual están separados del transporte;
+lecturas en background, filas virtualizadas y vista cacheada. Véase `docs/ARCHITECTURE.md`.
+
+Los formularios de acciones usan [GPUI Kit](https://gpui-kit.com/) 0.9.0 (Apache-2.0): campos
+de texto, cantidades musicales, casillas y botones. El adaptador está en
+`src/ui/components/parameter_field.rs`; el tema Hay se proyecta desde `src/ui/kit.rs`.
+El contrato de parámetros y las operaciones del DAW siguen siendo independientes de la UI.
+
+## Track FX sin cambiar Add
+
+El **[+]**, **A** y **:add** siguen abriendo el mismo catálogo general. Elegir **Hay Utility**
+inserta un efecto en la pista, dentro del contenedor FX seleccionado o después del efecto activo.
+El botón **FX** junto al [+], el menú de pista o **:fx.show** abren el árbol. Archivos y FX
+comparten el mismo componente visual, colores, filas, sangría y lista virtualizada.
+
+- **A / Add en el árbol:** catálogo existente, inicialmente en Componentes; Tab conserva las
+  demás categorías. El encabezado indica pista y contenedor destino.
+- **Doble clic / Enter:** parámetros. **B:** bypass. **F2:** nombre. **Ctrl+D:** duplicar.
+- **Delete:** quitar. Clic derecho ofrece las mismas acciones y contenedores serie/paralelo.
+- **Arrastrar:** bordes para ordenar; centro de contenedor para entrar; raíz para sacar.
+- Selección, expansión y scroll se recuerdan por pista; el panel es redimensionable.
+
+Utility tiene procesamiento real en Arrangement/piano y exportación. En serie se multiplican
+sus ganancias; en paralelo se suman ramas con la misma entrada. VST3 y otros efectos del
+catálogo todavía necesitan su procesador/host; no se simulan. El Utility de salida sigue en
+**:utility**, independiente del árbol. El proyecto aún no guarda estas cadenas al reiniciar.
+
 ## Principios que guían el desarrollo
 
 1. **Plugins desde la base.** Un plugin aporta capacidades al DAW: primitivos, componentes,
@@ -76,7 +110,8 @@ Teclado / ratón / automatización / scripts
 
 | Pieza actual | Papel en esta filosofía | Pendiente |
 | --- | --- | --- |
-| `Volume` con FunDSP | Primer primitivo que expondrá un plugin | Registro e instanciación mediante el host |
+| `Volume` con FunDSP | Primitivo de ganancia usado por Hay Utility | Más capacidades reutilizables |
+| `Hay Utility` (`hay.utility`) | Primer dispositivo interno: fábrica → Component → Volume; slot real de salida | Host de efectos generales y persistencia |
 | `Primitive` y metadatos de parámetros | Base del contrato DSP | Contratos de fuentes de control y conexiones |
 | `Component` y `NodeId` | Composición serial e identidad local de instancias | Direccionamiento completo entre componentes/plugins |
 | `ControlEvent` | Actualmente solicita cambios de parámetro o bypass | Separar solicitudes/acciones de eventos que notifican resultados |
@@ -110,6 +145,20 @@ programación de eventos offline.
 
 ## Canvas del Arrangement
 
+Clic derecho en una cabecera abre las propiedades y acciones de pista: insertar, renombrar,
+duplicar, agrupar/desagrupar, mute, solo, color y eliminar. **Ctrl+clic** selecciona varias
+pistas y **Shift+clic** un rango. Los grupos reúnen sus hijos y muestran `[activas/total]`;
+en Arrangement, **Delete** o **dd** en modo **Normal** eliminan las pistas seleccionadas
+y sus clips. **Esc** cancela la primera `d`. Los grupos incluyen sus pistas hijas al eliminar;
+no contienen clips propios. Al eliminar todas las pistas, el **+** central abre el buscador
+de **A / :add** para insertar una pista o elegir un instrumento. Las cadenas de Utility por
+pista/grupo se administran en Track FX; el host VST3 y los buses generales siguen pendientes.
+
+La flecha **▾/▸** de la cabecera pliega o despliega un grupo en una sola fila. Para ahorrar
+espacio vertical, selecciona pistas y usa clic derecho → **Altura · compacta**, **predeterminada**,
+**amplia** o **personalizada**. Solo cambia su presentación; los clips y el audio se conservan.
+Estos ajustes son de sesión y acompañan las pistas al reordenar o duplicar.
+
 [`src/ui/timeline/`](src/ui/timeline/) usa `gpui::canvas`, `Window::paint_quad` y el sistema de
 texto de la revisión de GPUI fijada en Cargo. Dibuja carriles continuos, regla y cursor de edición.
 Los headers y carriles comparten el desplazamiento vertical de GPUI; la regla permanece fija.
@@ -117,10 +166,20 @@ Los headers y carriles comparten el desplazamiento vertical de GPUI; la regla pe
 - **Click** en un carril: seleccionar pista y colocar el cursor; en la regla: colocar el cursor.
 - **Rueda**: desplazar pistas; **Shift + rueda** o gesto horizontal: desplazar el tiempo.
 - **Ctrl + rueda**: zoom alrededor del puntero. Sobre la regla, la rueda sola desplaza el tiempo.
+- **Touchpad:** pellizcar acerca/aleja alrededor del puntero; deslizar dos dedos mueve
+  tiempo y pistas, también en diagonal. Usa los gestos nativos de GPUI (Wayland/X11
+  cuando el sistema los entrega), sin bibliotecas adicionales.
+- En el **piano roll**, los mismos gestos mueven tiempo y registro de notas; **0** o
+  **Ajustar vista** restaura el encuadre inicial. También funcionan en su ventana separada.
+- **Windows/Super + dos dedos hacia abajo:** filas más altas en el piano roll.
+  **Alt + dos dedos hacia arriba:** notas más anchas. El gesto contrario reduce cada
+  dimensión; solo cambia la escala visual, conservando tono y duración.
 - En modo NORMAL: **h/l** o flechas horizontales mueven el cursor un pulso; **j/k** o flechas
   verticales seleccionan pista; **+ / −** hacen zoom; **Home** vuelve al inicio.
 - **R** o **:reload** recargan `~/.jaybu.profile`. `TIMELINE_PIXELS_PER_BEAT` define la escala
   inicial; alturas, colores y tipografía de la regla también proceden del perfil.
+- **Configuración → Apariencia → Contraste de selección** ajusta y guarda la intensidad.
+  En el perfil: `SELECTION_CONTRAST=0.18` (rango `0.0–0.4`; mayor valor, mayor contraste).
 
 Esta vista usa pulsos en **4/4 a 120 BPM**. El click es libre, sin snapping;
 el grid adapta su densidad al zoom. El cursor azul es de edición y el verde muestra la posición
@@ -131,12 +190,35 @@ se leen del perfil visual; no interviene en el transporte musical.
 
 ## Primer archivo reproducible
 
+### Exportar el Arrangement
+
+```text
+:export -n 93.[mp3,wave] -master
+:export -n 93.wav -individuals -sr 48000 -bits 24
+```
+
+Render offline en segundo plano mediante **libsndfile + LAME + libsoxr**; audio y MIDI,
+stems alineados, rango/cola, mono/estéreo, frecuencia, profundidad y MP3 CBR/VBR configurables.
+Por defecto escribe en `exports/` y respeta mute/solo y niveles de pista. `:export.help`
+muestra las opciones y `:export.cancel` cancela. [Guía de exportación](docs/EXPORT.md).
+
+Al ejecutar **Exportar audio** desde el buscador o su icono aparece un formulario flotante
+con los parámetros de esa exportación y botón **OK**. Parte de las preferencias guardadas;
+cancelarlo o editar sus campos no cambia esas preferencias. Las cantidades muestran sus
+unidades (beats, segundos, Hz), admitiendo fracciones cuando corresponde.
+El contrato reutilizable está en `src/actions.rs`; **Utility · ajustar ganancia** usa el mismo
+formulario para una cantidad en ×. Las invocaciones escritas siguen ejecutándose directamente.
+
+### Importar y escuchar
+
 Arrastra **un archivo mono o estéreo** sobre un carril. Se coloca en el punto donde lo sueltas,
 se decodifica en segundo plano mediante **Symphonia 0.6.1** y aparece su waveform.
 Este incremento mantiene un único clip: importar otro sustituye al anterior cuando termina de decodificarse.
 Formatos habilitados: WAV/PCM, FLAC, MP3, OGG/Vorbis y AAC/M4A.
 
-- **Space** en modo NORMAL o **▶**: reproducir desde el cursor de edición.
+- **Space** en modo NORMAL/INSERT o **▶**: reproducir desde el cursor de edición.
+  También funciona con foco en el explorador, piano roll o instrumento, incluidas sus ventanas
+  separadas. Mantenerlo pulsado no repite Play/Stop; al editar texto conserva su función de espacio.
 - **Arrastrar el clip con el botón izquierdo**: moverlo en el tiempo y entre pistas, sin snapping.
   Conserva el punto de agarre y detiene la reproducción al comenzar.
 - **Space** de nuevo o **■**: detener. Un click en el timeline detiene y recoloca el cursor.
@@ -196,7 +278,7 @@ categorías: instrumento, primitivo, componente y acción. El overlay y su estad
 `ui/views/palette.rs` y `ui/palette.rs`; las acciones se traducen a los comandos existentes.
 
 - **Upright Piano KW** asigna el piano a la pista seleccionada y abre la vista Instrument;
-  es el único instrumento implementado. La cabecera muestra `Upright Piano KW` en esa pista.
+  comparte el catálogo con Hay Sampler. La cabecera muestra `Upright Piano KW` en esa pista.
 - **Volume** y **Componente serial** aparecen como metadatos: todavía no se instancian
   desde el buscador ni se asignan a una pista.
 - **Reproducción**, **Detener**, **Patrón**, **Arrangement**, **Mixer** y **Recargar diseño**
@@ -207,10 +289,22 @@ seleccionada. Como solo existe una instancia de piano, asignarlo a otra pista lo
 El buscador todavía no crea instancias nuevas ni es un host de plugins. La asignación
 vive en `elevate::musical::track`, no en la vista.
 
-Haz clic en **◈ Hay** para abrir **Configuración**. Su primera opción muestra un overlay
-translúcido con los atajos y motions Vim-like disponibles en las vistas actuales; **Esc**
-lo cierra. La ayuda se mantiene sincronizada con los bindings existentes, no añade
-comandos nuevos.
+Haz clic en **◈ Hay** para abrir **Configuración**. Allí se eligen el **tema de color** y
+el **efecto del cursor**, con guardado automático en `~/.jaybu.profile` para conservarlos
+al reiniciar y recargar. Estos controles ya no ocupan la barra superior. El panel también
+incluye la ayuda de atajos y motions Vim-like; **Esc** lo cierra.
+
+## Hay Sampler
+
+Usa **Insertar sampler** en `[+]` o en el menú de pistas, o escribe `:sa`, para crear
+una pista con Hay Sampler y abrir sus controles. Si ya existe una pista con el
+instrumento, la acción abre esa pista: por ahora hay una instancia por sesión.
+
+Desde el [+] de una pista elige **Hay Sampler** (o `:sampler`) y carga/arrastra audio al
+panel. Waveform, Classic/1-Shot, inicio/final/loop, afinación, voces, filtro LP12 y ADSR,
+con controles y estética de Hay. Las notas del teclado y piano roll utilizan sfizz;
+la exportación captura el mismo sample y parámetros. Una instancia por sesión; Warp,
+Slice y mezcla multipista live siguen pendientes. [Uso y construcción nativa](docs/SAMPLER.md).
 
 ## Primer instrumento: piano
 
@@ -251,7 +345,8 @@ Acción: Note On / Note Off
 
 - **a w s e d f t g y h u j k**: C4…C5 cromático; mantener una tecla sostiene la nota.
 - **Click** sobre una tecla blanca o negra: la sostiene hasta soltar el botón.
-- **Space** libera todas las notas. **b** compara bypass y **[/]** ajustan Volume.
+- **Space** reproduce/detiene el transporte; **Esc** libera las notas del instrumento.
+  **b** compara bypass y **[/]** ajustan Volume.
 - La nota y el evento resultante aparecen en la barra de estado; la tecla pulsada se ilumina.
 - La primera nota abre el dispositivo a la frecuencia predeterminada (48 kHz en el entorno actual).
   El callback aplica las notas, renderiza bloques acotados y mantiene la polifonía dentro del hilo de audio.

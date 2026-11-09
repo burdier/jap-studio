@@ -87,6 +87,32 @@ impl Default for MidiMapper {
 }
 
 impl MidiMapper {
+    /// Sigue la identidad de las pistas después de insertar, eliminar o reordenar.
+    pub fn remap_tracks(&mut self, mapping: &[Option<usize>]) {
+        let remap = |target| match target {
+            MidiBindTarget::TrackVolume(i) => mapping
+                .get(i)
+                .copied()
+                .flatten()
+                .map(MidiBindTarget::TrackVolume),
+            MidiBindTarget::TrackPan(i) => mapping
+                .get(i)
+                .copied()
+                .flatten()
+                .map(MidiBindTarget::TrackPan),
+            other => Some(other),
+        };
+        self.armed_target = self.armed_target.and_then(remap);
+        self.bindings.retain_mut(|binding| {
+            if let Some(target) = remap(binding.target) {
+                binding.target = target;
+                true
+            } else {
+                false
+            }
+        });
+    }
+
     pub fn new() -> Self {
         // Mapeos MIDI 1.0 estándar hacia los parámetros del instrumento (según orden en SPECS):
         // 1=Volume(CC7), 2=Expression(CC11), 3=Pan(CC10), 4=Modulation(CC1),

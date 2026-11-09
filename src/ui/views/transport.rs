@@ -2,6 +2,7 @@
 use super::super::{
     CenterView, DawApp,
     components::button::{icon_button, pill_button},
+    icons::ToolbarScope,
 };
 use elevate::musical::time::DEFAULT_BPM;
 use gpui::{Context, IntoElement, MouseButton, div, prelude::*, px, rgb};
@@ -99,7 +100,16 @@ impl DawApp {
                             .ml_4()
                             .text_xs()
                             .text_color(rgb(ds.accent))
-                            .child(format!("Volume {:.2}x", self.gain)),
+                            .cursor_pointer()
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _, _, cx| {
+                                    this.open_utility();
+                                    cx.stop_propagation();
+                                    cx.notify();
+                                }),
+                            )
+                            .child(format!("Utility {:.2}x", self.utility.state().gain)),
                     )
                     .child(icon_button(ds, "−", ds.text).on_mouse_down(
                         MouseButton::Left,
@@ -118,7 +128,11 @@ impl DawApp {
                     .child(
                         div()
                             .text_xs()
-                            .text_color(rgb(if self.bypass { ds.warning } else { ds.success }))
+                            .text_color(rgb(if self.utility.state().bypassed {
+                                ds.warning
+                            } else {
+                                ds.success
+                            }))
                             .on_mouse_down(
                                 MouseButton::Left,
                                 cx.listener(|this, _, _, cx| {
@@ -126,9 +140,16 @@ impl DawApp {
                                     cx.notify();
                                 }),
                             )
-                            .child(if self.bypass { "BYPASS" } else { "FX ON" }),
+                            .child(if !self.utility.state().inserted {
+                                "SIN FX"
+                            } else if self.utility.state().bypassed {
+                                "BYPASS"
+                            } else {
+                                "FX ON"
+                            }),
                     ),
             )
+            .child(self.render_toolbar_bound_buttons(ToolbarScope::Transport, false, cx))
             .child(
                 div()
                     .flex()
@@ -142,7 +163,7 @@ impl DawApp {
                     )
                     .child(div().text_xs().text_color(rgb(ds.muted)).child(
                         match self.center_view {
-                            CenterView::Instrument => "Space: liberar notas",
+                            CenterView::Instrument => "Space: play/stop · Esc: liberar notas",
                             CenterView::Session => "Space: play/stop · patrón en loop",
                             _ => "Space: play/stop",
                         },

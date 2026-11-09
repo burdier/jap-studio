@@ -10,16 +10,25 @@ impl Timeline {
         &self,
         area: TimelineArea,
         track_count: usize,
-        selected_track: usize,
+        selected_tracks: Vec<bool>,
         design: &DesignSystem,
     ) -> impl IntoElement {
+        if area == TimelineArea::TimeRuler {
+            return self.render_time_ruler(design).into_any_element();
+        }
         let bounds_handle = self.bounds(area).clone();
         let viewport = self.viewport;
+        let layout = self.layout.clone().unwrap_or_else(|| {
+            crate::ui::track_layout::TrackLayout::uniform(track_count, design.track_header_height)
+        });
+        let import_preview = self.import_preview.clone();
         let edit_beat = self.edit_beat;
-        let design = *design;
+        let design = design.clone();
         let clip = self.clip.clone();
+        let other_audio_clips = self.other_audio_clips.clone();
         let midi_clip = self.midi_clip.clone();
         let other_midi_clips = self.other_midi_clips.clone();
+        let selected_midi = self.selected_midi.clone();
         let playhead = self.playhead;
         let hover_track = self.hover_track;
         let hover_dragging = self.hover_dragging();
@@ -76,24 +85,15 @@ impl Timeline {
                         }),
                     ));
                     if area == TimelineArea::Lanes {
-                        let track_colors = [
-                            design.accent,
-                            design.success,
-                            design.warning,
-                            design.danger,
-                            design.cyan,
-                            design.orange,
-                            design.pink,
-                            design.accent,
-                        ];
-                        for track in 0..track_count {
-                            let top = bounds.top() + px(track as f32 * design.track_header_height);
+                        for row in &layout.rows {
+                            let track = row.track;
+                            let top = bounds.top() + px(row.top);
                             let lane = Bounds::new(
                                 point(bounds.left(), top),
-                                size(bounds.size.width, px(design.track_header_height)),
+                                size(bounds.size.width, px(row.height)),
                             );
-                            let color = if track == selected_track {
-                                design.panel_hover
+                            let color = if selected_tracks.get(track).copied().unwrap_or(false) {
+                                design.selection_background()
                             } else if track % 2 == 0 {
                                 design.bg
                             } else {
@@ -101,7 +101,7 @@ impl Timeline {
                             };
                             window.paint_quad(fill(lane, rgb(color)));
                             if hover_track == Some(track) {
-                                let t_color = track_colors[track.min(track_colors.len() - 1)];
+                                let t_color = design.track_color(track);
                                 let alpha = if hover_dragging { 0x32 } else { 0x12 };
                                 window.paint_quad(fill(lane, rgba((t_color << 8) | alpha)));
                                 if hover_dragging {
@@ -159,14 +159,44 @@ impl Timeline {
                         ));
                     }
                     if area == TimelineArea::Lanes {
+                        for clip in &other_audio_clips {
+                            waveform::paint(
+                                clip, false, viewport, bounds, &layout, &design, window, cx,
+                            );
+                        }
                         if let Some(clip) = &clip {
-                            waveform::paint(clip, viewport, bounds, &design, window, cx);
+                            waveform::paint(
+                                clip, true, viewport, bounds, &layout, &design, window, cx,
+                            );
                         }
                         for clip in &other_midi_clips {
-                            waveform::paint_midi(clip, viewport, bounds, &design, window, cx);
+                            waveform::paint_midi(
+                                clip,
+                                selected_midi.contains(&clip.id),
+                                viewport,
+                                bounds,
+                                &layout,
+                                &design,
+                                window,
+                                cx,
+                            );
                         }
                         if let Some(midi_clip) = &midi_clip {
-                            waveform::paint_midi(midi_clip, viewport, bounds, &design, window, cx);
+                            waveform::paint_midi(
+                                midi_clip,
+                                selected_midi.contains(&midi_clip.id),
+                                viewport,
+                                bounds,
+                                &layout,
+                                &design,
+                                window,
+                                cx,
+                            );
+                        }
+                    }
+                    if area == TimelineArea::Lanes && cx.has_active_drag() {
+                        if let Some(preview) = &import_preview {
+                            preview.paint(viewport, bounds, &layout, &design, window, cx);
                         }
                     }
                     for (origin, label) in labels {
@@ -238,5 +268,6 @@ impl Timeline {
             },
         )
         .size_full()
+        .into_any_element()
     }
 }

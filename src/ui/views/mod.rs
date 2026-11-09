@@ -1,6 +1,11 @@
 //! Una vista por archivo. El comportamiento reutilizable vive en los controladores de ui/.
+mod action_form;
 mod arrangement;
 mod chrome;
+mod clip_menu;
+mod empty_arrangement;
+mod icon_picker;
+mod icon_picker_browser;
 mod instrument;
 mod instrument_params;
 mod mixer;
@@ -8,8 +13,16 @@ mod palette;
 mod pattern;
 mod piano_roll;
 mod settings;
+mod settings_appearance;
+mod settings_export;
+mod settings_shortcuts;
+mod settings_tracks;
+mod toolbar;
+mod track_color_menu;
+mod track_menu;
 pub(super) mod tracks;
 mod transport;
+mod utility;
 mod workspace;
 
 use super::{CenterView, DawApp};
@@ -21,7 +34,7 @@ impl DawApp {
         let (label, help) = match self.center_view {
             CenterView::Arrangement => (
                 "ARRANGEMENT",
-                "Click: cursor | Shift+wheel: scroll | Ctrl+wheel: zoom",
+                "Touchpad: 2 dedos desplazar · pellizcar zoom | Ctrl+rueda: zoom",
             ),
             CenterView::Instrument => ("INSTRUMENT", elevate::musical::controller::HINT),
             CenterView::Session => (

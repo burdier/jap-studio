@@ -8,6 +8,10 @@ use gpui::{Context, IntoElement, MouseButton, MouseDownEvent, div, prelude::*, p
 
 impl DawApp {
     pub(in crate::ui) fn render_arrangement(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.tracks.is_empty() {
+            return self.render_empty_arrangement(cx).into_any_element();
+        }
+        let layout = self.track_layout();
         let ds = &self.ds;
         let dragging_headers = matches!(self.split_drag, Some(SplitDrag::TrackHeaders { .. }));
         div()
@@ -71,7 +75,7 @@ impl DawApp {
                         div()
                             .flex()
                             .w_full()
-                            .h(px(self.tracks.len() as f32 * ds.track_header_height))
+                            .h(px(layout.height))
                             .child(
                                 div()
                                     .w(px(ds.track_header_width))
@@ -85,8 +89,10 @@ impl DawApp {
                                     .border_color(rgb(ds.border))
                                     .overflow_hidden()
                                     .children(
-                                        (0..self.tracks.len())
-                                            .map(|i| self.render_track_header(i, cx)),
+                                        layout
+                                            .rows
+                                            .iter()
+                                            .map(|row| self.render_track_header(row.track, cx)),
                                     ),
                             )
                             .child(
@@ -131,6 +137,49 @@ impl DawApp {
                             ),
                     ),
             )
+            .child(
+                div()
+                    .h(px(ds.timeline_bar_height.max(28.0)))
+                    .flex_shrink_0()
+                    .flex()
+                    .child(
+                        div()
+                            .w(px(ds.track_header_width))
+                            .h_full()
+                            .flex_shrink_0()
+                            .flex()
+                            .items_center()
+                            .px_3()
+                            .bg(rgb(ds.panel_dark))
+                            .border_1()
+                            .border_color(rgb(ds.border))
+                            .rounded_bl(px(ds.radius_lg))
+                            .child(
+                                div()
+                                    .text_size(px(ds.font_size_xs))
+                                    .text_color(rgb(ds.muted))
+                                    .child("MIN:SEG"),
+                            ),
+                    )
+                    .child(div().w(px(7.0)).h_full().flex_shrink_0())
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .h_full()
+                            .border_x_1()
+                            .border_b_1()
+                            .border_color(rgb(ds.border))
+                            .rounded_br(px(ds.radius_lg))
+                            .overflow_hidden()
+                            .child(self.render_timeline_area(
+                                TimelineArea::TimeRuler,
+                                self.tracks.len(),
+                                cx,
+                            )),
+                    ),
+            )
+            .into_any_element()
     }
 
     fn render_timeline_area(
@@ -150,9 +199,46 @@ impl DawApp {
                     this.stop_audio();
                     this.timeline.end_clip_drag();
                     if area == TimelineArea::Lanes {
+                        if event.modifiers.control {
+                            if this
+                                .timeline
+                                .activate_midi_clip_at(event.position, this.ds.track_header_height)
+                            {
+                                this.timeline.select_active_midi(true);
+                                this.cursor_row = this.timeline.midi_clip.as_ref().unwrap().track;
+                                this.status_message = format!(
+                                    "{} clips MIDI seleccionados · :materialize",
+                                    this.timeline.selected_midi.len()
+                                );
+                            }
+                            cx.stop_propagation();
+                            cx.notify();
+                            return;
+                        }
+                        if let Some(hit) = this
+                            .timeline
+                            .hit_clip_bar(event.position, this.ds.track_header_height)
+                        {
+                            this.handle_clip_bar_hit(hit, event.position, window.viewport_size());
+                            window.focus(&this.focus_handle, cx);
+                            cx.stop_propagation();
+                            cx.notify();
+                            return;
+                        }
                         let midi_hit = this
                             .timeline
                             .activate_midi_clip_at(event.position, this.ds.track_header_height);
+                        if midi_hit {
+                            this.timeline.select_active_midi(false);
+                        } else {
+                            this.timeline.selected_midi.clear();
+                        }
+                        if !midi_hit {
+                            let _ = this.timeline.activate_audio_clip_at(
+                                event.position,
+                                this.ds.track_header_height,
+                            );
+                        }
                         if midi_hit && (this.piano_roll.open || event.click_count == 2) {
                             this.open_piano_roll();
                         }
@@ -171,7 +257,7 @@ impl DawApp {
                         this.ds.track_header_height,
                         track_count,
                     ) {
-                        this.cursor_row = track;
+                        this.select_track(track, false, event.modifiers.shift);
                     }
                     cx.notify();
                 }),
@@ -181,14 +267,22 @@ impl DawApp {
                     .on_mouse_down(
                         MouseButton::Right,
                         cx.listener(|this, event: &MouseDownEvent, window, cx| {
-                            this.open_midi_clip_menu(event.position, window.viewport_size());
+                            this.open_clip_menu(event.position, window.viewport_size());
                             window.focus(&this.focus_handle, cx);
                             cx.stop_propagation();
                             cx.notify();
                         }),
                     )
+                    .on_drag_move(cx.listener(
+                        |this, event: &gpui::DragMoveEvent<gpui::ExternalPaths>, _, cx| {
+                            this.timeline.preview_import(event.drag(cx).paths());
+                            cx.notify();
+                        },
+                    ))
                     .on_drop(
                         cx.listener(move |this, paths: &gpui::ExternalPaths, window, cx| {
+                            this.timeline.import_preview = None;
+                            cx.notify();
                             if paths.paths().len() != 1 {
                                 this.status_message =
                                     "Arrastra un solo archivo en este incremento".into();
@@ -212,15 +306,25 @@ impl DawApp {
                         }),
                     )
             })
-            .on_scroll(cx.listener(move |this, event, _, cx| {
-                if this.timeline.scroll(event, area) {
-                    cx.stop_propagation();
-                    cx.notify();
-                }
+            .on_pinch(cx.listener(move |this, event, _, cx| {
+                this.timeline.pinch(event, area);
+                cx.stop_propagation();
+                cx.notify();
             }))
-            .child(
-                self.timeline
-                    .render(area, track_count, self.cursor_row, &self.ds),
-            )
+            .on_scroll(cx.listener(move |this, event, _, cx| {
+                let vertical = this.timeline.scroll(event, area);
+                let mut offset = this.track_scroll.offset();
+                offset.y = (offset.y + px(vertical))
+                    .clamp(-this.track_scroll.max_offset().y.max(px(0.0)), px(0.0));
+                this.track_scroll.set_offset(offset);
+                cx.stop_propagation();
+                cx.notify();
+            }))
+            .child(self.timeline.render(
+                area,
+                track_count,
+                (0..track_count).map(|i| self.track_selected(i)).collect(),
+                &self.ds,
+            ))
     }
 }

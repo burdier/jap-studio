@@ -20,6 +20,9 @@ pub(in crate::ui) fn modal_backdrop(
         .flex()
         .items_center()
         .justify_center()
+        .occlude()
+        .on_pinch(|_, _, cx| cx.stop_propagation())
+        .on_scroll(|_, _, cx| cx.stop_propagation())
         .on_mouse_down(MouseButton::Left, move |event, window, cx| {
             on_close(event, window, cx)
         })

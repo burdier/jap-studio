@@ -1,6 +1,12 @@
 //! Pistas del proyecto. Sin voces, dispositivos ni coordenadas de pantalla.
 //! La asignación de instrumento es estado musical; la UI solo la presenta.
-use super::model::InstrumentId;
+use super::{fx::FxChain, model::InstrumentId};
+use std::{
+    borrow::Cow,
+    sync::atomic::{AtomicU32, Ordering},
+};
+mod management;
+pub use management::{TrackEdit, edit_tracks};
 
 pub const TRACK_COUNT: usize = 8;
 
@@ -13,6 +19,7 @@ pub enum TrackKind {
     Synth,
     Effect,
     Audio,
+    Group,
 }
 
 impl TrackKind {
@@ -22,17 +29,57 @@ impl TrackKind {
             Self::Synth => "Synth",
             Self::Effect => "Effect",
             Self::Audio => "Audio",
+            Self::Group => "Grupo",
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Track {
     pub id: TrackId,
-    pub name: &'static str,
+    pub name: Cow<'static, str>,
     pub kind: TrackKind,
-    /// Instrumento asignado. El prototipo solo tiene una instancia de piano.
+    /// Instrumento asignado. El host conserva una instancia de piano y una de sampler.
     pub instrument: Option<InstrumentId>,
+    pub muted: bool,
+    pub solo: bool,
+    pub parent: Option<TrackId>,
+    /// Topología FX recursiva; datos de proyecto, sin instancias DSP.
+    pub chain: FxChain,
+}
+
+/// Identidad de plugin. La variante VST3 reserva el contrato; todavía no existe su host.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TrackDevice {
+    Hay { catalog_id: String },
+    Vst3 { class_id: String },
+}
+
+impl Track {
+    pub fn new(name: impl Into<String>, kind: TrackKind) -> Self {
+        static NEXT: AtomicU32 = AtomicU32::new(9);
+        Self {
+            id: TrackId(NEXT.fetch_add(1, Ordering::Relaxed)),
+            name: Cow::Owned(name.into()),
+            kind,
+            instrument: None,
+            muted: false,
+            solo: false,
+            parent: None,
+            chain: FxChain::new(),
+        }
+    }
+    pub fn accepts_clips(&self) -> bool {
+        self.kind != TrackKind::Group
+    }
+
+    pub fn is_audible(&self, solo_active: bool) -> bool {
+        !self.muted && (!solo_active || self.solo)
+    }
+}
+
+pub fn has_solo(tracks: &[Track]) -> bool {
+    tracks.iter().any(|track| track.solo)
 }
 
 pub const DEMO_TRACKS: [Track; TRACK_COUNT] = [
@@ -49,9 +96,13 @@ pub const DEMO_TRACKS: [Track; TRACK_COUNT] = [
 const fn track(id: u32, name: &'static str, kind: TrackKind) -> Track {
     Track {
         id: TrackId(id),
-        name,
+        name: Cow::Borrowed(name),
         kind,
         instrument: None,
+        muted: false,
+        solo: false,
+        parent: None,
+        chain: FxChain::new(),
     }
 }
 
@@ -77,7 +128,7 @@ pub fn assign_instrument(
 
 #[cfg(test)]
 mod tests {
-    use super::{DEMO_TRACKS, TRACK_COUNT, assign_instrument};
+    use super::{DEMO_TRACKS, TRACK_COUNT, assign_instrument, has_solo};
     use crate::musical::model::InstrumentId;
     use std::collections::HashSet;
 
@@ -103,5 +154,15 @@ mod tests {
         assert_eq!(assign_instrument(&mut tracks, 4, piano), None);
         assert_eq!(tracks[4].instrument, Some(piano));
         assert_eq!(assign_instrument(&mut tracks, TRACK_COUNT, piano), None);
+    }
+
+    #[test]
+    fn mute_and_solo_define_a_reproducible_audibility_policy() {
+        let mut tracks = DEMO_TRACKS;
+        tracks[1].muted = true;
+        tracks[4].solo = true;
+        assert!(!tracks[0].is_audible(has_solo(&tracks)));
+        assert!(!tracks[1].is_audible(has_solo(&tracks)));
+        assert!(tracks[4].is_audible(has_solo(&tracks)));
     }
 }

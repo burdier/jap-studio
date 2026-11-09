@@ -12,6 +12,9 @@ use std::rc::Rc;
 
 impl DawApp {
     pub(in crate::ui) fn render_instrument(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.sampler_selected() {
+            return self.render_sampler(cx).into_any_element();
+        }
         let ds = &self.ds;
         let name = self.instrument.active_name().to_string();
         let credits = self.instrument.active_credits().to_string();
@@ -120,6 +123,7 @@ impl DawApp {
                     .child(keyboard),
             )
             .child(div().flex_shrink_0().h(px(ds.padding_lg)))
+            .into_any_element()
     }
 
     fn render_bank_and_preset_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {

@@ -3,10 +3,14 @@
 
 mod assets;
 pub(crate) mod drums;
+pub(crate) mod export;
+mod fx_gain;
 mod midi_in;
 mod output;
 pub(crate) mod piano;
 mod playback;
+pub(crate) mod sampler;
+mod stereo_pan;
 
 pub(crate) use assets::{AudioClip, AudioFile, PEAK_FRAMES};
 pub(crate) use drums::DrumPlayer;

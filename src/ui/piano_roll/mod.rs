@@ -2,24 +2,18 @@
 mod actions;
 mod demo;
 pub(in crate::ui) mod geometry;
+mod navigation;
+#[cfg(test)]
+mod navigation_tests;
 mod window;
-
-pub(super) use window::DetachedPianoRoll;
 
 use elevate::musical::{
     model::NoteId,
     time::{PPQ, Tick},
 };
 use geometry::Grid;
-use gpui::{Pixels, Point};
+use navigation::RollViewport;
 use std::{cell::Cell, rc::Rc};
-
-#[derive(Clone, Copy)]
-pub(super) struct InsertMenu {
-    pub position: Point<Pixels>,
-    pub track: usize,
-    pub beat: f64,
-}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum RollTool {
@@ -37,6 +31,9 @@ pub(super) enum RollAction {
     Follow,
     Velocities,
     HighlightScale,
+    ResetView,
+    ZoomWidth(f64),
+    ZoomHeight(f64),
     ToggleWindow,
     Close,
     Preview(&'static str),
@@ -44,7 +41,6 @@ pub(super) enum RollAction {
 
 pub(super) struct PianoRoll {
     pub open: bool,
-    pub menu: Option<InsertMenu>,
     pub tool: RollTool,
     pub cursor: Tick,
     pub selected: Option<NoteId>,
@@ -53,6 +49,7 @@ pub(super) struct PianoRoll {
     pub velocities: bool,
     pub highlight_scale: bool,
     pub grid: Rc<Cell<Grid>>,
+    pub viewport: RollViewport,
     pub hint: String,
 }
 
@@ -60,7 +57,6 @@ impl Default for PianoRoll {
     fn default() -> Self {
         Self {
             open: false,
-            menu: None,
             tool: RollTool::Select,
             cursor: Tick(13 * PPQ),
             selected: None,
@@ -69,7 +65,8 @@ impl Default for PianoRoll {
             velocities: true,
             highlight_scale: true,
             grid: Rc::default(),
-            hint: "h/l: tiempo · j/k: nota · v/b/e/p/m: herramienta · Esc: volver".into(),
+            viewport: RollViewport::default(),
+            hint: "Super + 2 dedos: altura · Alt + 2 dedos: ancho · 0: ajustar vista".into(),
         }
     }
 }

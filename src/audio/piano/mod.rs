@@ -1,9 +1,13 @@
 //! Adaptador SoundFont (`libfluidsynth` C por `dlopen` con respaldo `RustySynth`) → Volume → CPAL.
+mod backend;
 mod fluidsynth;
+mod offline;
 mod render;
 mod soundfont;
 
 use super::output::choose_output_config;
+use super::stereo_pan::StereoPan;
+pub(crate) use backend::SynthBackend;
 use cpal::{
     SampleFormat,
     traits::{HostTrait, StreamTrait},
@@ -14,6 +18,7 @@ use elevate::musical::{
     time::{PPQ, Tick, TimeBase},
 };
 pub(crate) use fluidsynth::is_available as fluidsynth_available;
+pub(crate) use offline::{OfflinePiano, PianoSnapshot};
 use rtrb::{Producer, RingBuffer};
 pub(crate) use soundfont::{
     PresetEntry, SoundFontBank, discover as discover_soundfonts, load_path as load_soundfont,
@@ -31,6 +36,7 @@ const COMMAND_QUEUE_CAP: usize = 512;
 
 #[derive(Clone)]
 enum NoteCommand {
+    SamplerControl(u8, f32),
     On {
         note: u8,
         velocity: u8,
@@ -73,7 +79,9 @@ impl Default for PianoSettings {
 
 struct InstrumentState {
     gain: AtomicU32,
-    bypass: AtomicBool,
+    pan: StereoPan,
+    fx: super::fx_gain::FxGain,
+    utility: elevate::devices::utility_slot::UtilitySlot,
     failed: AtomicBool,
     plan_frame: AtomicU64,
     plan_playing: AtomicBool,
@@ -91,7 +99,9 @@ impl PianoPlayer {
     pub fn start(
         soundfont_path: &Path,
         gain: f32,
-        bypass: bool,
+        utility: elevate::devices::utility_slot::UtilitySlot,
+        pan: f32,
+        fx_gain: f32,
         settings: PianoSettings,
     ) -> Result<Self, String> {
         let sound_font = soundfont::load_path(soundfont_path)?;
@@ -100,52 +110,80 @@ impl PianoPlayer {
             .ok_or("No hay dispositivo de salida predeterminado")?;
         let config = choose_output_config(&device, None)?;
         let sample_rate = config.sample_rate();
+        let backend = SynthBackend::new(soundfont_path, &sound_font, sample_rate, settings)?;
+        Self::start_backend(device, config, backend, gain, utility, pan, fx_gain)
+    }
+    pub fn start_sampler(
+        mut engine: crate::audio::sampler::SfizzEngine,
+        gain: f32,
+        utility: elevate::devices::utility_slot::UtilitySlot,
+        pan: f32,
+        fx_gain: f32,
+    ) -> Result<Self, String> {
+        let device = cpal::default_host()
+            .default_output_device()
+            .ok_or("No hay salida de audio")?;
+        let config = choose_output_config(&device, None)?;
+        engine.set_sample_rate(config.sample_rate());
+        Self::start_backend(
+            device,
+            config,
+            SynthBackend::Sampler(engine),
+            gain,
+            utility,
+            pan,
+            fx_gain,
+        )
+    }
+    fn start_backend(
+        device: cpal::Device,
+        config: cpal::SupportedStreamConfig,
+        backend: SynthBackend,
+        gain: f32,
+        utility: elevate::devices::utility_slot::UtilitySlot,
+        pan: f32,
+        fx_gain: f32,
+    ) -> Result<Self, String> {
+        let sample_rate = config.sample_rate();
         let state = Arc::new(InstrumentState {
             gain: AtomicU32::new(gain.clamp(0.0, 2.0).to_bits()),
-            bypass: AtomicBool::new(bypass),
+            pan: StereoPan::new(pan),
+            fx: super::fx_gain::FxGain::new(fx_gain),
+            utility,
             failed: AtomicBool::new(false),
             plan_frame: AtomicU64::new(0),
             plan_playing: AtomicBool::new(false),
             plan_finished: AtomicBool::new(false),
         });
         let (producer, consumer) = RingBuffer::new(COMMAND_QUEUE_CAP);
-        let sf_path = soundfont_path.to_path_buf();
         let stream = match config.sample_format() {
             SampleFormat::F32 => render::build_stream::<f32>(
                 &device,
                 config.into(),
-                &sf_path,
-                sound_font,
+                backend,
                 consumer,
                 state.clone(),
-                settings,
             ),
             SampleFormat::I16 => render::build_stream::<i16>(
                 &device,
                 config.into(),
-                &sf_path,
-                sound_font,
+                backend,
                 consumer,
                 state.clone(),
-                settings,
             ),
             SampleFormat::I32 => render::build_stream::<i32>(
                 &device,
                 config.into(),
-                &sf_path,
-                sound_font,
+                backend,
                 consumer,
                 state.clone(),
-                settings,
             ),
             SampleFormat::U16 => render::build_stream::<u16>(
                 &device,
                 config.into(),
-                &sf_path,
-                sound_font,
+                backend,
                 consumer,
                 state.clone(),
-                settings,
             ),
             format => return Err(format!("Formato de salida no compatible: {format:?}")),
         }?;
@@ -161,6 +199,9 @@ impl PianoPlayer {
         if let Ok(mut guard) = self.commands.lock() {
             let _ = guard.push(cmd);
         }
+    }
+    pub fn sampler_control(&self, cc: u8, value: f32) {
+        self.push(NoteCommand::SamplerControl(cc, value));
     }
     pub fn note_on(&self, note: u8, velocity: u8) {
         self.push(NoteCommand::On { note, velocity });
@@ -221,13 +262,16 @@ impl PianoPlayer {
     pub fn plan_frame(&self) -> u64 {
         self.state.plan_frame.load(Ordering::Relaxed)
     }
+    pub fn set_fx_gain(&self, gain: f32) {
+        self.state.fx.set(gain);
+    }
     pub fn set_gain(&self, gain: f32) {
         self.state
             .gain
             .store(gain.clamp(0.0, 2.0).to_bits(), Ordering::Relaxed);
     }
-    pub fn set_bypass(&self, bypass: bool) {
-        self.state.bypass.store(bypass, Ordering::Relaxed);
+    pub fn set_pan(&self, pan: f32) {
+        self.state.pan.set(pan);
     }
     pub fn failed(&self) -> bool {
         self.state.failed.load(Ordering::Relaxed)

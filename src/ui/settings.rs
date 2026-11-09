@@ -3,41 +3,78 @@ use super::{
     DawApp,
     cursor_fx::CursorFxMode,
     design::ThemePreset,
+    profile,
     views::tracks::{TcpControlStyle, TcpLayoutPreset, TcpWidget},
 };
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum SettingsCategory {
+    #[default]
+    Appearance,
+    Tracks,
+    Export,
+    Shortcuts,
+}
+impl SettingsCategory {
+    pub const ALL: [Self; 4] = [
+        Self::Appearance,
+        Self::Tracks,
+        Self::Export,
+        Self::Shortcuts,
+    ];
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Appearance => "Apariencia",
+            Self::Tracks => "Pistas",
+            Self::Export => "Exportación",
+            Self::Shortcuts => "Atajos",
+        }
+    }
+}
 
 #[derive(Default)]
 pub(super) struct SettingsUi {
     settings_open: bool,
-    shortcuts_open: bool,
+    pub category: SettingsCategory,
+    pub export: super::export_preferences::ExportPreferences,
+    appearance_save_error: Option<String>,
 }
 
 impl SettingsUi {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            export: super::export_preferences::ExportPreferences::load(),
+            ..Self::default()
+        }
     }
 
     pub fn is_visible(&self) -> bool {
-        self.settings_open || self.shortcuts_open
+        self.settings_open
     }
 
+    #[cfg(test)]
     pub fn shortcuts_open(&self) -> bool {
-        self.shortcuts_open
+        self.settings_open && self.category == SettingsCategory::Shortcuts
+    }
+
+    pub fn appearance_save_error(&self) -> Option<&str> {
+        self.appearance_save_error.as_deref()
     }
 
     fn open(&mut self) {
         self.settings_open = true;
-        self.shortcuts_open = false;
+        self.export.editing = None;
     }
 
     fn show_shortcuts(&mut self) {
-        self.settings_open = false;
-        self.shortcuts_open = true;
+        self.settings_open = true;
+        self.category = SettingsCategory::Shortcuts;
+        self.export.editing = None;
     }
 
     fn close(&mut self) {
         self.settings_open = false;
-        self.shortcuts_open = false;
+        self.export.editing = None;
     }
 }
 
@@ -54,15 +91,23 @@ impl DawApp {
         self.settings.close();
     }
 
-    pub(super) fn handle_settings_key(&mut self, key: &str) {
-        if key == "escape" {
-            self.close_settings_overlay();
+    pub(super) fn handle_settings_key(
+        &mut self,
+        event: &gpui::KeyDownEvent,
+        cx: &mut gpui::Context<Self>,
+    ) {
+        if event.keystroke.key == "escape" {
+            if self.settings.export.editing.take().is_none() {
+                self.close_settings_overlay();
+            }
+        } else {
+            self.edit_export_settings_key(event, cx);
         }
     }
 
     pub(super) fn set_theme(&mut self, theme: ThemePreset) {
         self.ds.apply_theme(theme);
-        self.status_message = format!("Tema: {} ({})", theme.label(), theme.token());
+        self.save_appearance(format!("Tema: {}", theme.label()));
     }
 
     pub(super) fn cycle_theme(&mut self) {
@@ -75,7 +120,26 @@ impl DawApp {
     pub(super) fn set_cursor_fx(&mut self, mode: CursorFxMode) {
         self.ds.cursor_fx = mode;
         self.cursor_fx.set_mode(mode);
-        self.status_message = format!("Puntero GPU: {} ({})", mode.label(), mode.token());
+        self.save_appearance(format!("Cursor: {}", mode.label()));
+    }
+
+    pub(in crate::ui) fn set_selection_contrast(&mut self, value: f32) {
+        self.ds.selection_contrast = value.clamp(0.0, 0.4);
+        self.save_appearance(format!("Contraste de selección: {:.0}%", value * 100.0));
+    }
+
+    fn save_appearance(&mut self, description: String) {
+        match profile::save_appearance(&self.ds) {
+            Ok(()) => {
+                self.settings.appearance_save_error = None;
+                self.status_message = format!("{description} · guardado");
+            }
+            Err(error) => {
+                let message = format!("No se pudo guardar la apariencia: {error}");
+                self.settings.appearance_save_error = Some(message.clone());
+                self.status_message = format!("{description} · solo esta sesión. {message}");
+            }
+        }
     }
 
     pub(super) fn set_tcp_preset(&mut self, preset: TcpLayoutPreset) {
@@ -105,7 +169,7 @@ mod tests {
 
     #[test]
     fn settings_opens_then_shortcut_help_replaces_it_and_escape_closes_both() {
-        let mut settings = SettingsUi::new();
+        let mut settings = SettingsUi::default();
         assert!(!settings.is_visible());
         settings.open();
         assert!(settings.is_visible());

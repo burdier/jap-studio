@@ -14,11 +14,11 @@ required-features = ["ui"]
 
 [features]
 default = ["ui"]
-ui = ["dep:gpui", "dep:gpui_platform", "dep:dirs", "dep:symphonia", "dep:cpal", "dep:rustysynth", "dep:particula-rs", "dep:fastrand", "dep:midir", "dep:rtrb", "dep:libc"]
+ui = ["dep:gpui", "dep:dirs", "dep:symphonia", "dep:cpal", "dep:rustysynth", "dep:particula-rs", "dep:fastrand", "dep:midir", "dep:rtrb", "dep:libc"]
 
 [dependencies]
-gpui = { git = "https://github.com/zed-industries/zed", rev = "9a8ab54db4f9f9af4dc6efb42b304c55c6a62bd3", optional = true }
-gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "9a8ab54db4f9f9af4dc6efb42b304c55c6a62bd3", features = ["wayland", "x11"], optional = true }
+# La fachada conserva los imports gpui:: y alinea runtime, plataforma y controles.
+gpui = { package = "gpui-kit", version = "=0.9.0", default-features = false, features = ["component", "assets"], optional = true }
 dirs = { version = "5", optional = true }
 fundsp = { version = "0.23.0", default-features = false, features = ["std"] }
 wmidi = "4.0.11"

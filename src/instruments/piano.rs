@@ -5,6 +5,7 @@ use crate::audio::piano::{
     PianoPlayer, PianoSettings, PresetEntry, SoundFontBank, discover_soundfonts,
     fluidsynth_available, load_soundfont, presets_of,
 };
+use elevate::devices::utility_slot::UtilitySlot;
 use elevate::{
     catalog::{self, CatalogEntry},
     musical::{clip::MidiClip, keyboard::KeyboardLayout, model::InstrumentId},
@@ -28,6 +29,8 @@ pub(crate) struct Piano {
     bank_index: usize,
     presets: Vec<PresetEntry>,
     preset_index: usize,
+    pan: f32,
+    fx_gain: f32,
 }
 
 impl Piano {
@@ -48,6 +51,8 @@ impl Piano {
             bank_index: 0,
             presets,
             preset_index: 0,
+            pan: 0.0,
+            fx_gain: 1.0,
         }
     }
 
@@ -211,8 +216,38 @@ impl Piano {
         self.player.as_ref().map(|player| player.sample_rate)
     }
 
+    /// Datos propios: el worker construye voces nuevas sin leer estado vivo ni abrir CPAL.
+    pub fn export_snapshot(&self) -> Result<crate::audio::piano::PianoSnapshot, String> {
+        let bank = self
+            .banks
+            .get(self.bank_index)
+            .ok_or("No hay SoundFont para exportar MIDI")?;
+        let mut midi = Vec::new();
+        if let Some(preset) = self.presets.get(self.preset_index) {
+            midi.extend([(0xB0, 0x00, preset.bank), (0xC0, preset.patch, 0)]);
+        }
+        let mut master_volume = 0.7;
+        for spec in piano_params::SPECS {
+            for control in piano_params::controls(spec.id, self.params.get(spec.id)) {
+                match control {
+                    Control::Midi(command, a, b) => midi.push((command, a, b)),
+                    Control::MasterVolume(value) => master_volume = value,
+                }
+            }
+        }
+        Ok(crate::audio::piano::PianoSnapshot {
+            path: bank.path.clone(),
+            midi,
+            master_volume,
+            settings: PianoSettings {
+                maximum_polyphony: self.params.get(ParamId::Polyphony) as usize,
+                reverb_and_chorus: self.params.get(ParamId::Effects) >= 0.5,
+            },
+        })
+    }
+
     /// Abre el dispositivo en la primera nota. Devuelve si la orden se aceptó.
-    fn ensure_started(&mut self, gain: f32, bypass: bool) -> Result<(), String> {
+    fn ensure_started(&mut self, gain: f32, utility: UtilitySlot) -> Result<(), String> {
         if self.player.is_some() {
             return Ok(());
         }
@@ -227,7 +262,8 @@ impl Piano {
             maximum_polyphony: self.params.get(ParamId::Polyphony) as usize,
             reverb_and_chorus: self.params.get(ParamId::Effects) >= 0.5,
         };
-        let player = PianoPlayer::start(&bank.path, gain, bypass, settings)?;
+        let player =
+            PianoPlayer::start(&bank.path, gain, utility, self.pan, self.fx_gain, settings)?;
         if self.presets.is_empty()
             && let Ok(sf) = load_soundfont(&bank.path)
         {
@@ -251,12 +287,12 @@ impl Piano {
         note: u8,
         velocity: u8,
         gain: f32,
-        bypass: bool,
+        utility: UtilitySlot,
     ) -> Result<bool, String> {
         if note > 127 || self.held.contains(&note) {
             return Ok(false);
         }
-        self.ensure_started(gain, bypass)?;
+        self.ensure_started(gain, utility)?;
         if let Some(player) = &self.player {
             player.note_on(note, velocity);
         }
@@ -270,13 +306,13 @@ impl Piano {
         edit_beat: f64,
         bpm: f64,
         gain: f32,
-        bypass: bool,
+        utility: UtilitySlot,
     ) -> Result<(), String> {
         self.all_notes_off();
-        self.ensure_started(gain, bypass)?;
+        self.ensure_started(gain, utility)?;
         let offset_beats = (edit_beat - clip.start_beat).max(0.0);
         if let Some(player) = &self.player {
-            player.play_pattern(&clip.pattern, offset_beats, bpm)?;
+            player.play_pattern(&clip.playback_pattern(), offset_beats, bpm)?;
         }
         Ok(())
     }
@@ -333,15 +369,22 @@ impl Piano {
         self.mouse = None;
     }
 
+    pub fn set_fx_gain(&mut self, gain: f32) {
+        self.fx_gain = gain;
+        if let Some(player) = &self.player {
+            player.set_fx_gain(gain);
+        }
+    }
     pub fn set_gain(&self, gain: f32) {
         if let Some(player) = &self.player {
             player.set_gain(gain);
         }
     }
 
-    pub fn set_bypass(&self, bypass: bool) {
+    pub fn set_pan(&mut self, pan: f32) {
+        self.pan = pan.clamp(-1.0, 1.0);
         if let Some(player) = &self.player {
-            player.set_bypass(bypass);
+            player.set_pan(self.pan);
         }
     }
 

@@ -1,10 +1,22 @@
 //! Estado de navegación del Arrangement. El canvas está en paint.rs.
+mod clip_edit;
+#[cfg(test)]
+mod clip_edit_tests;
+mod clip_frame;
+#[cfg(test)]
+mod gesture_tests;
+mod import_preview;
 mod interaction;
+mod materialize;
 mod midi_clips;
 mod paint;
 mod particles;
+mod rows;
 #[cfg(test)]
 mod tests;
+mod time_ruler;
+mod track_edit;
+mod trim;
 mod viewport;
 mod waveform;
 
@@ -21,40 +33,59 @@ const BEATS_PER_BAR: f64 = 4.0;
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum TimelineArea {
     Ruler,
+    TimeRuler,
     Lanes,
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DragKind {
     Audio,
     Midi,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ClipBarHit {
+    Inspector(DragKind),
+    Mute(DragKind),
+    Lock(DragKind),
+    Loop(DragKind),
+}
+
 pub(crate) struct Timeline {
+    pub(crate) layout: Option<crate::ui::track_layout::TrackLayout>,
     clip_drag: Option<(Point<Pixels>, f64, bool, DragKind)>,
+    trim_drag: Option<trim::TrimDrag>,
     hover_track: Option<usize>,
     hover_dragging: bool,
     // Clips provisionales. Migrar al modelo de proyecto al introducir múltiples clips.
     pub clip: Option<AudioClip>,
+    pub other_audio_clips: Vec<AudioClip>,
     pub midi_clip: Option<MidiClip>,
-    other_midi_clips: Vec<MidiClip>,
+    pub other_midi_clips: Vec<MidiClip>,
+    pub selected_midi: Vec<elevate::musical::clip::ClipId>,
     pub playhead: Option<f64>,
     viewport: Viewport,
     edit_beat: f64,
     ruler_bounds: Rc<Cell<Bounds<Pixels>>>,
+    time_ruler_bounds: Rc<Cell<Bounds<Pixels>>>,
     lanes_bounds: Rc<Cell<Bounds<Pixels>>>,
     particles: ParticleTrail,
+    pub(crate) import_preview: Option<import_preview::ImportPreview>,
 }
 
 impl Timeline {
     pub(crate) fn new(pixels_per_beat: f32) -> Self {
         Self {
+            layout: None,
             clip_drag: None,
+            trim_drag: None,
             hover_track: None,
             hover_dragging: false,
             clip: None,
+            other_audio_clips: Vec::new(),
             midi_clip: None,
             other_midi_clips: Vec::new(),
+            selected_midi: Vec::new(),
             playhead: None,
             viewport: Viewport {
                 first_beat: 0.0,
@@ -62,8 +93,10 @@ impl Timeline {
             },
             edit_beat: 0.0,
             ruler_bounds: Rc::default(),
+            time_ruler_bounds: Rc::default(),
             lanes_bounds: Rc::default(),
             particles: ParticleTrail::default(),
+            import_preview: None,
         }
     }
     pub(crate) fn set_scale(&mut self, pixels_per_beat: f32) {
@@ -115,6 +148,7 @@ impl Timeline {
     fn bounds(&self, area: TimelineArea) -> &Rc<Cell<Bounds<Pixels>>> {
         match area {
             TimelineArea::Ruler => &self.ruler_bounds,
+            TimelineArea::TimeRuler => &self.time_ruler_bounds,
             TimelineArea::Lanes => &self.lanes_bounds,
         }
     }

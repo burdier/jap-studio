@@ -1,5 +1,5 @@
 //! Carga offline de archivos y picos para la waveform. Nunca llamar desde el callback.
-use elevate::StereoFrame;
+use elevate::{StereoFrame, musical::clip::ClipProps};
 use std::{fs::File, path::Path, sync::Arc};
 use symphonia::core::{
     formats::{TrackType, probe::Hint},
@@ -108,7 +108,27 @@ impl AudioFile {
 
 #[derive(Clone)]
 pub(crate) struct AudioClip {
+    /// Nombre de la instancia, independiente del archivo compartido.
+    pub name: String,
     pub file: Arc<AudioFile>,
     pub track: usize,
     pub start_beat: f64,
+    pub props: ClipProps,
+    /// Recorte no destructivo: segundos del archivo omitidos al inicio.
+    pub trim_start: f64,
+    /// Recorte no destructivo: segundos visibles; `None` = hasta el final del archivo.
+    pub trim_len: Option<f64>,
+}
+
+impl AudioClip {
+    pub fn length_seconds(&self) -> f64 {
+        let available = (self.file.duration() - self.trim_start).max(0.0);
+        self.trim_len.map_or(available, |len| len.min(available))
+    }
+    pub fn length_beats(&self) -> f64 {
+        self.length_seconds() * super::BEATS_PER_SECOND
+    }
+    pub fn end_beat(&self) -> f64 {
+        self.start_beat + self.length_beats()
+    }
 }

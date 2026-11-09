@@ -2,7 +2,7 @@
 use crate::ui::DawApp;
 use gpui::{
     App, AppContext, Bounds, Context, Entity, FocusHandle, IntoElement, Render, Subscription,
-    TitlebarOptions, Window, WindowBounds, WindowHandle, WindowOptions, px, size,
+    TitlebarOptions, Window, WindowBounds, WindowHandle, WindowOptions, div, prelude::*, px, size,
 };
 
 pub(in crate::ui) struct DetachedPianoRoll {
@@ -16,11 +16,19 @@ impl DetachedPianoRoll {
         let focus_handle = cx.focus_handle();
         window.focus(&focus_handle, cx);
         let weak = app.downgrade();
+        let window_id = window.window_handle().window_id();
         cx.on_release(move |_, cx| {
             // El cierre del sistema devuelve el editor al panel inferior, con su selección.
             if let Some(app) = weak.upgrade() {
                 app.update(cx, |app, cx| {
                     app.piano_roll_window = None;
+                    if app
+                        .action_form
+                        .as_ref()
+                        .is_some_and(|form| form.window_id == window_id)
+                    {
+                        app.action_form = None;
+                    }
                     cx.notify();
                 });
             }
@@ -35,10 +43,20 @@ impl DetachedPianoRoll {
 }
 
 impl Render for DetachedPianoRoll {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.app.update(cx, |app, cx| {
-            app.render_piano_roll(&self.focus_handle, cx)
-                .into_any_element()
+            let content = app
+                .render_piano_roll(&self.focus_handle, cx)
+                .into_any_element();
+            let form = app
+                .action_form
+                .as_ref()
+                .filter(|form| form.window_id == window.window_handle().window_id())
+                .map(|_| {
+                    app.render_action_form(window.viewport_size(), cx)
+                        .into_any_element()
+                });
+            div().relative().size_full().child(content).children(form)
         })
     }
 }
@@ -57,9 +75,12 @@ impl DawApp {
     pub(in crate::ui) fn focus_piano_roll(&self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(handle) = self.piano_roll_window {
             cx.defer(move |cx| {
-                if let Err(error) = handle.update(cx, |panel, window, cx| {
+                if let Err(error) = handle.update(cx, |root, window, cx| {
                     window.activate_window();
-                    window.focus(&panel.focus_handle, cx);
+                    if let Ok(panel) = root.view().clone().downcast::<DetachedPianoRoll>() {
+                        let focus = panel.read(cx).focus_handle.clone();
+                        window.focus(&focus, cx);
+                    }
                 }) {
                     eprintln!("No se pudo enfocar el piano roll: {error}");
                 }
@@ -85,7 +106,10 @@ fn open(app: Entity<DawApp>, cx: &mut App) {
             }),
             ..Default::default()
         },
-        |window, cx| cx.new(|cx| DetachedPianoRoll::new(panel_app, window, cx)),
+        |window, cx| {
+            let panel = cx.new(|cx| DetachedPianoRoll::new(panel_app, window, cx));
+            cx.new(|cx| gpui::base::Root::new(panel, window, cx))
+        },
     );
     app.update(cx, |app, cx| {
         match opened {
@@ -96,7 +120,7 @@ fn open(app: Entity<DawApp>, cx: &mut App) {
     });
 }
 
-fn close(handle: WindowHandle<DetachedPianoRoll>, cx: &mut App) {
+fn close(handle: WindowHandle<gpui::base::Root>, cx: &mut App) {
     if let Err(error) = handle.update(cx, |_, window, _| window.remove_window()) {
         eprintln!("No se pudo cerrar la ventana del piano roll: {error}");
     }

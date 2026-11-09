@@ -2,6 +2,7 @@
 use crate::ui::{
     DawApp,
     components::button::pill_button,
+    icons::ToolbarScope,
     piano_roll::{RollAction, RollTool},
 };
 use gpui::{Context, Div, IntoElement, MouseButton, div, prelude::*, px, rgb};
@@ -154,7 +155,8 @@ impl DawApp {
             .child(self.roll_button("Vel: 100", false, preview("velocity"), cx))
             .child(self.roll_button("Gate: 100%", false, preview("gate"), cx))
             .child(self.roll_button("Humanize: 0%", false, preview("humanizar"), cx))
-            .child(div().flex_1())
+            .child(separator(ds.border))
+            .child(self.render_toolbar_bound_buttons(ToolbarScope::PianoRoll, true, cx))
             .child(self.roll_button("⚙", false, preview("preferencias del editor"), cx));
         div()
             .flex_shrink_0()

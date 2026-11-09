@@ -105,8 +105,11 @@ impl DawApp {
         self.instrument_window.is_some()
     }
 
-    /// Entrada de teclado de la ventana separada: solo notas y liberar todo.
+    /// La ventana separada comparte transporte; Esc conserva la liberación de notas.
     pub(super) fn handle_detached_key(&mut self, event: &KeyDownEvent) {
+        if self.handle_transport_key(event) {
+            return;
+        }
         let key = event
             .keystroke
             .key_char
@@ -115,7 +118,7 @@ impl DawApp {
         if self.controller_key_down(key, event.is_held) {
             return;
         }
-        if matches!(key, " " | "space") {
+        if key == "escape" {
             self.all_notes_off();
         }
     }
@@ -147,7 +150,7 @@ fn open_instrument_window(app: Entity<DawApp>, cx: &mut App) {
     if app.read(cx).instrument_window.is_some() {
         return;
     }
-    let name = app.read(cx).instrument.active_name().to_string();
+    let name = app.read(cx).active_instrument_name().to_string();
     let bounds = Bounds::centered(None, size(px(900.0), px(640.0)), cx);
     let panel_app = app.clone();
     let opened = cx.open_window(
@@ -160,7 +163,10 @@ fn open_instrument_window(app: Entity<DawApp>, cx: &mut App) {
             app_id: Some("hay-daw".to_string()),
             ..Default::default()
         },
-        |window, cx| cx.new(|cx| DetachedPanel::new(panel_app, window, cx)),
+        |window, cx| {
+            let panel = cx.new(|cx| DetachedPanel::new(panel_app, window, cx));
+            cx.new(|cx| gpui::base::Root::new(panel, window, cx))
+        },
     );
     app.update(cx, |this, cx| {
         match opened {
@@ -174,7 +180,7 @@ fn open_instrument_window(app: Entity<DawApp>, cx: &mut App) {
     });
 }
 
-fn close(handle: WindowHandle<DetachedPanel>, cx: &mut App) {
+fn close(handle: WindowHandle<gpui::base::Root>, cx: &mut App) {
     handle
         .update(cx, |_, window, _| window.remove_window())
         .ok();

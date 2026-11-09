@@ -1,6 +1,6 @@
 //! Tokens de ~/.jaybu.profile y temas de color integrados.
 use super::{cursor_fx::CursorFxMode, views::tracks::TrackHeaderConfig};
-use std::{collections::HashMap, fs};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(in crate::ui) enum ThemePreset {
@@ -374,9 +374,11 @@ impl ThemePreset {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(super) struct DesignSystem {
     pub theme: ThemePreset,
+    /// Intensidad del contraste de selección (0–0.4), independiente del hover.
+    pub selection_contrast: f32,
     pub bg: u32,
     pub panel: u32,
     pub panel_hover: u32,
@@ -412,6 +414,8 @@ pub(super) struct DesignSystem {
     pub radius_sm: f32,
     pub radius_md: f32,
     pub radius_lg: f32,
+    /// Grosor del marco de los clips en px (`CLIP_BORDER`). Seleccionado refuerza el marco según SELECTION_CONTRAST.
+    pub clip_border: f32,
     pub playhead_particle_rate: f32,
     pub playhead_particle_life: f32,
     pub playhead_particle_size: f32,
@@ -420,16 +424,15 @@ pub(super) struct DesignSystem {
     pub playhead_particle_color: u32,
     pub cursor_fx: CursorFxMode,
     pub track_header: TrackHeaderConfig,
+    /// Color elegido por el usuario por pista (clic derecho). `None` = color del tema.
+    pub track_color_override: Vec<Option<u32>>,
 }
 
 impl DesignSystem {
     pub(super) fn load() -> Self {
-        let path = dirs::home_dir()
-            .map(|d| d.join(".jaybu.profile"))
-            .unwrap_or_default();
-        Self::from_profile(&fs::read_to_string(&path).unwrap_or_default())
+        Self::from_profile(&super::profile::load().unwrap_or_default())
     }
-    fn from_profile(content: &str) -> Self {
+    pub(super) fn from_profile(content: &str) -> Self {
         let mut map = HashMap::new();
         for line in content.lines() {
             let line = line.trim();
@@ -471,6 +474,7 @@ impl DesignSystem {
         );
         Self {
             theme,
+            selection_contrast: get("SELECTION_CONTRAST", 0.18).min(0.4),
             bg: color("BG", pal.bg),
             panel: color("PANEL", pal.panel),
             panel_hover: color("PANEL_HOVER", pal.panel_hover),
@@ -497,7 +501,7 @@ impl DesignSystem {
             pan_bar_width: get("PAN_BAR_WIDTH", 40.0),
             vol_bar_width: get("VOL_BAR_WIDTH", 40.0),
             control_bar_height: get("CONTROL_BAR_HEIGHT", 6.0),
-            knob_size: get("KNOB_SIZE", 22.0).clamp(14.0, 36.0),
+            knob_size: get("KNOB_SIZE", 28.0).clamp(18.0, 36.0),
             transport_btn_size: get("TRANSPORT_BTN_SIZE", 28.0),
             font_size_xs: get("FONT_SIZE_XS", 11.0),
             padding_xs: get("PADDING_XS", 4.0),
@@ -506,6 +510,7 @@ impl DesignSystem {
             radius_sm: get("RADIUS_SM", 3.0),
             radius_md: get("RADIUS_MD", 4.0),
             radius_lg: get("RADIUS_LG", 6.0),
+            clip_border: get("CLIP_BORDER", 1.0).clamp(0.0, 4.0),
             playhead_particle_rate: get("PLAYHEAD_PARTICLE_RATE", 120.0).min(2000.0),
             playhead_particle_life: get("PLAYHEAD_PARTICLE_LIFE", 0.6).clamp(0.05, 3.0),
             playhead_particle_size: get("PLAYHEAD_PARTICLE_SIZE", 2.0).clamp(0.5, 12.0),
@@ -514,7 +519,60 @@ impl DesignSystem {
             playhead_particle_color: color("PLAYHEAD_PARTICLE_COLOR", success),
             cursor_fx,
             track_header,
+            track_color_override: vec![None; 8],
         }
+    }
+
+    /// Acerca el fondo al color de texto: aclara temas oscuros y oscurece temas claros.
+    pub(in crate::ui) fn selection_color(&self, base: u32) -> u32 {
+        let channel = |shift: u32| {
+            let from = ((base >> shift) & 255) as f32;
+            let to = ((self.text >> shift) & 255) as f32;
+            (from + (to - from) * self.selection_contrast).round() as u32
+        };
+        (channel(16) << 16) | (channel(8) << 8) | channel(0)
+    }
+
+    pub(in crate::ui) fn selection_background(&self) -> u32 {
+        self.selection_color(self.panel)
+    }
+
+    /// Colores seleccionables para una pista (el mismo orden que el color automático).
+    /// Orden estable de los índices de color almacenados en cada clip.
+    pub(in crate::ui) fn clip_palette(&self) -> [u32; 7] {
+        [
+            self.orange,
+            self.cyan,
+            self.success,
+            self.pink,
+            self.warning,
+            self.danger,
+            self.accent,
+        ]
+    }
+
+    pub(in crate::ui) fn track_palette(&self) -> [u32; 7] {
+        [
+            self.accent,
+            self.success,
+            self.warning,
+            self.danger,
+            self.cyan,
+            self.orange,
+            self.pink,
+        ]
+    }
+
+    /// Color de una pista: el elegido por el usuario o el automático del tema.
+    pub(in crate::ui) fn track_color(&self, track: usize) -> u32 {
+        self.track_color_override
+            .get(track)
+            .copied()
+            .flatten()
+            .unwrap_or_else(|| {
+                let palette = self.track_palette();
+                palette[track % palette.len()]
+            })
     }
 
     pub(in crate::ui) fn apply_theme(&mut self, theme: ThemePreset) {

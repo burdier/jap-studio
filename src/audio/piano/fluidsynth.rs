@@ -94,7 +94,7 @@ pub(crate) fn is_available() -> bool {
     api().is_some()
 }
 
-pub(super) struct FluidEngine {
+pub(crate) struct FluidEngine {
     api: &'static FluidApi,
     settings: *mut FluidSettings,
     synth: *mut FluidSynth,
@@ -120,11 +120,15 @@ impl FluidEngine {
             if settings.is_null() {
                 return Err("new_fluid_settings devolvió NULL".into());
             }
-            (api.settings_setnum)(
+            if (api.settings_setnum)(
                 settings,
                 c"synth.sample-rate".as_ptr(),
                 f64::from(sample_rate),
-            );
+            ) < 0
+            {
+                (api.delete_settings)(settings);
+                return Err(format!("FluidSynth no admite {sample_rate} Hz"));
+            }
             (api.settings_setint)(
                 settings,
                 c"synth.polyphony".as_ptr(),

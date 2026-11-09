@@ -25,7 +25,10 @@ pub(super) fn build_stream<T: SizedSample + FromSample<f32>>(
         f32::from_bits(state.gain.load(Ordering::Relaxed)),
     )
     .map_err(|error| error.to_string())?;
-    volume.set_bypassed(state.bypass.load(Ordering::Relaxed));
+    let mut utility = state
+        .utility
+        .prepare(ProcessSpec::new(sample_rate).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
     let mut transport = Transport::default();
     transport.play();
     let mut kit = DrumKit::new();
@@ -40,7 +43,6 @@ pub(super) fn build_stream<T: SizedSample + FromSample<f32>>(
                 if volume.gain() != gain && volume.set_gain(gain).is_err() {
                     state.failed.store(true, Ordering::Relaxed);
                 }
-                volume.set_bypassed(state.bypass.load(Ordering::Relaxed));
 
                 for output_block in output.chunks_mut(RENDER_CHUNK * 2) {
                     let frames = output_block.len() / 2;
@@ -64,6 +66,7 @@ pub(super) fn build_stream<T: SizedSample + FromSample<f32>>(
                         );
                     }
                     volume.process(&mut block[..frames]);
+                    utility.process(&mut block[..frames]);
                     for (destination, frame) in output_block.chunks_exact_mut(2).zip(block.iter()) {
                         destination[0] = T::from_sample(frame[0].clamp(-1.0, 1.0));
                         destination[1] = T::from_sample(frame[1].clamp(-1.0, 1.0));

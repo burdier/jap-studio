@@ -1,46 +1,33 @@
 //! Controlador compartido por menú contextual, toolbar y teclado del mock.
-use super::{InsertMenu, PianoRoll, RollAction, RollTool, demo};
-use crate::ui::{DawApp, timeline::TimelineArea};
+use super::{PianoRoll, RollAction, RollTool, demo};
+use crate::ui::DawApp;
 use elevate::musical::time::{PPQ, Tick};
-use gpui::{Context, Pixels, Point, Size, Window, point, px};
+use gpui::{Context, Pixels, Point, Window};
 
 impl DawApp {
-    pub(in crate::ui) fn open_midi_clip_menu(
-        &mut self,
-        position: Point<Pixels>,
-        viewport: Size<Pixels>,
-    ) {
-        self.timeline.end_clip_drag();
-        let Some(track) = self.timeline.place_cursor(
-            position,
-            TimelineArea::Lanes,
-            self.ds.track_header_height,
-            self.tracks.len(),
-        ) else {
+    pub(in crate::ui) fn insert_midi_clip_from_menu(&mut self) {
+        let Some(target) = self.clip_menu.take() else {
             return;
         };
-        self.cursor_row = track;
-        self.sync_midi_focus();
-        self.piano_roll.menu = Some(InsertMenu {
-            position: point(
-                position.x.min((viewport.width - px(248.0)).max(px(0.0))),
-                position.y.min((viewport.height - px(94.0)).max(px(0.0))),
-            ),
-            track,
-            beat: self.timeline.edit_beat(),
-        });
+        if target.clip_kind.is_some() {
+            return;
+        }
+        self.insert_midi_clip_at(target.track, target.beat);
     }
 
-    pub(in crate::ui) fn insert_midi_clip_from_menu(&mut self) {
-        let Some(target) = self.piano_roll.menu.take() else {
+    pub(in crate::ui) fn insert_midi_clip_at(&mut self, track: usize, beat: f64) {
+        if !self.track_accepts_clips(track) {
+            self.status_message = "Selecciona una pista hija para insertar MIDI".into();
             return;
-        };
+        }
         self.stop_audio();
         let clip = demo::reference_clip(
-            self.instrument.active_name().to_string(),
-            target.track,
-            target.beat,
-            self.instrument.id(),
+            self.active_instrument_name().to_string(),
+            track,
+            beat,
+            self.tracks[track]
+                .instrument
+                .unwrap_or(self.instrument.id()),
         );
         self.timeline.insert_midi_clip(clip);
         self.open_piano_roll();
@@ -67,6 +54,24 @@ impl DawApp {
         cx: &mut Context<Self>,
     ) {
         match action {
+            RollAction::ZoomWidth(factor) => {
+                if let Some(clip) = &self.timeline.midi_clip {
+                    let grid = self.piano_roll.grid.get();
+                    self.piano_roll.viewport.zoom_at(
+                        grid,
+                        grid.notes.center(),
+                        clip.pattern_beats(),
+                        factor,
+                    );
+                }
+            }
+            RollAction::ZoomHeight(factor) => {
+                let grid = self.piano_roll.grid.get();
+                self.piano_roll
+                    .viewport
+                    .zoom_vertical_at(grid, grid.notes.center(), factor);
+            }
+            RollAction::ResetView => self.piano_roll.viewport = Default::default(),
             RollAction::Close if self.piano_roll_window.is_some() => {
                 self.toggle_piano_roll_window(cx)
             }
@@ -97,10 +102,11 @@ impl DawApp {
         cx: &mut Context<Self>,
     ) {
         let action = match key {
+            "0" => Some(RollAction::ResetView),
             "escape" => Some(RollAction::Close),
             "v" => Some(RollAction::Tool(RollTool::Select)),
             "b" => Some(RollAction::Tool(RollTool::Draw)),
-            "e" => Some(RollAction::Tool(RollTool::Erase)),
+            "e" | "E" => Some(RollAction::Tool(RollTool::Erase)),
             "p" => Some(RollAction::Tool(RollTool::Paint)),
             "m" => Some(RollAction::Tool(RollTool::Mute)),
             "h" | "left" | "l" | "right" => {

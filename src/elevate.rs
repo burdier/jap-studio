@@ -1,5 +1,9 @@
+pub mod actions;
 pub mod catalog;
 pub mod component;
+pub mod devices;
+pub mod explorer;
+pub mod export;
 pub mod musical;
 pub mod primitives;
 

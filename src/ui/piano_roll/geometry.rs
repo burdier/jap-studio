@@ -1,5 +1,6 @@
 //! Geometría compartida por dibujo y picking, también al cambiar de panel o de ventana.
-use elevate::musical::time::Tick;
+use super::navigation::RollViewport;
+use elevate::musical::time::{PPQ, Tick};
 use gpui::{Bounds, Pixels, Point, point, px, size};
 
 pub(in crate::ui) const FIRST_PITCH: u8 = 48;
@@ -14,10 +15,12 @@ pub(in crate::ui) struct Grid {
     pub velocity: Bounds<Pixels>,
     pub row_height: f32,
     pub pixels_per_beat: f32,
+    pub first_beat: f64,
+    pub top_pitch: f32,
 }
 
 impl Grid {
-    pub fn new(all: Bounds<Pixels>, beats: f64, velocities: bool) -> Self {
+    pub fn new(all: Bounds<Pixels>, beats: f64, velocities: bool, viewport: RollViewport) -> Self {
         let width = (f32::from(all.size.width) - KEYBOARD_WIDTH).max(1.0);
         let available = f32::from(all.size.height);
         let velocity_height = if velocities {
@@ -38,17 +41,21 @@ impl Grid {
             all,
             notes,
             velocity,
-            row_height: height / f32::from(LAST_PITCH - FIRST_PITCH + 1),
-            pixels_per_beat: width / beats as f32,
+            row_height: viewport.row_height(height),
+            pixels_per_beat: width / beats as f32 * viewport.zoom as f32,
+            first_beat: viewport
+                .first_beat
+                .clamp(0.0, (beats - beats / viewport.zoom).max(0.0)),
+            top_pitch: viewport.bounded_top_pitch(),
         }
     }
 
     pub fn x(&self, beat: f64) -> Pixels {
-        self.notes.left() + px(beat as f32 * self.pixels_per_beat)
+        self.notes.left() + px((beat - self.first_beat) as f32 * self.pixels_per_beat)
     }
 
     pub fn y(&self, pitch: u8) -> Pixels {
-        self.notes.top() + px(f32::from(LAST_PITCH.saturating_sub(pitch)) * self.row_height)
+        self.notes.top() + px((self.top_pitch - f32::from(pitch)) * self.row_height)
     }
 
     pub fn pick(&self, position: Point<Pixels>, length: Tick) -> Option<(Tick, u8)> {
@@ -60,9 +67,10 @@ impl Grid {
         {
             return None;
         }
-        let fraction = f32::from(position.x - self.notes.left()) / f32::from(self.notes.size.width);
-        let tick = Tick((fraction as f64 * length.0 as f64) as i64);
-        let row = (f32::from(position.y - self.notes.top()) / self.row_height) as u8;
-        Some((tick, LAST_PITCH.saturating_sub(row)))
+        let beat = self.first_beat
+            + f64::from(f32::from(position.x - self.notes.left()) / self.pixels_per_beat);
+        let tick = Tick(((beat * PPQ as f64).floor() as i64).clamp(0, (length.0 - 1).max(0)));
+        let row = f32::from(position.y - self.notes.top()) / self.row_height;
+        Some((tick, (self.top_pitch - row).ceil().clamp(0.0, 127.0) as u8))
     }
 }

@@ -14,6 +14,9 @@ impl Viewport {
         (beat - self.first_beat) * self.pixels_per_beat
     }
     pub fn zoom_at(&mut self, x: f64, factor: f64) {
+        if !x.is_finite() || !factor.is_finite() || factor <= 0.0 {
+            return;
+        }
         let anchor = self.beat_at(x);
         self.pixels_per_beat = (self.pixels_per_beat * factor).clamp(8.0, 256.0);
         self.first_beat = (anchor - x / self.pixels_per_beat).max(0.0);

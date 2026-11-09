@@ -1,7 +1,8 @@
 //! Instrumentos independientes de GPUI. La UI solo envía notas y consulta estado.
-//! Hoy solo existe el piano; el catálogo ya permite que otros se registren después.
+//! Piano SoundFont y sampler sfizz; ambos comparten el reproductor de eventos.
 
 pub(crate) mod piano;
 pub(crate) mod piano_params;
+pub(crate) mod sampler;
 
 pub(crate) use piano::Piano;

@@ -15,6 +15,8 @@ impl DawApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // Cualquier tecla ajena a dd cancela el operador, también dentro de overlays.
+        let delete_pending = std::mem::take(&mut self.track_delete_pending);
         let key = event
             .keystroke
             .key_char
@@ -25,27 +27,65 @@ impl DawApp {
         } else {
             key.to_string()
         };
+        if self.action_form.is_some() {
+            // Los controles Kit consumen edición/IME; ninguna tecla del formulario toca el DAW.
+            return;
+        }
+        if self.fx.menu.is_some() {
+            self.handle_fx_menu_key(event);
+            return;
+        }
+        if self.track_menu.is_some() {
+            self.handle_track_menu_key(event, window, cx);
+            return;
+        }
         if self.palette.is_open() {
             let text = !event.keystroke.modifiers.control && !event.keystroke.modifiers.alt;
-            self.handle_palette_key(key, text);
+            self.handle_palette_key(key, text, window, cx);
             return;
         }
         if self.settings.is_visible() {
-            self.handle_settings_key(key);
+            self.handle_settings_key(event, cx);
             return;
         }
-        if self.piano_roll.menu.is_some() {
-            match key {
-                "escape" => self.piano_roll.menu = None,
-                "enter" => {
-                    self.insert_midi_clip_from_menu();
-                    self.focus_piano_roll(window, cx);
-                }
-                _ => {}
+        if self.toolbar_icons.picker_open {
+            self.handle_icon_picker_key(event, cx);
+            return;
+        }
+        if self.clip_menu.is_some() {
+            self.handle_clip_menu_key(event, window, cx);
+            return;
+        }
+        if self.handle_transport_key(event) {
+            return;
+        }
+        let modifiers = event.keystroke.modifiers;
+        if self.mode == VimMode::Normal
+            && key == "e"
+            && !modifiers.control
+            && !modifiers.alt
+            && !modifiers.platform
+        {
+            if !event.is_held {
+                self.toggle_explorer();
             }
             return;
         }
+        if self.handle_track_delete_key(event, delete_pending) {
+            return;
+        }
         if self.mode == VimMode::Normal && self.controller_key_down(key, event.is_held) {
+            return;
+        }
+        // GPUI no genera KeyDown por cada carácter pegado: leer explícitamente el clipboard.
+        if self.mode == VimMode::Command
+            && event.keystroke.modifiers.control
+            && key.eq_ignore_ascii_case("v")
+        {
+            if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
+                self.command_buffer
+                    .push_str(&text.replace(['\n', '\r'], " "));
+            }
             return;
         }
         match self.mode {
@@ -55,7 +95,7 @@ impl DawApp {
                     self.set_mode(VimMode::Normal);
                 }
             }
-            VimMode::Command => self.handle_command_key(key),
+            VimMode::Command => self.handle_command_key(key, window, cx),
         }
     }
     pub(super) fn handle_key_up(&mut self, event: &KeyUpEvent) {
@@ -70,23 +110,6 @@ impl DawApp {
     }
     fn handle_normal_key(&mut self, key: &str) {
         match key {
-            " " | "space" => {
-                if self.center_view == CenterView::Instrument {
-                    self.all_notes_off();
-                } else if self.center_view == CenterView::Session {
-                    if self.pattern_player.is_some() {
-                        self.stop_pattern();
-                        self.status_message = "Patrón detenido".into();
-                    } else {
-                        self.play_pattern();
-                    }
-                } else if self.player.is_some() || self.instrument.clip_playing() {
-                    self.stop_audio();
-                    self.status_message = "Detenido".into();
-                } else {
-                    self.play_audio();
-                }
-            }
             "enter" if self.center_view == CenterView::Session => {
                 self.apply_pattern_action(PatternAction::Toggle {
                     lane: self.cursor_row,
@@ -127,17 +150,29 @@ impl DawApp {
             "l" | "right" => {
                 self.cursor_col = (self.cursor_col + 1).min(self.pattern_editor.step_count() - 1)
             }
+            "k" | "up" if self.center_view == CenterView::Arrangement => {
+                self.move_visible_track(false)
+            }
+            "j" | "down" if self.center_view == CenterView::Arrangement => {
+                self.move_visible_track(true)
+            }
             "k" | "up" => {
                 self.cursor_row = self.cursor_row.saturating_sub(1);
+                if self.center_view != CenterView::Session {
+                    self.select_track(self.cursor_row, false, false);
+                }
                 self.reveal_track();
             }
             "j" | "down" => {
                 let last = if self.center_view == CenterView::Session {
                     self.pattern_editor.lanes.len() - 1
                 } else {
-                    7
+                    self.tracks.len().saturating_sub(1)
                 };
                 self.cursor_row = (self.cursor_row + 1).min(last);
+                if self.center_view != CenterView::Session {
+                    self.select_track(self.cursor_row, false, false);
+                }
                 self.reveal_track();
             }
             "1" => self.set_center_view(CenterView::Arrangement),
@@ -151,12 +186,22 @@ impl DawApp {
             _ => {}
         }
     }
-    fn handle_command_key(&mut self, key: &str) {
+    fn handle_command_key(&mut self, key: &str, window: &mut Window, cx: &mut Context<Self>) {
         match key {
             "escape" => self.set_mode(VimMode::Normal),
             "enter" => {
                 let cmd = self.command_buffer.clone();
-                self.execute_command(&cmd);
+                let command = cmd.trim().to_ascii_lowercase();
+                if matches!(command.as_str(), "clip.rename" | "clip.gain" | "clip.color") {
+                    self.open_clip_catalog_page(
+                        &command,
+                        window.mouse_position(),
+                        window.viewport_size(),
+                    );
+                    cx.notify();
+                } else {
+                    self.execute_command(&cmd);
+                }
                 self.set_mode(VimMode::Normal);
             }
             "backspace" => {
@@ -167,7 +212,93 @@ impl DawApp {
         }
     }
     pub(super) fn execute_command(&mut self, cmd: &str) {
+        // El parser de export conserva mayúsculas y espacios entrecomillados en nombres/rutas.
+        let cmd = cmd.trim();
+        if self.handle_fx_command(cmd) {
+            return;
+        }
+        if cmd
+            .split_whitespace()
+            .next()
+            .is_some_and(|word| word.eq_ignore_ascii_case("file.import"))
+        {
+            match elevate::actions::tokenize(cmd) {
+                Ok(parts) if parts.len() == 2 && !parts[1].trim().is_empty() => {
+                    self.request_file_import(super::explorer_host::ImportSource::Path(
+                        parts[1].clone().into(),
+                    ));
+                }
+                _ => self.status_message = "Uso: file.import '/ruta/archivo.wav'".into(),
+            }
+            return;
+        }
+        if cmd
+            .split_whitespace()
+            .next()
+            .is_some_and(|word| word.eq_ignore_ascii_case("export"))
+        {
+            self.start_export(cmd);
+            return;
+        }
+        if let Some(raw) = cmd.strip_prefix("track.rename ") {
+            match elevate::actions::tokenize(raw) {
+                Ok(parts) if parts.len() == 1 && !parts[0].trim().is_empty() => {
+                    if let Some(track) = self.tracks.get_mut(self.cursor_row) {
+                        track.name = parts[0].trim().to_string().into();
+                    }
+                }
+                _ => self.status_message = "Uso: track.rename 'Nombre de pista'".into(),
+            }
+            return;
+        }
         match cmd.to_lowercase().as_str() {
+            "explorer.toggle" | "explorer" => self.toggle_explorer(),
+            "explorer.insert" => self.request_file_import(super::explorer_host::ImportSource::ExplorerSelection),
+            "track.fold" => self.toggle_track_fold(self.cursor_row),
+            "track.height.compact" => self.set_selected_track_height(Some(super::track_layout::COMPACT_TRACK_HEIGHT)),
+            "track.height.default" => self.set_selected_track_height(None),
+            "track.height.tall" => self.set_selected_track_height(Some(120.0)),
+            other if other.starts_with("track.height ") => {
+                match other[13..].trim().parse::<f32>() {
+                    Ok(height) => self.set_selected_track_height(Some(height)),
+                    Err(_) => self.status_message = "Uso: track.height 40 (32–240 px)".into(),
+                }
+            }
+            "track.insert" => self.edit_track_structure(elevate::musical::track::TrackEdit::Insert),
+            "track.delete" => self.edit_track_structure(elevate::musical::track::TrackEdit::Delete),
+            "track.duplicate" => self.edit_track_structure(elevate::musical::track::TrackEdit::Duplicate),
+            "track.group" => self.edit_track_structure(elevate::musical::track::TrackEdit::Group),
+            "track.ungroup" => self.edit_track_structure(elevate::musical::track::TrackEdit::Ungroup),
+            "track.mute" => self.toggle_track_mute(self.cursor_row),
+            "track.solo" => self.toggle_track_solo(self.cursor_row),
+            "export.settings" => self.open_export_settings(),
+            "export.cancel" => self.cancel_export(),
+            "export.help" => self.status_message = "export -n Nombre.[wav,mp3,aiff,flac] -master|-individuals · -sr Hz -bits 16|24|32|32f -bitrate kbps|-vbr 0–9 -mono -tracks 1,3 -start beats -length beats -tail segundos -master-fx on|off -out carpeta · docs/EXPORT.md".into(),
+            "utility" | "utility.open" => self.open_utility(),
+            "utility.remove" => {
+                self.apply_utility_action(elevate::devices::utility_slot::UtilityAction::Remove)
+            }
+            "utility.reset" => {
+                self.apply_utility_action(elevate::devices::utility_slot::UtilityAction::Reset)
+            }
+            "utility.bypass" => self.toggle_bypass(),
+            other if other.starts_with("utility.gain ") => {
+                match other
+                    .trim_start_matches("utility.gain ")
+                    .trim()
+                    .parse::<f32>()
+                {
+                    Ok(value) => self.apply_utility_action(
+                        elevate::devices::utility_slot::UtilityAction::SetGain(value),
+                    ),
+                    Err(_) => self.status_message = "Uso: utility.gain 0.5 (0–2x)".into(),
+                }
+            }
+            "sa" | "track.insert_sampler" => self.insert_sampler_track(),
+            "sampler" => {
+                if self.tracks.is_empty() { self.edit_track_structure(elevate::musical::track::TrackEdit::Insert); }
+                if self.track_accepts_clips(self.cursor_row) { self.add_sampler(self.cursor_row); }
+            }
             "add" | "browse" | "insert" => self.open_palette(),
             "play" => self.play_context(),
             "stop" => {
@@ -176,6 +307,7 @@ impl DawApp {
             }
             "record" | "rec" => self.toggle_midi_record(),
             "capture" | "dump" => self.capture_midi_to_track(),
+            "materialize" => self.materialize_midi_selection(),
             "arrangement" | "arr" => self.set_center_view(CenterView::Arrangement),
             "piano" | "instrument" | "inst" => self.set_center_view(CenterView::Instrument),
             "session" | "pat" | "pattern" => self.set_center_view(CenterView::Session),
@@ -190,6 +322,7 @@ impl DawApp {
             "learn" => {
                 self.toggle_midi_learn();
             }
+            other if other.starts_with("clip.") => self.execute_clip_catalog_action(other),
             "midi-scan" => {
                 self.midi_hw.reconnect();
                 let ports = self.midi_hw.port_names();
@@ -201,6 +334,10 @@ impl DawApp {
             }
             "theme" => {
                 self.cycle_theme();
+            }
+            "icons" | "toolbar" => {
+                self.toolbar_icons
+                    .open_picker(super::icons::ToolbarScope::Transport);
             }
             other if other.starts_with("theme ") => {
                 let arg = other.trim_start_matches("theme ").trim();

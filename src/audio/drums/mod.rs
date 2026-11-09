@@ -8,6 +8,7 @@ use cpal::{
     SampleFormat,
     traits::{HostTrait, StreamTrait},
 };
+use elevate::devices::utility_slot::UtilitySlot;
 use elevate::musical::{
     model::Pattern,
     scheduler::PreparedPattern,
@@ -20,7 +21,7 @@ use std::sync::{
 
 pub(super) struct DrumState {
     gain: AtomicU32,
-    bypass: AtomicBool,
+    utility: UtilitySlot,
     failed: AtomicBool,
     frame: AtomicU64,
 }
@@ -38,7 +39,12 @@ pub(crate) struct DrumPlayer {
 impl DrumPlayer {
     /// Compila el patrón fuera del callback y abre la salida al tempo indicado.
     /// El plan es inmutable: para escuchar cambios hay que detener y volver a reproducir.
-    pub fn start(pattern: &Pattern, bpm: f64, gain: f32, bypass: bool) -> Result<Self, String> {
+    pub fn start(
+        pattern: &Pattern,
+        bpm: f64,
+        gain: f32,
+        utility: UtilitySlot,
+    ) -> Result<Self, String> {
         let device = cpal::default_host()
             .default_output_device()
             .ok_or("No hay dispositivo de salida predeterminado")?;
@@ -50,7 +56,7 @@ impl DrumPlayer {
         let events = plan.event_count();
         let state = Arc::new(DrumState {
             gain: AtomicU32::new(gain.clamp(0.0, 2.0).to_bits()),
-            bypass: AtomicBool::new(bypass),
+            utility,
             failed: AtomicBool::new(false),
             frame: AtomicU64::new(0),
         });
@@ -99,10 +105,6 @@ impl DrumPlayer {
         self.state
             .gain
             .store(gain.clamp(0.0, 2.0).to_bits(), Ordering::Relaxed);
-    }
-
-    pub fn set_bypass(&self, bypass: bool) {
-        self.state.bypass.store(bypass, Ordering::Relaxed);
     }
 
     pub fn failed(&self) -> bool {

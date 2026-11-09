@@ -30,6 +30,7 @@ pub struct Volume {
 }
 
 impl Volume {
+    pub const INFO: &'static PrimitiveInfo = &INFO;
     pub const GAIN: ParameterId = GAIN.id;
     pub const SMOOTHING_SECONDS: f32 = 0.005;
 

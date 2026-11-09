@@ -2,7 +2,6 @@
 use super::super::{
     CenterView, DawApp, VimMode,
     components::button::{MAMEY_LOGO_COLOR, brand_logo},
-    cursor_fx::CursorFxMode,
 };
 use gpui::{Context, IntoElement, MouseButton, SharedString, div, prelude::*, px, rgb};
 
@@ -63,6 +62,15 @@ impl DawApp {
                             .items_center()
                             .gap_2()
                             .cursor_pointer()
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _, window, cx| {
+                                    this.open_settings();
+                                    window.focus(&this.focus_handle, cx);
+                                    cx.stop_propagation();
+                                    cx.notify();
+                                }),
+                            )
                             .child(brand_logo(18.0))
                             .child(
                                 div()
@@ -91,62 +99,6 @@ impl DawApp {
                     .flex()
                     .items_center()
                     .gap_3()
-                    .child(
-                        div()
-                            .px_2()
-                            .py(px(2.0))
-                            .rounded(px(ds.radius_sm))
-                            .bg(rgb(ds.panel))
-                            .border_1()
-                            .border_color(rgb(ds.border))
-                            .text_xs()
-                            .text_color(rgb(ds.pink))
-                            .cursor_pointer()
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(|this, _, _, cx| {
-                                    this.cycle_theme();
-                                    cx.stop_propagation();
-                                    cx.notify();
-                                }),
-                            )
-                            .child(format!("🎨 {}", ds.theme.label())),
-                    )
-                    .child(
-                        div()
-                            .px_2()
-                            .py(px(2.0))
-                            .rounded(px(ds.radius_sm))
-                            .bg(rgb(ds.panel))
-                            .border_1()
-                            .border_color(rgb(ds.border))
-                            .text_xs()
-                            .text_color(rgb(if self.cursor_fx.mode() == CursorFxMode::Off {
-                                ds.muted
-                            } else {
-                                ds.orange
-                            }))
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
-                                    let all = CursorFxMode::ALL;
-                                    let idx = all
-                                        .iter()
-                                        .position(|m| *m == this.cursor_fx.mode())
-                                        .unwrap_or(0);
-                                    let next = all[(idx + 1) % all.len()];
-                                    this.set_cursor_fx(next);
-                                    this.cursor_fx.on_mouse_down(event.position);
-                                    cx.stop_propagation();
-                                    cx.notify();
-                                }),
-                            )
-                            .child(format!(
-                                "{} {}",
-                                self.cursor_fx.mode().badge(),
-                                self.cursor_fx.mode().label()
-                            )),
-                    )
                     .child(div().text_xs().text_color(rgb(ds.muted)).child(view_label))
                     .child(div().text_xs().text_color(rgb(ds.muted)).child(audio_label))
                     .child(

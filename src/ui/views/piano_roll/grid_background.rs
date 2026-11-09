@@ -1,7 +1,7 @@
 //! Teclado, rejilla y regla del piano roll.
 use crate::ui::{
     DesignSystem,
-    piano_roll::geometry::{FIRST_PITCH, Grid, KEYBOARD_WIDTH, LAST_PITCH},
+    piano_roll::geometry::{Grid, KEYBOARD_WIDTH},
 };
 use elevate::musical::{keyboard::is_black, pitch::note_name};
 use gpui::{App, Bounds, Pixels, TextAlign, TextRun, Window, fill, point, px, rgb, rgba, size};
@@ -24,8 +24,11 @@ pub(super) fn paint_rows(
         f32::from(grid.notes.size.height),
         (ds.text << 8) | 0xff,
     );
-    for pitch in FIRST_PITCH..=LAST_PITCH {
+    for pitch in 0..=127 {
         let y = grid.y(pitch);
+        if y + px(grid.row_height) <= grid.notes.top() || y >= grid.notes.bottom() {
+            continue;
+        }
         let color = if is_black(pitch) {
             ds.panel_dark
         } else {
@@ -110,8 +113,10 @@ pub(super) fn paint_time(
     cx: &mut App,
 ) {
     let subdivisions = if grid.pixels_per_beat >= 16.0 { 4 } else { 1 };
-    let step_count = (beats * subdivisions as f64).ceil().min(4096.0) as usize;
-    for step in 0..=step_count {
+    let first = (grid.first_beat * subdivisions as f64).floor() as usize;
+    let visible_beats = f64::from(f32::from(grid.notes.size.width) / grid.pixels_per_beat);
+    let last = ((grid.first_beat + visible_beats).min(beats) * subdivisions as f64).ceil() as usize;
+    for step in first..=last.min(first.saturating_add(4096)) {
         let beat = step as f64 / subdivisions as f64;
         let x = grid.x(beat);
         let is_bar = step % (4 * subdivisions) == 0;

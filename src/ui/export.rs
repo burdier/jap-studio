@@ -1,0 +1,171 @@
+//! Acción de exportación: captura estado propio y observa el resultado del worker.
+use super::DawApp;
+use crate::audio::export::{self, Snapshot, TrackMix};
+use elevate::{export::ExportOptions, musical::time::DEFAULT_BPM};
+use std::sync::{atomic::Ordering, mpsc::TryRecvError};
+
+impl DawApp {
+    pub(super) fn start_export(&mut self, command: &str) {
+        if self.export_job.is_some() {
+            self.status_message =
+                "Ya hay una exportación activa · :export.cancel para cancelarla".into();
+            return;
+        }
+        let result = (|| {
+            let mut options =
+                ExportOptions::parse_with_defaults(command, &self.settings.export.saved)?;
+            // Elegir una cabecera de grupo exporta sus pistas hijas; el grupo no aloja clips.
+            if !options.tracks.is_empty() {
+                let selected = options.tracks.clone();
+                for index in selected {
+                    if let Some(group) = self.tracks.get(index)
+                        && !group.accepts_clips()
+                    {
+                        for (child, track) in self.tracks.iter().enumerate() {
+                            if track.parent == Some(group.id) && !options.tracks.contains(&child) {
+                                options.tracks.push(child);
+                            }
+                        }
+                    }
+                }
+            }
+            if let Ok(rest) = options.directory.strip_prefix("~") {
+                options.directory = dirs::home_dir()
+                    .ok_or("No se encontró la carpeta personal")?
+                    .join(rest);
+            }
+            if options.directory.is_relative() {
+                options.directory = std::env::current_dir()
+                    .map_err(|e| e.to_string())?
+                    .join(&options.directory);
+            }
+            let audio = self
+                .timeline
+                .other_audio_clips
+                .iter()
+                .chain(self.timeline.clip.iter())
+                .cloned()
+                .collect();
+            let midi: Vec<_> = self
+                .timeline
+                .other_midi_clips
+                .iter()
+                .chain(self.timeline.midi_clip.iter())
+                .cloned()
+                .collect();
+            let needs_piano = midi.iter().any(|c| {
+                options.includes_track(c.track)
+                    && !c.props.muted
+                    && self.track_gain(c.track) > 0.0
+                    && self.tracks[c.track].instrument
+                        != Some(crate::instruments::sampler::SAMPLER_ID)
+            });
+            let piano = if needs_piano {
+                Some(self.instrument.export_snapshot()?)
+            } else {
+                None
+            };
+            let sampler_tracks: Vec<usize> = self
+                .tracks
+                .iter()
+                .enumerate()
+                .filter(|(_, t)| t.instrument == Some(crate::instruments::sampler::SAMPLER_ID))
+                .map(|(i, _)| i)
+                .collect();
+            let needs_sampler = midi.iter().any(|c| {
+                sampler_tracks.contains(&c.track)
+                    && options.includes_track(c.track)
+                    && !c.props.muted
+                    && self.track_gain(c.track) > 0.
+            });
+            let sampler = if needs_sampler {
+                Some((sampler_tracks, self.sampler.snapshot()?))
+            } else {
+                None
+            };
+            let tracks = self
+                .tracks
+                .iter()
+                .enumerate()
+                .map(|(i, track)| TrackMix {
+                    name: track.name.to_string(),
+                    gain: self.track_gain(i),
+                    fx_gain: self.track_fx_gain(i),
+                    pan: self.track_pan(i),
+                })
+                .collect();
+            let snapshot = Snapshot {
+                audio,
+                midi,
+                piano,
+                sampler,
+                tracks,
+                utility: self.utility.state(),
+                bpm: DEFAULT_BPM,
+            };
+            export::start(snapshot, options)
+        })();
+        match result {
+            Ok(job) => {
+                self.export_job = Some(job);
+                self.status_message = "Preparando exportación del Arrangement…".into();
+            }
+            Err(error) => self.status_message = format!("Export: {error}"),
+        }
+    }
+
+    pub(super) fn cancel_export(&mut self) {
+        if let Some(job) = &self.export_job {
+            job.cancel.store(true, Ordering::Relaxed);
+            self.status_message = "Cancelando exportación…".into();
+        } else {
+            self.status_message = "No hay exportación activa".into();
+        }
+    }
+
+    pub(super) fn poll_export(&mut self) {
+        let Some(job) = &self.export_job else {
+            return;
+        };
+        match job.result.try_recv() {
+            Ok(result) => {
+                self.export_job = None;
+                self.status_message = match result {
+                    Ok(report) => {
+                        let folder = report
+                            .paths
+                            .first()
+                            .and_then(|p| p.parent())
+                            .map(|p| p.display().to_string())
+                            .unwrap_or_default();
+                        let peak = if report.overs == 0 {
+                            String::new()
+                        } else {
+                            format!(
+                                " · {} muestras >0 dBFS (PCM entero/MP3 saturan; float conserva)",
+                                report.overs
+                            )
+                        };
+                        format!(
+                            "Exportados {} archivos → {folder}{peak}",
+                            report.paths.len()
+                        )
+                    }
+                    Err(error) => format!("Export: {error}"),
+                };
+            }
+            Err(TryRecvError::Empty) => {
+                if !job.cancel.load(Ordering::Relaxed) {
+                    self.status_message = format!(
+                        "Exportando Arrangement · {}% · :export.cancel",
+                        job.progress.load(Ordering::Relaxed)
+                    );
+                }
+            }
+            Err(TryRecvError::Disconnected) => {
+                self.export_job = None;
+                self.status_message = "Export: el worker terminó sin resultado".into();
+            }
+        }
+    }
+}

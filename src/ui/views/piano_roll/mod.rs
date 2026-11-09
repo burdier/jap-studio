@@ -4,70 +4,13 @@ mod grid_background;
 mod inspector;
 mod toolbar;
 
-use crate::ui::{
-    DawApp,
-    components::{button::chip_option, context_menu::context_menu},
-    piano_roll::RollAction,
-};
+use crate::ui::{DawApp, VimMode, piano_roll::RollAction};
 use elevate::musical::time::PPQ;
 use gpui::{
     Context, FocusHandle, IntoElement, KeyDownEvent, MouseButton, div, prelude::*, px, rgb,
 };
-use std::rc::Rc;
 
 impl DawApp {
-    pub(in crate::ui) fn render_midi_clip_menu(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let menu = self.piano_roll.menu.expect("menú visible");
-        let ds = &self.ds;
-        let close = Rc::new(cx.listener(|this, _, _, cx| {
-            this.piano_roll.menu = None;
-            cx.notify();
-        }));
-        context_menu(
-            menu.position,
-            close,
-            div()
-                .w(px(240.0))
-                .p_1()
-                .bg(rgb(ds.panel_dark))
-                .border_1()
-                .border_color(rgb(ds.border))
-                .rounded(px(ds.radius_md))
-                .child(
-                    div()
-                        .px_2()
-                        .py_1()
-                        .text_xs()
-                        .text_color(rgb(ds.muted))
-                        .child(format!(
-                            "{} · {:.2} beats",
-                            self.tracks[menu.track].name, menu.beat
-                        )),
-                )
-                .child(
-                    chip_option(ds, "＋ Insertar MIDI clip", true, ds.accent)
-                        .w_full()
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(|this, _, window, cx| {
-                                this.insert_midi_clip_from_menu();
-                                this.focus_piano_roll(window, cx);
-                                cx.stop_propagation();
-                                cx.notify();
-                            }),
-                        ),
-                )
-                .child(
-                    div()
-                        .px_2()
-                        .py_1()
-                        .text_xs()
-                        .text_color(rgb(ds.muted))
-                        .child("8 compases · mock de referencia"),
-                ),
-        )
-    }
-
     pub(in crate::ui) fn render_piano_roll(
         &self,
         focus: &FocusHandle,
@@ -98,15 +41,36 @@ impl DawApp {
             .capture_any_mouse_down(move |_, window, cx| window.focus(&focus, cx))
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
-            .on_mouse_move(|_, _, cx| cx.stop_propagation())
+            .on_mouse_move(cx.listener(|this, _, _, cx| {
+                // El separador del explorador sigue funcionando al cruzar sobre el editor.
+                if this.split_drag.is_none() {
+                    cx.stop_propagation();
+                }
+            }))
             .on_scroll(|_, _, cx| cx.stop_propagation())
+            .on_pinch(|_, _, cx| cx.stop_propagation())
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                if this.handle_transport_key(event) {
+                    cx.stop_propagation();
+                    cx.notify();
+                    return;
+                }
                 let key = event
                     .keystroke
                     .key_char
                     .as_deref()
                     .unwrap_or(&event.keystroke.key);
-                this.handle_roll_key(key, window, cx);
+                let modifiers = event.keystroke.modifiers;
+                if key == "e"
+                    && this.mode == VimMode::Normal
+                    && !modifiers.control
+                    && !modifiers.alt
+                    && !modifiers.platform
+                {
+                    this.handle_key(event, window, cx);
+                } else {
+                    this.handle_roll_key(key, window, cx);
+                }
                 cx.stop_propagation();
                 cx.notify();
             }))
@@ -138,6 +102,12 @@ impl DawApp {
                                     .text_color(rgb(ds.muted))
                                     .child("MOCK"),
                             )
+                            .child(self.roll_button(
+                                "Ajustar vista",
+                                false,
+                                RollAction::ResetView,
+                                cx,
+                            ))
                             .child(self.roll_button(
                                 if self.piano_roll_window.is_some() {
                                     "Acoplar · Esc"

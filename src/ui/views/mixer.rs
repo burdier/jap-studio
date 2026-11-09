@@ -1,6 +1,5 @@
 //! Mock visual explícito. Estos medidores no representan audio del dispositivo.
 use super::super::{DawApp, components::meter::vertical_meter};
-use super::tracks::DEMO_LEVELS;
 use gpui::{IntoElement, div, prelude::*, px, rgb};
 
 impl DawApp {
@@ -24,13 +23,13 @@ impl DawApp {
                         div()
                             .text_center()
                             .text_xs()
-                            .text_color(rgb(colors[i]))
-                            .child(track.name),
+                            .text_color(rgb(colors[i % colors.len()]))
+                            .child(track.name.to_string()),
                     )
                     .child(vertical_meter(
                         ds,
-                        DEMO_LEVELS[i] / 10,
-                        colors[i],
+                        self.track_levels[i] / 10,
+                        colors[i % colors.len()],
                         ds.border,
                     ))
                     .child(
@@ -38,7 +37,7 @@ impl DawApp {
                             .text_center()
                             .text_xs()
                             .text_color(rgb(ds.muted))
-                            .child(format!("{}%", DEMO_LEVELS[i])),
+                            .child(format!("{}%", self.track_levels[i])),
                     )
                     .child(
                         div()

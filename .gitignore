@@ -1,5 +1,6 @@
 # Artefactos de compilación
 /target/
+/exports/
 
 # Metadatos locales del IDE y del agente
 /.idea/
@@ -11,3 +12,6 @@
 
 # Bancos descargados con scripts/fetch_soundfonts.sh (GB; no se versionan)
 /assets/soundfonts/freepats/
+
+# Bibliotecas nativas locales construidas desde versiones fijadas
+/.local/

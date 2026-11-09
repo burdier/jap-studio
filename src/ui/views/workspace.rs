@@ -1,13 +1,95 @@
 //! Arrangement superior y panel inferior del editor; el mixer ocupa el hueco al separarlo.
 use crate::ui::{
     DawApp,
-    components::splitter::{SplitDrag, horizontal_splitter},
+    components::splitter::{SplitDrag, horizontal_splitter, vertical_splitter},
     piano_roll::RollAction,
 };
-use gpui::{Context, IntoElement, MouseButton, MouseDownEvent, div, prelude::*, px, relative, rgb};
+use gpui::{
+    Context, IntoElement, MouseButton, MouseDownEvent, StyleRefinement, div, prelude::*, px,
+    relative, rgb,
+};
 
 impl DawApp {
     pub(super) fn render_arrangement_workspace(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let resizing = matches!(self.split_drag, Some(SplitDrag::Explorer { .. }));
+        div()
+            .flex_1()
+            .min_h_0()
+            .min_w_0()
+            .flex()
+            .gap(px(3.0))
+            .overflow_hidden()
+            .when(self.explorer.width > 0.0, |workspace| {
+                workspace.child(
+                    div()
+                        .w(px(self.explorer.width))
+                        .h_full()
+                        .flex_shrink_0()
+                        .overflow_hidden()
+                        .child(
+                            self.explorer
+                                .view
+                                .clone()
+                                .cached(StyleRefinement::default().size_full()),
+                        ),
+                )
+            })
+            .when(self.explorer.width > 0.0 || resizing, |workspace| {
+                workspace.child(vertical_splitter(&self.ds, resizing).on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                        this.split_drag = Some(SplitDrag::Explorer {
+                            start_x: f32::from(event.position.x),
+                            start_width: this.explorer.width,
+                        });
+                        window.focus(&this.focus_handle, cx);
+                        cx.stop_propagation();
+                        cx.notify();
+                    }),
+                ))
+            })
+            .when(self.fx.width > 0.0, |workspace| {
+                workspace.child(
+                    div()
+                        .w(px(self.fx.width))
+                        .h_full()
+                        .flex_shrink_0()
+                        .overflow_hidden()
+                        .child(
+                            self.fx
+                                .view
+                                .clone()
+                                .cached(StyleRefinement::default().size_full()),
+                        ),
+                )
+            })
+            .when(
+                self.fx.width > 0.0 || matches!(self.split_drag, Some(SplitDrag::Fx { .. })),
+                |workspace| {
+                    workspace.child(
+                        vertical_splitter(
+                            &self.ds,
+                            matches!(self.split_drag, Some(SplitDrag::Fx { .. })),
+                        )
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                                this.split_drag = Some(SplitDrag::Fx {
+                                    start_x: f32::from(event.position.x),
+                                    start_width: this.fx.width,
+                                });
+                                window.focus(&this.focus_handle, cx);
+                                cx.stop_propagation();
+                                cx.notify();
+                            }),
+                        ),
+                    )
+                },
+            )
+            .child(self.render_arrangement_editors(cx))
+    }
+
+    fn render_arrangement_editors(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let editor_open = self.piano_roll.open && self.timeline.midi_clip.is_some();
         let dragging_split = matches!(self.split_drag, Some(SplitDrag::WorkspaceVertical { .. }));
         let ratio = self.workspace_split_ratio;

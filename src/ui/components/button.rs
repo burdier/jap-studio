@@ -65,7 +65,11 @@ pub(in crate::ui) fn chip_option(
         .px_3()
         .py_1()
         .rounded(px(ds.radius_sm))
-        .bg(rgb(if selected { ds.panel_hover } else { ds.panel }))
+        .bg(rgb(if selected {
+            ds.selection_background()
+        } else {
+            ds.panel
+        }))
         .border_1()
         .border_color(rgb(if selected { accent_color } else { ds.border }))
         .text_xs()
@@ -86,5 +90,29 @@ pub(in crate::ui) fn badge_tag(
         .bg(rgb(ds.panel_dark))
         .text_xs()
         .text_color(rgb(color))
+        .child(label.into())
+}
+
+pub(in crate::ui) fn toggle_badge(
+    ds: &DesignSystem,
+    label: impl Into<SharedString>,
+    active: bool,
+    color: u32,
+) -> Div {
+    div()
+        .w(px(22.0))
+        .h(px(18.0))
+        .flex()
+        .items_center()
+        .justify_center()
+        .px_1()
+        .rounded(px(ds.radius_sm))
+        .bg(rgb(if active { color } else { ds.panel_dark }))
+        .text_xs()
+        .text_color(rgb(if active { ds.panel_dark } else { color }))
+        .border_1()
+        .border_color(rgb(if active { color } else { ds.border }))
+        .text_size(px(11.0))
+        .cursor_pointer()
         .child(label.into())
 }

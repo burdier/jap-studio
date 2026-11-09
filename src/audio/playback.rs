@@ -1,9 +1,10 @@
 //! Reproductor de UN clip. Adaptador provisional: no es el motor multipista.
-use super::{AudioClip, BEATS_PER_SECOND, output::choose_output_config};
+use super::{AudioClip, BEATS_PER_SECOND, output::choose_output_config, stereo_pan::StereoPan};
 use cpal::{
     FromSample, SampleFormat, SizedSample,
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
+use elevate::devices::utility_slot::UtilitySlot;
 use elevate::{Primitive, ProcessSpec, primitives::amplitude::Volume};
 use std::sync::{
     Arc,
@@ -12,7 +13,9 @@ use std::sync::{
 
 struct PlaybackState {
     gain: AtomicU32,
-    bypass: AtomicBool,
+    pan: StereoPan,
+    fx: super::fx_gain::FxGain,
+    utility: UtilitySlot,
     position: AtomicU64,
     finished: AtomicBool,
     failed: AtomicBool,
@@ -29,7 +32,9 @@ impl Player {
         clip: &AudioClip,
         start_beat: f64,
         gain: f32,
-        bypass: bool,
+        utility: UtilitySlot,
+        pan: f32,
+        fx_gain: f32,
     ) -> Result<Self, String> {
         let device = cpal::default_host()
             .default_output_device()
@@ -38,7 +43,9 @@ impl Player {
         let config = choose_output_config(&device, Some(rate))?;
         let state = Arc::new(PlaybackState {
             gain: AtomicU32::new(gain.to_bits()),
-            bypass: AtomicBool::new(bypass),
+            pan: StereoPan::new(pan),
+            fx: super::fx_gain::FxGain::new(fx_gain),
+            utility,
             position: AtomicU64::new(
                 (start_beat / BEATS_PER_SECOND * f64::from(rate)).round() as u64
             ),
@@ -71,11 +78,17 @@ impl Player {
             f32::from_bits(state.gain.load(Ordering::Relaxed)),
         )
         .map_err(|error| error.to_string())?;
-        volume.set_bypassed(state.bypass.load(Ordering::Relaxed));
+        let mut utility = state
+            .utility
+            .prepare(ProcessSpec::new(f64::from(config.sample_rate)).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+        let mut fx = state.fx.prepare();
         let file = clip.file.clone();
         let clip_start =
             (clip.start_beat / BEATS_PER_SECOND * f64::from(file.sample_rate)).round() as u64;
-        let clip_end = clip_start.saturating_add(file.frames.len() as u64);
+        let source_offset = (clip.trim_start * f64::from(file.sample_rate)).round() as u64;
+        let visible = (clip.length_seconds() * f64::from(file.sample_rate)).round() as u64;
+        let clip_end = clip_start.saturating_add(visible);
         let mut position = state.position.load(Ordering::Relaxed);
         let error_state = state.clone();
         device
@@ -86,19 +99,22 @@ impl Player {
                     if volume.gain() != gain && volume.set_gain(gain).is_err() {
                         state.failed.store(true, Ordering::Relaxed);
                     }
-                    volume.set_bypassed(state.bypass.load(Ordering::Relaxed));
                     let mut block = [[0.0_f32; 2]; 256];
                     for output_block in output.chunks_mut(512) {
                         let count = output_block.len() / 2;
                         for frame in block.iter_mut().take(count) {
                             *frame = position
                                 .checked_sub(clip_start)
-                                .and_then(|index| file.frames.get(index as usize))
+                                .filter(|index| *index < visible)
+                                .and_then(|index| file.frames.get((index + source_offset) as usize))
                                 .copied()
                                 .unwrap_or([0.0; 2]);
                             position = position.saturating_add(1).min(clip_end);
                         }
+                        fx.process(&state.fx, &mut block[..count]);
                         volume.process(&mut block[..count]);
+                        state.pan.apply(&mut block[..count]);
+                        utility.process(&mut block[..count]);
                         for (destination, frame) in
                             output_block.chunks_exact_mut(2).zip(block.iter())
                         {
@@ -120,13 +136,16 @@ impl Player {
             .map_err(|error| error.to_string())
     }
 
+    pub fn set_fx_gain(&self, gain: f32) {
+        self.state.fx.set(gain);
+    }
     pub fn set_gain(&self, gain: f32) {
         self.state
             .gain
             .store(gain.clamp(0.0, 2.0).to_bits(), Ordering::Relaxed);
     }
-    pub fn set_bypass(&self, bypass: bool) {
-        self.state.bypass.store(bypass, Ordering::Relaxed);
+    pub fn set_pan(&self, pan: f32) {
+        self.state.pan.set(pan);
     }
     pub fn beat(&self) -> f64 {
         self.state.position.load(Ordering::Relaxed) as f64 / f64::from(self.sample_rate)
