@@ -237,7 +237,7 @@ mod tests {
         let entry = palette
             .handle_key("enter", true)
             .expect("catálogo no vacío");
-        assert_eq!(entry.id, "instrument.piano");
+        assert_eq!(entry.id, catalog::entries()[0].id);
     }
 
     #[test]
