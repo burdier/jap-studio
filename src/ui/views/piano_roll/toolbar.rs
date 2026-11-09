@@ -5,9 +5,7 @@ use crate::ui::{
     icons::ToolbarScope,
     piano_roll::{RollAction, RollTool},
 };
-use gpui::{Context, Div, IntoElement, MouseButton, div, prelude::*, px, rgb};
-
-impl DawApp {
+use gpui::{Context, Div, IntoElement, MouseButton, div, prelude::*, px, rgb};impl DawApp {
     pub(in crate::ui::views) fn roll_button(
         &self,
         label: impl Into<gpui::SharedString>,
@@ -49,7 +47,7 @@ impl DawApp {
             .gap(px(8.0))
             .px_1()
             .overflow_x_scroll()
-            .child(self.roll_button("◀", false, preview("clip anterior"), cx))
+            .child(self.roll_button("◀", false, RollAction::PreviousClip, cx))
             .child(
                 self.roll_button(
                     format!("Clip: {} (pista {})", clip.name, clip.track + 1),
@@ -60,7 +58,7 @@ impl DawApp {
                 .w(px(218.0))
                 .overflow_hidden(),
             )
-            .child(self.roll_button("▶", false, preview("clip siguiente"), cx))
+            .child(self.roll_button("▶", false, RollAction::NextClip, cx))
             .child(self.roll_button(
                 format!("Len: {} bars", (clip.duration_beats() / 4.0).ceil() as u64),
                 false,
@@ -72,8 +70,8 @@ impl DawApp {
             .child(self.roll_button("Quantize: 1/16 ▾", false, preview("cuantización"), cx))
             .child(self.roll_button("Swing: 0%", false, preview("swing"), cx))
             .child(separator(ds.border))
-            .child(self.roll_button("Q", true, preview("cuantización"), cx))
-            .child(self.roll_button("H", false, preview("humanizar"), cx))
+            .child(self.roll_button("Q", false, RollAction::Quantize, cx))
+            .child(self.roll_button("H", false, RollAction::Humanize, cx))
             .child(self.roll_button("V: 1/8 ▾", false, preview("duración de nota"), cx))
             .child(separator(ds.border))
             .child(
@@ -146,7 +144,26 @@ impl DawApp {
                     ("▣", "copiar"),
                     ("▤", "pegar"),
                 ]
-                .map(|(icon, label)| self.roll_button(icon, false, preview(label), cx)),
+                .map(|(icon, label)| {
+                    let action = match label {
+                        "selección rectangular" => RollAction::Tool(RollTool::Box),
+                        "longitud" => RollAction::Tool(RollTool::Length),
+                        "cortar" => RollAction::Cut,
+                        "copiar" => RollAction::Copy,
+                        "pegar" => RollAction::Paste,
+                        _ => preview(label),
+                    };
+                    self.roll_button(
+                        icon,
+                        matches!(
+                            (label, self.piano_roll.tool),
+                            ("selección rectangular", RollTool::Box)
+                                | ("longitud", RollTool::Length)
+                        ),
+                        action,
+                        cx,
+                    )
+                }),
             )
             .child(separator(ds.border))
             .child(self.roll_button("Scale: C minor (Aeolian) ▾", false, preview("escala"), cx))
@@ -154,7 +171,7 @@ impl DawApp {
             .child(separator(ds.border))
             .child(self.roll_button("Vel: 100", false, preview("velocity"), cx))
             .child(self.roll_button("Gate: 100%", false, preview("gate"), cx))
-            .child(self.roll_button("Humanize: 0%", false, preview("humanizar"), cx))
+            .child(self.roll_humanize_control(cx))
             .child(separator(ds.border))
             .child(self.render_toolbar_bound_buttons(ToolbarScope::PianoRoll, true, cx))
             .child(self.roll_button("⚙", false, preview("preferencias del editor"), cx));
@@ -167,6 +184,52 @@ impl DawApp {
             .border_color(rgb(ds.border))
             .child(first)
             .child(second)
+    }
+
+    /// Control compacto de humanización: `−  Humanize: X%  +` con rueda de ratón.
+    fn roll_humanize_control(&self, cx: &mut Context<Self>) -> Div {
+        let ds = &self.ds;
+        let amount = self.piano_roll.humanize_amount;
+        let amount_down = amount.saturating_sub(10);
+        let amount_up = amount.saturating_add(10).min(100);
+        div()
+            .flex()
+            .items_center()
+            .gap(px(1.0))
+            // Botón −
+            .child(
+                self.roll_button("−", false, RollAction::HumanizeAmount(amount_down), cx)
+                    .w(px(14.0))
+                    .px(px(2.0)),
+            )
+            // Etiqueta con rueda para ajustar en pasos de 5 %
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .h(px(23.0))
+                    .px(px(5.0))
+                    .rounded(px(2.0))
+                    .cursor_pointer()
+                    .text_size(px(10.5))
+                    .text_color(rgb(ds.text))
+                    .on_scroll(cx.listener(|this, event: &gpui::ScrollEvent, window, cx| {
+                        let delta = -event.delta.pixel_delta(px(1.0)).y;
+                        let step: i16 = if delta > px(0.0) { 5 } else { -5 };
+                        let next =
+                            (i16::from(this.piano_roll.humanize_amount) + step).clamp(0, 100) as u8;
+                        this.apply_roll_action(RollAction::HumanizeAmount(next), window, cx);
+                        cx.stop_propagation();
+                        cx.notify();
+                    }))
+                    .child(format!("Humanize: {amount}%")),
+            )
+            // Botón +
+            .child(
+                self.roll_button("+", false, RollAction::HumanizeAmount(amount_up), cx)
+                    .w(px(14.0))
+                    .px(px(2.0)),
+            )
     }
 }
 

@@ -2,7 +2,7 @@
 use super::{PianoRoll, RollAction, RollTool, demo};
 use crate::ui::DawApp;
 use elevate::musical::time::{PPQ, Tick};
-use gpui::{Context, Pixels, Point, Window};
+use gpui::{Context, Window};
 
 impl DawApp {
     pub(in crate::ui) fn insert_midi_clip_from_menu(&mut self) {
@@ -39,9 +39,11 @@ impl DawApp {
         };
         self.cursor_row = clip.track;
         let cursor = Tick((13 * PPQ).min(clip.pattern.length().0 - 1));
+        let copied_note = self.piano_roll.copied_note;
         self.piano_roll = PianoRoll {
             open: true,
             cursor,
+            copied_note,
             ..PianoRoll::default()
         };
         self.timeline.end_clip_drag();
@@ -80,11 +82,21 @@ impl DawApp {
                 window.focus(&self.focus_handle, cx);
             }
             RollAction::ToggleWindow => self.toggle_piano_roll_window(cx),
+            RollAction::PreviousClip => self.step_roll_clip(-1),
+            RollAction::NextClip => self.step_roll_clip(1),
             RollAction::Tool(tool) => {
                 self.piano_roll.tool = tool;
-                self.piano_roll.hint =
-                    "Mock visual · selección disponible; edición MIDI pendiente".into();
+                self.piano_roll.hint = "Herramienta MIDI activa".into();
             }
+            RollAction::Quantize => self.roll_quantize(),
+            RollAction::Humanize => self.roll_humanize(),
+            RollAction::HumanizeAmount(amount) => {
+                self.piano_roll.humanize_amount = amount;
+                self.piano_roll.hint = format!("Humanize: {amount}%");
+            }
+            RollAction::Copy => self.roll_copy(false),
+            RollAction::Cut => self.roll_copy(true),
+            RollAction::Paste => self.roll_paste(),
             RollAction::GhostNotes => self.piano_roll.ghost_notes = !self.piano_roll.ghost_notes,
             RollAction::Follow => self.piano_roll.follow = !self.piano_roll.follow,
             RollAction::Velocities => self.piano_roll.velocities = !self.piano_roll.velocities,
@@ -109,6 +121,8 @@ impl DawApp {
             "e" | "E" => Some(RollAction::Tool(RollTool::Erase)),
             "p" => Some(RollAction::Tool(RollTool::Paint)),
             "m" => Some(RollAction::Tool(RollTool::Mute)),
+            "q" => Some(RollAction::Quantize),
+            "H" => Some(RollAction::Humanize),
             "h" | "left" | "l" | "right" => {
                 let direction = if matches!(key, "h" | "left") { -1 } else { 1 };
                 if let Some(clip) = &self.timeline.midi_clip {
@@ -130,6 +144,7 @@ impl DawApp {
                             (None, _) => 0,
                         };
                         self.piano_roll.selected = Some(notes[next].id);
+                        self.piano_roll.selected_notes = vec![notes[next].id];
                     }
                 }
                 None
@@ -139,27 +154,5 @@ impl DawApp {
         if let Some(action) = action {
             self.apply_roll_action(action, window, cx);
         }
-    }
-
-    pub(in crate::ui) fn select_roll_note(&mut self, position: Point<Pixels>) {
-        let Some(clip) = &self.timeline.midi_clip else {
-            return;
-        };
-        let Some((tick, pitch)) = self
-            .piano_roll
-            .grid
-            .get()
-            .pick(position, clip.pattern.length())
-        else {
-            return;
-        };
-        self.piano_roll.cursor = tick;
-        self.piano_roll.selected = clip
-            .notes()
-            .iter()
-            .find(|note| {
-                note.pitch == pitch && tick >= note.start && tick.0 < note.start.0 + note.duration.0
-            })
-            .map(|note| note.id);
     }
 }

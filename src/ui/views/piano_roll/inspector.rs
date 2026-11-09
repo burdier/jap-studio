@@ -79,7 +79,8 @@ impl DawApp {
                             .child(property(ds, "Q", "1/16"))
                             .child(property(ds, "Strength", "100%"))
                             .child(property(ds, "Swing", "0%"))
-                            .child(property(ds, "Random", "0%")),
+                            .child(property(ds, "Random", "0%"))
+                            .child(self.roll_humanize_row(cx)),
                     )
                     .child(
                         section(ds, "Scale")
@@ -169,6 +170,89 @@ impl DawApp {
                     .text_size(px(10.0))
                     .text_color(rgb(ds.text))
                     .child(label),
+            )
+    }
+
+    /// Fila de control de intensidad de humanización en el inspector.
+    fn roll_humanize_row(&self, cx: &mut Context<Self>) -> Div {
+        let ds = &self.ds;
+        let amount = self.piano_roll.humanize_amount;
+        let amount_down = amount.saturating_sub(10);
+        let amount_up = amount.saturating_add(10).min(100);
+        div()
+            .h(px(16.0))
+            .flex()
+            .items_center()
+            .text_size(px(10.5))
+            .child(
+                div()
+                    .w(px(64.0))
+                    .flex_shrink_0()
+                    .text_color(rgb(ds.muted))
+                    .child("Humanize"),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(2.0))
+                    .child(
+                        div()
+                            .text_color(rgb(ds.muted))
+                            .text_size(px(10.0))
+                            .cursor_pointer()
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |this, _, window, cx| {
+                                    this.apply_roll_action(
+                                        RollAction::HumanizeAmount(amount_down),
+                                        window,
+                                        cx,
+                                    );
+                                    cx.stop_propagation();
+                                    cx.notify();
+                                }),
+                            )
+                            .child("−"),
+                    )
+                    .child(
+                        div()
+                            .min_w(px(32.0))
+                            .text_color(rgb(ds.text))
+                            .on_scroll(cx.listener(|this, event: &gpui::ScrollEvent, window, cx| {
+                                let delta = -event.delta.pixel_delta(px(1.0)).y;
+                                let step: i16 = if delta > px(0.0) { 5 } else { -5 };
+                                let next = (i16::from(this.piano_roll.humanize_amount) + step)
+                                    .clamp(0, 100) as u8;
+                                this.apply_roll_action(
+                                    RollAction::HumanizeAmount(next),
+                                    window,
+                                    cx,
+                                );
+                                cx.stop_propagation();
+                                cx.notify();
+                            }))
+                            .child(format!("{amount}%")),
+                    )
+                    .child(
+                        div()
+                            .text_color(rgb(ds.muted))
+                            .text_size(px(10.0))
+                            .cursor_pointer()
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |this, _, window, cx| {
+                                    this.apply_roll_action(
+                                        RollAction::HumanizeAmount(amount_up),
+                                        window,
+                                        cx,
+                                    );
+                                    cx.stop_propagation();
+                                    cx.notify();
+                                }),
+                            )
+                            .child("+"),
+                    ),
             )
     }
 }
