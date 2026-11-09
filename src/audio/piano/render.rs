@@ -29,6 +29,7 @@ pub(super) fn build_stream<T: SizedSample + FromSample<f32>>(
         .prepare(ProcessSpec::new(f64::from(config.sample_rate)).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;
     let mut fx = state.fx.prepare();
+    let mut filter = super::filter::StereoFilter::new(config.sample_rate, Default::default());
     let mut left = vec![0.0_f32; RENDER_CHUNK];
     let mut right = vec![0.0_f32; RENDER_CHUNK];
     let mut block = [[0.0_f32; 2]; RENDER_CHUNK];
@@ -43,6 +44,7 @@ pub(super) fn build_stream<T: SizedSample + FromSample<f32>>(
                         break;
                     };
                     match command {
+                        NoteCommand::Filter(settings) => filter.set(settings),
                         NoteCommand::SamplerControl(cc, v) => {
                             if let SynthBackend::Sampler(s) = &mut synthesizer {
                                 s.control(cc, v);
@@ -99,6 +101,7 @@ pub(super) fn build_stream<T: SizedSample + FromSample<f32>>(
                     {
                         *frame = [left, right];
                     }
+                    filter.process(&mut block[..frames]);
                     fx.process(&state.fx, &mut block[..frames]);
                     volume.process(&mut block[..frames]);
                     state.pan.apply(&mut block[..frames]);

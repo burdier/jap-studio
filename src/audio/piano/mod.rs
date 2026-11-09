@@ -1,5 +1,6 @@
 //! Adaptador SoundFont (`libfluidsynth` C por `dlopen` con respaldo `RustySynth`) → Volume → CPAL.
 mod backend;
+mod filter;
 mod fluidsynth;
 mod offline;
 mod render;
@@ -36,6 +37,7 @@ const COMMAND_QUEUE_CAP: usize = 512;
 
 #[derive(Clone)]
 enum NoteCommand {
+    Filter(elevate::devices::filter::FilterSettings),
     SamplerControl(u8, f32),
     On {
         note: u8,
@@ -227,6 +229,9 @@ impl PianoPlayer {
     }
     pub fn set_effects(&self, enabled: bool) {
         self.push(NoteCommand::Effects(enabled));
+    }
+    pub fn set_filter(&self, settings: elevate::devices::filter::FilterSettings) {
+        self.push(NoteCommand::Filter(settings));
     }
     /// Compila `pattern` fuera del callback y ordena su reproducción sample-accurate.
     pub fn play_pattern(

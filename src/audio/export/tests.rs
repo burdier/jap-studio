@@ -305,6 +305,7 @@ fn midi_offline_uses_soundfont_settings_and_preserves_pre_roll_for_cropped_expor
         },
         midi: vec![(0xB0, 7, 100), (0xC0, 0, 0)],
         master_volume: 0.7,
+        filter: Default::default(),
     });
     let all = render(&snap, "export -tail 0.1");
     assert!(all[..6000].iter().all(|f| *f == [0.0; 2]));
@@ -318,6 +319,17 @@ fn midi_offline_uses_soundfont_settings_and_preserves_pre_roll_for_cropped_expor
     {
         assert!((a - b).abs() < 1e-5);
     }
+    snap.piano.as_mut().unwrap().filter = elevate::devices::filter::FilterSettings {
+        enabled: true,
+        cutoff: 40.,
+        ..Default::default()
+    };
+    let filtered = render(&snap, "export -tail 0.1");
+    let energy = |frames: &[[f32; 2]]| frames.iter().flatten().map(|x| x * x).sum::<f32>();
+    assert!(
+        energy(&filtered) < energy(&all) * 0.1,
+        "el filtro del snapshot debe procesar el SoundFont exportado"
+    );
     snap.piano.as_mut().unwrap().master_volume = 0.0;
     let silent = render(&snap, "export");
     let peak = silent

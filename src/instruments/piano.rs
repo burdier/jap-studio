@@ -187,6 +187,15 @@ impl Piano {
             Applies::Live => {
                 if let Some(player) = &self.player {
                     send(player, id, value);
+                    if matches!(
+                        id,
+                        ParamId::FilterEnabled
+                            | ParamId::FilterMode
+                            | ParamId::Cutoff
+                            | ParamId::Resonance
+                    ) {
+                        player.set_filter(self.params.filter());
+                    }
                 }
                 false
             }
@@ -239,6 +248,7 @@ impl Piano {
             path: bank.path.clone(),
             midi,
             master_volume,
+            filter: self.params.filter(),
             settings: PianoSettings {
                 maximum_polyphony: self.params.get(ParamId::Polyphony) as usize,
                 reverb_and_chorus: self.params.get(ParamId::Effects) >= 0.5,
@@ -278,6 +288,7 @@ impl Piano {
         {
             send(&player, spec.id, self.params.get(spec.id));
         }
+        player.set_filter(self.params.filter());
         self.player = Some(player);
         Ok(())
     }

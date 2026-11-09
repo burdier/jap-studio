@@ -1,4 +1,5 @@
 //! Dispositivos internos: descriptor/fábrica públicos, DSP preparado fuera del callback.
+pub mod filter;
 pub mod fx_gain;
 pub mod sampler;
 pub mod utility;

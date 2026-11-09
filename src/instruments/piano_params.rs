@@ -17,6 +17,10 @@ pub(crate) enum ParamId {
     CoarseTune,
     Polyphony,
     Effects,
+    FilterEnabled,
+    FilterMode,
+    Cutoff,
+    Resonance,
 }
 
 /// Cuándo surte efecto un cambio.
@@ -46,15 +50,31 @@ impl ParamSpec {
 
     /// Fracción 0..1 → valor, ajustado al paso.
     pub fn from_fraction(&self, fraction: f32) -> f32 {
-        let raw = self.min + fraction.clamp(0.0, 1.0) * (self.max - self.min);
+        let fraction = fraction.clamp(0.0, 1.0);
+        let raw = if self.id == ParamId::Cutoff {
+            self.min * (self.max / self.min).powf(fraction)
+        } else {
+            self.min + fraction * (self.max - self.min)
+        };
         ((raw / self.step).round() * self.step).clamp(self.min, self.max)
     }
 
     pub fn fraction(&self, value: f32) -> f32 {
+        if self.id == ParamId::Cutoff {
+            return (value.clamp(self.min, self.max) / self.min).ln() / (self.max / self.min).ln();
+        }
         ((value - self.min) / (self.max - self.min)).clamp(0.0, 1.0)
     }
 
     pub fn display(&self, value: f32) -> String {
+        if self.id == ParamId::FilterMode {
+            return match value.round() as u8 {
+                1 => "HP 12",
+                2 => "BP 12",
+                _ => "LP 12",
+            }
+            .into();
+        }
         if self.is_toggle() {
             return if value >= 0.5 { "ON" } else { "OFF" }.into();
         }
@@ -86,7 +106,7 @@ const fn spec(
 }
 
 use Applies::{Live, Restart};
-pub(crate) const SPECS: [ParamSpec; 14] = [
+pub(crate) const SPECS: [ParamSpec; 18] = [
     spec(
         ParamId::MasterVolume,
         "Master",
@@ -97,19 +117,10 @@ pub(crate) const SPECS: [ParamSpec; 14] = [
         "",
         Live,
     ),
-    spec(
-        ParamId::Volume,
-        "Volume (CC7)",
-        0.0,
-        127.0,
-        100.0,
-        1.0,
-        "",
-        Live,
-    ),
+    spec(ParamId::Volume, "Volumen", 0.0, 127.0, 100.0, 1.0, "", Live),
     spec(
         ParamId::Expression,
-        "Expression (CC11)",
+        "Expresión",
         0.0,
         127.0,
         127.0,
@@ -117,10 +128,10 @@ pub(crate) const SPECS: [ParamSpec; 14] = [
         "",
         Live,
     ),
-    spec(ParamId::Pan, "Pan (CC10)", 0.0, 127.0, 64.0, 1.0, "", Live),
+    spec(ParamId::Pan, "Pan", 0.0, 127.0, 64.0, 1.0, "", Live),
     spec(
         ParamId::Modulation,
-        "Modulación (CC1)",
+        "Modulación",
         0.0,
         127.0,
         0.0,
@@ -130,7 +141,7 @@ pub(crate) const SPECS: [ParamSpec; 14] = [
     ),
     spec(
         ParamId::ReverbSend,
-        "Reverb (CC91)",
+        "Reverb",
         0.0,
         127.0,
         40.0,
@@ -140,7 +151,7 @@ pub(crate) const SPECS: [ParamSpec; 14] = [
     ),
     spec(
         ParamId::ChorusSend,
-        "Chorus (CC93)",
+        "Chorus",
         0.0,
         127.0,
         0.0,
@@ -148,16 +159,7 @@ pub(crate) const SPECS: [ParamSpec; 14] = [
         "",
         Live,
     ),
-    spec(
-        ParamId::Sustain,
-        "Sustain (CC64)",
-        0.0,
-        1.0,
-        0.0,
-        1.0,
-        "",
-        Live,
-    ),
+    spec(ParamId::Sustain, "Sustain", 0.0, 1.0, 0.0, 1.0, "", Live),
     spec(
         ParamId::PitchBend,
         "Pitch bend",
@@ -190,7 +192,7 @@ pub(crate) const SPECS: [ParamSpec; 14] = [
     ),
     spec(
         ParamId::CoarseTune,
-        "Afinación gruesa",
+        "Transponer",
         -12.0,
         12.0,
         0.0,
@@ -217,6 +219,28 @@ pub(crate) const SPECS: [ParamSpec; 14] = [
         1.0,
         "",
         Restart,
+    ),
+    spec(ParamId::FilterEnabled, "Filtro", 0., 1., 0., 1., "", Live),
+    spec(ParamId::FilterMode, "Tipo", 0., 2., 0., 1., "", Live),
+    spec(
+        ParamId::Cutoff,
+        "Frecuencia",
+        20.,
+        20_000.,
+        12_000.,
+        1.,
+        " Hz",
+        Live,
+    ),
+    spec(
+        ParamId::Resonance,
+        "Resonancia",
+        0.5,
+        10.,
+        0.7,
+        0.1,
+        " Q",
+        Live,
     ),
 ];
 
@@ -273,7 +297,12 @@ pub(crate) fn controls(id: ParamId, value: f32) -> Vec<Control> {
             rpn(1, (raw >> 7) as u8, Some((raw & 0x7F) as u8))
         }
         ParamId::CoarseTune => rpn(2, (value.round().clamp(-12.0, 12.0) + 64.0) as u8, None),
-        ParamId::Polyphony | ParamId::Effects => Vec::new(),
+        ParamId::Polyphony
+        | ParamId::Effects
+        | ParamId::FilterEnabled
+        | ParamId::FilterMode
+        | ParamId::Cutoff
+        | ParamId::Resonance => Vec::new(),
     }
 }
 
@@ -299,6 +328,20 @@ impl PianoParams {
 
     pub fn get(&self, id: ParamId) -> f32 {
         self.values[Self::index(id)]
+    }
+
+    pub fn filter(&self) -> elevate::devices::filter::FilterSettings {
+        use elevate::devices::filter::{FilterMode, FilterSettings};
+        FilterSettings {
+            enabled: self.get(ParamId::FilterEnabled) >= 0.5,
+            mode: match self.get(ParamId::FilterMode) as u8 {
+                1 => FilterMode::HighPass,
+                2 => FilterMode::BandPass,
+                _ => FilterMode::LowPass,
+            },
+            cutoff: self.get(ParamId::Cutoff),
+            resonance: self.get(ParamId::Resonance),
+        }
     }
 
     /// Guarda el valor ajustado a su rango y paso; devuelve el valor efectivo.

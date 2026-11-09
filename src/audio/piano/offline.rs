@@ -12,6 +12,7 @@ pub(crate) struct PianoSnapshot {
     pub settings: PianoSettings,
     pub midi: Vec<(u8, u8, u8)>,
     pub master_volume: f32,
+    pub filter: elevate::devices::filter::FilterSettings,
 }
 
 pub(crate) struct OfflinePiano {
@@ -19,6 +20,7 @@ pub(crate) struct OfflinePiano {
     plan: PreparedPattern,
     position: u64,
     finished: bool,
+    filter: super::filter::StereoFilter,
 }
 
 impl OfflinePiano {
@@ -30,11 +32,19 @@ impl OfflinePiano {
     ) -> Result<Self, String> {
         let font = load_soundfont(&snapshot.path)?;
         let mut synth = SynthBackend::new(&snapshot.path, &font, sample_rate, snapshot.settings)?;
+        if !snapshot.midi.iter().any(|(command, _, _)| *command == 0xC0)
+            && let Some(preset) = super::soundfont::presets_of(&font).first()
+        {
+            synth.midi(0xB0, 0, preset.bank);
+            synth.midi(0xC0, preset.patch, 0);
+        }
         synth.set_master_volume(snapshot.master_volume);
         for &(command, data1, data2) in &snapshot.midi {
             synth.midi(command, data1, data2);
         }
-        Self::from_backend(synth, pattern, sample_rate, bpm)
+        let mut piano = Self::from_backend(synth, pattern, sample_rate, bpm)?;
+        piano.filter = super::filter::StereoFilter::new(sample_rate, snapshot.filter);
+        Ok(piano)
     }
     pub fn from_backend(
         synth: SynthBackend,
@@ -49,6 +59,7 @@ impl OfflinePiano {
             plan,
             position: 0,
             finished: false,
+            filter: super::filter::StereoFilter::new(sample_rate, Default::default()),
         })
     }
 
@@ -71,6 +82,7 @@ impl OfflinePiano {
             for (i, frame) in block.iter_mut().enumerate() {
                 *frame = [left[i], right[i]];
             }
+            self.filter.process(block);
         }
     }
 
