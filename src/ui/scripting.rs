@@ -1,70 +1,31 @@
 //! Adaptador UI de scripts: captura una copia, ejecuta en background y aplica por ID.
 use super::DawApp;
-use elevate::musical::clip::ClipId;
 use elevate::scripting::actions::{MidiOptions, MidiTool};
+use elevate::scripting::{
+    MidiScriptTarget,
+    packages::{PackagePhase, ToolInvocation},
+};
 use gpui::{AppContext, Context};
 use std::{io::Read, path::PathBuf};
+mod commands;
 
 enum ScriptSource {
     Builtin(MidiTool),
     File(PathBuf),
+    Tool(ToolInvocation),
 }
 
 impl DawApp {
-    pub(super) fn execute_script_command(&mut self, command: &str, cx: &mut Context<Self>) -> bool {
-        let parts = match elevate::actions::tokenize(command) {
-            Ok(parts) => parts,
-            Err(error) => {
-                if command.starts_with("midi.script") {
-                    self.status_message = format!("Lua: {error}");
-                    return true;
-                }
-                return false;
-            }
-        };
-        let Some(name) = parts.first() else {
-            return false;
-        };
-        let mut options = MidiOptions {
+    pub(super) fn start_tool_invocation(
+        &mut self,
+        invocation: ToolInvocation,
+        cx: &mut Context<Self>,
+    ) {
+        let options = MidiOptions {
             grid: self.piano_roll.resolution,
-            amount: self.piano_roll.humanize_amount,
-            value: 100,
-            pan: 0,
-            strength: 100,
-            scale_root: self.piano_roll.pitch_scale().root,
-            scale_intervals: self.piano_roll.pitch_scale().intervals,
+            ..Default::default()
         };
-        if let Some(tool) = MidiTool::from_command(&name.to_ascii_lowercase()) {
-            options.amount = match tool {
-                MidiTool::Gate | MidiTool::Probability => 100,
-                MidiTool::Swing => 0,
-                _ => options.amount,
-            };
-            if matches!(tool, MidiTool::ReleaseVelocity) {
-                options.value = 64;
-            }
-            match tool.options(&parts[1..], options) {
-                Ok(parsed) => options = parsed,
-                Err(error) => {
-                    self.status_message = error;
-                    return true;
-                }
-            }
-            self.start_midi_script(ScriptSource::Builtin(tool), options, cx);
-            return true;
-        }
-        let source = match parts.as_slice() {
-            [name, path] if name.eq_ignore_ascii_case("midi.script") && !path.is_empty() => {
-                ScriptSource::File(PathBuf::from(path))
-            }
-            [name, ..] if name.eq_ignore_ascii_case("midi.script") => {
-                self.status_message = "Uso: midi.script '/ruta/herramienta.lua'".into();
-                return true;
-            }
-            _ => return false,
-        };
-        self.start_midi_script(source, options, cx);
-        true
+        self.start_midi_script(ScriptSource::Tool(invocation), options, cx);
     }
 
     fn start_midi_script(
@@ -73,20 +34,33 @@ impl DawApp {
         options: MidiOptions,
         cx: &mut Context<Self>,
     ) {
+        let package = match &source {
+            ScriptSource::Tool(invocation) => Some(invocation.package().clone()),
+            _ => None,
+        };
+        let input_error = |reason: &str| {
+            package.as_ref().map_or_else(
+                || reason.to_string(),
+                |p| {
+                    p.error(PackagePhase::Arguments, "context", reason)
+                        .to_string()
+                },
+            )
+        };
         if self.script_task.is_some() {
-            self.status_message = "Ya hay un script Lua en curso".into();
+            self.status_message = input_error("Ya hay un script Lua en curso");
             return;
         }
         let Some(clip) = self.timeline.midi_clip.as_ref() else {
-            self.status_message = "Abre un clip MIDI para ejecutar el script".into();
+            self.status_message = input_error("Abre un clip MIDI para ejecutar el script");
             return;
         };
         if clip.props.locked {
-            self.status_message = "Clip MIDI bloqueado".into();
+            self.status_message = input_error("Clip MIDI bloqueado");
             return;
         }
         if self.piano_roll.drag.is_some() {
-            self.status_message = "Termina el arrastre antes de editar con Lua".into();
+            self.status_message = input_error("Termina el arrastre antes de editar con Lua");
             return;
         }
         if matches!(source, ScriptSource::Builtin(MidiTool::Subdivide))
@@ -116,12 +90,17 @@ impl DawApp {
             cx.notify();
             return;
         }
-        let clip_id: ClipId = clip.id;
+        let target = MidiScriptTarget::capture(clip);
         let original = clip.pattern.clone();
         let selected = self.piano_roll.selected_notes.clone();
         self.status_message = "Ejecutando Lua sobre el clip MIDI…".into();
         let work = cx.background_spawn(async move {
             let source = match source {
+                ScriptSource::Tool(invocation) => {
+                    return invocation
+                        .edit_midi(&original, &selected, options)
+                        .map_err(|e| e.to_string());
+                }
                 ScriptSource::Builtin(tool) => {
                     return elevate::scripting::edit_builtin(tool, &original, &selected, options);
                 }
@@ -139,18 +118,16 @@ impl DawApp {
             };
             elevate::scripting::edit_midi(&source, &original, &selected, options)
         });
-        let snapshot = clip.pattern.clone();
         self.script_task = Some(cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update(cx, |this, cx| {
                 this.script_task = None;
                 let current = this.timeline.midi_clip.as_ref();
-                if this.piano_roll.drag.is_some()
-                    || !current.is_some_and(|clip| {
-                        clip.id == clip_id && !clip.props.locked && clip.pattern == snapshot
-                    })
-                {
-                    this.status_message = "Lua: clip cambiado; resultado descartado".into();
+                if let Err(error) = target.validate(current, this.piano_roll.drag.is_some()) {
+                    this.status_message = package.as_ref().map_or_else(
+                        || format!("Lua: {error}"),
+                        |p| p.error(PackagePhase::Stale, "clip", &error).to_string(),
+                    );
                     cx.notify();
                     return;
                 }

@@ -115,6 +115,7 @@ impl DawApp {
             piano_ui: Default::default(),
             import_task: None,
             script_task: None,
+            lua_tools: Default::default(),
             sampler,
             sampler_ui: Default::default(),
             vst: Default::default(),

@@ -2,10 +2,10 @@
 use super::DawApp;
 use elevate::catalog::{self, CatalogAction};
 
-type Suggestion = (&'static str, &'static str);
+type Suggestion = (String, String);
 
 /// Alias y comandos con valores predefinidos que no figuran como entradas independientes.
-const KNOWN: &[Suggestion] = &[
+const KNOWN: &[(&str, &str)] = &[
     ("list device", "Listar interfaces de audio disponibles"),
     ("use device", "Elegir interfaz de audio"),
     ("add", "Abrir buscador de catálogo"),
@@ -78,14 +78,25 @@ const KNOWN: &[Suggestion] = &[
     ("utility.reset", "Restablecer ganancia del Utility"),
 ];
 
-pub(super) fn completions(query: &str) -> Vec<Suggestion> {
+pub(super) fn completions(
+    query: &str,
+    tools: &[catalog::tools::ToolCatalogEntry],
+) -> Vec<Suggestion> {
     let query = query.trim_start().to_ascii_lowercase();
-    let mut results = KNOWN.to_vec();
+    let mut results: Vec<Suggestion> = KNOWN
+        .iter()
+        .map(|(command, description)| (command.to_string(), description.to_string()))
+        .collect();
     for entry in catalog::entries() {
         if let CatalogAction::Invoke(command) = entry.action {
             if !results.iter().any(|(known, _)| *known == command) {
-                results.push((command, entry.name));
+                results.push((command.into(), entry.name.into()));
             }
+        }
+    }
+    for tool in tools {
+        if let CatalogAction::Invoke(command) = &tool.entry.action {
+            results.push((command.clone(), tool.entry.name.clone()));
         }
     }
     results.retain(|(command, description)| {
@@ -103,14 +114,14 @@ pub(super) fn completions(query: &str) -> Vec<Suggestion> {
                 2
             }
         };
-        rank(a.0).cmp(&rank(b.0)).then_with(|| a.0.cmp(b.0))
+        rank(&a.0).cmp(&rank(&b.0)).then_with(|| a.0.cmp(&b.0))
     });
     results
 }
 
 impl DawApp {
     pub(super) fn cmd_completions(&self) -> Vec<Suggestion> {
-        completions(&self.command_buffer)
+        completions(&self.command_buffer, self.palette.tool_entries())
     }
 
     pub(super) fn move_command_selection(&mut self, backwards: bool) {

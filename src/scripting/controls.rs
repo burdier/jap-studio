@@ -6,7 +6,12 @@ use crate::musical::{
 };
 use mlua::{Lua, Table};
 
+pub(super) const MAX_CONTROLS: usize = 65_536;
+
 pub(super) fn encode(lua: &Lua, pattern: &Pattern) -> Result<Table, String> {
+    if pattern.controls().points().len() > MAX_CONTROLS {
+        return Err("El script supera 65536 puntos de control".into());
+    }
     let rows = lua.create_table().map_err(|e| e.to_string())?;
     for (index, point) in pattern.controls().points().iter().enumerate() {
         let row = lua.create_table().map_err(|e| e.to_string())?;
@@ -21,14 +26,12 @@ pub(super) fn encode(lua: &Lua, pattern: &Pattern) -> Result<Table, String> {
 }
 
 pub(super) fn decode(rows: Table, original: &Pattern, target: &mut Pattern) -> Result<(), String> {
-    if rows.raw_len() > 65_536 {
-        return Err("El script supera 65536 puntos de control".into());
-    }
+    let length = super::arrays::length(&rows, MAX_CONTROLS)?;
     let old_ids: std::collections::HashSet<_> =
         original.controls().points().iter().map(|p| p.id).collect();
     let mut next_id = original.controls().next_id();
-    let mut points = Vec::with_capacity(rows.raw_len());
-    for index in 1..=rows.raw_len() {
+    let mut points = Vec::with_capacity(length);
+    for index in 1..=length {
         let row: Table = rows.raw_get(index).map_err(|e| e.to_string())?;
         let id = match row
             .raw_get::<Option<u64>>("id")

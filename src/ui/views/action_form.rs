@@ -122,12 +122,17 @@ impl DawApp {
                     .gap_1()
                     .border_b_1()
                     .border_color(rgb(ds.border))
-                    .child(div().text_lg().text_color(rgb(ds.text)).child(form.title))
+                    .child(
+                        div()
+                            .text_lg()
+                            .text_color(rgb(ds.text))
+                            .child(form.title.clone()),
+                    )
                     .child(
                         div()
                             .text_sm()
                             .text_color(rgb(ds.muted))
-                            .child(form.spec.description),
+                            .child(form.spec.description.clone()),
                     ),
             )
             .child(fields)
@@ -155,7 +160,7 @@ impl DawApp {
                             .flex_shrink_0()
                             .text_sm()
                             .text_color(rgb(self.ds.text))
-                            .child(parameter.label),
+                            .child(parameter.label.clone()),
                     )
                     .child(
                         div()
@@ -168,7 +173,7 @@ impl DawApp {
                 div()
                     .text_xs()
                     .text_color(rgb(self.ds.muted))
-                    .child(parameter.hint),
+                    .child(parameter.hint.clone()),
             )
     }
 
@@ -176,17 +181,22 @@ impl DawApp {
         let form = self.action_form.as_ref().expect("formulario abierto");
         let parameter = &form.spec.parameters[index];
         match &form.fields[index] {
-            ParameterField::Input(state) => match parameter.kind {
+            ParameterField::Input(state) => match &parameter.kind {
                 ParameterKind::Number { unit, .. } => NumberInput::new(state)
                     .small()
                     .w_full()
-                    .accessibility_label(parameter.label)
-                    .suffix(div().text_xs().text_color(rgb(self.ds.muted)).child(unit))
+                    .accessibility_label(parameter.label.clone())
+                    .suffix(
+                        div()
+                            .text_xs()
+                            .text_color(rgb(self.ds.muted))
+                            .child(unit.clone()),
+                    )
                     .into_any_element(),
                 _ => Input::new(state)
                     .small()
                     .w_full()
-                    .aria_label(parameter.label)
+                    .aria_label(parameter.label.clone())
                     .into_any_element(),
             },
             ParameterField::Bool { checked, focus } => div()
@@ -196,7 +206,7 @@ impl DawApp {
                         .small()
                         .checked(*checked)
                         .label(if *checked { "Sí" } else { "No" })
-                        .accessibility_label(parameter.label)
+                        .accessibility_label(parameter.label.clone())
                         .on_change(cx.listener(move |this, checked: &bool, _, cx| {
                             if let Some(form) = this.action_form.as_mut() {
                                 if let Some(ParameterField::Bool { checked: value, .. }) =

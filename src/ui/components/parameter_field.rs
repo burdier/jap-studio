@@ -11,8 +11,8 @@ pub(in crate::ui) enum ParameterField {
 }
 
 impl ParameterField {
-    pub fn new(
-        parameter: &ActionParameter,
+    pub fn new<S: AsRef<str>>(
+        parameter: &ActionParameter<S>,
         initial: String,
         window: &mut Window,
         cx: &mut App,
@@ -27,7 +27,11 @@ impl ParameterField {
         }
     }
 
-    pub fn value(&self, parameter: &ActionParameter, cx: &App) -> Result<ParameterValue, String> {
+    pub fn value<S: AsRef<str>>(
+        &self,
+        parameter: &ActionParameter<S>,
+        cx: &App,
+    ) -> Result<ParameterValue, String> {
         match self {
             Self::Input(input) => parameter.parse(input.read(cx).value().as_ref()),
             Self::Bool { checked, .. } => Ok(ParameterValue::Bool(*checked)),
@@ -36,9 +40,9 @@ impl ParameterField {
 
     /// Kit administra la edición; el contrato musical decide unidad, incremento y límites.
     /// Se usa el evento Step para conservar mínimos exclusivos y comas decimales.
-    pub fn step(
+    pub fn step<S: AsRef<str>>(
         &self,
-        parameter: &ActionParameter,
+        parameter: &ActionParameter<S>,
         action: StepAction,
         window: &mut Window,
         cx: &mut App,
@@ -52,10 +56,11 @@ impl ParameterField {
                 step,
                 ..
             },
-        ) = (self, parameter.kind)
+        ) = (self, &parameter.kind)
         else {
             return;
         };
+        let (min, min_exclusive, max, step) = (*min, *min_exclusive, *max, *step);
         let current = input
             .read(cx)
             .value()

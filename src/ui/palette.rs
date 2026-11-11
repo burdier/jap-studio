@@ -7,8 +7,11 @@ use elevate::{
 };
 use gpui::{Context, Window};
 
+mod activate;
+mod entry;
 mod plugins;
-use plugins::PaletteEntry;
+mod tools;
+use entry::PaletteEntry;
 
 pub(super) struct Palette {
     open: bool,
@@ -19,6 +22,7 @@ pub(super) struct Palette {
     selected: usize,
     results: Vec<PaletteEntry>,
     plugins: Vec<catalog::plugins::InstalledInstrument>,
+    tools: Vec<catalog::tools::ToolCatalogEntry>,
     scan_needed: bool,
     scan_task: Option<gpui::Task<()>>,
 }
@@ -42,6 +46,7 @@ impl Palette {
             selected: 0,
             results: catalog::search("").into_iter().map(Into::into).collect(),
             plugins: Vec::new(),
+            tools: Vec::new(),
             scan_needed: false,
             scan_task: None,
         }
@@ -141,6 +146,12 @@ impl Palette {
                 self.plugins
                     .iter()
                     .filter(|plugin| plugin.matches(&self.query))
+                    .map(PaletteEntry::from),
+            )
+            .chain(
+                self.tools
+                    .iter()
+                    .filter(|tool| tool.entry.matches(&self.query))
                     .map(PaletteEntry::from),
             )
             .filter(|entry| self.category.is_none_or(|kind| entry.kind == kind))

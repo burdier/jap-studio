@@ -117,7 +117,7 @@ impl DawApp {
                                     "pronto"
                                 } else if entry.bundle.is_some() {
                                     "+ cargar"
-                                } else if entry.action.parameters().is_some() {
+                                } else if entry.has_parameters {
                                     "↵ parámetros"
                                 } else if entry.kind == EntryKind::Action {
                                     "↵ ejecutar"

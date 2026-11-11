@@ -2,7 +2,10 @@
 //! No conoce GPUI, CPAL ni instancias: la UI consulta y traduce las acciones.
 use std::fmt;
 
+mod entry;
 pub mod plugins;
+pub mod tools;
+pub use entry::{CatalogAction, CatalogEntry, OwnedCatalogEntry};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntryKind {
@@ -29,34 +32,6 @@ impl fmt::Display for EntryKind {
     }
 }
 
-/// Acción provisional identificada por un comando estable. El host de acciones
-/// sustituirá estos strings cuando exista; el catálogo no importa la UI.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CatalogAction {
-    Invoke(&'static str),
-    Unavailable(&'static str),
-}
-
-impl CatalogAction {
-    /// Some declara que la invocación visual debe recoger argumentos antes de ejecutarse.
-    pub fn parameters(self) -> Option<&'static crate::actions::ActionSpec> {
-        match self {
-            Self::Invoke(command) => crate::actions::find(command),
-            Self::Unavailable(_) => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct CatalogEntry {
-    pub id: &'static str,
-    pub kind: EntryKind,
-    pub name: &'static str,
-    pub summary: &'static str,
-    pub keywords: &'static [&'static str],
-    pub action: CatalogAction,
-}
-
 const fn piano_action(id: &'static str, name: &'static str, command: &'static str) -> CatalogEntry {
     CatalogEntry {
         id,
@@ -69,6 +44,14 @@ const fn piano_action(id: &'static str, name: &'static str, command: &'static st
 }
 
 pub const CATALOG: &[CatalogEntry] = &[
+    CatalogEntry {
+        id: "action.midi.tools.reload",
+        kind: EntryKind::Action,
+        name: "Lua · recargar herramientas",
+        summary: "Leer paquetes MIDI distribuidos y del usuario; conserva el registro anterior si hay errores",
+        keywords: &["lua", "paquetes", "herramientas", "reload"],
+        action: CatalogAction::Invoke("midi.tools.reload"),
+    },
     CatalogEntry { id: "action.note.edit", kind: EntryKind::Action, name: "Nota general…", summary: "Crear o editar el apunte general persistente", keywords: &["nota", "apunte", "note", "escribir", "texto"], action: CatalogAction::Invoke("note.edit") },
     CatalogEntry { id: "action.vim.toggle", kind: EntryKind::Action, name: "Vim · activar/desactivar", summary: "Navegación modal opcional; preferencia guardada en Configuración → Atajos", keywords: &["vim", "teclado", "normal", "insert", "toggle"], action: CatalogAction::Invoke("vim.toggle") },
     CatalogEntry { id: "action.view.maximize", kind: EntryKind::Action, name: "Ampliar / restaurar panel activo", summary: "Oculta los otros paneles; conserva tamaños y contenido", keywords: &["maximizar", "fullscreen", "foco", "ventana", "piano roll"], action: CatalogAction::Invoke("view.maximize") },
@@ -989,32 +972,6 @@ pub fn search(query: &str) -> Vec<&'static CatalogEntry> {
             .then_with(|| left.name.cmp(right.name))
     });
     matches.into_iter().map(|(_, entry)| entry).collect()
-}
-
-impl CatalogEntry {
-    fn match_score(&self, normalized_query: &str) -> Option<u8> {
-        let name = normalize(self.name);
-        if name.starts_with(normalized_query) {
-            return Some(0);
-        }
-        if name
-            .split_whitespace()
-            .any(|word| word.starts_with(normalized_query))
-        {
-            return Some(1);
-        }
-        if name.contains(normalized_query) {
-            return Some(2);
-        }
-        let haystack = normalize(&format!(
-            "{} {} {} {}",
-            self.id,
-            self.summary,
-            self.keywords.join(" "),
-            self.kind.label()
-        ));
-        haystack.contains(normalized_query).then_some(3)
-    }
 }
 
 fn normalize(input: &str) -> String {

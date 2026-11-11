@@ -37,7 +37,8 @@ impl DawApp {
                         .children(completions[start..end].iter().enumerate().map(|(i, (cmd, desc))| {
                             let absolute_index = start + i;
                             let active = selected == Some(absolute_index);
-                            let command = *cmd;
+                            let command = cmd.clone();
+                            let display_command = format!(":{command}");
                             div()
                                 .h(px(22.0))
                                 .flex()
@@ -55,14 +56,14 @@ impl DawApp {
                                     .text_size(px(11.0))
                                     .font_weight(gpui::FontWeight::BOLD)
                                     .text_color(rgb(if active { ds.pink } else { ds.text }))
-                                    .child(format!(":{command}")))
+                                    .child(display_command))
                                 .child(div()
                                     .flex_1()
                                     .min_w_0()
                                     .truncate()
                                     .text_size(px(10.5))
                                     .text_color(rgb(ds.muted))
-                                    .child(*desc))
+                                    .child(desc.clone()))
                                 .when(total > VISIBLE && i == 0 && start > 0, |row| {
                                     row.child(div().text_size(px(9.0)).text_color(rgb(ds.muted))
                                         .child(format!("▲ {start}")))

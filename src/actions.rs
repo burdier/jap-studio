@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 mod audio;
 mod command;
 mod fx;
+mod owned;
 mod piano_roll;
 mod vst;
 pub use command::tokenize;
@@ -49,16 +50,30 @@ pub enum ParameterValue {
     Empty,
 }
 
-pub type ParameterValues = BTreeMap<&'static str, ParameterValue>;
+pub type ParameterValues<K = &'static str> = BTreeMap<K, ParameterValue>;
 
-#[derive(Debug)]
-pub struct ActionSpec {
-    pub command: &'static str,
-    pub description: &'static str,
-    pub parameters: &'static [ActionParameter],
+#[derive(Clone, Debug)]
+pub struct ActionSpec<S = &'static str, P = &'static [ActionParameter]> {
+    pub command: S,
+    pub description: S,
+    pub parameters: P,
 }
 
+pub type OwnedActionSpec = ActionSpec<String, Vec<ActionParameter<String>>>;
+
 impl<S: AsRef<str>> ActionParameter<S> {
+    /// La misma validación para un control tipado y un argumento escrito.
+    pub fn validate(&self, value: &ParameterValue) -> Result<ParameterValue, String> {
+        let raw = match (&self.kind, value) {
+            (_, ParameterValue::Empty) => String::new(),
+            (ParameterKind::Text, ParameterValue::Text(text)) => text.clone(),
+            (ParameterKind::Number { .. }, ParameterValue::Number(number)) => number.to_string(),
+            (ParameterKind::Bool, ParameterValue::Bool(boolean)) => boolean.to_string(),
+            _ => return Err(format!("{}: tipo de valor incorrecto", self.label.as_ref())),
+        };
+        self.parse(&raw)
+    }
+
     pub fn parse(&self, input: &str) -> Result<ParameterValue, String> {
         let fail = |reason: &str| format!("{}: {reason}", self.label.as_ref());
         if input.trim().is_empty() {
@@ -113,33 +128,31 @@ impl<S: AsRef<str>> ActionParameter<S> {
     }
 }
 
-impl ActionSpec {
+impl<S: AsRef<str>, P: AsRef<[ActionParameter<S>]>> ActionSpec<S, P> {
     /// Valida también llamadas headless; los consumidores no necesitan construir controles GPUI.
-    pub fn command_with(&self, values: &ParameterValues) -> Result<String, String> {
+    pub fn command_with<K: std::borrow::Borrow<str> + Ord>(
+        &self,
+        values: &ParameterValues<K>,
+    ) -> Result<String, String> {
+        let parameters = self.parameters.as_ref();
         if values
             .keys()
-            .any(|key| !self.parameters.iter().any(|p| p.key == *key))
+            .any(|key| !parameters.iter().any(|p| p.key.as_ref() == key.borrow()))
         {
             return Err("Parámetro desconocido para esta acción".into());
         }
-        let mut command = self.command.to_string();
-        for parameter in self.parameters {
+        let mut command = self.command.as_ref().to_string();
+        for parameter in parameters {
             let value = values
-                .get(parameter.key)
-                .ok_or_else(|| format!("Falta {}", parameter.label))?;
-            let raw = match (parameter.kind, value) {
-                (_, ParameterValue::Empty) => String::new(),
-                (ParameterKind::Text, ParameterValue::Text(text)) => text.clone(),
-                (ParameterKind::Number { .. }, ParameterValue::Number(number)) => {
-                    number.to_string()
-                }
-                (ParameterKind::Bool, ParameterValue::Bool(boolean)) => boolean.to_string(),
-                _ => return Err(format!("{}: tipo de valor incorrecto", parameter.label)),
-            };
-            let checked = parameter.parse(&raw)?;
+                .get(parameter.key.as_ref())
+                .ok_or_else(|| format!("Falta {}", parameter.label.as_ref()))?;
+            let checked = parameter.validate(value)?;
             if let Argument::Switch { on, off } = parameter.argument {
                 let ParameterValue::Bool(enabled) = checked else {
-                    return Err(format!("{}: se esperaba un booleano", parameter.label));
+                    return Err(format!(
+                        "{}: se esperaba un booleano",
+                        parameter.label.as_ref()
+                    ));
                 };
                 command.push(' ');
                 command.push_str(if enabled { on } else { off });
@@ -147,8 +160,11 @@ impl ActionSpec {
             }
             let encoded = match checked {
                 ParameterValue::Text(text) => quote(&text),
-                ParameterValue::Empty => quote(parameter.empty_value.unwrap_or_default()),
-                _ => raw,
+                ParameterValue::Empty => {
+                    quote(parameter.empty_value.as_ref().map_or("", AsRef::as_ref))
+                }
+                ParameterValue::Number(number) => number.to_string(),
+                ParameterValue::Bool(boolean) => boolean.to_string(),
             };
             command.push(' ');
             if let Argument::Flag(flag) = parameter.argument {

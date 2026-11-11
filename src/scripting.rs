@@ -3,7 +3,11 @@ pub mod actions;
 mod builtin;
 pub use builtin::{edit_builtin, inline_subdivision};
 mod controls;
+mod notes;
 mod output;
+mod target;
+pub use target::MidiScriptTarget;
+mod arrays;
 pub mod packages;
 pub mod push;
 mod sandbox;
@@ -43,39 +47,7 @@ pub fn edit_midi(
     let lua = sandbox::new().map_err(|error| error.to_string())?;
     let globals = lua.globals();
 
-    let selected: std::collections::HashSet<_> = selected.iter().copied().collect();
-    let notes = lua
-        .create_table_with_capacity(pattern.notes().len(), 0)
-        .map_err(|error| error.to_string())?;
-    for (index, note) in pattern.notes().iter().enumerate() {
-        let row = lua
-            .create_table_with_capacity(0, 10)
-            .map_err(|error| error.to_string())?;
-        row.set("id", note.id.0)
-            .map_err(|error| error.to_string())?;
-        row.set("start", note.start.0)
-            .map_err(|error| error.to_string())?;
-        row.set("duration", note.duration.0)
-            .map_err(|error| error.to_string())?;
-        row.set("pitch", note.pitch)
-            .map_err(|error| error.to_string())?;
-        row.set("release_velocity", note.expression.release_velocity)
-            .map_err(|e| e.to_string())?;
-        row.set("pan", note.expression.pan)
-            .map_err(|e| e.to_string())?;
-        row.set("probability", note.expression.probability)
-            .map_err(|e| e.to_string())?;
-        row.set("velocity", note.velocity)
-            .map_err(|error| error.to_string())?;
-        row.set(
-            "selected",
-            selected.is_empty() || selected.contains(&note.id),
-        )
-        .map_err(|error| error.to_string())?;
-        notes
-            .raw_set(index + 1, row)
-            .map_err(|error| error.to_string())?;
-    }
+    let notes = notes::encode(&lua, pattern, selected)?;
     globals
         .set("notes", notes.clone())
         .map_err(|error| error.to_string())?;

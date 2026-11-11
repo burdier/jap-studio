@@ -22,6 +22,7 @@ mod icons;
 mod input;
 mod kit;
 mod keyboard_preferences;
+mod lua_tools;
 mod workspace_focus;
 mod navigation;
 mod palette;
@@ -115,6 +116,7 @@ struct DawApp {
     piano_ui: views::instrument_params::PianoUi,
     import_task: Option<gpui::Task<()>>,
     script_task: Option<gpui::Task<()>>,
+    lua_tools: lua_tools::LuaTools,
     export_job: Option<crate::audio::export::ExportJob>,
     utility: elevate::devices::utility_slot::UtilitySlot,
     utility_open: bool,

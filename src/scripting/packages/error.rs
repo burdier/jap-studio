@@ -7,6 +7,10 @@ use std::{
 pub enum PackagePhase {
     Load,
     Descriptor,
+    Arguments,
+    Execute,
+    Result,
+    Stale,
 }
 
 /// Datos conservados para que cualquier host pueda presentar el mismo diagnóstico.
@@ -36,6 +40,10 @@ impl fmt::Display for PackageError {
         let phase = match self.phase {
             PackagePhase::Load => "load",
             PackagePhase::Descriptor => "descriptor",
+            PackagePhase::Arguments => "arguments",
+            PackagePhase::Execute => "execute",
+            PackagePhase::Result => "result",
+            PackagePhase::Stale => "stale",
         };
         write!(f, "{phase} · {}", self.path.display())?;
         if let Some(id) = &self.id {

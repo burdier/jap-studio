@@ -286,6 +286,7 @@ impl DawApp {
         if !self.execute_audio_command(cmd.trim(), cx)
             && !self.execute_vst_command(cmd.trim(), cx)
             && !self.execute_roll_command(cmd.trim(), window, cx)
+            && !self.execute_tool_command(cmd.trim(), window, cx)
             && !self.execute_script_command(cmd.trim(), cx)
         {
             self.execute_command(cmd);

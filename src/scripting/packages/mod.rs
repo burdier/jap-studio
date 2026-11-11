@@ -1,9 +1,16 @@
 //! Registro v1 headless: carga explícita y publicación completa fuera de UI/audio.
+mod command;
 mod descriptor;
 mod error;
+mod execute;
+#[cfg(test)]
+mod execute_tests;
 mod fields;
+mod invocation;
 mod parameters;
 mod scan;
+pub use command::ToolRequest;
+pub use invocation::{PackageForm, ToolInvocation};
 
 use crate::actions::ActionParameter;
 pub use error::{PackageError, PackagePhase};

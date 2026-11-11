@@ -4,7 +4,7 @@ use super::{
     parameters,
 };
 use crate::scripting::sandbox;
-use mlua::{Value, chunk::ChunkMode};
+use mlua::{Function, Lua, Value, chunk::ChunkMode};
 use std::path::Path;
 
 pub(super) fn read(
@@ -13,6 +13,17 @@ pub(super) fn read(
     bundled: bool,
 ) -> Result<PackageDescriptor, PackageError> {
     let lua = sandbox::new().map_err(|e| PackageError::load(path, e))?;
+    evaluate(&lua, source, path, bundled).map(|(descriptor, _)| descriptor)
+}
+
+/// Misma evaluación y lectura al registrar y ejecutar; el llamador conserva la VM
+/// para que evaluación y run compartan un único presupuesto.
+pub(super) fn evaluate(
+    lua: &Lua,
+    source: &str,
+    path: &Path,
+    bundled: bool,
+) -> Result<(PackageDescriptor, Function), PackageError> {
     let value: Value = lua
         .load(source)
         .set_name(path.to_string_lossy())
@@ -58,15 +69,21 @@ pub(super) fn read(
     }
     let name = fields.text("name", 128, false)?;
     let description = fields.text("description", 512, false)?;
-    if !matches!(fields.get("run")?, Value::Function(run) if run.info().what == "Lua") {
+    let Value::Function(run) = fields.get("run")? else {
+        return Err(fields.error("run", "Se esperaba una función Lua"));
+    };
+    if run.info().what != "Lua" {
         return Err(fields.error("run", "Se esperaba una función Lua"));
     }
     let parameters = parameters::read(&fields)?;
-    Ok(PackageDescriptor {
-        api_version: 1,
-        id,
-        name,
-        description,
-        parameters,
-    })
+    Ok((
+        PackageDescriptor {
+            api_version: 1,
+            id,
+            name,
+            description,
+            parameters,
+        },
+        run,
+    ))
 }

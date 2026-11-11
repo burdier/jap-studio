@@ -57,7 +57,7 @@ impl MidiEdit {
 }
 
 pub(super) fn decode(notes: Table, pattern: &Pattern) -> Result<MidiEdit, String> {
-    if notes.raw_len() != pattern.notes().len() {
+    if super::arrays::length(&notes, MAX_NOTES)? != pattern.notes().len() {
         return Err("Usa note.cuts para subdividir; no añadas ni quites filas de notes".into());
     }
     let mut changed = Vec::with_capacity(pattern.notes().len());
@@ -95,7 +95,11 @@ pub(super) fn decode(notes: Table, pattern: &Pattern) -> Result<MidiEdit, String
             return Err("Posición o duración de nota inválida".into());
         }
         let cuts: Option<Table> = row.raw_get("cuts").map_err(|e| e.to_string())?;
-        let count = cuts.as_ref().map_or(0, Table::raw_len);
+        let count = cuts
+            .as_ref()
+            .map(|cuts| super::arrays::length(cuts, MAX_NOTES))
+            .transpose()?
+            .unwrap_or(0);
         if count >= MAX_NOTES || changed.len() + count + 1 > MAX_NOTES {
             return Err("El resultado supera 16384 notas".into());
         }
