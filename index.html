@@ -244,6 +244,8 @@
         color: var(--text);
       }
 
+      .commit-plan a { color: var(--accent); }
+
       .rules {
         margin: 0 0 36px;
         padding: 16px 18px;
@@ -307,7 +309,7 @@
         <div class="score" aria-label="Avance total">
           <strong><span id="done-count">0</span> / <span id="total-count">15</span></strong>
           <span>PR completados · <span id="percent">0%</span></span>
-          <span class="commit-score"><span id="commit-done">0</span>/<span id="commit-total">0</span> commits · <span id="commit-percent">0%</span></span>
+          <span class="commit-score"><span id="commit-done">1</span>/<span id="commit-total">69</span> commits · <span id="commit-percent">1%</span></span>
           <div class="bar" aria-hidden="true"><span id="bar-fill"></span></div>
         </div>
       </header>
@@ -338,15 +340,15 @@
         <p class="phase-note">Extensiones útiles antes de ampliar el motor.</p>
         <div class="grid">
           <!-- Estado por commit: añade data-status="done" al li ya integrado. -->
-          <article data-pr="PR-01" data-status="pending">
-            <div class="pr-head"><span class="pr-number">PR-01</span><span class="status">Pendiente</span></div>
+          <article data-pr="PR-01" data-status="progress">
+            <div class="pr-head"><span class="pr-number">PR-01</span><span class="status">En progreso</span></div>
             <h3>Herramientas Lua declarativas</h3>
             <p>Añadir una herramienta al catálogo sin recompilar.</p>
             <div class="depends">Base del kit</div>
             <details class="commit-plan">
-              <summary>4 commits · 2–4 días · contrato antes del registro</summary>
+              <summary>1 de 4 commits completado · 2–4 días estimados para el PR</summary>
               <ol>
-                <li><strong>docs(lua): definir el paquete de herramientas v1</strong>Fijar IDs, versión, parámetros, ubicación y límites antes de cambiar el catálogo.</li>
+                <li data-status="done" data-commit="5bec9fe"><strong>docs(lua): definir el paquete de herramientas v1</strong>IDs, versión, parámetros, ubicación, recarga y límites definidos en el <a href="docs/LUA_PACKAGES.md">contrato v1</a>.<br><small>5bec9fe · 11 nov 2026 · 12 min 50 s transcurridos hasta el commit (05:45:16–05:58:06 UTC), incluida espera de permisos y sin el sondeo previo. Solo documentación; implementación pendiente.</small></li>
                 <li><strong>feat(lua): descubrir y validar metadatos de paquetes</strong>Añadir lectura headless con IDs duplicados, versión inválida y errores cubiertos por pruebas.</li>
                 <li><strong>feat(lua): ejecutar herramientas del registro dinámico</strong>Conectar una herramienta descubierta al sandbox, formulario y ruta de edición MIDI actuales.</li>
                 <li><strong>feat(lua): migrar acento a un paquete recargable</strong>Usarlo como primera herramienta externa; documentar instalación, recarga y el estado válido anterior ante errores.</li>

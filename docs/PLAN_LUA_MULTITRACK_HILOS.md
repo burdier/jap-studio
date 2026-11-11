@@ -1,6 +1,7 @@
 # Plan de PRs: kit Lua, multipista e Hilos
 
-Fecha: 2026-11-11. Estado: propuesta de implementación; todos los PRs están pendientes.
+Fecha: 2026-11-11. Estado: PR-01 en progreso (contrato documentado, 1 de 4 commits);
+los demás PRs están pendientes. La carga de paquetes todavía no está implementada.
 Los números identifican entregas de este plan, no PRs abiertos en GitHub. El repositorio
 todavía no tiene remoto configurado.
 
@@ -155,6 +156,12 @@ interoperabilidad y capacidad de procesamiento.
 
 **Título sugerido:** `feat(lua): cargar herramientas desde paquetes declarativos`
 
+**Avance:** commit 1 completado en `5bec9fe`: [contrato v1](LUA_PACKAGES.md).
+Tiempo transcurrido desde el inicio de esta ejecución hasta ese commit: **12 min 50 s**
+(2026-11-11, 05:45:16–05:58:06 UTC), incluida la espera de permisos. El sondeo previo
+y el commit posterior de seguimiento del tablero no están incluidos. Es una medición
+del paso documental; no extrapolar ese tiempo a los commits de implementación.
+
 **Valor:** añadir una herramienta MIDI nueva copiando un paquete Lua, con entrada en
 `[+]`, comando y formulario generado desde sus parámetros.
 
@@ -163,7 +170,7 @@ interoperabilidad y capacidad de procesamiento.
 
 **Tareas**
 
-- [ ] Definir paquete v1: ID estable, versión de API, nombre, parámetros y función de
+- [x] Definir paquete v1: ID estable, versión de API, nombre, parámetros y función de
   edición. Documentar su ubicación y carga explícita; evitar escanear disco al dibujar.
 - [ ] Crear un registro de metadatos dinámicos que conviva con las acciones nativas.
   El catálogo no instancia plugins ni conserva una VM como descriptor.
