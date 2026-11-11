@@ -195,14 +195,66 @@
       }
 
       .depends {
-        position: absolute;
-        right: 20px;
-        bottom: 16px;
-        left: 20px;
+        margin-top: 16px;
         padding-top: 12px;
         border-top: 1px solid var(--border);
         color: var(--muted);
         font-size: 0.72rem;
+      }
+
+      .commit-plan {
+        margin-top: 14px;
+        padding-top: 12px;
+        border-top: 1px solid var(--border);
+      }
+
+      .commit-plan summary {
+        color: var(--accent);
+        cursor: pointer;
+        font-size: 0.82rem;
+        font-weight: 700;
+      }
+
+      .commit-plan ol {
+        display: grid;
+        gap: 13px;
+        margin: 14px 0 0;
+        padding-left: 24px;
+      }
+
+      .commit-plan li {
+        padding-left: 3px;
+        color: var(--muted);
+        font-size: 0.82rem;
+      }
+
+      .commit-plan strong {
+        display: block;
+        margin-bottom: 2px;
+        color: var(--text);
+      }
+
+      .rules {
+        margin: 0 0 36px;
+        padding: 16px 18px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: var(--surface);
+      }
+
+      .rules summary {
+        color: var(--accent);
+        cursor: pointer;
+        font-weight: 700;
+      }
+
+      .rules ul {
+        display: grid;
+        gap: 8px;
+        margin: 14px 0 0;
+        padding-left: 20px;
+        color: var(--muted);
+        font-size: 0.88rem;
       }
 
       footer {
@@ -255,6 +307,19 @@
         <span class="done">Completado</span>
       </div>
 
+      <details class="rules">
+        <summary>Reglas de corte para todos los PR</summary>
+        <ul>
+          <li>Un commit tiene una sola intención; no mezclar función, formato y documentación.</li>
+          <li>No introducir tipos sin un consumidor real. Los contratos deben tener su primer uso o una prueba que los ejercite.</li>
+          <li>Añadir pruebas junto a la capacidad que protegen. La integración completa se verifica al cerrar cada PR.</li>
+          <li>Cada commit debe quedar verde con comprobaciones localizadas; ejecutar <code>scripts/check.sh</code> antes de cerrar el PR.</li>
+          <li>Antes de cada commit, revisar <code>git status</code> y añadir solo los archivos de su intención. Preservar cambios locales ajenos.</li>
+          <li>Respetar las capacidades existentes: no simular operaciones de FX, buses o audio que aún no estén implementadas.</li>
+          <li>Para PR-02, el orden es contrato → lectura → validación compartida → escritura atómica → Lua.</li>
+        </ul>
+      </details>
+
       <section>
         <h2>1 · Kit Lua</h2>
         <p class="phase-note">Extensiones útiles antes de ampliar el motor.</p>
@@ -265,18 +330,51 @@
             <h3>Herramientas Lua declarativas</h3>
             <p>Añadir una herramienta al catálogo sin recompilar.</p>
             <div class="depends">Base del kit</div>
+            <details class="commit-plan">
+              <summary>4 commits · contrato antes del registro</summary>
+              <ol>
+                <li><strong>docs(lua): definir el paquete de herramientas v1</strong>Fijar IDs, versión, parámetros, ubicación y límites antes de cambiar el catálogo.</li>
+                <li><strong>feat(lua): descubrir y validar metadatos de paquetes</strong>Añadir lectura headless con IDs duplicados, versión inválida y errores cubiertos por pruebas.</li>
+                <li><strong>feat(lua): ejecutar herramientas del registro dinámico</strong>Conectar una herramienta descubierta al sandbox, formulario y ruta de edición MIDI actuales.</li>
+                <li><strong>feat(lua): migrar acento a un paquete recargable</strong>Usarlo como primera herramienta externa; documentar instalación, recarga y el estado válido anterior ante errores.</li>
+              </ol>
+            </details>
           </article>
           <article data-pr="PR-02" data-status="pending">
             <div class="pr-head"><span class="pr-number">PR-02</span><span class="status">Pendiente</span></div>
             <h3>Automatizar pistas desde Lua</h3>
             <p>Crear y configurar varias pistas mediante lotes validados.</p>
             <div class="depends">Depende de PR-01</div>
+            <details class="commit-plan">
+              <summary>9 commits · orden: contrato → lectura → validación → escritura → Lua</summary>
+              <ol>
+                <li><strong>docs(plan): concretar el contrato de lotes de pistas</strong>Fijar snapshot, operaciones permitidas, revisión de origen, handles, errores y límites; sin undo/redo.</li>
+                <li><strong>feat(musical): exponer snapshot estable de pistas, mezcla y FX</strong>Añadir lectura headless con IDs estables; no añadir mutaciones ni UI.</li>
+                <li><strong>refactor(track): compartir la validación existente</strong>Extraer la validación de teclado y ratón sin cambiar comportamiento; cubrir no regresión.</li>
+                <li><strong>feat(musical): aplicar lotes tipados de forma atómica</strong>Comprobar revisión, validar todo y aplicar todo o nada con operaciones ya existentes. Probar el ejecutor desde Rust.</li>
+                <li><strong>feat(lua): construir y enviar lotes de pistas</strong>Lua produce operaciones; Rust las aplica por el ejecutor anterior. Incluir el caso mínimo de dos pistas.</li>
+                <li><strong>feat(lua): resolver handles temporales</strong>Asignar IDs al confirmar y rechazar referencias inválidas o ciclos; cubrir la resolución.</li>
+                <li><strong>feat(lua): añadir la plantilla de dos pistas</strong>Crear, nombrar y configurar niveles o cadenas soportadas; dar errores por operación y preservar estado ajeno.</li>
+                <li><strong>test(project): cubrir preservación e incompatibilidad</strong>Probar clips, selección, mapeos, destino inexistente y cambios concurrentes. Este es el commit de aceptación e integración.</li>
+                <li><strong>docs: actualizar mapa, estado y límites</strong>Actualizar arquitectura, prototipo, guía y checklist; declarar que todavía no hay undo/redo global.</li>
+              </ol>
+            </details>
           </article>
           <article data-pr="PR-03" data-status="pending">
             <div class="pr-head"><span class="pr-number">PR-03</span><span class="status">Pendiente</span></div>
             <h3>Componente audible en Lua</h3>
             <p>Componer primitivas y controlar el resultado desde la interfaz.</p>
             <div class="depends">Depende de PR-01</div>
+            <details class="commit-plan">
+              <summary>5 commits · cada etapa se usa en el componente</summary>
+              <ol>
+                <li><strong>docs(component): fijar el contrato Lua de primitivas</strong>Precisar puertos, parámetros, valores y límites del grafo mínimo.</li>
+                <li><strong>feat(component): validar grafos declarativos con primitivas existentes</strong>Conectar el validador a la creación de un componente reproducible.</li>
+                <li><strong>feat(component): procesar un componente Lua con Utility</strong>Usar volumen serie con señal real y probar sonido/bypass. Así el contrato se valida por audio antes de añadir controles.</li>
+                <li><strong>feat(ui): controlar parámetros declarados en Lua</strong>Generar formulario y comandos con los controles existentes, con pruebas de edición de la misma instancia. Se integra solo la presentación que ya consume el componente.</li>
+                <li><strong>feat(component): aislar instancias y recuperar fallos de recarga</strong>Probar parámetros independientes, ciclos inválidos y conservar el componente anterior si la preparación falla. Agrupa solo el ciclo de vida de esa capacidad.</li>
+              </ol>
+            </details>
           </article>
         </div>
       </section>
@@ -290,18 +388,46 @@
             <h3>Clips multipista</h3>
             <p>Escuchar varias pistas de audio con mezcla independiente.</p>
             <div class="depends">Depende de PR-03</div>
+            <details class="commit-plan">
+              <summary>4 commits · una salida y un transporte</summary>
+              <ol>
+                <li><strong>refactor(audio): separar fuente de clip y salida CPAL</strong>Conservar un reproductor de un clip con la misma ruta de preparación.</li>
+                <li><strong>feat(audio): mezclar dos fuentes en una salida</strong>Construir stream compartido, preparar buffers y probar la suma. La prueba del stream acompaña a su primer consumidor.</li>
+                <li><strong>feat(audio): aplicar mute, solo, nivel y pan por pista</strong>Conectar controles al plan y probar cada una de las cuatro operaciones. No abre el trabajo de transporte.</li>
+                <li><strong>feat(transport): ejecutar clips en frames compartidos</strong>Sincronizar Play, Stop, seek y loop; cubrir offsets, solapamientos y límites de bloque junto a su controlador.</li>
+              </ol>
+            </details>
           </article>
           <article data-pr="PR-05" data-status="pending">
             <div class="pr-head"><span class="pr-number">PR-05</span><span class="status">Pendiente</span></div>
             <h3>Instrumentos por pista</h3>
             <p>Ejecutar instancias internas independientes y MIDI simultáneo.</p>
             <div class="depends">Depende de PR-04</div>
+            <details class="commit-plan">
+              <summary>5 commits · fuentes MIDI dentro del motor</summary>
+              <ol>
+                <li><strong>refactor(instrument): separar síntesis de su stream</strong>Mantener piano y sampler utilizables a través del motor común.</li>
+                <li><strong>feat(audio): crear instancias internas por ID</strong>Preparar dos reproductores y comprobar independencia de voces y parámetros.</li>
+                <li><strong>feat(midi): programar clips de varias pistas</strong>Enviar eventos con offset de frame por instancia; probar notas simultáneas.</li>
+                <li><strong>feat(ui): enrutar teclado y MIDI por instancia</strong>Preservar destinos de NoteOff al cambiar foco o detener; probar liberaciones.</li>
+                <li><strong>feat(audio): compartir salida con la percusión de audición</strong>Integrar el plan de percusión existente y conservar explícita su limitación inmutable.</li>
+              </ol>
+            </details>
           </article>
           <article data-pr="PR-06" data-status="pending">
             <div class="pr-head"><span class="pr-number">PR-06</span><span class="status">Pendiente</span></div>
             <h3>VST3 en el motor común</h3>
             <p>Usar varias instancias VST3 bajo el mismo transporte.</p>
             <div class="depends">Depende de PR-05</div>
+            <details class="commit-plan">
+              <summary>4 commits · adaptar el host VST3 que ya existe</summary>
+              <ol>
+                <li><strong>refactor(vst3): implementar el procesador común</strong>Conectar el host actual, sus buses principales y ciclo de vida a una instancia por ID.</li>
+                <li><strong>feat(vst3): sincronizar contexto y eventos</strong>Pasar tiempo, tempo y offsets del motor; cubrir NoteOn, NoteOff y cambios por frame.</li>
+                <li><strong>feat(vst3): procesar instrumentos y efectos por pista</strong>Comprobar dos instancias con parámetros separados y exclusión de acceso concurrente antes de conectar UI.</li>
+                <li><strong>feat(ui): cargar VST3 desde el catálogo Lua existente</strong>Usar acciones/handles comunes sin exponer COM a Lua; incluir pruebas con el host de prueba. Los límites de plugins reales van documentados aparte.</li>
+              </ol>
+            </details>
           </article>
         </div>
       </section>
@@ -315,24 +441,62 @@
             <h3>Hilos</h3>
             <p>Combinar instrumentos, ramas y efectos dentro de una pista.</p>
             <div class="depends">Depende de PR-02, 03 y 06</div>
+            <details class="commit-plan">
+              <summary>4 commits · Hilos como estructura que ya suena</summary>
+              <ol>
+                <li><strong>docs(hilos): fijar identidad y tipos de rama</strong>Separar contenedor musical, nodo de plugin y threads del sistema.</li>
+                <li><strong>feat(hilos): representar capas y serie existentes</strong>Conectar el modelo con ramas de audio y eventos que se puedan ejecutar.</li>
+                <li><strong>feat(audio): procesar y sumar ramas del Hilo</strong>Ejecutarlas en secuencia y publicar plan preparado; probar una capa audible para cerrar el primer recorrido real.</li>
+                <li><strong>feat(lua): declarar una plantilla de Hilo</strong>Crear instrumentos/FX admitidos desde Lua con la misma operación que UI; cubrir bypass, retiro y colas de notas en ese comportamiento.</li>
+              </ol>
+            </details>
           </article>
           <article data-pr="PR-08" data-status="pending">
             <div class="pr-head"><span class="pr-number">PR-08</span><span class="status">Pendiente</span></div>
             <h3>Lua musical live</h3>
             <p>Procesar eventos musicales y medir el coste real de ejecución.</p>
             <div class="depends">Depende de PR-01 y 05</div>
+            <details class="commit-plan">
+              <summary>5 commits · medir antes de decidir el runtime</summary>
+              <ol>
+                <li><strong>docs(lua): fijar el perfil de ejecución musical</strong>Separar edición en sandbox de procesamiento live y establecer cómo medir.</li>
+                <li><strong>feat(lua): preparar el procesador y sus límites</strong>Crear el procesador musical genérico con memoria/eventos acotados; sin lógica particular de transpositor en Rust.</li>
+                <li><strong>feat(lua): exponer transformación de notas</strong>Implementar el transpositor Lua y probar offsets, IDs asociados y NoteOff.</li>
+                <li><strong>feat(audio): proteger el flujo ante error o sobrecarga Lua</strong>Preservar liberaciones, desactivar la instancia afectada y notificar fuera del callback.</li>
+                <li><strong>perf(lua): medir la integración live bajo carga</strong>Comparar 1/8/32 instancias y buffers; registrar equipo, percentiles, máximo y plazos perdidos. Revisar el alcance si no cumple.</li>
+              </ol>
+            </details>
           </article>
           <article data-pr="PR-09" data-status="pending">
             <div class="pr-head"><span class="pr-number">PR-09</span><span class="status">Pendiente</span></div>
             <h3>Modo Tejer</h3>
             <p>Distribuir notas round robin sin perder liberaciones ni expresión.</p>
             <div class="depends">Depende de PR-07 y 08</div>
+            <details class="commit-plan">
+              <summary>4 commits · reglas Tejer en Lua</summary>
+              <ol>
+                <li><strong>docs(tejer): especificar selección y reinicio</strong>Fijar avance, simultaneidad, seek/Play, edición del Hilo y manejo de errores.</li>
+                <li><strong>feat(tejer): enrutar NoteOn y registrar su destino</strong>Aplicar A-B-C con orden estable, guardar destino por voz y probar NoteOff/expresión, repeticiones y acordes. El registro se necesita para no perder liberaciones.</li>
+                <li><strong>feat(tejer): conservar sustain, control y colas</strong>Aplicar CC/pitch bend, panic y retiros de rama; probar que no queden notas colgadas con sus cambios activos.</li>
+                <li><strong>feat(tejer): mantener el resultado independiente del bloque</strong>Probar A-B-C-A-B-C, simultaneidad y partición en varios tamaños como cierre del comportamiento musical.</li>
+              </ol>
+            </details>
           </article>
           <article data-pr="PR-10" data-status="pending">
             <div class="pr-head"><span class="pr-number">PR-10</span><span class="status">Pendiente</span></div>
             <h3>Presets de Hilos</h3>
             <p>Guardar, recuperar y duplicar configuraciones independientes.</p>
             <div class="depends">Depende de PR-09</div>
+            <details class="commit-plan">
+              <summary>5 commits · estado recuperable y copias independientes</summary>
+              <ol>
+                <li><strong>docs(preset): definir formato versionado de Hilo</strong>Describir topología, IDs de tipo, versiones Lua, parámetros y referencias a recursos.</li>
+                <li><strong>feat(vst3): capturar y restaurar el estado permitido</strong>Usar ciclo de vida e hilos correctos; cubrir ida y vuelta de un estado de prueba.</li>
+                <li><strong>feat(hilos): guardar y cargar un preset</strong>Preparar todo antes de sustituir la instancia activa; si falla, conservarla.</li>
+                <li><strong>feat(hilos): duplicar instancias y remapear IDs</strong>Crear estado independiente y remapear conexiones; probar que editar la copia no cambia el original.</li>
+                <li><strong>feat(lua): guardar y restaurar reglas del Hilo</strong>Exponer las acciones existentes y documentar qué recursos ausentes impiden restaurar.</li>
+              </ol>
+            </details>
           </article>
         </div>
       </section>
@@ -346,30 +510,75 @@
             <h3>Compensación de latencia</h3>
             <p>Alinear pistas y ramas que atraviesan plugins con retraso.</p>
             <div class="depends">Depende de PR-07</div>
+            <details class="commit-plan">
+              <summary>3 commits · latencia declarada a audio alineado</summary>
+              <ol>
+                <li><strong>feat(audio): exponer latencia por procesador</strong>Traducir y verificar la latencia de formatos a una unidad común.</li>
+                <li><strong>feat(audio): calcular y preparar compensación por ruta</strong>Calcular el retraso en cada suma, preasignar buffers y probar impulsos alineados, bypass, frecuencia y bloques parciales.</li>
+                <li><strong>feat(audio): informar latencia de reproducción y monitorización</strong>Exponer tiempos medidos/declarados y documentar por separado lo que no se puede anticipar al entrar una nota live.</li>
+              </ol>
+            </details>
           </article>
           <article data-pr="PR-12" data-status="pending">
             <div class="pr-head"><span class="pr-number">PR-12</span><span class="status">Pendiente</span></div>
             <h3>Buses y sidechain</h3>
             <p>Mezclar por buses y conectar envíos e inputs auxiliares.</p>
             <div class="depends">Depende de PR-11</div>
+            <details class="commit-plan">
+              <summary>3 commits · routing sin feedback</summary>
+              <ol>
+                <li><strong>feat(routing): mezclar hijos en grupos existentes</strong>Conectar hijos al bus y probar la suma antes de añadir destinos auxiliares.</li>
+                <li><strong>feat(routing): añadir envíos y entradas sidechain compatibles</strong>Agregar pre/post fader y entradas auxiliares con prueba de aislamiento; es un recorrido completo de envío.</li>
+                <li><strong>feat(lua): declarar rutas y envíos permitidos</strong>Compartir edición con UI, cubrir detección de ciclos y probar el mismo routing de bus desde Lua.</li>
+              </ol>
+            </details>
           </article>
           <article data-pr="PR-13" data-status="pending">
             <div class="pr-head"><span class="pr-number">PR-13</span><span class="status">Pendiente</span></div>
             <h3>Exportación compartida</h3>
             <p>Renderizar el mismo procesamiento que se escucha.</p>
             <div class="depends">Depende de PR-10 y 12</div>
+            <details class="commit-plan">
+              <summary>4 commits · un grafo para reproducir y exportar</summary>
+              <ol>
+                <li><strong>refactor(export): preparar fuentes con el motor común</strong>Separar instancias offline y mantener codecs/cancelación existentes.</li>
+                <li><strong>feat(export): renderizar Hilos, MIDI y Tejer</strong>Transportar los mismos offsets, parámetros y semilla/reinicio.</li>
+                <li><strong>feat(export): incluir VST3 y compensación de latencia</strong>Procesar estado restaurado con colas, pre-roll y rangos explícitos; probar ruta live/offline en tolerancia.</li>
+                <li><strong>feat(export): publicar solo archivos completos</strong>Conservar cancelación, sustitución atómica y pruebas de errores de codec junto a la publicación.</li>
+              </ol>
+            </details>
           </article>
           <article data-pr="PR-14" data-status="pending">
             <div class="pr-head"><span class="pr-number">PR-14</span><span class="status">Pendiente</span></div>
             <h3>Procesamiento multinúcleo</h3>
             <p>Repartir ramas independientes según el grafo de dependencias.</p>
             <div class="depends">Depende de PR-08, 12 y 13</div>
+            <details class="commit-plan">
+              <summary>5 commits · paralelismo medido por dependencias</summary>
+              <ol>
+                <li><strong>perf(audio): planificar tareas según el grafo</strong>Derivar orden y ramas independientes; probar orden estable con sidechain.</li>
+                <li><strong>feat(audio): preparar trabajadores y buffers acotados</strong>Crear el equipo fuera del callback y demostrar propiedad exclusiva de cada instancia.</li>
+                <li><strong>feat(audio): repartir ramas independientes</strong>Mantener la ruta secuencial cuando la coordinación no compense.</li>
+                <li><strong>feat(audio): recuperar sobrecarga sin reutilizar buffers ocupados</strong>Definir y probar qué ocurre cuando un trabajador pierde el plazo.</li>
+                <li><strong>perf(audio): comparar carga secuencial y paralela</strong>Registrar equipo, tiempos altos, fallos de plazo y mejora real del proyecto de demostración.</li>
+              </ol>
+            </details>
           </article>
           <article data-pr="PR-15" data-status="pending">
             <div class="pr-head"><span class="pr-number">PR-15</span><span class="status">Pendiente</span></div>
             <h3>Host CLAP</h3>
             <p>Insertar CLAP en las mismas pistas, Hilos y exportaciones.</p>
             <div class="depends">Depende del motor completo</div>
+            <details class="commit-plan">
+              <summary>5 commits · adaptador CLAP al contrato común</summary>
+              <ol>
+                <li><strong>docs(clap): revisar crate, API y licencia</strong>Documentar compatibilidad y dependencias; obtener autorización antes de instalar.</li>
+                <li><strong>feat(clap): descubrir e instanciar clases</strong>Conectar el cargador al catálogo y probar plugin de prueba.</li>
+                <li><strong>feat(clap): adaptar buses, notas y parámetros</strong>Compartir transporte, offsets y puertos con VST3; probar independencia de instancias.</li>
+                <li><strong>feat(clap): integrar presets, exportación y editor disponible</strong>Usar ciclo de vida y extensiones soportadas; probar plugins opcionales ausentes en el mismo camino del host.</li>
+                <li><strong>feat(clap): alojar CLAP en Hilos mixtos</strong>Demostrar un Hilo con VST3 y CLAP en un render live/offline; mantiene una prueba real de interoperabilidad al integrar.</li>
+              </ol>
+            </details>
           </article>
         </div>
       </section>
