@@ -4,15 +4,16 @@ mod builtin;
 pub use builtin::{edit_builtin, inline_subdivision};
 mod controls;
 mod output;
+pub mod packages;
 pub mod push;
+mod sandbox;
 use crate::musical::{
     model::{NoteId, Pattern},
     time::PPQ,
 };
 use actions::MidiOptions;
-use mlua::{HookTriggers, Lua, LuaOptions, StdLib, VmState};
+use mlua::chunk::ChunkMode;
 pub use output::MidiEdit;
-use std::time::{Duration, Instant};
 
 /// API v1: `notes` contiene id, start, duration, pitch, velocity y selected.
 /// `start`, `duration` y `length` se miden en ticks; `ppq` indica ticks por negra.
@@ -36,36 +37,11 @@ pub fn edit_midi(
     if pattern.notes().len() > output::MAX_NOTES || options.amount > 100 {
         return Err("Demasiadas notas o intensidad fuera de 0–100".into());
     }
-    if source.len() > 256 * 1024 {
+    if source.len() > sandbox::MAX_SOURCE_BYTES {
         return Err("El script Lua supera 256 KiB".into());
     }
-    let lua = Lua::new_with(
-        StdLib::MATH | StdLib::STRING | StdLib::TABLE,
-        LuaOptions::default(),
-    )
-    .map_err(|error| error.to_string())?;
-    // Lua abre la biblioteca base incluso con `new_with`; retirar carga de archivos
-    // y capturas de error que podrían anular el límite del hook.
+    let lua = sandbox::new().map_err(|error| error.to_string())?;
     let globals = lua.globals();
-    for name in ["dofile", "loadfile", "load", "pcall", "xpcall"] {
-        globals
-            .set(name, mlua::Nil)
-            .map_err(|error| error.to_string())?;
-    }
-    lua.set_memory_limit(8 * 1024 * 1024)
-        .map_err(|error| error.to_string())?;
-    let deadline = Instant::now() + Duration::from_millis(250);
-    lua.set_hook(
-        HookTriggers::new().every_nth_instruction(1_000),
-        move |_, _| {
-            if Instant::now() >= deadline {
-                Err(mlua::Error::runtime("El script Lua excedió 250 ms"))
-            } else {
-                Ok(VmState::Continue)
-            }
-        },
-    )
-    .map_err(|error| error.to_string())?;
 
     let selected: std::collections::HashSet<_> = selected.iter().copied().collect();
     let notes = lua
@@ -130,7 +106,10 @@ pub fn edit_midi(
     globals
         .set("controls", controls.clone())
         .map_err(|e| e.to_string())?;
-    lua.load(source).exec().map_err(|error| error.to_string())?;
+    lua.load(source)
+        .set_mode(ChunkMode::Text)
+        .exec()
+        .map_err(|error| error.to_string())?;
     let mut result = output::decode(notes, pattern)?;
     controls::decode(controls, pattern, &mut result.pattern)?;
     Ok(result)

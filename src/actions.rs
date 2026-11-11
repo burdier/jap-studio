@@ -1,17 +1,17 @@
 //! Contratos headless de argumentos. La UI recoge valores; el comando recibe los mismos datos.
 use std::collections::BTreeMap;
-mod command;
 mod audio;
+mod command;
 mod fx;
 mod piano_roll;
 mod vst;
 pub use command::tokenize;
 
-#[derive(Clone, Copy, Debug)]
-pub enum ParameterKind {
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ParameterKind<S = &'static str> {
     Text,
     Number {
-        unit: &'static str,
+        unit: S,
         min: f64,
         min_exclusive: bool,
         max: f64,
@@ -22,22 +22,22 @@ pub enum ParameterKind {
     Bool,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Argument {
     Positional,
     Flag(&'static str),
     Switch { on: &'static str, off: &'static str },
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct ActionParameter {
-    pub key: &'static str,
-    pub label: &'static str,
-    pub hint: &'static str,
-    pub kind: ParameterKind,
-    pub default: &'static str,
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ActionParameter<S = &'static str> {
+    pub key: S,
+    pub label: S,
+    pub hint: S,
+    pub kind: ParameterKind<S>,
+    pub default: S,
     /// None exige un valor; Some traduce un campo vacío al valor del comando.
-    pub empty_value: Option<&'static str>,
+    pub empty_value: Option<S>,
     pub argument: Argument,
 }
 
@@ -58,9 +58,9 @@ pub struct ActionSpec {
     pub parameters: &'static [ActionParameter],
 }
 
-impl ActionParameter {
+impl<S: AsRef<str>> ActionParameter<S> {
     pub fn parse(&self, input: &str) -> Result<ParameterValue, String> {
-        let fail = |reason: &str| format!("{}: {reason}", self.label);
+        let fail = |reason: &str| format!("{}: {reason}", self.label.as_ref());
         if input.trim().is_empty() {
             return if self.empty_value.is_some() {
                 Ok(ParameterValue::Empty)
@@ -68,7 +68,7 @@ impl ActionParameter {
                 Err(fail("completa este campo"))
             };
         }
-        match self.kind {
+        match &self.kind {
             ParameterKind::Text => {
                 if input.contains(['\n', '\r', '\0']) {
                     return Err(fail("usa una sola línea de texto"));
@@ -88,6 +88,7 @@ impl ActionParameter {
                 whole,
                 ..
             } => {
+                let unit = unit.as_ref();
                 let number: f64 = input
                     .trim()
                     .replace(',', ".")
@@ -96,14 +97,14 @@ impl ActionParameter {
                 if !number.is_finite() {
                     return Err(fail("usa una cantidad finita"));
                 }
-                if number < min || (min_exclusive && number == min) {
-                    let relation = if min_exclusive { ">" } else { "≥" };
+                if number < *min || (*min_exclusive && number == *min) {
+                    let relation = if *min_exclusive { ">" } else { "≥" };
                     return Err(fail(&format!("debe ser {relation} {min} {unit}")));
                 }
-                if number > max {
+                if number > *max {
                     return Err(fail(&format!("debe ser ≤ {max} {unit}")));
                 }
-                if whole && number.fract() != 0.0 {
+                if *whole && number.fract() != 0.0 {
                     return Err(fail(&format!("usa {unit} sin fracciones")));
                 }
                 Ok(ParameterValue::Number(number))
