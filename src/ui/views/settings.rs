@@ -7,15 +7,16 @@ use crate::ui::{
     },
     settings::SettingsCategory,
 };
-use gpui::{Context, IntoElement, MouseButton, Pixels, Size, div, prelude::*, px, rgb};
+use gpui::{Context, IntoElement, MouseButton, Window, div, prelude::*, px, rgb};
 use std::rc::Rc;
 
 impl DawApp {
     pub(in crate::ui) fn render_settings_overlay(
         &self,
-        viewport: Size<Pixels>,
+        window: &Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let viewport = window.viewport_size();
         let ds = &self.ds;
         let category = self.settings.category;
         let close: ModalClose = Rc::new(cx.listener(|this, _, _, cx| {
@@ -100,7 +101,13 @@ impl DawApp {
                                         .on_mouse_down(
                                             MouseButton::Left,
                                             cx.listener(move |this, _, window, cx| {
+                                                this.settings.audio.probe = None;
+                                                this.settings.audio.focus_request = None;
+                                                this.settings.audio.selectors.clear();
                                                 this.settings.category = item;
+                                                if item == SettingsCategory::Audio {
+                                                    this.refresh_audio_devices(cx);
+                                                }
                                                 this.settings.export.editing = None;
                                                 window.focus(&this.focus_handle, cx);
                                                 cx.stop_propagation();
@@ -130,9 +137,12 @@ impl DawApp {
                                     SettingsCategory::Appearance => {
                                         self.render_appearance_settings(cx)
                                     }
+                                    SettingsCategory::Audio => {
+                                        self.render_audio_settings(window, cx)
+                                    }
                                     SettingsCategory::Tracks => self.render_track_settings(cx),
                                     SettingsCategory::Export => self.render_export_settings(cx),
-                                    SettingsCategory::Shortcuts => self.render_shortcut_help(),
+                                    SettingsCategory::Shortcuts => self.render_shortcut_help(cx),
                                 }),
                         ),
                 ),

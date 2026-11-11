@@ -15,4 +15,10 @@ if [ -z "${CONTAINER_ID:-}" ] && command -v distrobox >/dev/null 2>&1; then
     exec distrobox enter "$CONTAINER" -- bash scripts/run.sh "$@"
 fi
 export RUST_BACKTRACE="${RUST_BACKTRACE:-1}"
+if [[ -z "${WINELOADER:-}" ]] && ! command -v wine >/dev/null 2>&1 \
+    && command -v distrobox-host-exec >/dev/null 2>&1 && [[ -e /run/host/usr/bin/wine || -L /run/host/usr/bin/wine ]]; then
+    export WINELOADER="$PWD/scripts/wine-host.sh"
+    # Host y Wine viven en namespaces de PID distintos; los sockets sí son compartidos.
+    export YABRIDGE_NO_WATCHDOG=1
+fi
 exec cargo run --bin daw-gpui "$@"

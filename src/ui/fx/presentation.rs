@@ -2,6 +2,7 @@
 use super::{FxTarget, FxTree, Row};
 use elevate::musical::{
     fx::{FxChain, FxId, FxKind, FxNode},
+    model::InstrumentId,
     track::TrackId,
 };
 use gpui::Context;
@@ -34,8 +35,20 @@ impl FxTree {
             container: true,
             enabled: true,
             parallel: false,
+            instrument: false,
         });
         if !view.root_closed {
+            if self.instrument.is_some() {
+                self.rows.push(Row {
+                    id: None,
+                    depth: 1,
+                    name: self.instrument_name.clone(),
+                    container: false,
+                    enabled: true,
+                    parallel: false,
+                    instrument: true,
+                });
+            }
             flatten(self.chain.nodes(), 1, &view.collapsed, &mut self.rows);
         }
     }
@@ -44,10 +57,17 @@ impl FxTree {
         track: TrackId,
         name: &str,
         chain: &FxChain,
+        instrument: Option<InstrumentId>,
+        instrument_name: &str,
         cx: &mut Context<Self>,
     ) {
         let changed = self.track != Some(track);
-        if !changed && self.name == name && self.chain.revision() == chain.revision() {
+        if !changed
+            && self.name == name
+            && self.chain.revision() == chain.revision()
+            && self.instrument == instrument
+            && self.instrument_name == instrument_name
+        {
             return;
         }
         let previous = self.views.get(&track).and_then(|view| view.selected);
@@ -57,10 +77,17 @@ impl FxTree {
             .position(|row| row.id == previous)
             .unwrap_or(0);
         let removed = !changed && previous.is_some_and(|id| chain.find(id).is_none());
-        let structural = changed || !same_topology(self.chain.nodes(), chain.nodes());
+        let structural = changed
+            || self.instrument != instrument
+            || !same_topology(self.chain.nodes(), chain.nodes());
         self.track = Some(track);
         self.name = name.into();
         self.chain = chain.clone();
+        self.instrument = instrument;
+        self.instrument_name = instrument_name.into();
+        if instrument.is_none() {
+            self.views.entry(track).or_default().instrument_selected = false;
+        }
         if structural {
             self.rebuild();
             if removed {
@@ -74,6 +101,8 @@ impl FxTree {
                 if let Some(node) = row.id.and_then(|id| chain.find(id)) {
                     row.name.clone_from(&node.name);
                     row.enabled = node.enabled;
+                } else if row.instrument {
+                    row.name = instrument_name.into();
                 } else if row.id.is_none() {
                     row.name = format!("Track: {name}");
                 }
@@ -91,6 +120,7 @@ fn flatten(nodes: &[FxNode], depth: usize, collapsed: &HashSet<FxId>, rows: &mut
             container: node.children().is_some(),
             enabled: node.enabled,
             parallel: matches!(node.kind, FxKind::ParallelChain { .. }),
+            instrument: false,
         });
         if !collapsed.contains(&node.id) {
             if let Some(children) = node.children() {

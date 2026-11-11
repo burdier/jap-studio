@@ -6,6 +6,8 @@ pub mod explorer;
 pub mod export;
 pub mod musical;
 pub mod primitives;
+pub mod project;
+pub mod scripting;
 
 pub use component::{Component, ComponentError, ControlEvent, NodeId};
 pub use primitives::{

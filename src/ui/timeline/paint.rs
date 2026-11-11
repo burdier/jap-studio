@@ -1,5 +1,6 @@
 //! Regla, carriles, rejilla y cursores. La waveform se dibuja en waveform.rs.
-use super::{BEATS_PER_BAR, DesignSystem, Timeline, TimelineArea, waveform};
+use super::{DesignSystem, DragKind, Timeline, TimelineArea, waveform};
+use crate::ui::track_drag::TrackReorderVisual;
 use gpui::{
     Bounds, ContentMask, IntoElement, Styled, TextAlign, TextRun, canvas, fill, point, px, rgb,
     rgba, size,
@@ -11,6 +12,7 @@ impl Timeline {
         area: TimelineArea,
         track_count: usize,
         selected_tracks: Vec<bool>,
+        track_visual: Option<&TrackReorderVisual>,
         design: &DesignSystem,
     ) -> impl IntoElement {
         if area == TimelineArea::TimeRuler {
@@ -18,20 +20,47 @@ impl Timeline {
         }
         let bounds_handle = self.bounds(area).clone();
         let viewport = self.viewport;
-        let layout = self.layout.clone().unwrap_or_else(|| {
+        let beats_per_bar = self.meter.beats_per_bar();
+        let beat_length = 4.0 / f64::from(self.meter.denominator());
+        let bpm = self.tempo.bpm();
+        let original_layout = self.layout.clone().unwrap_or_else(|| {
             crate::ui::track_layout::TrackLayout::uniform(track_count, design.track_header_height)
         });
+        let layout =
+            track_visual.map_or_else(|| original_layout.clone(), |visual| visual.layout.clone());
+        let dragged_rows = track_visual.map_or_else(Vec::new, |visual| visual.source_rows.clone());
+        let floating_layout = track_visual.map(|visual| {
+            let mut layout = original_layout.clone();
+            for row in &mut layout.rows {
+                if dragged_rows.contains(&row.track) {
+                    row.top += visual.float_offset;
+                }
+            }
+            layout
+        });
+        let floating_area =
+            track_visual.map(|visual| (visual.floating_top, visual.floating_height));
         let import_preview = self.import_preview.clone();
-        let edit_beat = self.edit_beat;
+        let edit_beat = self.visual_edit_beat();
         let design = design.clone();
         let clip = self.clip.clone();
         let other_audio_clips = self.other_audio_clips.clone();
         let midi_clip = self.midi_clip.clone();
         let other_midi_clips = self.other_midi_clips.clone();
         let selected_midi = self.selected_midi.clone();
-        let playhead = self.playhead;
-        let hover_track = self.hover_track;
-        let hover_dragging = self.hover_dragging();
+        let playhead = self.visual_playhead();
+        let hover_track = if track_visual.is_some() {
+            None
+        } else {
+            self.hover_track
+        };
+        let hover_dragging = track_visual.is_none() && self.hover_dragging();
+        let hover_clip = if track_visual.is_some() {
+            None
+        } else {
+            self.hover_clip
+        };
+        let floating_color = track_visual.map(|visual| design.track_color(visual.source_track));
         let particles = if area == TimelineArea::Lanes {
             self.particles.snapshot()
         } else {
@@ -43,13 +72,12 @@ impl Timeline {
                 let mut labels = Vec::new();
                 if area == TimelineArea::Ruler {
                     let width = f64::from(f32::from(bounds.size.width));
-                    let first_bar = (viewport.first_beat / BEATS_PER_BAR).ceil() as u64;
-                    let last_bar = (viewport.beat_at(width) / BEATS_PER_BAR).floor() as u64;
                     let mut previous_end = bounds.left();
-                    for bar in first_bar..=last_bar {
+                    for bar in viewport.grid().visible_bars(width, beats_per_bar) {
                         let x =
-                            bounds.left() + px(viewport.x_at(bar as f64 * BEATS_PER_BAR) as f32);
-                        let origin = point(x + px(design.padding_xs), bounds.top());
+                            bounds.left() + px(viewport.x_at(bar as f64 * beats_per_bar) as f32);
+                        let origin =
+                            point(x.max(bounds.left()) + px(design.padding_xs), bounds.top());
                         if origin.x < previous_end {
                             continue;
                         }
@@ -57,7 +85,7 @@ impl Timeline {
                         let run = TextRun {
                             len: text.len(),
                             font: window.text_style().font(),
-                            color: rgb(design.muted).into(),
+                            color: rgb(design.text).into(),
                             background_color: None,
                             underline: None,
                             strikethrough: None,
@@ -92,7 +120,9 @@ impl Timeline {
                                 point(bounds.left(), top),
                                 size(bounds.size.width, px(row.height)),
                             );
-                            let color = if selected_tracks.get(track).copied().unwrap_or(false) {
+                            let color = if dragged_rows.contains(&track) {
+                                design.panel_dark
+                            } else if selected_tracks.get(track).copied().unwrap_or(false) {
                                 design.selection_background()
                             } else if track % 2 == 0 {
                                 design.bg
@@ -130,73 +160,151 @@ impl Timeline {
                             ));
                         }
                     }
+                    crate::ui::components::bar_grid::paint(
+                        bounds,
+                        viewport.grid(),
+                        beats_per_bar,
+                        &design,
+                        window,
+                    );
                     let width = f64::from(f32::from(bounds.size.width));
-                    let step = viewport.grid_step();
+                    let step = viewport.grid_step().min(beat_length);
                     let first_tick = (viewport.first_beat / step).ceil() as u64;
                     let last_tick = (viewport.beat_at(width) / step).floor() as u64;
-                    for tick in first_tick..=last_tick {
+                    for tick in first_tick..=last_tick.min(first_tick.saturating_add(4096)) {
                         let beat = tick as f64 * step;
-                        let is_bar = beat % BEATS_PER_BAR == 0.0;
-                        let is_beat = beat.fract() == 0.0;
+                        let is_bar = (beat / beats_per_bar - (beat / beats_per_bar).round()).abs()
+                            < 0.000_001;
+                        if is_bar {
+                            continue;
+                        } // Ya dibujado por el componente de compases.
+                        let is_beat =
+                            (beat / beat_length - (beat / beat_length).round()).abs() < 0.000_001;
                         let x = bounds.left() + px(viewport.x_at(beat) as f32);
                         let height = if area == TimelineArea::Lanes {
                             bounds.size.height
-                        } else if is_bar {
-                            px(10.0)
                         } else {
                             px(4.0)
                         };
-                        let color = if is_bar {
-                            design.grid
-                        } else if is_beat {
-                            design.border
-                        } else {
-                            design.panel
-                        };
+                        let color = if is_beat { design.border } else { design.panel };
                         window.paint_quad(fill(
                             Bounds::new(point(x, bounds.bottom() - height), size(px(1.0), height)),
                             rgb(color),
                         ));
                     }
                     if area == TimelineArea::Lanes {
-                        for clip in &other_audio_clips {
-                            waveform::paint(
-                                clip, false, viewport, bounds, &layout, &design, window, cx,
-                            );
-                        }
-                        if let Some(clip) = &clip {
-                            waveform::paint(
-                                clip, true, viewport, bounds, &layout, &design, window, cx,
-                            );
-                        }
-                        for clip in &other_midi_clips {
-                            waveform::paint_midi(
-                                clip,
-                                selected_midi.contains(&clip.id),
-                                viewport,
-                                bounds,
-                                &layout,
-                                &design,
-                                window,
-                                cx,
-                            );
-                        }
-                        if let Some(midi_clip) = &midi_clip {
-                            waveform::paint_midi(
-                                midi_clip,
-                                selected_midi.contains(&midi_clip.id),
-                                viewport,
-                                bounds,
-                                &layout,
-                                &design,
-                                window,
-                                cx,
-                            );
+                        for floating in [false, true] {
+                            let clip_layout = if floating {
+                                let Some(layout) = floating_layout.as_ref() else {
+                                    continue;
+                                };
+                                if let Some((top, height)) = floating_area {
+                                    window.paint_quad(fill(
+                                        Bounds::new(
+                                            point(bounds.left(), bounds.top() + px(top)),
+                                            size(bounds.size.width, px(height)),
+                                        ),
+                                        rgb(design.panel_hover),
+                                    ));
+                                    window.paint_quad(fill(
+                                        Bounds::new(
+                                            point(bounds.left(), bounds.top() + px(top)),
+                                            size(bounds.size.width, px(1.0)),
+                                        ),
+                                        rgba((floating_color.unwrap_or(design.accent) << 8) | 0xb0),
+                                    ));
+                                }
+                                layout
+                            } else {
+                                &layout
+                            };
+                            for item in other_audio_clips
+                                .iter()
+                                .filter(|item| dragged_rows.contains(&item.track) == floating)
+                            {
+                                waveform::paint(
+                                    item,
+                                    bpm,
+                                    false,
+                                    hover_clip.and_then(|hover| {
+                                        hover.edge_for(DragKind::Audio, item.track, item.start_beat)
+                                    }),
+                                    viewport,
+                                    bounds,
+                                    clip_layout,
+                                    &design,
+                                    window,
+                                    cx,
+                                );
+                            }
+                            if let Some(item) = clip
+                                .as_ref()
+                                .filter(|item| dragged_rows.contains(&item.track) == floating)
+                            {
+                                waveform::paint(
+                                    item,
+                                    bpm,
+                                    true,
+                                    hover_clip.and_then(|hover| {
+                                        hover.edge_for(DragKind::Audio, item.track, item.start_beat)
+                                    }),
+                                    viewport,
+                                    bounds,
+                                    clip_layout,
+                                    &design,
+                                    window,
+                                    cx,
+                                );
+                            }
+                            for item in other_midi_clips
+                                .iter()
+                                .filter(|item| dragged_rows.contains(&item.track) == floating)
+                            {
+                                waveform::paint_midi(
+                                    item,
+                                    selected_midi.contains(&item.id),
+                                    hover_clip.and_then(|hover| {
+                                        hover.edge_for(DragKind::Midi, item.track, item.start_beat)
+                                    }),
+                                    viewport,
+                                    bounds,
+                                    clip_layout,
+                                    &design,
+                                    window,
+                                    cx,
+                                );
+                            }
+                            if let Some(item) = midi_clip
+                                .as_ref()
+                                .filter(|item| dragged_rows.contains(&item.track) == floating)
+                            {
+                                waveform::paint_midi(
+                                    item,
+                                    selected_midi.contains(&item.id),
+                                    hover_clip.and_then(|hover| {
+                                        hover.edge_for(DragKind::Midi, item.track, item.start_beat)
+                                    }),
+                                    viewport,
+                                    bounds,
+                                    clip_layout,
+                                    &design,
+                                    window,
+                                    cx,
+                                );
+                            }
                         }
                     }
                     if area == TimelineArea::Lanes && cx.has_active_drag() {
                         if let Some(preview) = &import_preview {
-                            preview.paint(viewport, bounds, &layout, &design, window, cx);
+                            preview.paint(
+                                viewport,
+                                bounds,
+                                &layout,
+                                beats_per_bar,
+                                &design,
+                                window,
+                                cx,
+                            );
                         }
                     }
                     for (origin, label) in labels {

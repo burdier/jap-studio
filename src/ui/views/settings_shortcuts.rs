@@ -1,7 +1,7 @@
 use crate::ui::DawApp;
-use gpui::{IntoElement, div, prelude::*, px, rgb};
+use gpui::{Context, IntoElement, MouseButton, div, prelude::*, px, rgb};
 impl DawApp {
-    pub(super) fn render_shortcut_help(&self) -> gpui::AnyElement {
+    pub(super) fn render_shortcut_help(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let ds = &self.ds;
         let groups: &[(&str, &[(&str, &str)])] = &[
             (
@@ -9,12 +9,23 @@ impl DawApp {
                 &[
                     ("h  j  k  l", "mover cursor / selección según la vista"),
                     ("i", "modo Insert"),
+                    (
+                        "f (Normal) / F11",
+                        "ampliar panel activo; repetir o Esc para restaurar",
+                    ),
+                    (
+                        "vim.toggle",
+                        "activar/desactivar Vim desde [+] o Configuración",
+                    ),
                     ("e (Normal)", "mostrar / ocultar explorador de bibliotecas"),
                     (":", "modo Command; escribe un comando y pulsa Enter"),
                     (":sa", "insertar pista Hay Sampler o abrir la existente"),
                     ("Esc", "salir del overlay o liberar notas"),
                     ("Tab", "cambiar a la vista siguiente"),
-                    ("1  2  3  4", "Arrangement · Pattern · Mixer · Instrument"),
+                    (
+                        "1  2  3  4",
+                        "Arrangement · Pattern · Mixer · editor de instrumento en Track FX",
+                    ),
                 ],
             ),
             (
@@ -24,7 +35,7 @@ impl DawApp {
                     ("j / k", "seleccionar pista"),
                     (
                         "Delete / dd (Normal)",
-                        "eliminar pistas seleccionadas y sus clips; un grupo incluye sus hijos",
+                        "eliminar pistas seleccionadas y sus clips; dd se desactiva con teclado MIDI",
                     ),
                     ("+ / -", "acercar / alejar"),
                     ("Home", "volver al inicio"),
@@ -73,9 +84,14 @@ impl DawApp {
                         "aumentar / reducir altura de las filas",
                     ),
                     (
-                        "Alt + 2 dedos ↑ / ↓",
-                        "aumentar / reducir ancho de las notas",
+                        "Alt+1 / Alt+2",
+                        "rejilla más fina / más gruesa; no modifica notas",
                     ),
+                    (
+                        "Alt+rueda / Shift+pellizco",
+                        "subdividir notas seleccionadas según la rejilla",
+                    ),
+                    ("Q / H", "cuantizar / humanizar mediante acciones Lua"),
                     (
                         "Pellizcar / Ctrl + rueda",
                         "zoom horizontal alrededor del puntero",
@@ -177,6 +193,16 @@ impl DawApp {
             .gap_3()
             .p_4()
             .overflow_y_scroll()
+            .child(div().flex().items_center().justify_between().gap_3().pb_3()
+                .child(div().flex().flex_col()
+                    .child(div().text_color(rgb(ds.text)).child("Navegación Vim"))
+                    .child(div().text_xs().text_color(rgb(ds.muted)).child("Modos Normal/Insert/Command · hjkl · dd. No cambia MIDI ni transporte.")))
+                .child(div().px_3().py_2().cursor_pointer().border_1().border_color(rgb(ds.border))
+                    .bg(rgb(if self.vim_enabled { ds.selection_background() } else { ds.panel }))
+                    .child(if self.vim_enabled { "✓ Activado" } else { "Desactivado" })
+                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
+                        this.execute_command("vim.toggle"); cx.stop_propagation(); cx.notify();
+                    }))))
             .children(groups.iter().map(|(heading, shortcuts)| {
                 div()
                     .flex()

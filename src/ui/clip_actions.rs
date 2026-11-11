@@ -19,11 +19,11 @@ impl DawApp {
             self.timeline.insert_midi_clip(clip);
             Some(DragKind::Midi)
         } else if self.timeline.clip.as_ref().is_some_and(|clip| {
-            clip.track == track && beat >= clip.start_beat && beat < clip.end_beat()
+            clip.track == track && beat >= clip.start_beat && beat < clip.end_beat(self.timeline.tempo.bpm())
         }) {
             Some(DragKind::Audio)
         } else if let Some(index) = self.timeline.other_audio_clips.iter().rposition(|clip| {
-            clip.track == track && beat >= clip.start_beat && beat < clip.end_beat()
+            clip.track == track && beat >= clip.start_beat && beat < clip.end_beat(self.timeline.tempo.bpm())
         }) {
             let clip = self.timeline.other_audio_clips.remove(index);
             self.timeline.insert_audio_clip(clip);
@@ -154,7 +154,7 @@ impl DawApp {
             }
             DragKind::Audio => {
                 if let Some(mut copy) = self.timeline.clip.clone() {
-                    copy.start_beat = copy.end_beat();
+                    copy.start_beat = copy.end_beat(self.timeline.tempo.bpm());
                     self.status_message = format!(
                         "Clip de audio «{}» duplicado en {:.2} beats",
                         copy.name, copy.start_beat

@@ -1,4 +1,4 @@
-//! Slider y toggle genéricos para parámetros. Trabajan con fracciones 0..1; quien los usa
+//! Slider genérico para parámetros. Trabaja con fracciones 0..1; quien lo usa
 //! traduce a su rango. El slider son celdas: click o arrastre fijan el valor sin medir bounds.
 use crate::ui::DesignSystem;
 use gpui::{App, IntoElement, MouseButton, SharedString, Window, div, prelude::*, px, rgb};
@@ -49,27 +49,6 @@ pub(in crate::ui) fn param_slider(
             .border_1()
             .border_color(rgb(ds.border))
             .children(cells),
-    )
-}
-
-pub(in crate::ui) fn param_toggle(
-    ds: &DesignSystem,
-    label: &'static str,
-    on: bool,
-    on_set: FractionSet,
-    on_reset: Reset,
-) -> impl IntoElement + use<> {
-    let next = if on { 0.0 } else { 1.0 };
-    frame(ds, label, if on { "ON" } else { "OFF" }.into(), on_reset).child(
-        div()
-            .h(px(14.0))
-            .border_1()
-            .border_color(rgb(ds.border))
-            .bg(rgb(if on { ds.accent } else { ds.panel_dark }))
-            .cursor_pointer()
-            .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-                on_set(&next, window, cx)
-            }),
     )
 }
 

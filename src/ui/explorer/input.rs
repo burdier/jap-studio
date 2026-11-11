@@ -49,6 +49,7 @@ impl Explorer {
             return;
         }
         cx.stop_propagation();
+        if !self.vim_enabled && matches!(key, "h" | "j" | "k" | "l" | "e") { return; }
         if modifiers.control || modifiers.alt || modifiers.platform {
             return;
         }

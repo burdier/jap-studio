@@ -12,9 +12,13 @@ name = "daw-gpui"
 path = "src/main.rs"
 required-features = ["ui"]
 
+[[example]]
+name = "vst3_probe"
+required-features = ["ui"]
+
 [features]
 default = ["ui"]
-ui = ["dep:gpui", "dep:dirs", "dep:symphonia", "dep:cpal", "dep:rustysynth", "dep:particula-rs", "dep:fastrand", "dep:midir", "dep:rtrb", "dep:libc"]
+ui = ["dep:gpui", "dep:dirs", "dep:symphonia", "dep:cpal", "dep:rustysynth", "dep:particula-rs", "dep:fastrand", "dep:midir", "dep:rtrb", "dep:libc", "dep:realfft", "dep:vst3"]
 
 [dependencies]
 # La fachada conserva los imports gpui:: y alinea runtime, plataforma y controles.
@@ -24,10 +28,14 @@ fundsp = { version = "0.23.0", default-features = false, features = ["std"] }
 wmidi = "4.0.11"
 midly = { version = "0.5.3", default-features = false, features = ["std"] }
 symphonia = { version = "0.6.1", optional = true, default-features = false, features = ["wav", "pcm", "flac", "ogg", "vorbis", "mp3", "aac", "isomp4", "all-meta"] }
-cpal = { version = "0.18.2", optional = true }
+cpal = { version = "0.18.2", optional = true, features = ["pipewire"] }
 rustysynth = { version = "1.3.8", optional = true }
 particula-rs = { version = "0.1.8", optional = true }
 fastrand = { version = "2.5.0", optional = true }
 midir = { version = "0.11.1", optional = true }
 rtrb = { version = "0.3.6", optional = true }
 libc = { version = "0.2", optional = true }
+realfft = { version = "=3.5.1", optional = true }
+loro = "=1.17.1"
+mlua = { version = "=0.12.2", default-features = false, features = ["lua54", "vendored"] }
+vst3 = { version = "=0.3.0", optional = true }

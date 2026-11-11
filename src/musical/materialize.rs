@@ -30,19 +30,21 @@ pub fn materialize(clips: &[&MidiClip]) -> Result<MidiClip, String> {
         }
         let a = clip.props;
         let b = first.props;
-        if a.gain_db != b.gain_db
+        if clip.channel != first.channel
+            || a.gain_db != b.gain_db
             || a.muted != b.muted
             || a.pitch_semitones != b.pitch_semitones
             || a.looped != b.looped
         {
             return Err(
-                "Para conservar el sonido, iguala ganancia, mute, pitch y loop antes de unir"
+                "Para conservar el sonido, iguala canal, ganancia, mute, pitch y loop antes de unir"
                     .into(),
             );
         }
         end = end.max(ticks(clip.end_beat())?);
     }
     let mut pattern = Pattern::new(Tick(end - origin)).map_err(|e| e.to_string())?;
+    let mut muted_notes = std::collections::HashSet::new();
     for clip in clips {
         let offset = ticks(clip.start_beat)? - origin;
         let source_start = ticks(clip.trim_start)?;
@@ -50,19 +52,36 @@ pub fn materialize(clips: &[&MidiClip]) -> Result<MidiClip, String> {
         let source_end = source_start
             .checked_add(length)
             .ok_or("Duración fuera de rango")?;
+        let controls = clip
+            .pattern
+            .controls()
+            .window(Tick(source_start), Tick(length));
+        for point in controls.points() {
+            let at = Tick(offset + point.at.0);
+            if pattern.controls().points().iter().any(|existing| {
+                existing.at == at && existing.lane == point.lane && existing.value != point.value
+            }) {
+                return Err(
+                    "Los clips tienen controles MIDI incompatibles en el mismo instante".into(),
+                );
+            }
+            pattern.set_control(point.lane, at, point.value)?;
+        }
         for note in clip.notes() {
             let start = note.start.0.max(source_start);
             let end = (note.start.0 + note.duration.0).min(source_end);
             if end > start {
-                pattern
-                    .add_note(
-                        note.instrument,
+                let id = pattern
+                    .add_note_copy(
+                        *note,
                         Tick(offset + start - source_start),
                         Tick(end - start),
-                        note.pitch,
-                        note.velocity,
+                        note.instrument,
                     )
                     .map_err(|e| e.to_string())?;
+                if clip.muted_notes.contains(&note.id) {
+                    muted_notes.insert(id);
+                }
             }
         }
     }
@@ -73,5 +92,7 @@ pub fn materialize(clips: &[&MidiClip]) -> Result<MidiClip, String> {
         pattern,
     );
     result.props = first.props;
+    result.channel = first.channel;
+    result.muted_notes = muted_notes;
     Ok(result)
 }

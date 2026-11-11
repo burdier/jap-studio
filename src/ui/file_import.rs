@@ -3,7 +3,7 @@ use super::DawApp;
 use crate::audio::{AudioClip, AudioFile};
 use elevate::{
     explorer::EntryKind,
-    musical::{clip::MidiClip, smf::parse_smf_to_clip, track::assign_instrument},
+    musical::{clip::MidiClip, smf::parse_smf_to_clip_with_meter, track::assign_instrument},
 };
 use gpui::{AppContext, Context};
 use std::{path::PathBuf, sync::Arc};
@@ -33,6 +33,7 @@ impl DawApp {
         let instrument_id = self.tracks[track]
             .instrument
             .unwrap_or(self.instrument.id());
+        let meter = self.timeline.meter;
         self.stop_audio();
         self.stop_pattern();
         self.status_message = format!("Importando {}…", path.display());
@@ -44,7 +45,7 @@ impl DawApp {
                     .unwrap_or(path.as_os_str())
                     .to_string_lossy()
                     .into_owned();
-                parse_smf_to_clip(&bytes, name, track, start_beat, instrument_id)
+                parse_smf_to_clip_with_meter(&bytes, name, track, start_beat, instrument_id, meter)
                     .map(ImportedFile::Midi)
                     .map_err(|error| error.to_string())
             } else {

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.YIAN6557.Elevate</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Elevate</name>
+  <summary>Modern, modular digital audio workstation built with Rust and GPUI</summary>
+  
+  <description>
+    <p>
+      Elevate is a fast, keyboard-driven digital audio workstation (DAW) designed for fluid music production, recording, and sequencing.
+    </p>
+    <p>Key highlights:</p>
+    <ul>
+      <li>High-performance vector user interface powered by GPUI.</li>
+      <li>Modular audio architecture with built-in sampler (sfizz SFZ engine) and SoundFont synth support.</li>
+      <li>Precision piano roll with modal editing, humanization, and scale snapping.</li>
+      <li>Flexible track routing with integrated serial/parallel FX chains.</li>
+      <li>Extensible via Lua scripting for MIDI transformations and workflows.</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">io.github.YIAN6557.Elevate.desktop</launchable>
+
+  <url type="homepage">https://github.com/YIAN6557/daw-gpui</url>
+  <url type="bugtracker">https://github.com/YIAN6557/daw-gpui/issues</url>
+
+  <provides>
+    <binary>daw-gpui</binary>
+  </provides>
+
+  <developer id="io.github.YIAN6557">
+    <name>Elevate Team</name>
+  </developer>
+
+  <categories>
+    <category>AudioVideo</category>
+    <category>Audio</category>
+    <category>AudioVideoEditing</category>
+    <category>Midi</category>
+  </categories>
+
+  <content_rating type="oars-1.1" />
+
+  <releases>
+    <release version="0.1.0" date="2026-11-09">
+      <description>
+        <p>Initial Flatpak preview release featuring GPUI interface, sfizz sampler, and SoundFont playback.</p>
+      </description>
+    </release>
+  </releases>
+</component>

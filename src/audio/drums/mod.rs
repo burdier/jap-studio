@@ -4,10 +4,7 @@ mod stream;
 mod voice;
 
 use super::output::choose_output_config;
-use cpal::{
-    SampleFormat,
-    traits::{HostTrait, StreamTrait},
-};
+use cpal::{SampleFormat, traits::StreamTrait};
 use elevate::devices::utility_slot::UtilitySlot;
 use elevate::musical::{
     model::Pattern,
@@ -44,12 +41,11 @@ impl DrumPlayer {
         bpm: f64,
         gain: f32,
         utility: UtilitySlot,
+        audio: &super::device::AudioConfig,
     ) -> Result<Self, String> {
-        let device = cpal::default_host()
-            .default_output_device()
-            .ok_or("No hay dispositivo de salida predeterminado")?;
-        let config = choose_output_config(&device, None)?;
-        let sample_rate = config.sample_rate();
+        let device = audio.device(false)?;
+        let setup = choose_output_config(&device, audio)?;
+        let sample_rate = setup.config.sample_rate;
         let time_base = TimeBase::new(sample_rate, bpm).map_err(time_error)?;
         let plan = Arc::new(PreparedPattern::compile(pattern, time_base).map_err(time_error)?);
         let loop_frames = plan.length_frames();
@@ -60,19 +56,35 @@ impl DrumPlayer {
             failed: AtomicBool::new(false),
             frame: AtomicU64::new(0),
         });
-        let stream = match config.sample_format() {
-            SampleFormat::F32 => {
-                stream::build_stream::<f32>(&device, config.into(), plan, state.clone())
-            }
-            SampleFormat::I16 => {
-                stream::build_stream::<i16>(&device, config.into(), plan, state.clone())
-            }
-            SampleFormat::I32 => {
-                stream::build_stream::<i32>(&device, config.into(), plan, state.clone())
-            }
-            SampleFormat::U16 => {
-                stream::build_stream::<u16>(&device, config.into(), plan, state.clone())
-            }
+        let stream = match setup.format {
+            SampleFormat::F32 => stream::build_stream::<f32>(
+                &device,
+                setup.config,
+                setup.first_channel,
+                plan,
+                state.clone(),
+            ),
+            SampleFormat::I16 => stream::build_stream::<i16>(
+                &device,
+                setup.config,
+                setup.first_channel,
+                plan,
+                state.clone(),
+            ),
+            SampleFormat::I32 => stream::build_stream::<i32>(
+                &device,
+                setup.config,
+                setup.first_channel,
+                plan,
+                state.clone(),
+            ),
+            SampleFormat::U16 => stream::build_stream::<u16>(
+                &device,
+                setup.config,
+                setup.first_channel,
+                plan,
+                state.clone(),
+            ),
             format => return Err(format!("Formato de salida no compatible: {format:?}")),
         }?;
         stream.play().map_err(|error| error.to_string())?;

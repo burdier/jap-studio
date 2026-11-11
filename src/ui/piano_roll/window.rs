@@ -1,5 +1,5 @@
 //! La ventana presenta el mismo editor y observa el mismo clip que el Arrangement.
-use crate::ui::DawApp;
+use crate::ui::{DawApp, VimMode};
 use gpui::{
     App, AppContext, Bounds, Context, Entity, FocusHandle, IntoElement, Render, Subscription,
     TitlebarOptions, Window, WindowBounds, WindowHandle, WindowOptions, div, prelude::*, px, size,
@@ -45,6 +45,7 @@ impl DetachedPianoRoll {
 impl Render for DetachedPianoRoll {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.app.update(cx, |app, cx| {
+            app.sync_audio_selectors(window, cx);
             let content = app
                 .render_piano_roll(&self.focus_handle, cx)
                 .into_any_element();
@@ -56,7 +57,24 @@ impl Render for DetachedPianoRoll {
                     app.render_action_form(window.viewport_size(), cx)
                         .into_any_element()
                 });
-            div().relative().size_full().child(content).children(form)
+            let picker = app
+                .toolbar_icons
+                .picker_open
+                .then(|| app.render_icon_picker_overlay(cx).into_any_element());
+            let settings = app
+                .settings
+                .is_visible()
+                .then(|| app.render_settings_overlay(window, cx).into_any_element());
+            let command_bar = (app.mode == VimMode::Command)
+                .then(|| app.render_command_bar(cx).into_any_element());
+            div()
+                .relative()
+                .size_full()
+                .child(content)
+                .children(picker)
+                .children(settings)
+                .children(form)
+                .children(command_bar)
         })
     }
 }

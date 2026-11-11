@@ -89,7 +89,7 @@ impl FxChain {
             .ok_or_else(|| "FX inexistente".into())
     }
 }
-fn validate(
+pub(super) fn validate(
     nodes: &[FxNode],
     depth: usize,
     ids: &mut std::collections::HashSet<FxId>,

@@ -15,7 +15,6 @@ impl DawApp {
         let ds = &self.ds;
         let view_label = match self.center_view {
             CenterView::Arrangement => "ARRANGEMENT",
-            CenterView::Instrument => "INSTRUMENT",
             CenterView::Session => "PATTERN",
             CenterView::Mixer => "MIXER",
         };
@@ -23,6 +22,8 @@ impl DawApp {
             format!("Patrón {} Hz", player.sample_rate)
         } else if let Some(player) = &self.player {
             format!("{} Hz", player.sample_rate)
+        } else if let Some(rate) = self.vst.sample_rate() {
+            format!("{} · {rate} Hz", self.vst.name)
         } else if let Some(rate) = self.instrument.sample_rate() {
             format!("{} · {rate} Hz", self.instrument.active_name())
         } else if let Some(clip) = &self.timeline.clip {
@@ -34,6 +35,8 @@ impl DawApp {
             "● DRUMS"
         } else if self.player.is_some() {
             "● AUDIO"
+        } else if self.vst.ready() {
+            "● VST3"
         } else if self.instrument.is_running() {
             "● INSTRUMENT"
         } else {
@@ -160,16 +163,26 @@ impl DawApp {
                             }),
                     )
                     .children(
-                        [
-                            "h j k l",
-                            "i:insert",
-                            "::cmd",
-                            "a:buscar",
-                            "Tab:view",
-                            "+/-:zoom",
-                            "R:reload",
-                            "1/2/3/4:jump",
-                        ]
+                        if self.vim_enabled {
+                            vec![
+                                "h j k l",
+                                "i:insert",
+                                "::cmd",
+                                "a:buscar",
+                                "Tab:view",
+                                "+/-:zoom",
+                                "R:reload",
+                                "1/2/3/4:jump",
+                            ]
+                        } else {
+                            vec![
+                                "Flechas: navegar",
+                                "Delete: eliminar",
+                                "F11: ampliar",
+                                "[+]: acciones",
+                            ]
+                        }
+                        .into_iter()
                         .map(|label| div().text_color(rgb(ds.muted)).child(label)),
                     ),
             )

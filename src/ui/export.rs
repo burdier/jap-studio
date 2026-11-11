@@ -1,7 +1,7 @@
 //! Acción de exportación: captura estado propio y observa el resultado del worker.
 use super::DawApp;
 use crate::audio::export::{self, Snapshot, TrackMix};
-use elevate::{export::ExportOptions, musical::time::DEFAULT_BPM};
+use elevate::export::ExportOptions;
 use std::sync::{atomic::Ordering, mpsc::TryRecvError};
 
 impl DawApp {
@@ -39,6 +39,9 @@ impl DawApp {
                     .map_err(|e| e.to_string())?
                     .join(&options.directory);
             }
+            if self.tracks.iter().any(|t| crate::audio::effects::contains_vst(&t.chain)) {
+                return Err("La exportación con efectos VST3 todavía requiere render offline de sus estados; no se exportará sin ellos".into());
+            }
             let audio = self
                 .timeline
                 .other_audio_clips
@@ -60,6 +63,10 @@ impl DawApp {
                     && self.tracks[c.track].instrument
                         != Some(crate::instruments::sampler::SAMPLER_ID)
             });
+            if midi.iter().any(|clip| options.includes_track(clip.track) && !clip.props.muted
+                && self.track_gain(clip.track) > 0. && self.tracks[clip.track].instrument == Some(crate::instruments::vst::VST_ID)) {
+                return Err("La exportación de instrumentos VST3 todavía no está disponible; excluye esa pista del rango de exportación".into());
+            }
             let piano = if needs_piano {
                 Some(self.instrument.export_snapshot()?)
             } else {
@@ -101,7 +108,7 @@ impl DawApp {
                 sampler,
                 tracks,
                 utility: self.utility.state(),
-                bpm: DEFAULT_BPM,
+                bpm: self.timeline.tempo.bpm(),
             };
             export::start(snapshot, options)
         })();

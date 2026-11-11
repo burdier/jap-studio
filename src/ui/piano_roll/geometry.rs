@@ -1,5 +1,6 @@
 //! Geometría compartida por dibujo y picking, también al cambiar de panel o de ventana.
 use super::navigation::RollViewport;
+use crate::ui::time_grid::TimeGrid;
 use elevate::musical::time::{PPQ, Tick};
 use gpui::{Bounds, Pixels, Point, point, px, size};
 
@@ -51,7 +52,29 @@ impl Grid {
     }
 
     pub fn x(&self, beat: f64) -> Pixels {
-        self.notes.left() + px((beat - self.first_beat) as f32 * self.pixels_per_beat)
+        self.notes.left() + px(self.axis().x_at(beat) as f32)
+    }
+
+    pub fn axis(&self) -> TimeGrid {
+        TimeGrid {
+            first_beat: self.first_beat,
+            pixels_per_beat: f64::from(self.pixels_per_beat),
+        }
+    }
+
+    /// El mismo intervalo temporal sirve para dibujar, seleccionar y detectar el borde.
+    pub fn note_bounds(&self, start: Tick, duration: Tick, pitch: u8) -> Bounds<Pixels> {
+        let (left, right) = self.axis().interval(
+            start.0 as f64 / PPQ as f64,
+            (start.0 + duration.0) as f64 / PPQ as f64,
+        );
+        let x = self.notes.left() + px(left as f32 + 2.0);
+        let width = ((right - left) as f32 - 3.0).max(2.0);
+        let y = self.y(pitch) + px(self.row_height * 0.13);
+        Bounds::new(
+            point(x, y),
+            size(px(width), px((self.row_height * 0.74).max(1.0))),
+        )
     }
 
     pub fn y(&self, pitch: u8) -> Pixels {
@@ -67,8 +90,9 @@ impl Grid {
         {
             return None;
         }
-        let beat = self.first_beat
-            + f64::from(f32::from(position.x - self.notes.left()) / self.pixels_per_beat);
+        let beat = self
+            .axis()
+            .beat_at(f64::from(f32::from(position.x - self.notes.left())));
         let tick = Tick(((beat * PPQ as f64).floor() as i64).clamp(0, (length.0 - 1).max(0)));
         let row = f32::from(position.y - self.notes.top()) / self.row_height;
         Some((tick, (self.top_pitch - row).ceil().clamp(0.0, 127.0) as u8))

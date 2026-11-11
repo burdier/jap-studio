@@ -3,13 +3,15 @@ use crate::ui::{
     DesignSystem,
     piano_roll::geometry::{Grid, KEYBOARD_WIDTH},
 };
-use elevate::musical::{keyboard::is_black, pitch::note_name};
+use elevate::musical::{keyboard::is_black, pitch::note_name, scale::PitchScale};
 use gpui::{App, Bounds, Pixels, TextAlign, TextRun, Window, fill, point, px, rgb, rgba, size};
 
 pub(super) fn paint_rows(
     grid: &Grid,
     ds: &DesignSystem,
     highlight: bool,
+    show_scale_keyboard: bool,
+    scale: PitchScale,
     window: &mut Window,
     cx: &mut App,
 ) {
@@ -42,7 +44,7 @@ pub(super) fn paint_rows(
             grid.row_height,
             (color << 8) | 0xff,
         );
-        if highlight && matches!(pitch % 12, 0 | 2 | 3 | 5 | 7 | 8 | 10) {
+        if highlight && scale.contains(pitch) {
             rectangle(
                 window,
                 grid.notes.left(),
@@ -94,6 +96,16 @@ pub(super) fn paint_rows(
                 );
             }
         }
+        if show_scale_keyboard && scale.contains(pitch) {
+            rectangle(
+                window,
+                keys_left,
+                y,
+                keys_width * if is_black(pitch) { 0.57 } else { 1.0 },
+                grid.row_height,
+                (ds.accent << 8) | 0x38,
+            );
+        }
     }
     rectangle(
         window,
@@ -109,53 +121,71 @@ pub(super) fn paint_time(
     grid: &Grid,
     ds: &DesignSystem,
     beats: f64,
+    meter: elevate::musical::time::Meter,
+    resolution: elevate::musical::grid::NoteGrid,
     window: &mut Window,
     cx: &mut App,
 ) {
-    let subdivisions = if grid.pixels_per_beat >= 16.0 { 4 } else { 1 };
-    let first = (grid.first_beat * subdivisions as f64).floor() as usize;
+    let beat_length = 4.0 / f64::from(meter.denominator());
+    let bar_length = meter.beats_per_bar();
+    let width = f64::from(f32::from(grid.notes.size.width)).min(grid.axis().x_at(beats).max(0.0));
+    let time_bounds = Bounds::new(
+        point(grid.notes.left(), grid.all.top()),
+        size(px(width as f32), grid.all.size.height - px(10.0)),
+    );
+    crate::ui::components::bar_grid::paint(time_bounds, grid.axis(), bar_length, ds, window);
+    // Los compases no dependen de las subdivisiones visibles: también 3/4, 6/8, etc.
+    let mut previous_end = grid.notes.left();
+    for bar in grid.axis().visible_bars(width, bar_length) {
+        let x = grid.x(bar as f64 * bar_length).max(grid.notes.left()) + px(8.0);
+        if x < previous_end {
+            continue;
+        }
+        let text = (bar + 1).to_string();
+        label(
+            window,
+            cx,
+            &text,
+            point(x, grid.all.top() + px(3.0)),
+            ds.text,
+            11.0,
+        );
+        previous_end = x + px(text.len() as f32 * 8.0 + 12.0);
+    }
+    // Mantener la rejilla elegida; al alejar, omitir líneas demasiado juntas.
+    let mut step_size = 4.0 / f64::from(resolution.denominator());
+    while step_size * f64::from(grid.pixels_per_beat) < 6.0 && step_size < 4.0 {
+        step_size *= 2.0;
+    }
+    let first = (grid.first_beat / step_size).floor() as usize;
     let visible_beats = f64::from(f32::from(grid.notes.size.width) / grid.pixels_per_beat);
-    let last = ((grid.first_beat + visible_beats).min(beats) * subdivisions as f64).ceil() as usize;
+    let last = ((grid.first_beat + visible_beats).min(beats) / step_size).ceil() as usize;
     for step in first..=last.min(first.saturating_add(4096)) {
-        let beat = step as f64 / subdivisions as f64;
+        let beat = step as f64 * step_size;
         let x = grid.x(beat);
-        let is_bar = step % (4 * subdivisions) == 0;
-        let is_beat = step % subdivisions == 0;
-        let color = if is_bar {
-            (ds.accent << 8) | 0xa0
-        } else if is_beat {
+        let is_bar = (beat / bar_length - (beat / bar_length).round()).abs() < 0.000_001;
+        let is_beat = (beat / beat_length - (beat / beat_length).round()).abs() < 0.000_001;
+        let color = if is_beat {
             (ds.grid << 8) | 0xba
         } else {
             (ds.border << 8) | 0x6a
         };
-        let top = if is_bar {
-            grid.all.top() + px(4.0)
-        } else {
-            grid.notes.top()
-        };
-        rectangle(
-            window,
-            x,
-            top,
-            if is_bar { 1.0 } else { 0.6 },
-            f32::from(grid.all.bottom() - top) - 10.0,
-            color,
-        );
-        if is_bar && beat < beats {
-            label(
+        let top = grid.notes.top();
+        if !is_bar {
+            rectangle(
                 window,
-                cx,
-                &(beat as usize / 4 + 1).to_string(),
-                point(x + px(8.0), grid.all.top() + px(3.0)),
-                ds.text,
-                11.0,
+                x,
+                top,
+                0.6,
+                f32::from(grid.all.bottom() - top) - 10.0,
+                color,
             );
         }
         if is_beat && beat < beats && grid.pixels_per_beat > 12.0 {
             label(
                 window,
                 cx,
-                &(beat as usize % 4 + 1).to_string(),
+                &(meter.beat_at(beat) as usize).to_string(),
                 point(
                     x + px(grid.pixels_per_beat * 0.42),
                     grid.all.top() + px(23.0),

@@ -6,15 +6,18 @@ use gpui::{AppContext, Context, Entity, Subscription, Window};
 
 pub(in crate::ui) struct FxDock {
     pub view: Entity<FxTree>,
+    pub analyzers: super::analyzers::Analyzers,
     pub width: f32,
     last_width: f32,
     focus_request: bool,
     track_ids: Vec<TrackId>,
     pub current: Option<FxTarget>,
+    pub editor_track: Option<TrackId>,
     pub menu: Option<super::menu::FxMenu>,
     pending: Option<(FxTarget, &'static str)>,
     pub form_target: Option<FxTarget>,
     select_request: Option<FxTarget>,
+    instrument_select_request: Option<TrackId>,
     _subscription: Subscription,
 }
 impl FxDock {
@@ -24,11 +27,14 @@ impl FxDock {
             match event {
                 FxEvent::Focused => {
                     this.track_delete_pending = false;
-                    let notes = this.controller.release_all();
-                    this.apply_midi(notes);
+                    this.sync_midi_focus();
                 }
                 FxEvent::Close => this.fx.width = 0.0,
-                FxEvent::Selection(target) => this.fx.current = Some(*target),
+                FxEvent::Selection(target) => {
+                    this.fx.current = Some(*target);
+                    this.workspace_focus.active = crate::ui::workspace_focus::Panel::Fx;
+                },
+                FxEvent::Instrument(track) => this.open_track_instrument(*track),
                 FxEvent::Add(target) => this.open_fx_palette(*target),
                 FxEvent::Action(target, command) => this.fx.pending = Some((*target, *command)),
                 FxEvent::Edit(track, edit) => {
@@ -48,20 +54,60 @@ impl FxDock {
         });
         Self {
             view,
+            analyzers: Default::default(),
             width: 0.0,
             last_width: 300.0,
             focus_request: false,
             track_ids: Vec::new(),
             current: None,
+            editor_track: None,
             menu: None,
             pending: None,
             form_target: None,
             select_request: None,
+            instrument_select_request: None,
             _subscription: subscription,
         }
     }
 }
 impl DawApp {
+    pub(in crate::ui) fn open_selected_instrument(&mut self) {
+        if let Some(track) = self
+            .tracks
+            .get(self.cursor_row)
+            .filter(|track| track.instrument.is_some())
+        {
+            self.open_track_instrument(track.id);
+        } else {
+            self.show_fx();
+            self.status_message = "Selecciona una pista con instrumento en Track FX".into();
+        }
+    }
+    pub(in crate::ui) fn open_track_instrument(&mut self, track: TrackId) {
+        let Some(index) = self
+            .tracks
+            .iter()
+            .position(|item| item.id == track && item.instrument.is_some())
+        else {
+            return;
+        };
+        self.select_track(index, false, false);
+        if self.vst_selected() {
+            self.fx.editor_track = None;
+            self.focus_midi_instrument();
+            self.fx.instrument_select_request = Some(track);
+            self.show_fx();
+            self.fx.focus_request = false;
+            self.vst.open_editor();
+            return;
+        }
+        self.fx.editor_track = Some(track);
+        self.workspace_focus.active = crate::ui::workspace_focus::Panel::Instrument;
+        self.focus_midi_instrument();
+        self.fx.instrument_select_request = Some(track);
+        self.show_fx();
+        self.fx.focus_request = false;
+    }
     pub(in crate::ui) fn resize_fx(&mut self, width: f32) {
         let width = width.clamp(0.0, 600.0);
         if width >= 40.0 {
@@ -70,6 +116,9 @@ impl DawApp {
         self.fx.width = if width < 40.0 { 0.0 } else { width };
     }
     pub(in crate::ui) fn show_fx(&mut self) {
+        if self.workspace_focus.expanded != Some(crate::ui::workspace_focus::Panel::Fx) {
+            self.workspace_focus.expanded = None;
+        }
         self.set_center_view(CenterView::Arrangement);
         self.fx.focus_request = true;
         if self.fx.width == 0.0 {
@@ -86,8 +135,7 @@ impl DawApp {
         };
         self.open_palette_for_track(index);
         self.palette.fx_target = Some(target);
-        self.palette
-            .set_category(Some(elevate::catalog::EntryKind::Component));
+        self.palette.set_category(None);
         self.fx.current = Some(target);
         self.show_fx();
     }
@@ -121,7 +169,9 @@ impl DawApp {
         }
         let track = self.tracks.get(self.cursor_row);
         let select = self.fx.select_request.take();
+        let instrument_select = self.fx.instrument_select_request.take();
         self.fx.view.update(cx, |tree, cx| {
+            tree.vim_enabled = self.vim_enabled;
             if tree.style != style || tree.suspended != suspended {
                 tree.style = style;
                 tree.suspended = suspended;
@@ -131,10 +181,33 @@ impl DawApp {
                 tree.views.retain(|id, _| self.fx.track_ids.contains(id));
             }
             if let Some(track) = track {
-                tree.sync(track.id, &track.name, &track.chain, cx);
+                let instrument_name = match track.instrument {
+                    Some(id) if id == crate::instruments::vst::VST_ID => self.vst.name.as_str(),
+                    Some(id) if id == crate::instruments::sampler::SAMPLER_ID => "Hay Sampler",
+                    _ => "Piano SoundFont",
+                };
+                tree.sync(
+                    track.id,
+                    &track.name,
+                    &track.chain,
+                    track.instrument,
+                    instrument_name,
+                    cx,
+                );
             } else if tree.track.take().is_some() {
                 tree.rows.clear();
                 cx.notify();
+            }
+            if let Some(id) = instrument_select {
+                if let Some(view) = tree.views.get_mut(&id) {
+                    view.selected = None;
+                    view.instrument_selected = true;
+                    view.root_closed = false;
+                }
+                if tree.track == Some(id) {
+                    tree.rebuild();
+                    cx.notify();
+                }
             }
             if let Some(target) = select {
                 if let Some(view) = tree.views.get_mut(&target.track) {
@@ -184,7 +257,26 @@ impl DawApp {
         );
         let mut chain = self.tracks[index].chain.clone();
         let selected = chain.apply(edit)?;
-        elevate::devices::fx_gain::compile(&chain)?;
+        if crate::audio::effects::needs_rack(&chain) {
+            if !self.tracks[index].accepts_clips() {
+                return Err("Spectrum/VST3 requieren una pista de audio o MIDI; los buses de grupo aún no están implementados".into());
+            }
+            let rate = self
+                .vst_effects
+                .instances
+                .iter()
+                .find(|(id, _)| chain.find(**id).is_some())
+                .map_or(0, |(_, e)| e.rate);
+            self.fx.analyzers.prepare(&chain);
+            crate::audio::effects::compile(
+                &chain,
+                &self.vst_effects.instances,
+                &self.fx.analyzers.taps,
+                rate,
+            )?;
+        } else {
+            elevate::devices::fx_gain::compile(&chain)?;
+        }
         self.tracks[index].chain = chain;
         if !preserve {
             self.fx.select_request = Some(FxTarget {
@@ -195,6 +287,7 @@ impl DawApp {
         if !preserve {
             self.show_fx();
         }
+        self.sync_vst_effects();
         self.publish_track_fx();
         self.status_message = format!("FX · {}", self.tracks[index].name);
         Ok(())

@@ -1,6 +1,6 @@
 //! Dibujo de clips de audio y MIDI en el Arrangement.
 use super::{DesignSystem, clip_frame, viewport::Viewport};
-use crate::audio::{AudioClip, BEATS_PER_SECOND, PEAK_FRAMES};
+use crate::audio::{AudioClip, PEAK_FRAMES};
 use elevate::musical::{
     clip::{ClipProps, MidiClip},
     time::PPQ,
@@ -8,14 +8,6 @@ use elevate::musical::{
 use gpui::{
     App, Bounds, ContentMask, Pixels, TextAlign, TextRun, Window, fill, point, px, rgb, rgba, size,
 };
-
-fn clip_accent_color(track: usize, props: ClipProps, design: &DesignSystem) -> u32 {
-    let palette = design.clip_palette();
-    match props.color_index {
-        Some(idx) => palette[usize::from(idx) % palette.len()],
-        None => design.track_color(track),
-    }
-}
 
 /// Controles compactos dentro del clip, junto al nombre.
 fn paint_clip_control_pill(
@@ -95,7 +87,9 @@ fn paint_clip_control_pill(
 
 pub(super) fn paint(
     clip: &AudioClip,
+    bpm: f64,
     selected: bool,
+    hover_edge: Option<clip_frame::ClipEdge>,
     viewport: Viewport,
     bounds: Bounds<Pixels>,
     layout: &crate::ui::track_layout::TrackLayout,
@@ -105,11 +99,11 @@ pub(super) fn paint(
 ) {
     let width = f64::from(f32::from(bounds.size.width));
     let left = viewport.x_at(clip.start_beat).max(0.0);
-    let right = viewport.x_at(clip.end_beat()).min(width);
+    let right = viewport.x_at(clip.end_beat(bpm)).min(width);
     if right <= left {
         return;
     }
-    let track_color = clip_accent_color(clip.track, clip.props, design);
+    let track_color = design.clip_color(clip.track, clip.props);
     let Some(row) = layout.row(clip.track) else {
         return;
     };
@@ -130,6 +124,7 @@ pub(super) fn paint(
                 track_color,
                 selected,
                 clip.props.muted,
+                hover_edge,
                 design,
                 window,
             );
@@ -159,7 +154,7 @@ pub(super) fn paint(
             let mut column = start_col;
             while column < end_col {
                 let frame_at = |x: f64| {
-                    (((viewport.beat_at(x) - clip.start_beat).max(0.0) / BEATS_PER_SECOND
+                    (((viewport.beat_at(x) - clip.start_beat).max(0.0) / (bpm / 60.0)
                         + clip.trim_start)
                         * f64::from(clip.file.sample_rate)) as usize
                 };
@@ -281,6 +276,7 @@ pub(super) fn paint(
 pub(super) fn paint_midi(
     clip: &MidiClip,
     selected: bool,
+    hover_edge: Option<clip_frame::ClipEdge>,
     viewport: Viewport,
     bounds: Bounds<Pixels>,
     layout: &crate::ui::track_layout::TrackLayout,
@@ -294,7 +290,7 @@ pub(super) fn paint_midi(
     if right <= left {
         return;
     }
-    let clip_color = clip_accent_color(clip.track, clip.props, design);
+    let clip_color = design.clip_color(clip.track, clip.props);
     let Some(row) = layout.row(clip.track) else {
         return;
     };
@@ -315,6 +311,7 @@ pub(super) fn paint_midi(
                 clip_color,
                 selected,
                 clip.props.muted,
+                hover_edge,
                 design,
                 window,
             );

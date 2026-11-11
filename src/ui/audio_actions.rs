@@ -1,13 +1,12 @@
 //! Coordinación UI → adaptadores de audio; decodificación en background.
 use super::{CenterView, DawApp, pattern_editor::PatternAction, views::tracks::TRACK_UNITY_LEVEL};
-use crate::audio::{DrumPlayer, Player};
+use crate::audio::DrumPlayer;
 use crate::instruments::piano_params::{self, Applies, ParamId, SPECS};
 use elevate::musical::{
     controller::DEFAULT_VELOCITY,
     midi::{MidiMessage, MidiTarget, RoutedMidi},
     midi_map::{MappedEffect, MidiAction, MidiBindTarget},
     pitch::note_name,
-    time::DEFAULT_BPM,
     track::{TrackKind, assign_instrument, has_solo},
 };
 
@@ -70,7 +69,6 @@ impl DawApp {
     /// automáticamente las notas que tenía el cliente anterior.
     pub(super) fn sync_midi_focus(&mut self) {
         let target = match self.center_view {
-            CenterView::Instrument => Some(MidiTarget::Instrument(self.active_instrument_id())),
             CenterView::Session => Some(MidiTarget::Sequencer),
             CenterView::Arrangement | CenterView::Mixer => self
                 .tracks
@@ -80,6 +78,12 @@ impl DawApp {
         };
         let released = self.midi_server.focus(target);
         self.dispatch_routed_midi(released);
+    }
+    pub(super) fn poll_live_midi(&mut self) {
+        let messages = self.midi_hw.drain();
+        if !messages.is_empty() {
+            self.apply_midi(messages);
+        }
     }
     pub(super) fn focus_midi_instrument(&mut self) {
         let released = self
@@ -195,6 +199,7 @@ impl DawApp {
                 MidiTarget::Instrument(id) if id == crate::instruments::sampler::SAMPLER_ID => {
                     self.sampler_midi(message)
                 }
+                MidiTarget::Instrument(id) if id == crate::instruments::vst::VST_ID => self.vst_midi(message),
                 MidiTarget::Instrument(_) => {}
                 MidiTarget::Sequencer => {
                     if let MidiMessage::NoteOn { .. } = message {
@@ -227,16 +232,19 @@ impl DawApp {
         let Some(messages) = self.controller.key_down(key, repeat) else {
             return false;
         };
+        self.track_delete_pending = false;
         self.apply_midi(messages);
         self.status_message = self.controller_status();
         true
     }
     pub(super) fn toggle_controller(&mut self) {
+        self.track_delete_pending = false;
         let messages = self.controller.set_enabled(!self.controller.enabled());
         self.apply_midi(messages);
         self.status_message = self.controller_status();
     }
     fn note_on_velocity(&mut self, note: u8, velocity: u8) {
+        if self.vst_selected() { self.vst_midi(MidiMessage::NoteOn { note, velocity }); return; }
         if self.sampler_selected() {
             self.sample_note_on(note, velocity);
             return;
@@ -251,8 +259,11 @@ impl DawApp {
             self.stop_pattern();
         }
         let now = self.now_ns();
-        self.midi_capture
-            .record(MidiMessage::NoteOn { note, velocity }, now, DEFAULT_BPM);
+        self.midi_capture.record(
+            MidiMessage::NoteOn { note, velocity },
+            now,
+            self.timeline.tempo.bpm(),
+        );
         match self
             .instrument
             .note_on(note, velocity, self.piano_gain(), self.utility.clone())
@@ -274,18 +285,25 @@ impl DawApp {
         }
     }
     pub(super) fn note_off(&mut self, note: u8) {
+        if self.vst.held.contains(&note) { self.vst_midi(MidiMessage::NoteOff { note }); return; }
         if self.sampler.held(note) {
             self.sampler.note_off(note);
-            self.midi_capture
-                .record(MidiMessage::NoteOff { note }, self.now_ns(), DEFAULT_BPM);
+            self.midi_capture.record(
+                MidiMessage::NoteOff { note },
+                self.now_ns(),
+                self.timeline.tempo.bpm(),
+            );
             return;
         }
         if !self.instrument.note_off(note) {
             return;
         }
         let now = self.now_ns();
-        self.midi_capture
-            .record(MidiMessage::NoteOff { note }, now, DEFAULT_BPM);
+        self.midi_capture.record(
+            MidiMessage::NoteOff { note },
+            now,
+            self.timeline.tempo.bpm(),
+        );
         self.status_message = format!(
             "Note Off {} · {}",
             note_name(note),
@@ -293,6 +311,7 @@ impl DawApp {
         );
     }
     pub(super) fn release_mouse_note(&mut self) {
+        if let Some(note) = self.vst.mouse.take() { self.vst_midi(MidiMessage::NoteOff { note }); }
         if let Some(note) = self.sampler.mouse.take() {
             self.note_off(note);
         }
@@ -301,6 +320,7 @@ impl DawApp {
         }
     }
     pub(super) fn all_notes_off(&mut self) {
+        self.vst.all_off();
         self.sampler.all_off();
         let controller_off = self.controller.release_all();
         self.apply_midi(controller_off);
@@ -308,7 +328,7 @@ impl DawApp {
         self.dispatch_routed_midi(server_off);
         let now = self.now_ns();
         self.midi_capture
-            .record(MidiMessage::AllNotesOff, now, DEFAULT_BPM);
+            .record(MidiMessage::AllNotesOff, now, self.timeline.tempo.bpm());
         if self.instrument.all_notes_off() {
             self.status_message = "Todas las notas liberadas".into();
         }
@@ -324,13 +344,14 @@ impl DawApp {
         }
         let start_beat = self.timeline.edit_beat();
         let title = format!("MIDI · {}", self.active_instrument_name());
-        let Some(clip) = self.midi_capture.to_clip(
+        let Some(clip) = self.midi_capture.to_clip_with_meter(
             title,
             target_track,
             start_beat,
             self.active_instrument_id(),
             now,
-            DEFAULT_BPM,
+            self.timeline.tempo.bpm(),
+            self.timeline.meter,
         ) else {
             self.status_message =
                 "No hay notas MIDI recientes para insertar · toca algo primero".into();
@@ -355,7 +376,8 @@ impl DawApp {
         }
         if self.midi_capture.is_recording() {
             let now = self.now_ns();
-            self.midi_capture.stop_recording(now, DEFAULT_BPM);
+            self.midi_capture
+                .stop_recording(now, self.timeline.tempo.bpm());
             if self.midi_capture.has_notes() {
                 self.capture_midi_to_track();
             } else {
@@ -405,6 +427,15 @@ impl DawApp {
             Err(error) => self.status_message = format!("Banco SoundFont: {error}"),
         }
     }
+    pub(super) fn poll_piano_resources(&mut self, cx: &mut gpui::Context<Self>) {
+        if let Some(result) = self.instrument.poll_resources() {
+            self.status_message = match result {
+                Ok(()) => format!("{} · listo", self.instrument.active_name()),
+                Err(error) => format!("Piano: {error}"),
+            };
+            cx.notify();
+        }
+    }
     pub(super) fn select_soundfont_bank(&mut self, index: usize) {
         self.all_notes_off();
         match self.instrument.select_bank(index) {
@@ -436,6 +467,7 @@ impl DawApp {
         }
     }
     pub(super) fn stop_instrument(&mut self) {
+        self.vst.silence();
         self.sampler.silence();
         self.instrument.stop();
     }
@@ -446,9 +478,10 @@ impl DawApp {
         self.stop_pattern();
         match DrumPlayer::start(
             &self.pattern_editor.pattern,
-            DEFAULT_BPM,
+            self.timeline.tempo.bpm(),
             self.drum_gain(),
             self.utility.clone(),
+            &self.settings.audio.saved,
         ) {
             Ok(player) => {
                 let events = player.event_count();
@@ -507,6 +540,9 @@ impl DawApp {
                     return;
                 }
                 let start = edit_beat.max(midi_clip.start_beat);
+                if self.tracks.get(midi_clip.track).is_some_and(|t| t.instrument == Some(crate::instruments::vst::VST_ID)) {
+                    self.play_vst_clip(&midi_clip, start); return;
+                }
                 if self
                     .tracks
                     .get(midi_clip.track)
@@ -523,7 +559,7 @@ impl DawApp {
                 match self.instrument.play_clip(
                     &midi_clip,
                     start,
-                    DEFAULT_BPM,
+                    self.timeline.tempo.bpm(),
                     clip_gain,
                     self.utility.clone(),
                 ) {
@@ -557,28 +593,16 @@ impl DawApp {
                 format!("Clip de audio «{}» está silenciado (Mute)", clip.file.name);
             return;
         }
-        if edit_beat >= clip.end_beat() {
+        if edit_beat >= clip.end_beat(self.timeline.tempo.bpm()) {
             self.status_message = "Coloca el cursor antes del final del clip".into();
             return;
         }
-        let clip_gain = (self.track_gain(clip.track) * clip.props.gain_linear()).clamp(0.0, 2.0);
-        let pan = self.track_pan(clip.track);
-        match Player::start(
-            clip,
-            edit_beat,
-            clip_gain,
-            self.utility.clone(),
-            pan,
-            self.track_fx_gain(clip.track),
-        ) {
-            Ok(player) => {
-                self.player = Some(player);
-                self.status_message = "Reproduciendo · archivo → Volume → CPAL".into();
-            }
-            Err(error) => self.status_message = format!("Salida de audio: {error}"),
-        }
+        self.request_file_playback(clip.clone(), edit_beat);
     }
+
     pub(super) fn stop_audio(&mut self) {
+        self.vst.stop_clip();
+        self.file_playback = None;
         self.player = None;
         self.instrument.stop_clip();
         self.sampler.stop_clip();

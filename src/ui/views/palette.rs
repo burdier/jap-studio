@@ -53,7 +53,7 @@ impl DawApp {
                 .flex()
                 .flex_col()
                 .children(results.iter().enumerate().map(|(index, entry)| {
-                    let entry = *entry;
+                    let choice = entry.clone();
                     let active = index == selected;
                     let kind_color = category_color(ds, Some(entry.kind));
                     let unavailable = matches!(entry.action, CatalogAction::Unavailable(_));
@@ -73,7 +73,7 @@ impl DawApp {
                         .on_mouse_down(
                             MouseButton::Left,
                             cx.listener(move |this, _, window, cx| {
-                                this.activate_catalog_entry(entry, window, cx);
+                                this.activate_palette_entry(choice.clone(), window, cx);
                                 cx.stop_propagation();
                                 cx.notify();
                             }),
@@ -96,13 +96,13 @@ impl DawApp {
                                         .text_xs()
                                         .font_weight(gpui::FontWeight::BOLD)
                                         .text_color(rgb(ds.text))
-                                        .child(entry.name),
+                                        .child(entry.name.clone()),
                                 )
                                 .child(
                                     div()
                                         .text_xs()
                                         .text_color(rgb(ds.muted))
-                                        .child(entry.summary),
+                                        .child(entry.summary.clone()),
                                 ),
                         )
                         .child(
@@ -115,6 +115,8 @@ impl DawApp {
                                 }))
                                 .child(if unavailable {
                                     "pronto"
+                                } else if entry.bundle.is_some() {
+                                    "+ cargar"
                                 } else if entry.action.parameters().is_some() {
                                     "↵ parámetros"
                                 } else if entry.kind == EntryKind::Action {

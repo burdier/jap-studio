@@ -11,19 +11,22 @@ use super::{
 pub(super) enum SettingsCategory {
     #[default]
     Appearance,
+    Audio,
     Tracks,
     Export,
     Shortcuts,
 }
 impl SettingsCategory {
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 5] = [
         Self::Appearance,
+        Self::Audio,
         Self::Tracks,
         Self::Export,
         Self::Shortcuts,
     ];
     pub fn label(self) -> &'static str {
         match self {
+            Self::Audio => "Audio",
             Self::Appearance => "Apariencia",
             Self::Tracks => "Pistas",
             Self::Export => "Exportación",
@@ -36,6 +39,7 @@ impl SettingsCategory {
 pub(super) struct SettingsUi {
     settings_open: bool,
     pub category: SettingsCategory,
+    pub audio: super::audio_preferences::AudioPreferences,
     pub export: super::export_preferences::ExportPreferences,
     appearance_save_error: Option<String>,
 }
@@ -44,6 +48,7 @@ impl SettingsUi {
     pub fn new() -> Self {
         Self {
             export: super::export_preferences::ExportPreferences::load(),
+            audio: super::audio_preferences::AudioPreferences::load(),
             ..Self::default()
         }
     }
@@ -73,6 +78,9 @@ impl SettingsUi {
     }
 
     fn close(&mut self) {
+        self.audio.probe = None;
+        self.audio.focus_request = None;
+        self.audio.selectors.clear();
         self.settings_open = false;
         self.export.editing = None;
     }
@@ -107,6 +115,8 @@ impl DawApp {
 
     pub(super) fn set_theme(&mut self, theme: ThemePreset) {
         self.ds.apply_theme(theme);
+        self.timeline.set_scale(self.ds.timeline_pixels_per_beat);
+        self.refresh_track_layout();
         self.save_appearance(format!("Tema: {}", theme.label()));
     }
 

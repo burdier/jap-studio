@@ -1,6 +1,169 @@
 # Estado del prototipo y siguiente incremento
 
+Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MODULATION.md).
+
 ## Disponible
+
+- Acción **Nota general…** desde `[+]`, `:note` o `:note.edit`. Abre el mismo apunte
+  multilínea para editarlo y guardarlo en los datos del usuario (`hay-daw/general-note.md`);
+  no queda atado a una pista o proyecto. Ctrl+Enter guarda y Esc cierra.
+
+- Subdivisión MIDI de selecciones pequeñas en el mismo evento UI, manteniendo el
+  script Lua y los IDs/mute/selección. Las herramientas integradas serializan solo
+  notas afectadas y conservan CC en Rust. Diagnóstico headless: ~0,19 ms para cortar
+  una nota entre 38 con 8192 CC (antes ~82 ms); cortes masivos y scripts propios
+  siguen en background. Compilación y medición local, sin suite de tests.
+
+- `f` en Normal amplía el panel con foco (piano roll, Arrangement, instrumento,
+  Track FX o explorador) y otra pulsación restaura el layout sin cambiar anchos ni
+  divisiones. Esc restaura el panel acoplado; F11, botón Ampliar y acción
+  `view.maximize` también funcionan sin Vim. En ventanas GPUI separadas se alterna
+  la maximización nativa. Sin ventanas nuevas ni copias del editor.
+- Configuración → Atajos ofrece Navegación Vim, con acción `vim.toggle` en `[+]`
+  y `:vim.toggle` / `:vim toggle`. Se persiste `VIM_ENABLED` en el perfil existente.
+  Al desactivar Vim se cancelan `dd` y el modo/comando pendiente; flechas, Delete,
+  ratón, atajos de herramientas, controlador MIDI y transporte siguen disponibles.
+  El indicador cambia a VIM OFF; se reactiva desde la UI sin necesitar `:`.
+
+- Hay Spectrum insertable desde `[+]` o `:fx.spectrum`, con identidad por nodo y
+  múltiples inspectores en Track FX. Comparación antes/después de VST3, reordenamiento,
+  serie/paralelo, duplicación y bypass mediante el árbol existente. El mismo componente
+  del piano ofrece espectro, onda estéreo, espectrogramas log/lineal y peak/RMS.
+  RealFFT existente, sin dependencias nuevas. Análisis fuera de RT; captura solo con
+  Track FX visible. Posición/nombre/bypass se guardan con el proyecto; modo e historial
+  pertenecen a la sesión. Pendientes buses de grupo, audición de patrón de percusión,
+  cabeceras/mixer y modulación LFO. Ver [VISUAL_MODULATION.md](VISUAL_MODULATION.md).
+
+- VST3 genérico: catálogo por metadatos de fábrica en proceso separado, clases de
+  instrumentos y efectos, entrada/salida estéreo, editor original y efectos en el
+  árbol existente (serie/paralelo, bypass, orden y eliminación). Cathar Restore de
+  Windows instalado mediante yabridge y procesando audio de diagnóstico. Acciones
+  `fx.vst3.load/editor`. Sin nuevas dependencias. Compilación y diagnóstico manual,
+  sin suite de tests; límites de export/estado/duplicación/grupos en [VST3.md](VST3.md).
+
+- Arrangement y piano roll alternan un fondo tenue por compás, con divisiones y
+  números más claros. Componente compartido, adaptado al tema y la firma de compás;
+  mantiene la alternancia al desplazar y hacer zoom, sin cambiar notas ni snap.
+
+- Daynight Studio: variante oscura de Daylight Studio, con paneles diferenciados,
+  texto claro y acentos mates. Disponible en Apariencia y mediante `THEME=daynight`;
+  conserva dimensiones, controles y contraste de selección del usuario.
+
+- Los 16 temas integrados usan acentos desaturados y superficies más neutras.
+  Obsidiana adopta grises de estudio inspirados en REAPER; Cyberpunk Studio conserva
+  su familia violeta/rosa. Notas con halo discreto y clips con bordes del tema, sin
+  coral fijo. Selección, avisos y tiradores siguen diferenciados. Los perfiles con
+  colores personalizados conservan prioridad; volver a elegir el tema aplica la paleta.
+
+- `[+]` → Instrumentos carga Pianoteq VST3 mediante yabridge en background. Una instancia
+  por sesión, fila en Track FX, MIDI en vivo y clips con scheduler existente, mezcla de
+  pista y salida principal estéreo. Comandos `instrument.vst3.load/remove`. El acceso
+  del escritorio usa el Wine del host desde gpui-dev. Carga/síntesis real comprobadas;
+  editor original VST3 abierto desde Track FX. Bitstream Vera instalada para corregir
+  textos ausentes bajo Wine; falta revisar el dibujo tras recargar el plugin.
+  Estado/presets, mapeo Lua y exportación VST3 pendientes. [Alcance](VST3.md).
+
+- M activa/desactiva el controlador también desde OFF. El icono asignado a teclado MIDI
+  muestra ON/OFF y fondo activo desde el mismo estado que el instrumento.
+- Shift + arrastrar dentro del cuerpo de clips de audio o MIDI desplaza su contenido
+  sin mover pista, inicio ni duración; reutiliza `trim_start`/`trim_len`, sin modificar
+  la fuente. Desplazamiento continuo, acotado a la fuente y respetando bloqueo. Si el
+  clip muestra toda la fuente hay que recortar antes un borde; el estado lo indica.
+  Cabecera y Ctrl-selección conservan sus gestos. Validación: compilación sin tests.
+
+- Instrumento/FX: MIDI del ordenador activo tiene prioridad sobre atajos de árbol y
+  explorador; Espacio comparte Play/Stop en editor y ventana separada. Cambiar el foco
+  a FX no libera notas si el destino MIDI sigue siendo el mismo. La ventana separada
+  también drena MIDI físico. Formularios/menús y campos de texto conservan sus teclas.
+- Playhead visual interpolado entre publicaciones del audio, extrapolación máxima de
+  80 ms y reinicio inmediato en Stop, saltos y vueltas del loop. Cursor de edición
+  con convergencia breve; Play sigue usando la posición exacta elegida. Dibujo compartido
+  entre regla, Arrangement y piano roll. Validación: compilación; pendiente revisión
+  visual/interactiva por el usuario.
+
+- Configuración → Audio: driver disponible, entrada/salida por ID CPAL, pareja física de
+  salida, canal mono de entrada, frecuencia y buffer admitidos, estimación por bloque,
+  tono de prueba y medidor. `:list device` lista interfaces; `:use device 2` selecciona
+  y guarda una salida (`:use device input 2` selecciona entrada). `:use device` abre el
+  panel y enfoca el selector. Borrador/Aplicar/Revertir; valores `AUDIO_*` persistidos en el perfil.
+  Select compartido de Kit con búsqueda y menú flotante (sin desplazar el panel),
+  Tab/Shift-Tab y navegación de opciones. Interfaces ocupadas o con error de consulta
+  permanecen visibles. Backend PipeWire nativo habilitado para compartir la interfaz
+  con Linux. Salidas hermanas seleccionables por nombre real (SSL Line Outputs
+  1/L + 2/R y Line Outputs 3 + 4), con canales locales por endpoint. Los perfiles ALSA
+  existentes se conservan y ofrecen cambio explícito a PipeWire desde Audio.
+  Verificado en SSL: stream silencioso de ocho segundos en 3/4 (765952 muestras)
+  mientras 1/L + 2/R seguía RUNNING en Linux; ambas salidas RUNNING simultáneamente,
+  sin errores durante el stream. No equivale a una comprobación auditiva.
+  Piano, sampler, percusión y clips comparten esta selección. Los archivos se remuestrean
+  con SoXR fuera de UI/RT cuando corresponde. La entrada sirve al medidor; grabación a
+  pistas y monitorización todavía pendientes. Comprobado mediante compilación; falta
+  comprobación auditiva con la interfaz física del usuario.
+
+- Modo `:` con sugerencias visibles del catálogo y alias. `↑/↓` eligen, Tab completa,
+  Enter ejecuta el texto o la selección explícita, Esc cancela y clic completa. Los
+  comandos que requieren parámetros abren el formulario existente. Funciona en la
+  ventana principal y en el piano roll separado. Validación: compilación.
+
+- Lua 5.4 mediante `mlua` para transformar notas del clip MIDI activo fuera de la UI y
+  del hilo de audio. El formulario `[+]` acepta un archivo Lua; `:midi.script` hace lo
+  mismo, y **Lua · acentuar notas** / `:midi.script.accent` / acción de catálogo **Lua · acentuar notas** prueban un
+  ejemplo integrado; el botón **Lua…** abre un archivo propio. El resultado se valida como patrón completo y se descarta si el
+  clip cambia. Solo edita notas existentes; no hay todavía API de displays ni undo de
+  proyecto. [Contrato y límites](LUA.md). Validación: compilación.
+
+- Documento Loro headless para nombre, IDs, orden, grupos, instrumento, mute, solo, FX y MIDI de
+  pistas. Reconcilia cambios sin recrear el orden CRDT, exporta/importa snapshots y
+  actualizaciones, y guarda/carga archivos binarios con reemplazo atómico. Valida el
+  esquema y la jerarquía al importar. Las cadenas FX conservan nodos, parámetros,
+  bypass y contenedores anidados. Los clips MIDI guardan posición, recorte, propiedades
+  y notas con IDs originales; se reconstruyen con el índice de carril actual.
+  Todavía no guarda clips de audio ni controles de mezcla;
+  por eso no hay comando de abrir/guardar proyecto en la UI. Validación: compilación.
+
+- Piano roll: controles de la barra registrados en catálogo y comandos, formularios de
+  parámetros musicales y transformaciones Lua (Q/H/Subdividir/Gate/Swing/Velocity/Random/Clamp).
+  Selector real de clip, longitud no destructiva, canal MIDI 1–16, escala/tónica, duración,
+  copy/cut/paste múltiple, Paint por arrastre, color picker, Follow y repetición por frames.
+  Pointer (V) selecciona/mueve con clic; doble clic en vacío crea con duración de rejilla,
+  y sobre una nota la elimina. Región selecciona, Delete/Backspace borra la selección,
+  y Borrar región elimina al soltar (Esc cancela). Ctrl+A selecciona todas;
+  Ctrl+Shift+A despeja. Acciones registradas y suavizado visual breve de mover/recortar
+  y del ajuste final al grid, sin cambiar el resultado musical. Validado por compilación;
+  pendiente valorar la sensación con ratón/touchpad en la app.
+  Notas con borde de 0,7 px y sombra tenue. Empuje Lua al mover una nota o alargar su
+  borde derecho: recorta vecinas del mismo tono, desde el lado del contacto; funciona
+  al mover a izquierda/derecha. Mantiene un tick mínimo y detiene el avance al alcanzarlo.
+  Retroceder restaura mientras dura el gesto; al soltar se confirma; Esc cancela todo.
+  VM reutilizada por gesto, sin pasar controles ni ejecutar Lua durante paint/audio.
+  Validación: compilación; interacción visual pendiente de probar en la app.
+  Botones, teclado e iconos comparten operaciones. Las preferencias sobreviven cambios de
+  clip durante la sesión; Edited compara con el estado al abrir. Velocity y los carriles CC/bend/presión editan datos reales; estos últimos tienen puntos
+  independientes, scheduler, importación SMF, Loro y API Lua. Release velocity, probabilidad
+  y pan por nota tienen carril, acción Lua y persistencia. Probabilidad se evalúa por vuelta;
+  sfizz recibe release velocity y FluidSynth aplica pan por voz. Los otros backends
+  conservan esas expresiones sin aplicar las que no soportan.
+  También siguen pendientes undo y guardado completo de sesión. Inventario y validación:
+  [PIANO_ROLL_ACTIONS.md](PIANO_ROLL_ACTIONS.md).
+
+- Analizador RealFFT reutilizable para gráficas de efectos: el filtro del piano muestra
+  un panel `<` `>` que alterna espectro de salida y visualizador de forma de onda.
+  Espectro incluye guía de corte; la FFT corre en la UI con buffers
+  preparados; el callback solo entrega muestras mediante una cola acotada.
+
+- Piano reorganizado con la línea visual de Hay Sampler: cabecera/fuente compactas,
+  bloques de perillas, bancos y créditos desplegables y teclado de 135 px. Arrastre/rueda,
+  Shift para precisión, doble clic para reset y MIDI Learn conservado. Filtro estéreo real
+  LP/HP/BP con corte logarítmico 20 Hz–20 kHz y resonancia Q 0,5–10, también en exportación.
+  Descubrimiento de bancos y preparación del motor bajo demanda en un worker; sin cargar
+  SoundFonts al arrancar. Stop/NoteOff cancelan solicitudes pendientes y un cambio de banco
+  descarta preparaciones antiguas. Sin dependencias nuevas. Verificación completa con
+  `scripts/check.sh`: formato, 104 tests y compilación; incluye filtro en exportación.
+  Interacción visual/auditiva pendiente de sesión gráfica.
+
+- Piano y Hay Sampler aparecen como fila de instrumento en Track FX. Insertarlos
+  conserva Arrangement y abre el editor inferior; la vista central Instrument ya
+  no forma parte de la navegación.
 
 - Acción **Insertar sampler** en `[+]`, menú de pistas y `:sa`: crea una pista con
   Hay Sampler asignado o abre la existente (una instancia por sesión). Asignable a la barra.
@@ -27,7 +190,7 @@
   no reconstruye filas; el árbol está cacheado y virtualizado. Su panel se puede reducir a cero.
   Utility procesa en audio/piano y exportación, mediante compilación lineal de serie/paralelo
   fuera del callback y publicación atómica suavizada. Un grupo compone su ganancia con sus hijos.
-  Paralelo suma sin normalizar; vacío/bypass pasa la entrada. No añade EQ/Reverb, host VST3,
+  Paralelo suma sin normalizar; vacío/bypass pasa la entrada. No añade EQ/Reverb ni efectos VST3,
   buses generales, mezcla multipista live, FX de Session ni persistencia/undo del proyecto.
   Validación: compilación; sin ejecutar tests ni validar interacción/audio en una sesión gráfica.
 
@@ -82,13 +245,18 @@
   Configuración → Apariencia, «Contraste de selección» ofrece Suave/Medio/Alto y una vista
   comparativa. Se guarda automáticamente como `SELECTION_CONTRAST` en `~/.jaybu.profile`;
   por defecto `0.18`, rango `0.0–0.4`. Los fondos se adaptan al texto del tema para funcionar
-  tanto en temas claros como oscuros; cambiar de tema conserva la intensidad elegida.
+  tanto en temas claros como oscuros; los temas existentes conservan la intensidad elegida,
+  mientras que Ableton Live Dark aplica `0.22` de su preset.
 
 - Pistas dinámicas: insertar, eliminar con sus clips, duplicar selección/clips, renombrar,
   color, mute/solo y grupos básicos de un nivel. Ctrl+clic selecciona varias cabeceras;
   Shift+clic selecciona un rango. El menú derecho usa las mismas filas planas y selector de
   color que los clips. En Arrangement, Delete o dos pulsaciones de `d` en modo Normal eliminan
   las pistas seleccionadas (incluidos hijos/clips de grupos); Esc u otra tecla cancela `d`.
+  Arrastrar una cabecera separa visualmente la pista y sus clips del grid; flotan con el
+  puntero mientras las demás filas muestran el nuevo orden y el hueco de destino.
+  El orden musical se cambia al soltar. Las hijas se reordenan entre hermanas y los grupos
+  se mueven con sus hijos.
   Mantener pulsada la tecla no dispara eliminaciones sucesivas. Los campos y overlays conservan
   su entrada de texto. Las acciones también se encuentran en el catálogo.
   Las acciones `track.insert/delete/duplicate/group/ungroup/rename/mute/solo`
@@ -103,7 +271,7 @@
   el balance suma el desplazamiento del grupo al de cada hijo y limita a L/R. También se
   aplica al snapshot de exportación; seleccionar un grupo exporta sus hijos (stems por hijo).
   Son controles jerárquicos básicos, no un bus de mezcla en vivo. `Track.chain` usa ahora el árbol FX recursivo descrito arriba.
-  Los grupos de pistas siguen limitados a un nivel; no hay host VST3 ni bus DSP general. El proyecto sigue
+  Los grupos de pistas siguen limitados a un nivel; no hay efectos VST3 de grupo ni bus DSP general. El proyecto sigue
   sin guardado/undo. En este incremento se valida únicamente compilación, sin ejecutar tests.
 
 - Acciones con parámetros declarativos: texto, booleanos y cantidades con unidad/límites.
@@ -126,7 +294,12 @@
 - Regla de tiempo fija al pie del Arrangement, alineada con el grid: minutos/segundos,
   subdivisiones adaptadas al zoom y fracciones de segundo al acercarse. Comparte cursor,
   playhead, desplazamiento y zoom con la regla musical; clic coloca el cursor de edición.
-  La conversión usa el tempo constante actual de 120 BPM.
+  La conversión usa el BPM actual del Arrangement, editable desde el transporte o `:tempo`.
+  El compás editable (`:meter`, por ejemplo `:meter 6/8`) gobierna las líneas y etiquetas
+  de compás, la vista de piano y el redondeo de clips MIDI importados o capturados.
+  Las posiciones internas siguen en negras a PPQ=960. Cambiar BPM detiene la audición
+  activa para preparar los reproductores con el nuevo tempo; no hay mapa de tempo.
+  El patrón de 16 pasos de Session conserva su duración independiente.
 
 - Al arrastrar un archivo MIDI o audio sobre Arrangement se muestra una sombra con su nombre
   y una línea en el punto de inserción, usando el zoom y scroll actuales. Desaparece al salir,
@@ -218,8 +391,8 @@
   de edición pendientes conservan la etiqueta «mock». Iconos y acciones tienen búsquedas
   independientes (Tab alterna, Enter asigna) y listas desplazables. Las acciones nuevas del
   catálogo aparecen automáticamente en Transporte; las asignaciones duran la sesión.
-- El `[+]` asigna el piano a su pista y la cabecera muestra `Upright Piano KW`; la vista
-  Instrument indica la pista activa. `a`/`:add` usan la pista seleccionada.
+- El `[+]` asigna el piano a su pista y la cabecera muestra `Upright Piano KW`; Track FX
+  muestra el instrumento de la pista activa. `a`/`:add` usan la pista seleccionada.
 - Piano desacoplado de la vista: `src/instruments/piano.rs` posee reproductor, notas
   sostenidas y ratón; la vista pinta el descriptor de `elevate::catalog`.
 - Demo offline `sequencer` y contratos de fronteras, IDs, errores e invariancia por tamaño de buffer.
@@ -233,8 +406,8 @@
 - Parámetros del piano (RustySynth): Master, Volume/Expression/Pan/Modulación, sends de
   Reverb y Chorus, Sustain, Pitch bend, rango de bend, afinación fina/gruesa (RPN) y, al
   abrir el piano, Polifonía y Reverb+chorus. Click en la etiqueta restaura el valor por defecto.
-- Selector de bancos SoundFont (`.sf2`) y presets (Bank/Program MIDI) dentro de la vista
-  Instrument: descubre automáticamente `assets/soundfonts/` y `assets/soundfonts/freepats/`,
+- Selector de bancos SoundFont (`.sf2`) y presets (Bank/Program MIDI) dentro del editor
+  de instrumento: descubre automáticamente `assets/soundfonts/` y `assets/soundfonts/freepats/`,
   muestra el nombre oficial y los créditos/licencia del autor leídos de cada `.readme.txt`.
 - Componente `MidiClip` y grabación/recuperación MIDI (`MidiCapture`): mapea todo lo tocado
   (por controlador o teclado gráfico) a `NoteEvent` en ticks (`Pattern`), permite **Recuperar MIDI**
@@ -308,7 +481,8 @@
 4. **Samples reales:** sustituir la síntesis provisional por cuatro samples cargados
    fuera del callback y un pool de voces acotado, conservando los offsets verificados.
 5. **Transporte conectado:** GPUI observa snapshots. Loop configurable y cambios de plan
-   en caliente; edición de BPM y preparación de planes coherentes.
+   en caliente; BPM/compás editables ya llegan a las rutas actuales, pero falta un
+   transporte único con cambios de plan sin detener la reproducción.
 6. **Persistencia:** aprobar Serde/JSON y guardado temporal; versionar datos musicales
    separadamente del layout, nunca serializar voces/streams.
 7. Swing/probabilidad/microtiming, más vistas y extensiones sobre esos contratos.

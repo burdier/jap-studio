@@ -4,19 +4,44 @@
 use super::{
     midi::MidiMessage,
     model::{InstrumentId, NoteEvent, Pattern},
-    time::{PPQ, Tick},
+    time::{Meter, PPQ, Tick},
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Identidad de instancia durante la sesión; clonar para dibujar conserva el ID.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ClipId(u64);
+static NEXT_CLIP_ID: AtomicU64 = AtomicU64::new(1);
 
 impl ClipId {
     fn fresh() -> Self {
-        static NEXT: AtomicU64 = AtomicU64::new(1);
-        Self(NEXT.fetch_add(1, Ordering::Relaxed))
+        Self(NEXT_CLIP_ID.fetch_add(1, Ordering::Relaxed))
+    }
+
+    pub fn value(self) -> u64 {
+        self.0
+    }
+
+    pub fn next_id() -> u64 {
+        NEXT_CLIP_ID.load(Ordering::Relaxed)
+    }
+
+    pub fn reserve_next_id(next: u64) -> Result<(), String> {
+        if next == 0 || next > i64::MAX as u64 {
+            return Err("Siguiente ID de clip inválido".into());
+        }
+        NEXT_CLIP_ID.fetch_max(next, Ordering::Relaxed);
+        Ok(())
+    }
+
+    /// Recupera una identidad persistida sin permitir que futuras inserciones la reutilicen.
+    pub fn restore(value: u64) -> Result<Self, String> {
+        if value == 0 || value >= i64::MAX as u64 {
+            return Err("ID de clip MIDI inválido".into());
+        }
+        NEXT_CLIP_ID.fetch_max(value + 1, Ordering::Relaxed);
+        Ok(Self(value))
     }
 }
 
@@ -64,7 +89,10 @@ pub struct MidiClip {
     pub track: usize,
     pub start_beat: f64,
     pub pattern: Pattern,
+    /// Canal de salida del clip, numerado 1–16.
+    pub channel: u8,
     pub props: ClipProps,
+    pub muted_notes: HashSet<super::model::NoteId>,
     /// Recorte no destructivo: beats del patrón omitidos al inicio.
     pub trim_start: f64,
     /// Recorte no destructivo: beats visibles; `None` = hasta el final del patrón.
@@ -79,7 +107,9 @@ impl MidiClip {
             track,
             start_beat: start_beat.max(0.0),
             pattern,
+            channel: 1,
             props: ClipProps::default(),
+            muted_notes: HashSet::new(),
             trim_start: 0.0,
             trim_len: None,
         }
@@ -105,7 +135,7 @@ impl MidiClip {
 
     /// Patrón a reproducir: solo la ventana visible, sin modificar el original.
     pub fn playback_pattern(&self) -> Pattern {
-        if self.trim_start == 0.0 && self.trim_len.is_none() {
+        if self.trim_start == 0.0 && self.trim_len.is_none() && self.muted_notes.is_empty() {
             return self.pattern.clone();
         }
         let window_start = (self.trim_start * PPQ as f64).round() as i64;
@@ -114,18 +144,24 @@ impl MidiClip {
             return self.pattern.clone();
         };
         for note in self.pattern.notes() {
+            if self.muted_notes.contains(&note.id) {
+                continue;
+            }
             let start = note.start.0.max(window_start);
             let end = (note.start.0 + note.duration.0).min(window_start + window_len);
             if end > start {
-                let _ = trimmed.add_note(
-                    note.instrument,
+                let _ = trimmed.add_note_copy(
+                    *note,
                     Tick(start - window_start),
                     Tick(end - start),
-                    note.pitch,
-                    note.velocity,
+                    note.instrument,
                 );
             }
         }
+        trimmed.automation = self
+            .pattern
+            .controls()
+            .window(Tick(window_start), Tick(window_len));
         trimmed
     }
 
@@ -144,6 +180,7 @@ pub struct CapturedNote {
     pub duration: Tick,
     pub pitch: u8,
     pub velocity: u8,
+    pub release_velocity: u8,
 }
 
 /// Grabadora y búfer retrospectivo de salida MIDI.
@@ -155,6 +192,7 @@ pub struct CapturedNote {
 pub struct MidiCapture {
     recording: bool,
     origin_ns: Option<u64>,
+    capture_bpm: Option<f64>,
     last_event_ns: Option<u64>,
     active: HashMap<u8, (Tick, u8)>,
     notes: Vec<CapturedNote>,
@@ -188,12 +226,13 @@ impl MidiCapture {
     }
 
     pub fn stop_recording(&mut self, now_ns: u64, bpm: f64) {
-        self.flush_active(now_ns, bpm);
+        self.flush_active(now_ns, self.capture_bpm.unwrap_or(bpm));
         self.recording = false;
     }
 
     pub fn clear(&mut self) {
         self.origin_ns = None;
+        self.capture_bpm = None;
         self.last_event_ns = None;
         self.active.clear();
         self.notes.clear();
@@ -211,26 +250,31 @@ impl MidiCapture {
                     self.clear();
                 }
                 let origin = *self.origin_ns.get_or_insert(now_ns);
-                let tick = ns_to_tick(now_ns.saturating_sub(origin), bpm);
+                let capture_bpm = *self.capture_bpm.get_or_insert(bpm);
+                let tick = ns_to_tick(now_ns.saturating_sub(origin), capture_bpm);
                 self.active.insert(note, (tick, velocity.max(1)));
                 self.last_event_ns = Some(now_ns);
             }
             MidiMessage::NoteOff { note } => {
                 if let Some((start, velocity)) = self.active.remove(&note) {
                     let origin = self.origin_ns.unwrap_or(now_ns);
-                    let end = ns_to_tick(now_ns.saturating_sub(origin), bpm);
+                    let end = ns_to_tick(
+                        now_ns.saturating_sub(origin),
+                        self.capture_bpm.unwrap_or(bpm),
+                    );
                     let duration = Tick((end.0 - start.0).max(MIN_DURATION_TICKS));
                     self.notes.push(CapturedNote {
                         start,
                         duration,
                         pitch: note,
                         velocity,
+                        release_velocity: 64,
                     });
                     self.last_event_ns = Some(now_ns);
                 }
             }
             MidiMessage::AllNotesOff => {
-                self.flush_active(now_ns, bpm);
+                self.flush_active(now_ns, self.capture_bpm.unwrap_or(bpm));
             }
             MidiMessage::ControlChange { .. }
             | MidiMessage::PitchBend { .. }
@@ -250,12 +294,13 @@ impl MidiCapture {
                 duration,
                 pitch,
                 velocity,
+                release_velocity: 64,
             });
         }
     }
 
     /// Convierte lo tocado en un `MidiClip` listo para insertarse en `track` en `start_beat`.
-    /// Normaliza el inicio a la primera nota y redondea la longitud al compás (múltiplo de 4 negras).
+    /// Compatibilidad para consumidores que todavía usan el compás inicial 4/4.
     pub fn to_clip(
         &mut self,
         name: impl Into<String>,
@@ -265,7 +310,29 @@ impl MidiCapture {
         now_ns: u64,
         bpm: f64,
     ) -> Option<MidiClip> {
-        self.flush_active(now_ns, bpm);
+        self.to_clip_with_meter(
+            name,
+            track,
+            start_beat,
+            instrument,
+            now_ns,
+            bpm,
+            Meter::default(),
+        )
+    }
+
+    /// Normaliza el inicio a la primera nota y redondea la longitud al compás vigente.
+    pub fn to_clip_with_meter(
+        &mut self,
+        name: impl Into<String>,
+        track: usize,
+        start_beat: f64,
+        instrument: InstrumentId,
+        now_ns: u64,
+        bpm: f64,
+        meter: Meter,
+    ) -> Option<MidiClip> {
+        self.flush_active(now_ns, self.capture_bpm.unwrap_or(bpm));
         if self.notes.is_empty() {
             return None;
         }
@@ -276,7 +343,7 @@ impl MidiCapture {
             .map(|n| n.start.0 - min_start + n.duration.0)
             .max()
             .unwrap_or(PPQ);
-        let bar_ticks = PPQ * 4;
+        let bar_ticks = meter.ticks_per_bar();
         let length_ticks = ((max_end + bar_ticks - 1) / bar_ticks).max(1) * bar_ticks;
         let mut pattern = Pattern::new(Tick(length_ticks)).ok()?;
         let mut sorted = self.notes.clone();
@@ -284,7 +351,14 @@ impl MidiCapture {
         for note in sorted {
             let start = Tick((note.start.0 - min_start).max(0));
             let duration = Tick(note.duration.0.min(length_ticks - start.0).max(1));
-            let _ = pattern.add_note(instrument, start, duration, note.pitch, note.velocity);
+            if let Ok(id) = pattern.add_note(instrument, start, duration, note.pitch, note.velocity)
+            {
+                let _ = pattern.set_note_property(
+                    id,
+                    super::note_expression::NoteProperty::ReleaseVelocity,
+                    i16::from(note.release_velocity),
+                );
+            }
         }
         Some(MidiClip::new(name, track, start_beat, pattern))
     }

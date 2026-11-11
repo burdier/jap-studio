@@ -1,7 +1,8 @@
 use crate::{instruments::sampler::SAMPLER_ID, ui::DawApp};
-use elevate::musical::{midi::MidiMessage, model::InstrumentId, time::DEFAULT_BPM};
+use elevate::musical::{midi::MidiMessage, model::InstrumentId};
 impl DawApp {
     pub(in crate::ui) fn active_instrument_id(&self) -> InstrumentId {
+        if self.vst_selected() { return crate::instruments::vst::VST_ID; }
         if self.sampler_selected() {
             SAMPLER_ID
         } else {
@@ -9,6 +10,7 @@ impl DawApp {
         }
     }
     pub(in crate::ui) fn active_instrument_name(&self) -> &str {
+        if self.vst_selected() { return &self.vst.name; }
         if self.sampler_selected() {
             self.sampler.name()
         } else {
@@ -38,9 +40,7 @@ impl DawApp {
         };
         self.stop_pattern();
         self.instrument.stop();
-        if self.player.take().is_some() {
-            self.timeline.playhead = None;
-        }
+        self.stop_audio();
         if !self.sampler.ready() {
             self.status_message = "Carga un sample antes de tocar".into();
             return;
@@ -56,7 +56,7 @@ impl DawApp {
                 self.midi_capture.record(
                     MidiMessage::NoteOn { note, velocity },
                     self.session_epoch.elapsed().as_nanos() as u64,
-                    DEFAULT_BPM,
+                    self.timeline.tempo.bpm(),
                 );
             }
             Err(e) => self.status_message = e,
@@ -70,7 +70,7 @@ impl DawApp {
                 self.midi_capture.record(
                     MidiMessage::NoteOff { note },
                     self.session_epoch.elapsed().as_nanos() as u64,
-                    DEFAULT_BPM,
+                    self.timeline.tempo.bpm(),
                 );
             }
             MidiMessage::AllNotesOff => self.sampler.all_off(),
@@ -98,7 +98,10 @@ impl DawApp {
                 self.track_pan(clip.track),
                 self.track_fx_gain(clip.track),
             )
-            .and_then(|_| self.sampler.play_clip(clip, start, DEFAULT_BPM));
+            .and_then(|_| {
+                self.sampler
+                    .play_clip(clip, start, self.timeline.tempo.bpm())
+            });
         match result {
             Ok(()) => {
                 self.timeline.playhead = Some(start);

@@ -2,8 +2,11 @@
 mod action_form;
 mod app;
 mod audio_actions;
+mod audio_preferences;
+mod file_playback;
 mod clip_actions;
 mod clip_menu;
+mod command_suggestions;
 mod components;
 mod cursor_fx;
 mod design;
@@ -13,10 +16,13 @@ mod explorer_host;
 mod export;
 mod export_preferences;
 mod file_import;
+mod general_note;
 mod fx;
 mod icons;
 mod input;
 mod kit;
+mod keyboard_preferences;
+mod workspace_focus;
 mod navigation;
 mod palette;
 mod pattern_editor;
@@ -24,10 +30,16 @@ mod piano_roll;
 mod profile;
 mod render;
 mod sampler;
+mod vst;
+mod scripting;
+mod spectrum;
 mod settings;
+mod time_grid;
+mod timing;
 mod timeline;
 mod toolbar;
 mod track_actions;
+mod track_drag;
 mod track_layout;
 mod track_menu;
 mod track_presentation;
@@ -67,7 +79,6 @@ enum VimMode {
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum CenterView {
     Arrangement,
-    Instrument,
     Session,
     Mixer,
 }
@@ -75,10 +86,14 @@ enum CenterView {
 // Privado al árbol UI: las vistas no exponen este estado a audio o al núcleo musical.
 struct DawApp {
     player: Option<Player>,
+    file_playback: Option<file_playback::PendingPlayback>,
     pattern_player: Option<DrumPlayer>,
     instrument: Piano,
     sampler: crate::instruments::sampler::Sampler,
     sampler_ui: sampler::SamplerUi,
+    vst: crate::instruments::vst::VstInstrument,
+    vst_effects: vst::effects::VstEffects,
+    vst_task: Option<gpui::Task<()>>,
     controller: ComputerKeyboard,
     midi_server: MidiServer,
     midi_mapper: MidiMapper,
@@ -89,6 +104,7 @@ struct DawApp {
     window_request: Option<bool>,
     palette: Palette,
     action_form: Option<action_form::ActionForm>,
+    general_note: Option<general_note::GeneralNote>,
     settings: SettingsUi,
     toolbar_icons: icons::ToolbarBindings,
     cursor_fx: CursorFx,
@@ -96,8 +112,9 @@ struct DawApp {
     workspace_split_ratio: f32,
     explorer: explorer_host::ExplorerDock,
     fx: fx::FxDock,
-    _soundfont_task: Option<gpui::Task<Result<(), String>>>,
+    piano_ui: views::instrument_params::PianoUi,
     import_task: Option<gpui::Task<()>>,
+    script_task: Option<gpui::Task<()>>,
     export_job: Option<crate::audio::export::ExportJob>,
     utility: elevate::devices::utility_slot::UtilitySlot,
     utility_open: bool,
@@ -120,12 +137,16 @@ struct DawApp {
     track_levels: Vec<i32>,
     track_pans: Vec<i32>,
     track_control_drag: Option<(usize, bool, Pixels, i32, bool)>,
+    track_reorder_drag: Option<track_drag::TrackReorderDrag>,
     track_scroll: ScrollHandle,
     mode: VimMode,
+    vim_enabled: bool,
+    workspace_focus: workspace_focus::WorkspaceFocus,
     center_view: CenterView,
     cursor_row: usize,
     cursor_col: usize,
     command_buffer: String,
+    cmd_selected: Option<usize>,
     last_key: String,
     status_message: String,
 }

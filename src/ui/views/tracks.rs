@@ -349,6 +349,9 @@ impl DawApp {
         let height = self.track_height(i);
         let color = ds.track_color(i);
         let selected = self.track_selected(i);
+        let dragged = self
+            .track_reorder_drag
+            .is_some_and(|drag| drag.moved && drag.source == self.tracks[i].id);
         let hovered = self.timeline.hover_track() == Some(i);
         let drag_glow = hovered && self.timeline.hover_dragging();
         // Mezcla sutil para conservar el panel oscuro y la legibilidad del encabezado.
@@ -401,6 +404,7 @@ impl DawApp {
             .border_b_1()
             .border_l_2()
             .border_color(rgb(border_col))
+            .when(dragged, |header| header.opacity(0.25))
             .drag_over::<gpui::ExternalPaths>(move |style, _, _, _| {
                 style
                     .bg(gpui::rgba((color << 8) | 0x2e))
@@ -418,6 +422,9 @@ impl DawApp {
                 MouseButton::Left,
                 cx.listener(move |this, event: &MouseDownEvent, window, cx| {
                     this.select_track(i, event.modifiers.control, event.modifiers.shift);
+                    if !event.modifiers.control && !event.modifiers.shift {
+                        this.begin_track_reorder_drag(i, event.position);
+                    }
                     window.focus(&this.focus_handle, cx);
                     cx.notify();
                 }),
@@ -562,7 +569,9 @@ impl DawApp {
                 )
                 .into_any_element(),
             TcpWidget::Type => {
-                let label = if track.instrument == Some(crate::instruments::sampler::SAMPLER_ID) {
+                let label = if track.instrument == Some(crate::instruments::vst::VST_ID) {
+                    self.vst.name.clone()
+                } else if track.instrument == Some(crate::instruments::sampler::SAMPLER_ID) {
                     format!("Sampler · {}", self.sampler.name())
                 } else if track.instrument == Some(self.instrument.id()) {
                     self.instrument.active_name().to_string()

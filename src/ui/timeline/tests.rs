@@ -107,7 +107,7 @@ fn trimming_audio_keeps_the_decoded_source_and_limits_the_visible_region() {
     let clip = timeline.clip.as_ref().unwrap();
     assert_eq!(clip.start_beat, 5.0);
     assert_eq!(clip.trim_start, 0.5);
-    assert_eq!(clip.length_beats(), 15.0);
+    assert_eq!(clip.length_beats(elevate::musical::time::DEFAULT_BPM), 15.0);
     assert!(Arc::ptr_eq(&clip.file, &source));
     assert_eq!(clip.file.frames.len(), 800);
 }

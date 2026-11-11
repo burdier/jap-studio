@@ -105,19 +105,28 @@ impl FxTree {
         let track = self.track.unwrap();
         let view = &self.views[&track];
         let id = row.id;
+        let is_instrument = row.instrument;
         let target = FxTarget { track, node: id };
         let expanded = row
             .container
             .then(|| id.map_or(!view.root_closed, |id| !view.collapsed.contains(&id)));
         let color = if row.enabled { style.text } else { style.muted };
         let mut line = tree::row(
-            id.map_or(0, |id| id.0) as usize,
+            if row.instrument {
+                usize::MAX
+            } else {
+                id.map_or(0, |id| id.0) as usize
+            },
             style,
             TreeRow {
                 depth: row.depth,
                 name: &row.name,
                 expanded,
-                selected: view.selected == id,
+                selected: if row.instrument {
+                    view.instrument_selected
+                } else {
+                    !view.instrument_selected && view.selected == id
+                },
                 icon: if row.container {
                     tree::FOLDER
                 } else {
@@ -125,7 +134,13 @@ impl FxTree {
                 },
                 color,
                 icon_color: color,
-                status: if row.parallel { Some("Paralelo") } else { None },
+                status: if row.instrument {
+                    Some("Instrumento")
+                } else if row.parallel {
+                    Some("Paralelo")
+                } else {
+                    None
+                },
             },
         )
         .relative()
@@ -141,12 +156,20 @@ impl FxTree {
             MouseButton::Right,
             cx.listener(move |this, event: &MouseDownEvent, window, cx| {
                 this.views.get_mut(&track).unwrap().selected = id;
+                this.views.get_mut(&track).unwrap().instrument_selected = is_instrument;
                 window.focus(&this.focus, cx);
-                cx.emit(FxEvent::Menu(target, event.position));
+                if is_instrument {
+                    cx.emit(FxEvent::Instrument(track));
+                } else {
+                    cx.emit(FxEvent::Menu(target, event.position));
+                }
                 cx.stop_propagation();
                 cx.notify();
             }),
         );
+        if row.instrument {
+            return line;
+        }
         let place = if row.container {
             FxPlacement::Inside(id)
         } else {

@@ -1,6 +1,6 @@
 use crate::{
     instruments::sampler::{SAMPLER_ID, SampleAsset, Sampler},
-    ui::{CenterView, DawApp},
+    ui::DawApp,
 };
 use elevate::{
     devices::sampler::{self, PlayMode},
@@ -25,7 +25,7 @@ impl DawApp {
             }
             self.refresh_track_layout();
             self.reveal_track();
-            self.set_center_view(CenterView::Instrument);
+            self.open_track_instrument(self.tracks[index].id);
             self.status_message =
                 "Hay Sampler · pista existente · una instancia disponible por sesión".into();
             return;
@@ -47,8 +47,9 @@ impl DawApp {
     pub(in crate::ui) fn add_sampler(&mut self, track: usize) {
         self.stop_all();
         assign_instrument(&mut self.tracks, track, SAMPLER_ID);
+        self.mix_vst();
         self.cursor_row = track;
-        self.set_center_view(CenterView::Instrument);
+        self.open_track_instrument(self.tracks[track].id);
         self.sync_midi_focus();
         self.status_message =
             "Hay Sampler · carga o arrastra un sample · M activa el teclado MIDI".into();

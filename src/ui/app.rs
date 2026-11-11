@@ -11,7 +11,7 @@ use super::{
     views::tracks::{DEMO_LEVELS, DEMO_PANS},
 };
 use crate::audio::MidiHardwareIn;
-use crate::instruments::{Piano, piano};
+use crate::instruments::Piano;
 use elevate::musical::{
     clip::MidiCapture,
     controller::ComputerKeyboard,
@@ -27,6 +27,8 @@ use gpui::{
 use std::time::Instant;
 
 pub(crate) fn run() {
+    if let Err(error) = crate::audio::vst3::environment::configure() { eprintln!("Wine: {error}"); }
+    if crate::audio::vst3::scan::worker() { return; }
     application()
         .with_assets(gpui::assets::Assets)
         .run(|cx: &mut App| {
@@ -62,8 +64,11 @@ pub(crate) fn run() {
 impl DawApp {
     fn new(cx: &mut Context<Self>) -> Self {
         let ds = DesignSystem::load();
-        let soundfont_task = cx.background_spawn(async { piano::preload() });
-        let instrument = Piano::new();
+        let settings = SettingsUi::new();
+        let mut instrument = Piano::new();
+        instrument.configure_audio(settings.audio.saved.clone());
+        let mut sampler = crate::instruments::sampler::Sampler::default();
+        sampler.configure_audio(settings.audio.saved.clone());
         let initial_target = Some(MidiTarget::Instrument(instrument.id()));
         let explorer = super::explorer_host::ExplorerDock::new(&ds, cx);
         let fx = super::fx::FxDock::new((&ds).into(), cx);
@@ -73,6 +78,7 @@ impl DawApp {
             piano_roll: PianoRoll::default(),
             clip_menu: None,
             action_form: None,
+            general_note: None,
             track_color_menu: None,
             piano_roll_focus: cx.focus_handle(),
             piano_roll_window: None,
@@ -85,7 +91,9 @@ impl DawApp {
             track_levels: DEMO_LEVELS.to_vec(),
             track_pans: DEMO_PANS.to_vec(),
             track_control_drag: None,
+            track_reorder_drag: None,
             player: None,
+            file_playback: None,
             pattern_player: None,
             instrument,
             controller: ComputerKeyboard::default(),
@@ -97,17 +105,21 @@ impl DawApp {
             instrument_window: None,
             window_request: None,
             palette: Palette::new(),
-            settings: SettingsUi::new(),
+            settings,
             toolbar_icons: ToolbarBindings::new(),
             cursor_fx: CursorFx::new(ds.cursor_fx),
             split_drag: None,
             workspace_split_ratio: 0.38,
             explorer,
             fx,
-            _soundfont_task: Some(soundfont_task),
+            piano_ui: Default::default(),
             import_task: None,
-            sampler: Default::default(),
+            script_task: None,
+            sampler,
             sampler_ui: Default::default(),
+            vst: Default::default(),
+            vst_task: None,
+            vst_effects: Default::default(),
             export_job: None,
             utility: elevate::devices::utility_slot::UtilitySlot::new(),
             utility_open: false,
@@ -115,15 +127,20 @@ impl DawApp {
             focus_handle: cx.focus_handle(),
             track_scroll: ScrollHandle::new(),
             mode: VimMode::Normal,
+            vim_enabled: super::keyboard_preferences::load_vim(),
+            workspace_focus: Default::default(),
             center_view: CenterView::Arrangement,
             cursor_row: 0,
             cursor_col: 0,
             command_buffer: String::new(),
+            cmd_selected: None,
             last_key: String::new(),
             status_message: "Ready".into(),
         }
     }
     pub(super) fn reload(&mut self) {
+        self.vim_enabled = super::keyboard_preferences::load_vim();
+        if !self.vim_enabled { self.set_mode(VimMode::Normal); }
         self.settings.export = super::export_preferences::ExportPreferences::load();
         let colors = std::mem::take(&mut self.ds.track_color_override);
         self.ds = DesignSystem::load();
@@ -133,19 +150,17 @@ impl DawApp {
     }
     pub(super) fn set_mode(&mut self, mode: VimMode) {
         self.track_delete_pending = false;
-        self.mode = mode;
-        if mode != VimMode::Command {
+        self.mode = if self.vim_enabled { mode } else { VimMode::Normal };
+        if self.mode != VimMode::Command {
             self.command_buffer.clear();
+            self.cmd_selected = None;
+        } else {
+            self.cmd_selected = None;
         }
     }
     pub(super) fn set_center_view(&mut self, view: CenterView) {
+        if view != self.center_view { self.workspace_focus = Default::default(); }
         self.track_delete_pending = false;
-        if self.center_view == CenterView::Instrument
-            && view != CenterView::Instrument
-            && !self.instrument_detached()
-        {
-            self.all_notes_off();
-        }
         if self.center_view == CenterView::Session && view != CenterView::Session {
             self.stop_pattern();
         }

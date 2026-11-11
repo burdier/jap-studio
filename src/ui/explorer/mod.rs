@@ -17,6 +17,7 @@ pub(super) enum ExplorerEvent {
 pub(super) struct Explorer {
     pub(super) style: ExplorerStyle,
     pub(super) focus: FocusHandle,
+    pub(super) vim_enabled: bool,
     tree: LibraryTree,
     selected: Option<PathBuf>,
     search: String,
@@ -43,6 +44,7 @@ impl Explorer {
         let mut this = Self {
             style,
             focus: cx.focus_handle(),
+            vim_enabled: true,
             tree: LibraryTree::default(),
             selected: None,
             search: String::new(),

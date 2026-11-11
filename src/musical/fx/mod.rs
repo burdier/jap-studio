@@ -9,10 +9,10 @@ use std::{
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FxId(pub u64);
+static NEXT_FX_ID: AtomicU64 = AtomicU64::new(1);
 impl FxId {
     fn fresh() -> Self {
-        static NEXT: AtomicU64 = AtomicU64::new(1);
-        Self(NEXT.fetch_add(1, Ordering::Relaxed))
+        Self(NEXT_FX_ID.fetch_add(1, Ordering::Relaxed))
     }
 }
 #[derive(Debug, Clone, PartialEq)]
@@ -96,6 +96,16 @@ impl Default for FxChain {
     }
 }
 impl FxChain {
+    /// Reconstruye una cadena persistida y reserva sus IDs para futuras inserciones.
+    pub fn restore(nodes: Vec<FxNode>) -> Result<Self, String> {
+        let mut ids = std::collections::HashSet::new();
+        edit::validate(&nodes, 0, &mut ids)?;
+        if let Some(max) = ids.iter().map(|id| id.0).max() {
+            let next = max.checked_add(1).ok_or("Se agotaron los IDs de FX")?;
+            NEXT_FX_ID.fetch_max(next, Ordering::Relaxed);
+        }
+        Ok(Self { nodes, revision: 0 })
+    }
     pub const fn new() -> Self {
         Self {
             nodes: Vec::new(),

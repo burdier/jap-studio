@@ -15,6 +15,7 @@ pub(super) struct Api {
     pub off: unsafe extern "C" fn(*mut Synth, i32, i32, i32),
     pub cc: unsafe extern "C" fn(*mut Synth, i32, i32, i32),
     pub hdcc: unsafe extern "C" fn(*mut Synth, i32, i32, f32),
+    pub pressure: unsafe extern "C" fn(*mut Synth, i32, i32),
     pub bend: unsafe extern "C" fn(*mut Synth, i32, i32),
     pub render: unsafe extern "C" fn(*mut Synth, *mut *mut f32, i32, i32),
 }
@@ -86,6 +87,7 @@ impl Api {
                 off: symbol(handle, c"sfizz_send_note_off")?,
                 cc: symbol(handle, c"sfizz_send_cc")?,
                 hdcc: symbol(handle, c"sfizz_send_hdcc")?,
+                pressure: symbol(handle, c"sfizz_send_channel_aftertouch")?,
                 bend: symbol(handle, c"sfizz_send_pitch_wheel")?,
                 render: symbol(handle, c"sfizz_render_block")?,
             })

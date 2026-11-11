@@ -1,4 +1,5 @@
 //! Adaptador FX para el TreeView compartido; estado visual independiente por pista.
+pub(in crate::ui) mod analyzers;
 mod audio;
 mod commands;
 mod drag;
@@ -10,6 +11,7 @@ mod view;
 use super::components::tree::TreeStyle;
 use elevate::musical::{
     fx::{FxChain, FxEdit, FxId},
+    model::InstrumentId,
     track::TrackId,
 };
 use gpui::{Context, EventEmitter, FocusHandle, Pixels, Point, UniformListScrollHandle};
@@ -24,6 +26,7 @@ pub(super) struct FxTarget {
 pub(super) enum FxEvent {
     Focused,
     Selection(FxTarget),
+    Instrument(TrackId),
     Close,
     Add(FxTarget),
     Action(FxTarget, &'static str),
@@ -33,6 +36,7 @@ pub(super) enum FxEvent {
 #[derive(Default)]
 struct Presentation {
     selected: Option<FxId>,
+    instrument_selected: bool,
     collapsed: HashSet<FxId>,
     root_closed: bool,
     scroll: UniformListScrollHandle,
@@ -45,6 +49,7 @@ struct Row {
     container: bool,
     enabled: bool,
     parallel: bool,
+    instrument: bool,
 }
 pub(super) struct FxTree {
     style: TreeStyle,
@@ -52,9 +57,12 @@ pub(super) struct FxTree {
     pub track: Option<TrackId>,
     name: String,
     chain: FxChain,
+    instrument: Option<InstrumentId>,
+    instrument_name: String,
     views: HashMap<TrackId, Presentation>,
     rows: Vec<Row>,
     suspended: bool,
+    vim_enabled: bool,
 }
 impl EventEmitter<FxEvent> for FxTree {}
 impl FxTree {
@@ -65,9 +73,12 @@ impl FxTree {
             track: None,
             name: String::new(),
             chain: FxChain::new(),
+            instrument: None,
+            instrument_name: String::new(),
             views: HashMap::new(),
             rows: Vec::new(),
             suspended: false,
+            vim_enabled: true,
         }
     }
 }

@@ -1,12 +1,9 @@
 //! Regla inferior en tiempo absoluto, con el mismo viewport y cursor del Arrangement.
 use super::{DesignSystem, Timeline};
-use elevate::musical::time::DEFAULT_BPM;
 use gpui::{
     Bounds, ContentMask, IntoElement, Styled, TextAlign, TextRun, canvas, fill, point, px, rgb,
     size,
 };
-
-const BEATS_PER_SECOND: f64 = DEFAULT_BPM / 60.0;
 
 fn major_step_ms(pixels_per_second: f64, label_spacing: f64) -> u64 {
     [
@@ -41,20 +38,21 @@ impl Timeline {
     pub(super) fn render_time_ruler(&self, design: &DesignSystem) -> impl IntoElement {
         let handle = self.time_ruler_bounds.clone();
         let viewport = self.viewport;
-        let cursor = self.edit_beat;
-        let playhead = self.playhead;
+        let beats_per_second = self.tempo.beats_per_second();
+        let cursor = self.visual_edit_beat();
+        let playhead = self.visual_playhead();
         let design = design.clone();
         canvas(
             move |bounds, window, _| {
                 handle.set(bounds);
                 let step = major_step_ms(
-                    viewport.pixels_per_beat * BEATS_PER_SECOND,
+                    viewport.pixels_per_beat * beats_per_second,
                     f64::from(design.font_size_xs * 8.0).max(80.0),
                 );
                 let minor = step / 5;
-                let start_ms = viewport.first_beat / BEATS_PER_SECOND * 1_000.0;
+                let start_ms = viewport.first_beat / beats_per_second * 1_000.0;
                 let end_ms = viewport.beat_at(f64::from(f32::from(bounds.size.width)))
-                    / BEATS_PER_SECOND
+                    / beats_per_second
                     * 1_000.0;
                 let mut ticks = Vec::new();
                 let mut labels = Vec::new();
@@ -65,7 +63,7 @@ impl Timeline {
                     let ms = index * minor;
                     let major = ms % step == 0;
                     let x = bounds.left()
-                        + px(viewport.x_at(ms as f64 / 1_000.0 * BEATS_PER_SECOND) as f32);
+                        + px(viewport.x_at(ms as f64 / 1_000.0 * beats_per_second) as f32);
                     ticks.push((x, major));
                     if major {
                         let text = time_label(ms, step < 1_000);
@@ -183,7 +181,7 @@ mod tests {
         assert_eq!(timeline.edit_beat, 122.0);
         assert_eq!(
             time_label(
-                (timeline.edit_beat / BEATS_PER_SECOND * 1_000.0) as u64,
+                (timeline.edit_beat / timeline.tempo.beats_per_second() * 1_000.0) as u64,
                 false
             ),
             "1:01"

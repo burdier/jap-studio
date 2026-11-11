@@ -1,10 +1,16 @@
 //! Resultado preparado fuera del callback para las cadenas lineales de Utility actuales.
 //! Publicación escalar atómica: sin árboles, locks, reservas ni destrucciones en RT.
 use std::sync::atomic::{AtomicU32, Ordering};
-pub(crate) struct FxGain(AtomicU32);
+pub(crate) struct FxGain(AtomicU32, super::effects::Routing);
 impl FxGain {
     pub fn new(gain: f32) -> Self {
-        Self(AtomicU32::new(gain.to_bits()))
+        Self(
+            AtomicU32::new(gain.to_bits()),
+            super::effects::Routing::new(),
+        )
+    }
+    pub fn set_rack(&self, rack: Option<std::sync::Arc<super::effects::Rack>>, rate: u32) {
+        self.1.set(rack, rate);
     }
     pub fn set(&self, gain: f32) {
         self.0.store(gain.to_bits(), Ordering::Relaxed);
@@ -36,6 +42,7 @@ impl PreparedFxGain {
             self.remaining = 256;
             self.step = (target - self.current) / 256.0;
         }
+        state.1.process(frames);
         for frame in frames {
             if self.remaining > 0 {
                 self.current += self.step;

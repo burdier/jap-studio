@@ -11,16 +11,50 @@ use gpui::{
 impl Render for DawApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         super::kit::sync_theme(&self.ds, cx);
+        self.validate_workspace_focus();
         self.sync_explorer(window, cx);
         self.sync_fx(window, cx);
+        self.sync_vst_effects();
+        self.poll_fx_analyzers();
         self.refresh_track_layout();
         if !cx.has_active_drag() {
             self.timeline.import_preview = None;
         }
-        let hw_midi = self.midi_hw.drain();
+        self.poll_live_midi();
+        if let Some(message) = self.vst.editor_message() { self.status_message = message; }
         self.poll_export();
-        if !hw_midi.is_empty() {
-            self.apply_midi(hw_midi);
+        self.poll_audio_probe();
+        self.poll_file_playback();
+        self.scan_palette_plugins(cx);
+        if (self.fx.editor_track.is_some_and(|id| {
+            self.center_view == CenterView::Arrangement
+                && self.tracks.get(self.cursor_row).is_some_and(|track| {
+                    track.id == id && track.instrument == Some(self.instrument.id())
+                })
+        }) || self.instrument_detached())
+            && !self.sampler_selected()
+        {
+            self.instrument.request_resources();
+        }
+        self.poll_piano_resources(cx);
+        let piano_editor = self.fx.editor_track.is_some_and(|id| {
+            self.center_view == CenterView::Arrangement
+                && self.tracks.get(self.cursor_row).is_some_and(|track| {
+                    track.id == id && track.instrument == Some(self.instrument.id())
+                })
+        });
+        self.instrument.set_spectrum_enabled(piano_editor);
+        if piano_editor {
+            if let Some(rate) = self.instrument.sample_rate() {
+                if self.piano_ui.spectrum_rate != rate || self.piano_ui.spectrum.is_none() {
+                    self.piano_ui.spectrum =
+                        Some(crate::audio::analyzer::SpectrumAnalyzer::new(rate));
+                    self.piano_ui.spectrum_rate = rate;
+                }
+                if let Some(analyzer) = &mut self.piano_ui.spectrum {
+                    self.instrument.drain_spectrum(analyzer);
+                }
+            }
         }
         if let Some(player) = &self.player {
             self.timeline.playhead = Some(player.beat());
@@ -34,22 +68,31 @@ impl Render for DawApp {
                 self.stop_audio();
             }
         } else if let Some(midi_clip) = &self.timeline.midi_clip {
-            if self.sampler.clip_playing() {
+            if self.vst.clip_playing() {
+                self.timeline.playhead = self.vst.beat(midi_clip.start_beat, self.timeline.tempo.bpm());
+            } else if self.vst.clip_finished() {
+                self.status_message = "Fin del clip MIDI · VST3".into(); self.stop_audio();
+            } else if self.sampler.clip_playing() {
                 self.timeline.playhead = self
                     .sampler
-                    .beat(midi_clip.start_beat, elevate::musical::time::DEFAULT_BPM);
+                    .beat(midi_clip.start_beat, self.timeline.tempo.bpm());
             } else if self.sampler.clip_finished() {
                 self.status_message = "Fin del clip MIDI · Hay Sampler".into();
                 self.stop_audio();
             } else if self.instrument.clip_playing() {
                 self.timeline.playhead = self
                     .instrument
-                    .clip_beat(midi_clip.start_beat, elevate::musical::time::DEFAULT_BPM);
+                    .clip_beat(midi_clip.start_beat, self.timeline.tempo.bpm());
             } else if self.instrument.clip_finished() {
                 self.status_message = "Fin del clip MIDI".into();
                 self.stop_audio();
             }
         }
+        let cursor_animating = self.timeline.advance_visual_transport();
+        if self.vst.failed() {
+            self.vst.unload(); self.status_message = "El instrumento VST3 o su salida falló; vuelve a cargarlo desde [+]".into();
+        }
+        self.follow_roll_playhead();
         if self.sampler.failed() {
             self.sampler.stop();
             self.status_message = "La salida del sampler falló; vuelve a cargar el sample".into();
@@ -76,21 +119,27 @@ impl Render for DawApp {
         if self.player.is_some()
             || self.instrument.clip_playing()
             || self.sampler.clip_playing()
+            || self.vst.clip_playing()
+            || self.vst.ready()
+            || !self.vst_effects.instances.is_empty()
+            || (self.fx.width > 0. && !self.fx.analyzers.views.is_empty())
             || self.pattern_player.is_some()
+            || self.file_playback.is_some()
             || self.midi_hw.has_ports()
+            || cursor_animating
             || particles_alive
             || cursor_fx_alive
             || self.export_job.is_some()
+            || self.settings.audio.probe.is_some()
+            || self.instrument.loading()
+            || (piano_editor && self.instrument.is_running())
         {
             cx.on_next_frame(window, |_, _, cx| cx.notify());
             window.request_animation_frame();
         }
+        self.sync_audio_selectors(window, cx);
         let ds = &self.ds;
-        let mode_label = SharedString::from(match self.mode {
-            VimMode::Normal => "NORMAL",
-            VimMode::Insert => "INSERT",
-            VimMode::Command => "COMMAND",
-        });
+        let mode_label = SharedString::from(self.mode_label());
         let mode_color = match self.mode {
             VimMode::Normal => ds.success,
             VimMode::Insert => ds.accent,
@@ -100,10 +149,10 @@ impl Render for DawApp {
             .palette
             .is_open()
             .then(|| self.render_palette(cx).into_any_element());
-        let settings_overlay = self.settings.is_visible().then(|| {
-            self.render_settings_overlay(window.viewport_size(), cx)
-                .into_any_element()
-        });
+        let settings_overlay = self
+            .settings
+            .is_visible()
+            .then(|| self.render_settings_overlay(window, cx).into_any_element());
         let icon_picker_overlay = self
             .toolbar_icons
             .picker_open
@@ -117,6 +166,11 @@ impl Render for DawApp {
                 self.render_action_form(window.viewport_size(), cx)
                     .into_any_element()
             });
+        let general_note = self
+            .general_note
+            .as_ref()
+            .filter(|note| note.window_id == window.window_handle().window_id())
+            .map(|_| self.render_general_note(window.viewport_size(), cx).into_any_element());
         let fx_menu = self
             .fx
             .menu
@@ -134,10 +188,14 @@ impl Render for DawApp {
             .track_color_menu
             .is_some()
             .then(|| self.render_track_color_menu(cx).into_any_element());
+        let command_bar =
+            (self.mode == VimMode::Command).then(|| self.render_command_bar(cx).into_any_element());
         div()
             .id("hay")
             .key_context(if self.action_form.is_some() {
                 "HayModal"
+            } else if self.general_note.is_some() {
+                "HayGeneralNote"
             } else {
                 "HayWorkspace"
             })
@@ -170,6 +228,17 @@ impl Render for DawApp {
                     cx.notify();
                 }),
             )
+            .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                if this.workspace_key(event, window, cx) {
+                    cx.stop_propagation(); cx.notify(); return;
+                }
+                let musical_focus = this.focus_handle.is_focused(window)
+                    || this.fx.view.read(cx).focus.is_focused(window);
+                if musical_focus && this.handle_performance_key(event) {
+                    cx.stop_propagation();
+                    cx.notify();
+                }
+            }))
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 this.handle_key(event, window, cx);
                 this.sync_windows(cx);
@@ -183,6 +252,8 @@ impl Render for DawApp {
             .on_mouse_move(
                 cx.listener(|this, event: &gpui::MouseMoveEvent, window, cx| {
                     this.update_track_control_drag(event.position, event.dragging());
+                    let track_drag_changed =
+                        this.update_track_reorder_drag(event.position, event.dragging());
                     this.cursor_fx.on_mouse_move(event.position);
                     if let Some(drag) = this.split_drag {
                         if !event.dragging() {
@@ -243,7 +314,8 @@ impl Render for DawApp {
                         );
                     if !event.dragging() {
                         this.timeline.end_clip_drag();
-                        if hover_changed
+                        if track_drag_changed
+                            || hover_changed
                             || this.cursor_fx.mode() != super::cursor_fx::CursorFxMode::Off
                         {
                             cx.notify();
@@ -258,33 +330,47 @@ impl Render for DawApp {
                         )
                     {
                         this.cursor_row = track;
-                        this.status_message = format!(
-                            "Clip · pista {} · {}",
-                            track + 1,
-                            this.timeline.position_label()
-                        );
+                        if this.timeline.slipping() {
+                            this.status_message = if this.timeline.slip_has_room() {
+                                "Desplazando contenido · bordes y pista fijos".into()
+                            } else {
+                                "Sin contenido oculto: recorta un borde antes de desplazar".into()
+                            };
+                        } else {
+                            this.status_message = format!(
+                                "Clip · pista {} · {}",
+                                track + 1,
+                                this.timeline.position_label()
+                            );
+                        }
                     }
                     cx.notify();
                 }),
             )
             .on_mouse_up(
                 MouseButton::Left,
-                cx.listener(|this, _, _, cx| {
+                cx.listener(|this, event: &gpui::MouseUpEvent, _, cx| {
+                    let track_dragged = this.track_reorder_drag.is_some();
+                    this.finish_track_reorder_drag(event.position);
                     this.end_track_control_drag();
                     this.release_mouse_note();
                     this.timeline.end_clip_drag();
-                    if this.split_drag.take().is_some() {
+                    let split_dragged = this.split_drag.take().is_some();
+                    if track_dragged || split_dragged {
                         cx.notify();
                     }
                 }),
             )
             .on_mouse_up_out(
                 MouseButton::Left,
-                cx.listener(|this, _, _, cx| {
+                cx.listener(|this, event: &gpui::MouseUpEvent, _, cx| {
+                    let track_dragged = this.track_reorder_drag.is_some();
+                    this.finish_track_reorder_drag(event.position);
                     this.end_track_control_drag();
                     this.release_mouse_note();
                     this.timeline.end_clip_drag();
-                    if this.split_drag.take().is_some() {
+                    let split_dragged = this.split_drag.take().is_some();
+                    if track_dragged || split_dragged {
                         cx.notify();
                     }
                 }),
@@ -315,7 +401,7 @@ impl Render for DawApp {
                     }),
                 ),
             )
-            .when(self.utility_open, |root| {
+            .when(self.utility_open && self.workspace_focus.expanded.is_none(), |root| {
                 root.child(self.render_utility(cx))
             })
             .child(self.render_center(cx))
@@ -328,6 +414,8 @@ impl Render for DawApp {
             .when_some(settings_overlay, |root, overlay| root.child(overlay))
             .when_some(icon_picker_overlay, |root, overlay| root.child(overlay))
             .when_some(action_form, |root, overlay| root.child(overlay))
+            .when_some(general_note, |root, overlay| root.child(overlay))
+            .when_some(command_bar, |root, bar| root.child(bar))
             .when_some(cursor_overlay, |root, cursor| root.child(cursor))
     }
 }

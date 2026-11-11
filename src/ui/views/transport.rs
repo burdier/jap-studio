@@ -4,7 +4,6 @@ use super::super::{
     components::button::{icon_button, pill_button},
     icons::ToolbarScope,
 };
-use elevate::musical::time::DEFAULT_BPM;
 use gpui::{Context, IntoElement, MouseButton, div, prelude::*, px, rgb};
 
 impl DawApp {
@@ -91,10 +90,26 @@ impl DawApp {
                             .ml_4()
                             .text_color(rgb(ds.accent))
                             .font_weight(gpui::FontWeight::BOLD)
-                            .child(format!("{DEFAULT_BPM:.2}")),
+                            .cursor_pointer()
+                            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| {
+                                if let Some(entry) = elevate::catalog::find("action.tempo.set")
+                                    && let Some(spec) = entry.action.parameters() {
+                                        this.open_action_form(entry, spec, window, cx);
+                                    }
+                                cx.stop_propagation();
+                            }))
+                            .child(format!("{:.2}", self.timeline.tempo.bpm())),
                     )
                     .child(div().text_color(rgb(ds.muted)).child("BPM"))
-                    .child(div().ml_2().text_color(rgb(ds.muted)).child("4/4"))
+                    .child(div().ml_2().text_color(rgb(ds.muted)).cursor_pointer()
+                        .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| {
+                            if let Some(entry) = elevate::catalog::find("action.meter.set")
+                                && let Some(spec) = entry.action.parameters() {
+                                    this.open_action_form(entry, spec, window, cx);
+                                }
+                            cx.stop_propagation();
+                        }))
+                        .child(self.timeline.meter.label()))
                     .child(
                         div()
                             .ml_4()
@@ -163,7 +178,6 @@ impl DawApp {
                     )
                     .child(div().text_xs().text_color(rgb(ds.muted)).child(
                         match self.center_view {
-                            CenterView::Instrument => "Space: play/stop · Esc: liberar notas",
                             CenterView::Session => "Space: play/stop · patrón en loop",
                             _ => "Space: play/stop",
                         },

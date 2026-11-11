@@ -28,6 +28,11 @@ fn coefficient(node: &FxNode) -> Result<f32, String> {
             }
             Ok(gain)
         }
+        // Render offline sin visualización: Spectrum conserva exactamente la señal.
+        FxKind::Effect {
+            plugin_id: TrackDevice::Hay { catalog_id },
+            ..
+        } if catalog_id == super::spectrum::ID => Ok(1.0),
         FxKind::Effect { .. } => Err(format!("{}: procesador no disponible", node.name)),
         FxKind::SerialChain { children } => serial(children),
         FxKind::ParallelChain { branches } if branches.is_empty() => Ok(1.0),

@@ -20,6 +20,7 @@ pub(crate) struct OfflinePiano {
     plan: PreparedPattern,
     position: u64,
     finished: bool,
+    channel: u8,
     filter: super::filter::StereoFilter,
 }
 
@@ -29,20 +30,21 @@ impl OfflinePiano {
         pattern: &Pattern,
         sample_rate: u32,
         bpm: f64,
+        channel: u8,
     ) -> Result<Self, String> {
         let font = load_soundfont(&snapshot.path)?;
         let mut synth = SynthBackend::new(&snapshot.path, &font, sample_rate, snapshot.settings)?;
         if !snapshot.midi.iter().any(|(command, _, _)| *command == 0xC0)
             && let Some(preset) = super::soundfont::presets_of(&font).first()
         {
-            synth.midi(0xB0, 0, preset.bank);
-            synth.midi(0xC0, preset.patch, 0);
+            synth.midi(0xB0 | channel, 0, preset.bank);
+            synth.midi(0xC0 | channel, preset.patch, 0);
         }
         synth.set_master_volume(snapshot.master_volume);
         for &(command, data1, data2) in &snapshot.midi {
-            synth.midi(command, data1, data2);
+            synth.midi((command & 0xf0) | channel, data1, data2);
         }
-        let mut piano = Self::from_backend(synth, pattern, sample_rate, bpm)?;
+        let mut piano = Self::from_backend(synth, pattern, sample_rate, bpm, channel)?;
         piano.filter = super::filter::StereoFilter::new(sample_rate, snapshot.filter);
         Ok(piano)
     }
@@ -51,6 +53,7 @@ impl OfflinePiano {
         pattern: &Pattern,
         sample_rate: u32,
         bpm: f64,
+        channel: u8,
     ) -> Result<Self, String> {
         let base = TimeBase::new(sample_rate, bpm).map_err(|e| e.to_string())?;
         let plan = PreparedPattern::compile(pattern, base).map_err(|e| e.to_string())?;
@@ -59,6 +62,7 @@ impl OfflinePiano {
             plan,
             position: 0,
             finished: false,
+            channel: channel.min(15),
             filter: super::filter::StereoFilter::new(sample_rate, Default::default()),
         })
     }
@@ -75,6 +79,8 @@ impl OfflinePiano {
                     &mut self.synth,
                     &self.plan,
                     &mut self.position,
+                    self.channel,
+                    0,
                     &mut left[..count],
                     &mut right[..count],
                 );
@@ -88,7 +94,7 @@ impl OfflinePiano {
 
     /// Fin del rango: liberar sustain/notas y renderizar solamente sus colas.
     pub fn finish_input(&mut self) {
-        self.synth.midi(0xB0, 64, 0);
+        self.synth.midi(0xB0 | self.channel, 64, 0);
         self.synth.note_off_all();
         self.finished = true;
     }

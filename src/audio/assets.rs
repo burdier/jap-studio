@@ -125,10 +125,10 @@ impl AudioClip {
         let available = (self.file.duration() - self.trim_start).max(0.0);
         self.trim_len.map_or(available, |len| len.min(available))
     }
-    pub fn length_beats(&self) -> f64 {
-        self.length_seconds() * super::BEATS_PER_SECOND
+    pub fn length_beats(&self, bpm: f64) -> f64 {
+        self.length_seconds() * bpm / 60.0
     }
-    pub fn end_beat(&self) -> f64 {
-        self.start_beat + self.length_beats()
+    pub fn end_beat(&self, bpm: f64) -> f64 {
+        self.start_beat + self.length_beats(bpm)
     }
 }

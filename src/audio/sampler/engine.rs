@@ -78,12 +78,20 @@ impl SfizzEngine {
         }
     }
     pub fn note_off(&mut self, note: u8) {
+        self.note_off_velocity(note, 64);
+    }
+    pub fn note_off_velocity(&mut self, note: u8, release_velocity: u8) {
         if note > 127 {
             return;
         }
         self.held[note as usize] = false;
         unsafe {
-            (self.api.off)(self.synth, 0, note as i32, 0);
+            (self.api.off)(
+                self.synth,
+                0,
+                note as i32,
+                i32::from(release_velocity.min(127)),
+            );
         }
     }
     pub fn all_off(&mut self) {
@@ -103,6 +111,7 @@ impl SfizzEngine {
         unsafe {
             match command & 0xf0 {
                 0xb0 => (self.api.cc)(self.synth, 0, a as i32, b as i32),
+                0xd0 => (self.api.pressure)(self.synth, 0, a as i32),
                 0xe0 => (self.api.bend)(self.synth, 0, ((b as i32) << 7 | a as i32) - 8192),
                 _ => {}
             }

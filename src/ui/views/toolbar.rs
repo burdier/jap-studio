@@ -1,7 +1,7 @@
 //! Iconos asignados a las barras: ejecución y acceso al selector.
 use crate::ui::{
     DawApp,
-    icons::{ToolbarScope, render_svg_icon, toolbar_icon_button},
+    icons::{ToolbarAction, ToolbarScope, render_svg_icon, toolbar_icon_button},
 };
 use gpui::{Context, Div, MouseButton, div, prelude::*, px, rgb};
 
@@ -55,27 +55,54 @@ impl DawApp {
                     .children(list.iter().enumerate().map(|(idx, bound)| {
                         let icon = self.toolbar_icons.icon_by_id(&bound.icon_id);
                         let action = bound.action;
-                        toolbar_icon_button(ds, icon.svg_bytes, action.short_tag(), accent, compact)
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(move |this, _, window, cx| {
+                        let command = bound.custom_command.clone();
+                        let controller = command.as_deref().map_or(
+                            action == ToolbarAction::ToggleController,
+                            |command| {
+                                matches!(command.trim().trim_start_matches(':'), "midi" | "kbd")
+                            },
+                        );
+                        let active = controller && self.controller.enabled();
+                        let tag = if controller {
+                            if active { "MIDI ON" } else { "MIDI OFF" }
+                        } else {
+                            bound
+                                .custom_command
+                                .as_deref()
+                                .unwrap_or(action.short_tag())
+                        };
+                        toolbar_icon_button(
+                            ds,
+                            icon.svg_bytes,
+                            tag,
+                            if controller { ds.success } else { accent },
+                            compact,
+                            active,
+                        )
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, _, window, cx| {
+                                if let Some(command) = &command {
+                                    this.submit_command_line(command, window, cx);
+                                } else {
                                     this.execute_toolbar_action(action, window, cx);
-                                    cx.stop_propagation();
-                                    cx.notify();
-                                }),
-                            )
-                            .on_mouse_down(
-                                MouseButton::Right,
-                                cx.listener(move |this, _, _, cx| {
-                                    this.toolbar_icons.remove_at(scope, idx);
-                                    this.status_message = format!(
-                                        "Icono desvinculado de {} (clic en + para añadir)",
-                                        scope.label()
-                                    );
-                                    cx.stop_propagation();
-                                    cx.notify();
-                                }),
-                            )
+                                }
+                                cx.stop_propagation();
+                                cx.notify();
+                            }),
+                        )
+                        .on_mouse_down(
+                            MouseButton::Right,
+                            cx.listener(move |this, _, _, cx| {
+                                this.toolbar_icons.remove_at(scope, idx);
+                                this.status_message = format!(
+                                    "Icono desvinculado de {} (clic en + para añadir)",
+                                    scope.label()
+                                );
+                                cx.stop_propagation();
+                                cx.notify();
+                            }),
+                        )
                     })),
             )
             .child(

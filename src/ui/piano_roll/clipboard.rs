@@ -1,0 +1,103 @@
+//! Portapapeles de notas con expresión, offsets y mute conservados.
+use crate::ui::DawApp;
+use elevate::musical::time::Tick;
+
+impl DawApp {
+    pub(in crate::ui) fn roll_copy(&mut self, cut: bool) {
+        let Some(clip) = self.timeline.midi_clip.as_ref() else {
+            return;
+        };
+        if cut && (clip.props.locked || self.piano_roll.drag.is_some()) {
+            self.piano_roll.hint =
+                "Termina el arrastre y desbloquea el clip antes de cortar".into();
+            return;
+        }
+        let notes: Vec<_> = clip
+            .notes()
+            .iter()
+            .filter(|note| {
+                self.piano_roll.selected_notes.contains(&note.id)
+                    || (self.piano_roll.selected_notes.is_empty()
+                        && self.piano_roll.selected == Some(note.id))
+            })
+            .map(|note| (*note, clip.muted_notes.contains(&note.id)))
+            .collect();
+        if notes.is_empty() {
+            self.piano_roll.hint = "Selecciona notas para copiar".into();
+            return;
+        }
+        let count = notes.len();
+        if cut {
+            self.stop_audio();
+            if let Some(clip) = self.timeline.midi_clip.as_mut() {
+                for (note, _) in &notes {
+                    let _ = clip.pattern.remove_note(note.id);
+                    clip.muted_notes.remove(&note.id);
+                }
+            }
+            self.piano_roll.selected = None;
+            self.piano_roll.selected_notes.clear();
+        }
+        self.piano_roll.copied_notes = notes;
+        self.piano_roll.hint = format!(
+            "{count} notas {}",
+            if cut { "cortadas" } else { "copiadas" }
+        );
+    }
+
+    pub(in crate::ui) fn roll_paste(&mut self) {
+        let Some(clip) = self.timeline.midi_clip.as_ref() else {
+            return;
+        };
+        if clip.props.locked || self.piano_roll.drag.is_some() {
+            self.piano_roll.hint = "Termina el arrastre y desbloquea el clip antes de pegar".into();
+            return;
+        }
+        let Some(origin) = self
+            .piano_roll
+            .copied_notes
+            .iter()
+            .map(|(note, _)| note.start.0)
+            .min()
+        else {
+            return;
+        };
+        let offset = self.piano_roll.cursor.0.max(0) - origin;
+        let mut pattern = clip.pattern.clone();
+        let mut muted = clip.muted_notes.clone();
+        let mut selected = Vec::new();
+        for (note, is_muted) in &self.piano_roll.copied_notes {
+            let instrument = self
+                .tracks
+                .get(clip.track)
+                .and_then(|track| track.instrument)
+                .unwrap_or(note.instrument);
+            match pattern.add_note_copy(
+                *note,
+                Tick(note.start.0 + offset),
+                note.duration,
+                instrument,
+            ) {
+                Ok(id) => {
+                    selected.push(id);
+                    if *is_muted {
+                        muted.insert(id);
+                    }
+                }
+                Err(_) => {
+                    self.piano_roll.hint =
+                        "La selección no cabe: amplía el clip o mueve el cursor".into();
+                    return;
+                }
+            }
+        }
+        self.stop_audio();
+        if let Some(clip) = self.timeline.midi_clip.as_mut() {
+            clip.pattern = pattern;
+            clip.muted_notes = muted;
+        }
+        self.piano_roll.hint = format!("{} notas pegadas", selected.len());
+        self.piano_roll.selected = selected.first().copied();
+        self.piano_roll.selected_notes = selected;
+    }
+}

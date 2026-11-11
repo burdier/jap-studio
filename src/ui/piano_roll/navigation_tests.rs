@@ -80,7 +80,7 @@ fn piano_roll_navigation_stays_inside_clip_and_midi_pitch_range() {
 }
 
 #[test]
-fn super_and_alt_resize_only_the_requested_visual_axis() {
+fn super_and_ctrl_resize_only_the_requested_visual_axis() {
     let mut view = RollViewport::default();
     let initial = grid(view);
     let pointer = point(initial.x(8.0), initial.y(66) + px(initial.row_height * 0.5));
@@ -105,7 +105,7 @@ fn super_and_alt_resize_only_the_requested_visual_axis() {
     let height_zoom = view.vertical_zoom;
     let top_pitch = view.top_pitch;
     event.modifiers = Modifiers {
-        alt: true,
+        control: true,
         ..Default::default()
     };
     event.delta = ScrollDelta::Pixels(point(px(14.0), px(60.0)));

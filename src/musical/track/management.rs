@@ -8,6 +8,7 @@ pub enum TrackEdit {
     Duplicate,
     Group,
     Ungroup,
+    Move { target: TrackId, after: bool },
 }
 
 pub fn edit_tracks(
@@ -109,6 +110,30 @@ pub fn edit_tracks(
                 if t.parent.is_some_and(|id| groups.contains(&id)) {
                     t.parent = None;
                 }
+            }
+        }
+        TrackEdit::Move { target, after } => {
+            let source = tracks
+                .get(cursor)
+                .ok_or("La pista que se quiere mover ya no existe")?;
+            let destination = tracks
+                .iter()
+                .find(|track| track.id == target)
+                .ok_or("La pista de destino ya no existe")?;
+            if source.parent != destination.parent {
+                return Err("Mueve pistas dentro del mismo grupo o nivel".into());
+            }
+            if source.id != target {
+                let source_index = output
+                    .iter()
+                    .position(|track| track.id == source.id)
+                    .expect("pista de origen presente");
+                let moved = output.remove(source_index);
+                let destination_index = output
+                    .iter()
+                    .position(|track| track.id == target)
+                    .expect("pista de destino presente");
+                output.insert(destination_index + usize::from(after), moved);
             }
         }
     }

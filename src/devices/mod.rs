@@ -2,6 +2,7 @@
 pub mod filter;
 pub mod fx_gain;
 pub mod sampler;
+pub mod spectrum;
 pub mod utility;
 pub mod utility_slot;
 
@@ -25,6 +26,7 @@ pub struct DeviceDescriptor {
 pub fn find(id: &str) -> Option<&'static DeviceDescriptor> {
     match id {
         "hay.utility" => Some(&utility::DESCRIPTOR),
+        spectrum::ID => Some(&spectrum::DESCRIPTOR),
         _ => None,
     }
 }

@@ -3,9 +3,8 @@ use super::{PianoSettings, fluidsynth::FluidEngine};
 use rustysynth::{SoundFont, Synthesizer, SynthesizerSettings};
 use std::{path::Path, sync::Arc};
 
-const MIDI_CHANNEL: i32 = 0;
-
 pub(crate) enum SynthBackend {
+    Vst(crate::audio::vst3::VstEngine),
     Sampler(crate::audio::sampler::SfizzEngine),
     Fluid(FluidEngine),
     Rusty(Synthesizer),
@@ -35,24 +34,51 @@ impl SynthBackend {
         synthesizer.set_master_volume(0.7);
         Ok(Self::Rusty(synthesizer))
     }
-    pub fn note_on(&mut self, note: u8, velocity: u8) {
+    fn note_on(&mut self, channel: i32, note: u8, velocity: u8) {
         match self {
+            Self::Vst(v) => v.midi(0x90 | channel as u8, note, velocity),
             Self::Sampler(s) => s.note_on(note, velocity),
-            Self::Fluid(f) => f.note_on(MIDI_CHANNEL, i32::from(note), i32::from(velocity)),
-            Self::Rusty(r) => r.note_on(MIDI_CHANNEL, i32::from(note), i32::from(velocity)),
+            Self::Fluid(f) => f.note_on(channel, i32::from(note), i32::from(velocity)),
+            Self::Rusty(r) => r.note_on(channel, i32::from(note), i32::from(velocity)),
         }
     }
-    pub fn note_off(&mut self, note: u8) {
+    pub fn note_on_expression(
+        &mut self,
+        channel: u8,
+        note: u8,
+        velocity: u8,
+        expression: elevate::musical::note_expression::NoteExpression,
+    ) {
+        if let Self::Fluid(fluid) = self {
+            fluid.note_on_pan(
+                i32::from(channel),
+                i32::from(note),
+                i32::from(velocity),
+                expression.pan,
+            );
+        } else {
+            // sfizz/RustySynth no exponen pan por voz en estos adaptadores.
+            // No convertirlo a CC10: afectaría a las demás notas del canal.
+            self.note_on(i32::from(channel), note, velocity);
+        }
+    }
+    fn note_off(&mut self, channel: i32, note: u8, release_velocity: u8) {
         match self {
-            Self::Sampler(s) => s.note_off(note),
-            Self::Fluid(f) => f.note_off(MIDI_CHANNEL, i32::from(note)),
-            Self::Rusty(r) => r.note_off(MIDI_CHANNEL, i32::from(note)),
+            Self::Vst(v) => v.midi(0x80 | channel as u8, note, release_velocity),
+            Self::Sampler(s) => s.note_off_velocity(note, release_velocity),
+            Self::Fluid(f) => f.note_off(channel, i32::from(note)),
+            Self::Rusty(r) => r.note_off(channel, i32::from(note)),
         }
     }
     pub fn note_off_all(&mut self) {
         match self {
+            Self::Vst(v) => v.panic(),
             Self::Sampler(s) => s.all_off(),
-            Self::Fluid(f) => f.note_off_all(MIDI_CHANNEL),
+            Self::Fluid(f) => {
+                for channel in 0..16 {
+                    f.note_off_all(channel);
+                }
+            }
             Self::Rusty(r) => r.note_off_all(false),
         }
     }
@@ -60,15 +86,29 @@ impl SynthBackend {
         if let Self::Sampler(s) = self {
             s.panic();
         } else {
+            for channel in 0..16 {
+                self.midi(0xb0 | channel, 64, 0);
+            }
             self.note_off_all();
         }
     }
     pub fn midi(&mut self, command: u8, data1: u8, data2: u8) {
+        let channel = i32::from(command & 0x0f);
+        let command = command & 0xf0;
+        if command == 0x90 && data2 > 0 {
+            self.note_on(channel, data1, data2);
+            return;
+        }
+        if command == 0x80 || command == 0x90 {
+            self.note_off(channel, data1, if command == 0x90 { 64 } else { data2 });
+            return;
+        }
         match self {
+            Self::Vst(v) => v.midi(command | channel as u8, data1, data2),
             Self::Sampler(s) => s.midi(command, data1, data2),
-            Self::Fluid(f) => f.process_midi(MIDI_CHANNEL, command, data1, data2),
+            Self::Fluid(f) => f.process_midi(channel, command, data1, data2),
             Self::Rusty(r) => r.process_midi_message(
-                MIDI_CHANNEL,
+                channel,
                 i32::from(command),
                 i32::from(data1),
                 i32::from(data2),
@@ -77,7 +117,7 @@ impl SynthBackend {
     }
     pub fn set_master_volume(&mut self, volume: f32) {
         match self {
-            Self::Sampler(_) => {}
+            Self::Sampler(_) | Self::Vst(_) => {}
             Self::Fluid(f) => f.set_master_volume(volume),
             Self::Rusty(r) => r.set_master_volume(volume),
         }
@@ -94,9 +134,14 @@ impl SynthBackend {
     }
     pub fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
         match self {
+            Self::Vst(v) => v.render(left, right),
             Self::Sampler(s) => s.render(left, right),
             Self::Fluid(f) => f.render(left, right),
             Self::Rusty(r) => r.render(left, right),
         }
+    }
+
+    pub fn failed(&self) -> bool {
+        matches!(self, Self::Vst(v) if v.failed)
     }
 }

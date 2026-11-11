@@ -35,7 +35,7 @@ impl Timeline {
         };
         let track = row.track;
         let hit = |clip: &AudioClip| {
-            track == clip.track && beat >= clip.start_beat && beat < clip.end_beat()
+            track == clip.track && beat >= clip.start_beat && beat < clip.end_beat(self.tempo.bpm())
         };
         if self.clip.as_ref().is_some_and(hit) {
             return true;
@@ -112,7 +112,7 @@ impl Timeline {
             }
             DragKind::Audio => {
                 let clip = self.clip.as_ref()?;
-                (clip.start_beat, clip.end_beat())
+                (clip.start_beat, clip.end_beat(self.tempo.bpm()))
             }
         };
         let clip_left_x = self.viewport.x_at(start_beat).max(0.0) as f32;

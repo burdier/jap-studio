@@ -8,7 +8,7 @@ pista existente, desplegando el grupo si estaba plegado; no mueve el instrumento
 La acción del catálogo también se puede vincular a un icono de la barra.
 
 En el [+] existente, busca **Hay Sampler**. También acepta `:sampler`. Se asigna a la
-pista seleccionada y abre Instrument. Carga un archivo con **Cargar sample…**, suéltalo
+pista seleccionada, aparece en Track FX y abre el editor inferior. Carga un archivo con **Cargar sample…**, suéltalo
 sobre el panel o usa **Desde biblioteca** con un archivo seleccionado en el explorador.
 
 El dispositivo conserva colores, tipografía, botones, perillas y teclado de Hay. La

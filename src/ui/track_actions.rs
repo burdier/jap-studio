@@ -41,7 +41,11 @@ impl DawApp {
                 }
                 true
             }
-            "d" => {
+            "d" if self.vim_enabled => {
+                if self.controller.enabled() {
+                    self.track_delete_pending = false;
+                    return false;
+                }
                 if event.is_held {
                     self.track_delete_pending = pending;
                 } else if pending {
@@ -105,6 +109,16 @@ impl DawApp {
                 return;
             }
         };
+        if matches!(edit, TrackEdit::Move { .. })
+            && tracks
+                .iter()
+                .map(|track| track.id)
+                .eq(self.tracks.iter().map(|track| track.id))
+        {
+            return;
+        }
+        let active_midi = self.timeline.midi_clip.as_ref().map(|clip| clip.id);
+        let selected_midi = self.timeline.selected_midi.clone();
         self.stop_all();
         if self.midi_capture.is_recording() {
             self.midi_capture.stop_recording(
@@ -116,11 +130,14 @@ impl DawApp {
             );
         }
         self.track_control_drag = None;
+        self.track_reorder_drag = None;
         self.clip_menu = None;
         self.track_menu = None;
         self.track_color_menu = None;
         self.palette.close();
-        self.piano_roll.open = false;
+        if !matches!(edit, TrackEdit::Move { .. }) {
+            self.piano_roll.open = false;
+        }
         let old_cursor = self.tracks.get(self.cursor_row).map(|t| t.id);
         let original: Vec<_> = self
             .tracks
@@ -128,6 +145,12 @@ impl DawApp {
             .map(|old| tracks.iter().position(|t| t.id == old.id))
             .collect();
         self.timeline.remap_tracks(&sources, &original);
+        if matches!(edit, TrackEdit::Move { .. }) {
+            if let Some(id) = active_midi {
+                self.timeline.focus_midi_clip(id);
+            }
+            self.timeline.selected_midi = selected_midi;
+        }
         self.midi_mapper.remap_tracks(&original);
         self.track_levels = sources
             .iter()

@@ -38,14 +38,27 @@ impl DetachedPanel {
 }
 
 impl Render for DetachedPanel {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let (content, bg, text) = self.app.update(cx, |app, cx| {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let (content, bg, text, loading) = self.app.update(cx, |app, cx| {
+            app.poll_live_midi();
+            if !app.sampler_selected() && !app.vst_selected() {
+                app.instrument.request_resources();
+            }
+            app.poll_piano_resources(cx);
             (
                 app.render_instrument(cx).into_any_element(),
                 app.ds.bg,
                 app.ds.text,
+                app.instrument.loading()
+                    || app.midi_hw.has_ports()
+                    || app.instrument.is_running()
+                    || app.sampler.clip_playing() || app.vst.clip_playing(),
             )
         });
+        if loading {
+            cx.on_next_frame(window, |_, _, cx| cx.notify());
+            window.request_animation_frame();
+        }
         div()
             .id("hay-detached-instrument")
             .track_focus(&self.focus_handle)
@@ -65,6 +78,23 @@ impl Render for DetachedPanel {
                     });
                 }),
             )
+            .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                let workspace_handled = this.app.update(cx, |app, cx| app.workspace_key(event, window, cx));
+                if workspace_handled { cx.stop_propagation(); cx.notify(); return; }
+                if this.focus_handle.is_focused(window) {
+                    let handled = this.app.update(cx, |app, cx| {
+                        app.focus_midi_instrument();
+                        let handled = app.handle_performance_key(event);
+                        if handled {
+                            cx.notify();
+                        }
+                        handled
+                    });
+                    if handled {
+                        cx.stop_propagation();
+                    }
+                }
+            }))
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
                 this.app.update(cx, |app, cx| {
                     app.focus_midi_instrument();
@@ -107,7 +137,7 @@ impl DawApp {
 
     /// La ventana separada comparte transporte; Esc conserva la liberación de notas.
     pub(super) fn handle_detached_key(&mut self, event: &KeyDownEvent) {
-        if self.handle_transport_key(event) {
+        if self.handle_performance_key(event) {
             return;
         }
         let key = event
@@ -115,9 +145,6 @@ impl DawApp {
             .key_char
             .as_deref()
             .unwrap_or(&event.keystroke.key);
-        if self.controller_key_down(key, event.is_held) {
-            return;
-        }
         if key == "escape" {
             self.all_notes_off();
         }

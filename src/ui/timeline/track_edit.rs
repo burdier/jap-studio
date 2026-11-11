@@ -2,10 +2,22 @@
 use super::Timeline;
 
 impl Timeline {
+    pub(crate) fn focus_midi_clip(&mut self, id: elevate::musical::clip::ClipId) {
+        if self.midi_clip.as_ref().is_some_and(|clip| clip.id == id) {
+            return;
+        }
+        if let Some(index) = self.other_midi_clips.iter().position(|clip| clip.id == id) {
+            let clip = self.other_midi_clips.remove(index);
+            if let Some(previous) = self.midi_clip.replace(clip) {
+                self.other_midi_clips.push(previous);
+            }
+        }
+    }
     pub(crate) fn remap_tracks(&mut self, sources: &[Option<usize>], original: &[Option<usize>]) {
         self.end_clip_drag();
         self.import_preview = None;
         self.hover_track = None;
+        self.hover_clip = None;
         let audio: Vec<_> = self
             .other_audio_clips
             .drain(..)

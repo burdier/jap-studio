@@ -1,15 +1,17 @@
 //! Estado de ejecución del piano/sintetizador SoundFont: bancos, presets, voces y ratón.
 //! No importa GPUI. La vista consulta este objeto; el audio vive en `audio/piano`.
+mod loading;
 use super::piano_params::{self, Applies, Control, ParamId, PianoParams};
 use crate::audio::piano::{
     PianoPlayer, PianoSettings, PresetEntry, SoundFontBank, discover_soundfonts,
-    fluidsynth_available, load_soundfont, presets_of,
+    fluidsynth_available,
 };
 use elevate::devices::utility_slot::UtilitySlot;
 use elevate::{
     catalog::{self, CatalogEntry},
     musical::{clip::MidiClip, keyboard::KeyboardLayout, model::InstrumentId},
 };
+use loading::{Loading, PendingPlayback};
 use std::collections::HashSet;
 
 const ENTRY_ID: &str = "instrument.piano";
@@ -21,6 +23,7 @@ const LAST_NOTE: u8 = 83;
 /// `assets/soundfonts/` y expone sus presets y créditos del autor.
 pub(crate) struct Piano {
     player: Option<PianoPlayer>,
+    fx_rack: Option<std::sync::Arc<crate::audio::effects::Rack>>,
     held: HashSet<u8>,
     mouse: Option<u8>,
     layout: KeyboardLayout,
@@ -31,28 +34,41 @@ pub(crate) struct Piano {
     preset_index: usize,
     pan: f32,
     fx_gain: f32,
+    loading: Loading,
+    output_config: crate::audio::device::AudioConfig,
 }
 
 impl Piano {
+    pub fn set_fx_rack(&mut self, rack: Option<std::sync::Arc<crate::audio::effects::Rack>>) { if let Some(player) = &self.player { player.set_fx_rack(rack.clone()); } self.fx_rack = rack; }
+
+    pub fn drain_spectrum(&self, analyzer: &mut crate::audio::analyzer::SpectrumAnalyzer) {
+        if let Some(player) = &self.player {
+            player.drain_spectrum(analyzer);
+        }
+    }
+
+    pub fn set_spectrum_enabled(&self, enabled: bool) {
+        if let Some(player) = &self.player {
+            player.set_spectrum_enabled(enabled);
+        }
+    }
+
     pub fn new() -> Self {
-        let banks = discover_soundfonts();
-        let presets = banks
-            .first()
-            .and_then(|bank| load_soundfont(&bank.path).ok())
-            .map(|sf| presets_of(&sf))
-            .unwrap_or_default();
         Self {
             player: None,
+            fx_rack: None,
             held: HashSet::new(),
             mouse: None,
             layout: KeyboardLayout::new(FIRST_NOTE, LAST_NOTE),
             params: PianoParams::new(),
-            banks,
+            banks: Vec::new(),
             bank_index: 0,
-            presets,
+            presets: Vec::new(),
             preset_index: 0,
             pan: 0.0,
             fx_gain: 1.0,
+            loading: Loading::default(),
+            output_config: Default::default(),
         }
     }
 
@@ -95,43 +111,25 @@ impl Piano {
         self.preset_index
     }
 
-    /// Re-escanea `assets/soundfonts` por si terminaron de descargarse bancos nuevos.
-    pub fn refresh_banks(&mut self) {
-        let current_path = self.banks.get(self.bank_index).map(|b| b.path.clone());
-        self.banks = discover_soundfonts();
-        if let Some(path) = current_path
-            && let Some(pos) = self.banks.iter().position(|b| b.path == path)
-        {
-            self.bank_index = pos;
-        } else {
-            self.bank_index = 0;
-        }
-        if self.presets.is_empty()
-            && let Some(bank) = self.banks.get(self.bank_index)
-            && let Ok(sf) = load_soundfont(&bank.path)
-        {
-            self.presets = presets_of(&sf);
-        }
-    }
-
     pub fn select_bank(&mut self, index: usize) -> Result<(), String> {
         if index >= self.banks.len() {
             return Err("Banco fuera de rango".into());
         }
-        let sf = load_soundfont(&self.banks[index].path)?;
-        self.presets = presets_of(&sf);
-        self.preset_index = 0;
         if self.bank_index != index {
-            self.bank_index = index;
             self.stop();
+            self.invalidate_resources();
+            self.bank_index = index;
+            self.presets.clear();
+            self.preset_index = 0;
         }
+        self.request_resources();
         Ok(())
     }
 
     pub fn step_bank(&mut self, delta: isize) -> Result<(), String> {
-        self.refresh_banks();
         if self.banks.is_empty() {
-            return Err("No hay bancos SoundFont disponibles".into());
+            self.request_resources();
+            return Err("Preparando la lista de bancos SoundFont…".into());
         }
         let len = self.banks.len() as isize;
         let next = (self.bank_index as isize + delta).rem_euclid(len) as usize;
@@ -183,6 +181,9 @@ impl Piano {
     pub fn set_param(&mut self, id: ParamId, value: f32) -> bool {
         let changed = self.params.get(id) != value;
         let value = self.params.set(id, value);
+        if changed && piano_params::spec_of(id).applies == Applies::Restart {
+            self.invalidate_resources();
+        }
         match piano_params::spec_of(id).applies {
             Applies::Live => {
                 if let Some(player) = &self.player {
@@ -194,7 +195,7 @@ impl Piano {
                             | ParamId::Cutoff
                             | ParamId::Resonance
                     ) {
-                        player.set_filter(self.params.filter());
+        player.set_filter(self.params.filter());
                     }
                 }
                 false
@@ -227,8 +228,12 @@ impl Piano {
 
     /// Datos propios: el worker construye voces nuevas sin leer estado vivo ni abrir CPAL.
     pub fn export_snapshot(&self) -> Result<crate::audio::piano::PianoSnapshot, String> {
-        let bank = self
-            .banks
+        let banks = if self.banks.is_empty() {
+            discover_soundfonts()
+        } else {
+            self.banks.clone()
+        };
+        let bank = banks
             .get(self.bank_index)
             .ok_or("No hay SoundFont para exportar MIDI")?;
         let mut midi = Vec::new();
@@ -257,28 +262,23 @@ impl Piano {
     }
 
     /// Abre el dispositivo en la primera nota. Devuelve si la orden se aceptó.
-    fn ensure_started(&mut self, gain: f32, utility: UtilitySlot) -> Result<(), String> {
+    fn ensure_started(&mut self, gain: f32, utility: UtilitySlot) -> Result<bool, String> {
         if self.player.is_some() {
-            return Ok(());
+            return Ok(true);
         }
-        if self.banks.is_empty() {
-            self.refresh_banks();
-        }
-        let bank = self
-            .banks
-            .get(self.bank_index)
-            .ok_or_else(|| "No hay ningún SoundFont disponible".to_string())?;
-        let settings = PianoSettings {
-            maximum_polyphony: self.params.get(ParamId::Polyphony) as usize,
-            reverb_and_chorus: self.params.get(ParamId::Effects) >= 0.5,
+        let Some(prepared) = self.loading.prepared.take() else {
+            if let Some(error) = &self.loading.error {
+                return Err(error.clone());
+            }
+            self.request_resources();
+            return Ok(false);
         };
-        let player =
-            PianoPlayer::start(&bank.path, gain, utility, self.pan, self.fx_gain, settings)?;
-        if self.presets.is_empty()
-            && let Ok(sf) = load_soundfont(&bank.path)
-        {
-            self.presets = presets_of(&sf);
-        }
+        let player = prepared
+            .start(gain, utility, self.pan, self.fx_gain)
+            .map_err(|error| {
+                self.loading.error = Some(error.clone());
+                error
+            })?;
         if let Some(preset) = self.presets.get(self.preset_index) {
             send_preset(&player, preset);
         }
@@ -288,9 +288,10 @@ impl Piano {
         {
             send(&player, spec.id, self.params.get(spec.id));
         }
+        player.set_fx_rack(self.fx_rack.clone());
         player.set_filter(self.params.filter());
         self.player = Some(player);
-        Ok(())
+        Ok(true)
     }
 
     pub fn note_on(
@@ -303,7 +304,19 @@ impl Piano {
         if note > 127 || self.held.contains(&note) {
             return Ok(false);
         }
-        self.ensure_started(gain, utility)?;
+        if !self.ensure_started(gain, utility.clone())? {
+            let pending = self
+                .loading
+                .pending
+                .get_or_insert_with(|| PendingPlayback::Notes {
+                    notes: Default::default(),
+                    gain,
+                    utility,
+                });
+            if let PendingPlayback::Notes { notes, .. } = pending {
+                notes.insert(note, velocity);
+            }
+        }
         if let Some(player) = &self.player {
             player.note_on(note, velocity);
         }
@@ -320,22 +333,38 @@ impl Piano {
         utility: UtilitySlot,
     ) -> Result<(), String> {
         self.all_notes_off();
-        self.ensure_started(gain, utility)?;
+        if !self.ensure_started(gain, utility.clone())? {
+            self.loading.pending = Some(PendingPlayback::Clip {
+                clip: clip.clone(),
+                beat: edit_beat,
+                bpm,
+                gain,
+                utility,
+            });
+            return Ok(());
+        }
         let offset_beats = (edit_beat - clip.start_beat).max(0.0);
         if let Some(player) = &self.player {
-            player.play_pattern(&clip.playback_pattern(), offset_beats, bpm)?;
+            player.set_channel(clip.channel.saturating_sub(1).min(15));
+            if let Some(preset) = self.presets.get(self.preset_index) { send_preset(player, preset); }
+            for spec in piano_params::SPECS { send(player, spec.id, self.params.get(spec.id)); }
+            player.play_pattern(&clip.playback_pattern(), offset_beats, bpm, clip.props.looped)?;
         }
         Ok(())
     }
 
     pub fn stop_clip(&mut self) {
+        if matches!(self.loading.pending, Some(PendingPlayback::Clip { .. })) {
+            self.loading.pending = None;
+        }
         if let Some(player) = &self.player {
             player.stop_pattern();
         }
     }
 
     pub fn clip_playing(&self) -> bool {
-        self.player.as_ref().is_some_and(PianoPlayer::plan_playing)
+        matches!(self.loading.pending, Some(PendingPlayback::Clip { .. }))
+            || self.player.as_ref().is_some_and(PianoPlayer::plan_playing)
     }
 
     pub fn clip_finished(&self) -> bool {
@@ -343,6 +372,9 @@ impl Piano {
     }
 
     pub fn clip_beat(&self, clip_start_beat: f64, bpm: f64) -> Option<f64> {
+        if let Some(PendingPlayback::Clip { beat, .. }) = self.loading.pending {
+            return Some(beat);
+        }
         let player = self.player.as_ref()?;
         if !player.plan_playing() {
             return None;
@@ -355,6 +387,12 @@ impl Piano {
         if !self.held.remove(&note) {
             return false;
         }
+        if let Some(PendingPlayback::Notes { notes, .. }) = &mut self.loading.pending {
+            notes.remove(&note);
+            if notes.is_empty() {
+                self.loading.pending = None;
+            }
+        }
         if let Some(player) = &self.player {
             player.note_off(note);
         }
@@ -362,6 +400,9 @@ impl Piano {
     }
 
     pub fn all_notes_off(&mut self) -> bool {
+        if matches!(self.loading.pending, Some(PendingPlayback::Notes { .. })) {
+            self.loading.pending = None;
+        }
         self.mouse = None;
         if self.held.is_empty() {
             return false;
@@ -374,6 +415,7 @@ impl Piano {
     }
 
     pub fn stop(&mut self) {
+        self.loading.pending = None;
         self.all_notes_off();
         self.player = None;
         self.held.clear();
@@ -386,7 +428,14 @@ impl Piano {
             player.set_fx_gain(gain);
         }
     }
-    pub fn set_gain(&self, gain: f32) {
+    pub fn set_gain(&mut self, gain: f32) {
+        if let Some(
+            PendingPlayback::Notes { gain: pending, .. }
+            | PendingPlayback::Clip { gain: pending, .. },
+        ) = &mut self.loading.pending
+        {
+            *pending = gain;
+        }
         if let Some(player) = &self.player {
             player.set_gain(gain);
         }
@@ -402,11 +451,6 @@ impl Piano {
     pub fn failed(&self) -> bool {
         self.player.as_ref().is_some_and(PianoPlayer::failed)
     }
-}
-
-/// Carga el SoundFont inicial fuera del callback antes del primer note-on.
-pub(crate) fn preload() -> Result<(), String> {
-    crate::audio::piano::preload()
 }
 
 fn send_preset(player: &PianoPlayer, preset: &PresetEntry) {

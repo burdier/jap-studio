@@ -37,7 +37,11 @@ use gpui::{Context, Div, IntoElement, MouseButton, div, prelude::*, px, rgb};imp
     pub(super) fn render_roll_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let ds = &self.ds;
         let clip = self.timeline.midi_clip.as_ref().expect("clip visible");
-        let preview = RollAction::Preview;
+        let edited = self.piano_roll.opened_clip.as_ref().is_some_and(|before| {
+            before.id == clip.id && (before.name != clip.name || before.props != clip.props || before.channel != clip.channel
+                || before.pattern != clip.pattern
+                || before.muted_notes != clip.muted_notes || before.trim_start != clip.trim_start || before.trim_len != clip.trim_len)
+        });
         let first = div()
             .id("roll-clip-toolbar")
             .h(px(36.0))
@@ -52,27 +56,25 @@ use gpui::{Context, Div, IntoElement, MouseButton, div, prelude::*, px, rgb};imp
                 self.roll_button(
                     format!("Clip: {} (pista {})", clip.name, clip.track + 1),
                     false,
-                    preview("selector de clip"),
+                    RollAction::ChooseClip,
                     cx,
                 )
                 .w(px(218.0))
                 .overflow_hidden(),
             )
             .child(self.roll_button("▶", false, RollAction::NextClip, cx))
-            .child(self.roll_button(
-                format!("Len: {} bars", (clip.duration_beats() / 4.0).ceil() as u64),
-                false,
-                preview("longitud"),
-                cx,
-            ))
-            .child(self.roll_button("Ch: 1", false, preview("canal MIDI"), cx))
-            .child(self.roll_button("Snap: 1/16 ▾", false, preview("snap"), cx))
-            .child(self.roll_button("Quantize: 1/16 ▾", false, preview("cuantización"), cx))
-            .child(self.roll_button("Swing: 0%", false, preview("swing"), cx))
+            .child(self.roll_button(format!("Len: {:.2} bars", clip.pattern_beats() / self.timeline.meter.beats_per_bar()), false, RollAction::Form("midi.clip.length"), cx))
+            .child(self.roll_button(format!("Ch: {}", clip.channel), false, RollAction::Form("midi.clip.channel"), cx))
+            .child(self.roll_button("Más fina · Alt+1", false, RollAction::GridFiner, cx))
+            .child(self.roll_button(format!("Grid: 1/{}", self.piano_roll.resolution.denominator()), false, RollAction::Form("midi.grid"), cx))
+            .child(self.roll_button("Más gruesa · Alt+2", false, RollAction::GridCoarser, cx))
+            .child(self.roll_button("Swing…", false, RollAction::Swing, cx))
             .child(separator(ds.border))
             .child(self.roll_button("Q", false, RollAction::Quantize, cx))
             .child(self.roll_button("H", false, RollAction::Humanize, cx))
-            .child(self.roll_button("V: 1/8 ▾", false, preview("duración de nota"), cx))
+            .child(self.roll_button("Subdividir", false, RollAction::Subdivide, cx))
+            .child(self.roll_button("Lua…", false, RollAction::Form("midi.script"), cx))
+            .child(self.roll_button(format!("V: 1/{} ▾", self.piano_roll.draw_length.denominator()), false, RollAction::ChooseDrawLength, cx))
             .child(separator(ds.border))
             .child(
                 self.roll_button(
@@ -101,17 +103,19 @@ use gpui::{Context, Div, IntoElement, MouseButton, div, prelude::*, px, rgb};imp
                 .text_color(rgb(ds.accent)),
             )
             .child(
-                self.roll_button("Loop ⟳ 4 bars", false, preview("loop"), cx)
+                self.roll_button(if clip.props.looped { "Loop ⟳ ON" } else { "Loop ⟳ OFF" }, clip.props.looped, RollAction::ToggleClipLoop, cx)
                     .text_color(rgb(ds.accent)),
             )
             .child(
                 div()
                     .text_size(px(10.0))
                     .text_color(rgb(ds.warning))
-                    .child("Edited (•)"),
+                    .child(if edited { "Edited •" } else { "Sin cambios" }),
             );
         let tools = [
-            ("Select (V)", RollTool::Select),
+            ("Pointer (V)", RollTool::Select),
+            ("Región", RollTool::Box),
+            ("Borrar región", RollTool::EraseRegion),
             ("Draw (B)", RollTool::Draw),
             ("Erase (E)", RollTool::Erase),
             ("Paint (P)", RollTool::Paint),
@@ -134,6 +138,7 @@ use gpui::{Context, Div, IntoElement, MouseButton, div, prelude::*, px, rgb};imp
                     cx,
                 )
             }))
+            .child(self.roll_button("Eliminar · Del", false, RollAction::DeleteSelection, cx))
             .child(separator(ds.border))
             .children(
                 [
@@ -151,7 +156,8 @@ use gpui::{Context, Div, IntoElement, MouseButton, div, prelude::*, px, rgb};imp
                         "cortar" => RollAction::Cut,
                         "copiar" => RollAction::Copy,
                         "pegar" => RollAction::Paste,
-                        _ => preview(label),
+                        "lápiz" => RollAction::Tool(RollTool::Draw),
+                        _ => RollAction::Tool(RollTool::Select),
                     };
                     self.roll_button(
                         icon,
@@ -166,15 +172,15 @@ use gpui::{Context, Div, IntoElement, MouseButton, div, prelude::*, px, rgb};imp
                 }),
             )
             .child(separator(ds.border))
-            .child(self.roll_button("Scale: C minor (Aeolian) ▾", false, preview("escala"), cx))
-            .child(self.roll_button("Key: C ▾", false, preview("tónica"), cx))
+            .child(self.roll_button(if self.piano_roll.scale_minor { "Scale: Natural minor ▾" } else { "Scale: Major ▾" }, false, RollAction::ChooseScale, cx))
+            .child(self.roll_button(format!("Key: {} ▾", ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"][usize::from(self.piano_roll.scale_root)]), false, RollAction::ChooseRoot, cx))
             .child(separator(ds.border))
-            .child(self.roll_button("Vel: 100", false, preview("velocity"), cx))
-            .child(self.roll_button("Gate: 100%", false, preview("gate"), cx))
+            .child(self.roll_button("Velocity…", false, RollAction::Velocity, cx))
+            .child(self.roll_button("Gate…", false, RollAction::Gate, cx))
             .child(self.roll_humanize_control(cx))
             .child(separator(ds.border))
             .child(self.render_toolbar_bound_buttons(ToolbarScope::PianoRoll, true, cx))
-            .child(self.roll_button("⚙", false, preview("preferencias del editor"), cx));
+            .child(self.roll_button("⚙", false, RollAction::OpenSettings, cx));
         div()
             .flex_shrink_0()
             .flex()

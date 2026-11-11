@@ -3,16 +3,14 @@ mod backend;
 mod filter;
 mod fluidsynth;
 mod offline;
+mod prepare;
 mod render;
 mod soundfont;
 
 use super::output::choose_output_config;
 use super::stereo_pan::StereoPan;
 pub(crate) use backend::SynthBackend;
-use cpal::{
-    SampleFormat,
-    traits::{HostTrait, StreamTrait},
-};
+use cpal::{SampleFormat, traits::StreamTrait};
 use elevate::musical::{
     model::Pattern,
     scheduler::PreparedPattern,
@@ -20,17 +18,14 @@ use elevate::musical::{
 };
 pub(crate) use fluidsynth::is_available as fluidsynth_available;
 pub(crate) use offline::{OfflinePiano, PianoSnapshot};
-use rtrb::{Producer, RingBuffer};
+pub(crate) use prepare::PreparedPiano;
+use rtrb::{Consumer, Producer, RingBuffer};
 pub(crate) use soundfont::{
     PresetEntry, SoundFontBank, discover as discover_soundfonts, load_path as load_soundfont,
-    preload, presets_of,
 };
-use std::{
-    path::Path,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
-    },
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
 };
 
 const COMMAND_QUEUE_CAP: usize = 512;
@@ -53,12 +48,14 @@ enum NoteCommand {
         data1: u8,
         data2: u8,
     },
+    Channel(u8),
     MasterVolume(f32),
     Polyphony(usize),
     Effects(bool),
     PlayPlan {
         plan: Arc<PreparedPattern>,
         start_frame: u64,
+        looped: bool,
     },
     StopPlan,
 }
@@ -88,48 +85,32 @@ struct InstrumentState {
     plan_frame: AtomicU64,
     plan_playing: AtomicBool,
     plan_finished: AtomicBool,
+    spectrum_enabled: AtomicBool,
 }
 
 pub(crate) struct PianoPlayer {
     _stream: cpal::Stream,
     commands: Mutex<Producer<NoteCommand>>,
+    spectrum: Mutex<Consumer<[f32; 2]>>,
     state: Arc<InstrumentState>,
     pub sample_rate: u32,
 }
 
 impl PianoPlayer {
-    pub fn start(
-        soundfont_path: &Path,
-        gain: f32,
-        utility: elevate::devices::utility_slot::UtilitySlot,
-        pan: f32,
-        fx_gain: f32,
-        settings: PianoSettings,
-    ) -> Result<Self, String> {
-        let sound_font = soundfont::load_path(soundfont_path)?;
-        let device = cpal::default_host()
-            .default_output_device()
-            .ok_or("No hay dispositivo de salida predeterminado")?;
-        let config = choose_output_config(&device, None)?;
-        let sample_rate = config.sample_rate();
-        let backend = SynthBackend::new(soundfont_path, &sound_font, sample_rate, settings)?;
-        Self::start_backend(device, config, backend, gain, utility, pan, fx_gain)
-    }
     pub fn start_sampler(
         mut engine: crate::audio::sampler::SfizzEngine,
         gain: f32,
         utility: elevate::devices::utility_slot::UtilitySlot,
         pan: f32,
         fx_gain: f32,
+        audio: &super::device::AudioConfig,
     ) -> Result<Self, String> {
-        let device = cpal::default_host()
-            .default_output_device()
-            .ok_or("No hay salida de audio")?;
-        let config = choose_output_config(&device, None)?;
-        engine.set_sample_rate(config.sample_rate());
+        let device = audio.device(false)?;
+        let setup = choose_output_config(&device, audio)?;
+        engine.set_sample_rate(setup.config.sample_rate);
         Self::start_backend(
             device,
-            config,
+            setup,
             SynthBackend::Sampler(engine),
             gain,
             utility,
@@ -139,14 +120,14 @@ impl PianoPlayer {
     }
     fn start_backend(
         device: cpal::Device,
-        config: cpal::SupportedStreamConfig,
+        setup: super::output::StreamSetup,
         backend: SynthBackend,
         gain: f32,
         utility: elevate::devices::utility_slot::UtilitySlot,
         pan: f32,
         fx_gain: f32,
     ) -> Result<Self, String> {
-        let sample_rate = config.sample_rate();
+        let sample_rate = setup.config.sample_rate;
         let state = Arc::new(InstrumentState {
             gain: AtomicU32::new(gain.clamp(0.0, 2.0).to_bits()),
             pan: StereoPan::new(pan),
@@ -156,35 +137,45 @@ impl PianoPlayer {
             plan_frame: AtomicU64::new(0),
             plan_playing: AtomicBool::new(false),
             plan_finished: AtomicBool::new(false),
+            spectrum_enabled: AtomicBool::new(false),
         });
         let (producer, consumer) = RingBuffer::new(COMMAND_QUEUE_CAP);
-        let stream = match config.sample_format() {
+        let (spectrum_tx, spectrum_rx) = RingBuffer::new(8192);
+        let stream = match setup.format {
             SampleFormat::F32 => render::build_stream::<f32>(
                 &device,
-                config.into(),
+                setup.config,
+                setup.first_channel,
                 backend,
                 consumer,
+                spectrum_tx,
                 state.clone(),
             ),
             SampleFormat::I16 => render::build_stream::<i16>(
                 &device,
-                config.into(),
+                setup.config,
+                setup.first_channel,
                 backend,
                 consumer,
+                spectrum_tx,
                 state.clone(),
             ),
             SampleFormat::I32 => render::build_stream::<i32>(
                 &device,
-                config.into(),
+                setup.config,
+                setup.first_channel,
                 backend,
                 consumer,
+                spectrum_tx,
                 state.clone(),
             ),
             SampleFormat::U16 => render::build_stream::<u16>(
                 &device,
-                config.into(),
+                setup.config,
+                setup.first_channel,
                 backend,
                 consumer,
+                spectrum_tx,
                 state.clone(),
             ),
             format => return Err(format!("Formato de salida no compatible: {format:?}")),
@@ -193,9 +184,27 @@ impl PianoPlayer {
         Ok(Self {
             _stream: stream,
             commands: Mutex::new(producer),
+            spectrum: Mutex::new(spectrum_rx),
             state,
             sample_rate,
         })
+    }
+
+    pub fn drain_spectrum(&self, analyzer: &mut super::analyzer::SpectrumAnalyzer) {
+        if let Ok(mut samples) = self.spectrum.try_lock() {
+            for _ in 0..8192 {
+                let Ok(sample) = samples.pop() else {
+                    break;
+                };
+                analyzer.push_stereo(sample);
+            }
+        }
+    }
+
+    pub fn set_spectrum_enabled(&self, enabled: bool) {
+        self.state
+            .spectrum_enabled
+            .store(enabled, Ordering::Relaxed);
     }
     fn push(&self, cmd: NoteCommand) {
         if let Ok(mut guard) = self.commands.lock() {
@@ -213,6 +222,9 @@ impl PianoPlayer {
     }
     pub fn all_notes_off(&self) {
         self.push(NoteCommand::AllOff);
+    }
+    pub fn set_channel(&self, channel: u8) {
+        self.push(NoteCommand::Channel(channel.min(15)));
     }
     pub fn midi(&self, command: u8, data1: u8, data2: u8) {
         self.push(NoteCommand::Midi {
@@ -239,6 +251,7 @@ impl PianoPlayer {
         pattern: &Pattern,
         offset_beats: f64,
         bpm: f64,
+        looped: bool,
     ) -> Result<(), String> {
         let time_base = TimeBase::new(self.sample_rate, bpm).map_err(|e| e.to_string())?;
         let plan =
@@ -247,10 +260,34 @@ impl PianoPlayer {
         let start_frame = time_base
             .frame_at(offset_ticks)
             .map_err(|e| e.to_string())?;
+        let start_frame = if looped {
+            start_frame % plan.length_frames().max(1)
+        } else {
+            start_frame
+        };
+        let start_tick =
+            (start_frame as f64 / self.sample_rate as f64 * bpm / 60.0 * PPQ as f64).round() as i64;
+        let mut chased = std::collections::BTreeMap::new();
+        for point in pattern
+            .controls()
+            .points()
+            .iter()
+            .filter(|point| point.at.0 < start_tick)
+        {
+            chased.insert(point.lane, point.value);
+        }
         self.state.plan_frame.store(start_frame, Ordering::Relaxed);
         self.state.plan_finished.store(false, Ordering::Relaxed);
         self.state.plan_playing.store(true, Ordering::Relaxed);
-        self.push(NoteCommand::PlayPlan { plan, start_frame });
+        self.push(NoteCommand::PlayPlan {
+            plan,
+            start_frame,
+            looped,
+        });
+        for (lane, value) in chased {
+            let (command, a, b) = lane.midi(value);
+            self.midi(command, a, b);
+        }
         Ok(())
     }
     pub fn stop_pattern(&self) {
@@ -267,6 +304,7 @@ impl PianoPlayer {
     pub fn plan_frame(&self) -> u64 {
         self.state.plan_frame.load(Ordering::Relaxed)
     }
+    pub fn set_fx_rack(&self, rack: Option<std::sync::Arc<crate::audio::effects::Rack>>) { self.state.fx.set_rack(rack, self.sample_rate); }
     pub fn set_fx_gain(&self, gain: f32) {
         self.state.fx.set(gain);
     }

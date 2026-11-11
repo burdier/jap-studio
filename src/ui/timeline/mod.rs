@@ -12,23 +12,45 @@ mod midi_clips;
 mod paint;
 mod particles;
 mod rows;
+mod slip;
 #[cfg(test)]
 mod tests;
 mod time_ruler;
 mod track_edit;
 mod trim;
 mod viewport;
+mod visual_transport;
 mod waveform;
 
 use super::DesignSystem;
 use crate::audio::AudioClip;
 use elevate::musical::clip::MidiClip;
+use elevate::musical::time::{Meter, Tempo};
 use gpui::{Bounds, Pixels, Point};
 use particles::ParticleTrail;
 use std::{cell::Cell, rc::Rc};
 use viewport::Viewport;
 
-const BEATS_PER_BAR: f64 = 4.0;
+#[derive(Clone, Copy, PartialEq)]
+struct ClipHover {
+    kind: DragKind,
+    track: usize,
+    start_beat: f64,
+    edge: Option<clip_frame::ClipEdge>,
+}
+
+impl ClipHover {
+    fn edge_for(
+        self,
+        kind: DragKind,
+        track: usize,
+        start_beat: f64,
+    ) -> Option<clip_frame::ClipEdge> {
+        (self.kind == kind && self.track == track && self.start_beat == start_beat)
+            .then_some(self.edge)
+            .flatten()
+    }
+}
 
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum TimelineArea {
@@ -52,11 +74,15 @@ pub(crate) enum ClipBarHit {
 }
 
 pub(crate) struct Timeline {
+    pub(crate) tempo: Tempo,
+    pub(crate) meter: Meter,
     pub(crate) layout: Option<crate::ui::track_layout::TrackLayout>,
     clip_drag: Option<(Point<Pixels>, f64, bool, DragKind)>,
     trim_drag: Option<trim::TrimDrag>,
+    slip_drag: Option<slip::SlipDrag>,
     hover_track: Option<usize>,
     hover_dragging: bool,
+    hover_clip: Option<ClipHover>,
     // Clips provisionales. Migrar al modelo de proyecto al introducir múltiples clips.
     pub clip: Option<AudioClip>,
     pub other_audio_clips: Vec<AudioClip>,
@@ -64,6 +90,7 @@ pub(crate) struct Timeline {
     pub other_midi_clips: Vec<MidiClip>,
     pub selected_midi: Vec<elevate::musical::clip::ClipId>,
     pub playhead: Option<f64>,
+    visual_transport: visual_transport::VisualTransport,
     viewport: Viewport,
     edit_beat: f64,
     ruler_bounds: Rc<Cell<Bounds<Pixels>>>,
@@ -76,17 +103,22 @@ pub(crate) struct Timeline {
 impl Timeline {
     pub(crate) fn new(pixels_per_beat: f32) -> Self {
         Self {
+            tempo: Tempo::default(),
+            meter: Meter::default(),
             layout: None,
             clip_drag: None,
             trim_drag: None,
+            slip_drag: None,
             hover_track: None,
             hover_dragging: false,
+            hover_clip: None,
             clip: None,
             other_audio_clips: Vec::new(),
             midi_clip: None,
             other_midi_clips: Vec::new(),
             selected_midi: Vec::new(),
             playhead: None,
+            visual_transport: Default::default(),
             viewport: Viewport {
                 first_beat: 0.0,
                 pixels_per_beat: f64::from(pixels_per_beat).clamp(8.0, 256.0),
@@ -114,8 +146,11 @@ impl Timeline {
     }
     pub(crate) fn position_label(&self) -> String {
         let rounded = (self.edit_beat * 100.0).round() / 100.0;
-        let bar = (rounded / BEATS_PER_BAR).floor() as u64 + 1;
-        format!("{bar}:{:.2}", rounded % BEATS_PER_BAR + 1.0)
+        format!(
+            "{}:{:.2}",
+            self.meter.bar_at(rounded),
+            self.meter.beat_at(rounded)
+        )
     }
     pub(crate) fn go_to_start(&mut self) {
         self.edit_beat = 0.0;
@@ -151,6 +186,9 @@ impl Timeline {
             TimelineArea::TimeRuler => &self.time_ruler_bounds,
             TimelineArea::Lanes => &self.lanes_bounds,
         }
+    }
+    pub(crate) fn lanes_bounds(&self) -> Bounds<Pixels> {
+        self.lanes_bounds.get()
     }
     pub(crate) fn advance_particles(&mut self, design: &DesignSystem, visible: bool) -> bool {
         let bounds = self.lanes_bounds.get();

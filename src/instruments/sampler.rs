@@ -15,16 +15,21 @@ pub(crate) struct Sampler {
     pub params: SamplerParams,
     pub asset: Option<Arc<SampleAsset>>,
     player: Option<PianoPlayer>,
+    fx_rack: Option<std::sync::Arc<crate::audio::effects::Rack>>,
+    output_config: crate::audio::device::AudioConfig,
     prepared: Option<SfizzEngine>,
     held: HashSet<u8>,
     pub mouse: Option<u8>,
 }
 impl Default for Sampler {
+
     fn default() -> Self {
         Self {
             params: SamplerParams::default(),
             asset: None,
             player: None,
+            fx_rack: None,
+            output_config: Default::default(),
             prepared: None,
             held: HashSet::new(),
             mouse: None,
@@ -32,6 +37,13 @@ impl Default for Sampler {
     }
 }
 impl Sampler {
+    pub fn set_fx_rack(&mut self, rack: Option<std::sync::Arc<crate::audio::effects::Rack>>) { if let Some(player) = &self.player { player.set_fx_rack(rack.clone()); } self.fx_rack = rack; }
+
+    pub fn configure_audio(&mut self, config: crate::audio::device::AudioConfig) {
+        self.stop();
+        self.output_config = config;
+    }
+
     pub fn prepare(asset: Arc<SampleAsset>, params: SamplerParams) -> Result<SfizzEngine, String> {
         SfizzEngine::prepare(SamplerSnapshot { asset, params }, 48000)
     }
@@ -82,8 +94,16 @@ impl Sampler {
                 .prepared
                 .take()
                 .ok_or("Sampler preparándose; espera a que termine la carga")?;
-            self.player = Some(PianoPlayer::start_sampler(engine, gain, utility, pan, fx)?);
+            self.player = Some(PianoPlayer::start_sampler(
+                engine,
+                gain,
+                utility,
+                pan,
+                fx,
+                &self.output_config,
+            )?);
         }
+        if let Some(player) = &self.player { player.set_fx_rack(self.fx_rack.clone()); }
         self.mix(gain, pan, fx);
         Ok(())
     }
@@ -117,14 +137,14 @@ impl Sampler {
     }
     pub fn play_clip(&mut self, clip: &MidiClip, beat: f64, bpm: f64) -> Result<(), String> {
         self.all_off();
-        self.player
-            .as_ref()
-            .ok_or("Sampler no preparado")?
-            .play_pattern(
-                &clip.playback_pattern(),
-                (beat - clip.start_beat).max(0.),
-                bpm,
-            )
+        let player = self.player.as_ref().ok_or("Sampler no preparado")?;
+        player.set_channel(clip.channel.saturating_sub(1).min(15));
+        player.play_pattern(
+            &clip.playback_pattern(),
+            (beat - clip.start_beat).max(0.),
+            bpm,
+            clip.props.looped,
+        )
     }
     pub fn clip_playing(&self) -> bool {
         self.player.as_ref().is_some_and(PianoPlayer::plan_playing)

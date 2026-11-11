@@ -39,6 +39,7 @@ impl ExplorerDock {
                 }
                 ExplorerEvent::Close => this.hide_explorer(),
                 ExplorerEvent::Focused => {
+                    this.workspace_focus.active = super::workspace_focus::Panel::Explorer;
                     this.track_delete_pending = false;
                     this.release_explorer_keyboard();
                 }
@@ -61,6 +62,7 @@ impl DawApp {
         if self.explorer.width > 0.0 && self.center_view == CenterView::Arrangement {
             self.hide_explorer();
         } else {
+            self.workspace_focus.expanded = None;
             self.set_center_view(CenterView::Arrangement);
             self.release_explorer_keyboard();
             self.explorer.width = self.explorer.last_width;
@@ -95,9 +97,10 @@ impl DawApp {
     pub(super) fn sync_explorer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.flush_file_import(cx);
         let style = ExplorerStyle::from(&self.ds);
-        if self.explorer.view.read(cx).style != style {
+        if self.explorer.view.read(cx).style != style || self.explorer.view.read(cx).vim_enabled != self.vim_enabled {
             self.explorer.view.update(cx, |explorer, cx| {
                 explorer.style = style;
+                explorer.vim_enabled = self.vim_enabled;
                 cx.notify();
             });
         }

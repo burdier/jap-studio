@@ -307,6 +307,7 @@ pub(in crate::ui) fn toolbar_icon_button(
     tag: &str,
     color: u32,
     compact: bool,
+    active: bool,
 ) -> Div {
     let h = if compact {
         26.0
@@ -320,21 +321,21 @@ pub(in crate::ui) fn toolbar_icon_button(
         .flex()
         .items_center()
         .gap(px(5.0))
-        .bg(rgb(ds.panel_dark))
+        .bg(rgb(if active { color } else { ds.panel_dark }))
         .border_1()
-        .border_color(rgb(ds.border))
+        .border_color(rgb(if active { color } else { ds.border }))
         .rounded(px(ds.radius_md))
         .cursor_pointer()
         .child(render_svg_icon(
             bytes,
             if compact { 16.0 } else { 19.0 },
-            color,
+            if active { ds.bg } else { color },
         ))
         .child(
             div()
                 .text_size(px(if compact { 10.5 } else { 11.0 }))
                 .font_weight(gpui::FontWeight::BOLD)
-                .text_color(rgb(ds.text))
+                .text_color(rgb(if active { ds.bg } else { ds.text }))
                 .child(tag.to_owned()),
         )
 }

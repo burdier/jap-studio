@@ -14,7 +14,7 @@ struct Quality {
     flags: c_ulong,
 }
 
-pub(super) fn resample(
+pub(crate) fn resample(
     input: &[StereoFrame],
     from: u32,
     to: u32,

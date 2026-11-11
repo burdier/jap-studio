@@ -27,6 +27,10 @@ impl DawApp {
         } else {
             key.to_string()
         };
+        if self.general_note.is_some() {
+            self.track_delete_pending = false;
+            return;
+        }
         if self.action_form.is_some() {
             // Los controles Kit consumen edición/IME; ninguna tecla del formulario toca el DAW.
             return;
@@ -45,6 +49,9 @@ impl DawApp {
             return;
         }
         if self.settings.is_visible() {
+            if self.audio_select_popup_focused(window, cx) {
+                return;
+            }
             self.handle_settings_key(event, cx);
             return;
         }
@@ -56,11 +63,11 @@ impl DawApp {
             self.handle_clip_menu_key(event, window, cx);
             return;
         }
-        if self.handle_transport_key(event) {
+        if self.handle_performance_key(event) {
             return;
         }
         let modifiers = event.keystroke.modifiers;
-        if self.mode == VimMode::Normal
+        if self.vim_enabled && self.mode == VimMode::Normal
             && key == "e"
             && !modifiers.control
             && !modifiers.alt
@@ -74,9 +81,6 @@ impl DawApp {
         if self.handle_track_delete_key(event, delete_pending) {
             return;
         }
-        if self.mode == VimMode::Normal && self.controller_key_down(key, event.is_held) {
-            return;
-        }
         // GPUI no genera KeyDown por cada carácter pegado: leer explícitamente el clipboard.
         if self.mode == VimMode::Command
             && event.keystroke.modifiers.control
@@ -85,6 +89,13 @@ impl DawApp {
             if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
                 self.command_buffer
                     .push_str(&text.replace(['\n', '\r'], " "));
+                self.cmd_selected = None;
+            }
+            return;
+        }
+        if !self.vim_enabled {
+            if matches!(key, "left" | "right" | "up" | "down" | "home" | "insert" | "enter" | "escape" | "tab" | "+" | "=" | "-" | "[" | "]") {
+                self.handle_normal_key(key);
             }
             return;
         }
@@ -95,7 +106,9 @@ impl DawApp {
                     self.set_mode(VimMode::Normal);
                 }
             }
-            VimMode::Command => self.handle_command_key(key, window, cx),
+            VimMode::Command => {
+                self.handle_command_key(key, event.keystroke.modifiers.shift, window, cx)
+            }
         }
     }
     pub(super) fn handle_key_up(&mut self, event: &KeyUpEvent) {
@@ -127,8 +140,7 @@ impl DawApp {
             "i" => self.set_mode(VimMode::Insert),
             ":" => self.set_mode(VimMode::Command),
             "tab" => self.set_center_view(match self.center_view {
-                CenterView::Arrangement => CenterView::Instrument,
-                CenterView::Instrument => CenterView::Session,
+                CenterView::Arrangement => CenterView::Session,
                 CenterView::Session => CenterView::Mixer,
                 CenterView::Mixer => CenterView::Arrangement,
             }),
@@ -178,7 +190,7 @@ impl DawApp {
             "1" => self.set_center_view(CenterView::Arrangement),
             "2" => self.set_center_view(CenterView::Session),
             "3" => self.set_center_view(CenterView::Mixer),
-            "4" => self.set_center_view(CenterView::Instrument),
+            "4" => self.open_selected_instrument(),
             "R" => {
                 self.reload();
                 self.status_message = "Design reloaded".into();
@@ -186,34 +198,109 @@ impl DawApp {
             _ => {}
         }
     }
-    fn handle_command_key(&mut self, key: &str, window: &mut Window, cx: &mut Context<Self>) {
+    fn handle_command_key(
+        &mut self,
+        key: &str,
+        shift: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         match key {
             "escape" => self.set_mode(VimMode::Normal),
+            "up" => self.move_command_selection(true),
+            "down" => self.move_command_selection(false),
+            "tab" if shift => self.move_command_selection(true),
+            "tab" => self.complete_command(),
             "enter" => {
-                let cmd = self.command_buffer.clone();
-                let command = cmd.trim().to_ascii_lowercase();
-                if matches!(command.as_str(), "clip.rename" | "clip.gain" | "clip.color") {
-                    self.open_clip_catalog_page(
-                        &command,
-                        window.mouse_position(),
-                        window.viewport_size(),
-                    );
-                    cx.notify();
-                } else {
-                    self.execute_command(&cmd);
+                let cmd = self
+                    .cmd_selected
+                    .and_then(|index| {
+                        self.cmd_completions()
+                            .get(index)
+                            .map(|(command, _)| (*command).to_string())
+                    })
+                    .unwrap_or_else(|| self.command_buffer.clone());
+                if cmd.trim().is_empty() {
+                    self.status_message = "Escribe un comando o elige una sugerencia".into();
+                    return;
                 }
+                self.submit_command_line(&cmd, window, cx);
                 self.set_mode(VimMode::Normal);
             }
             "backspace" => {
                 self.command_buffer.pop();
+                self.cmd_selected = None;
             }
-            _ if key.len() == 1 => self.command_buffer.push_str(key),
+            "space" => {
+                self.command_buffer.push(' ');
+                self.cmd_selected = None;
+            }
+            _ if key.chars().count() == 1 => {
+                self.command_buffer.push_str(key);
+                self.cmd_selected = None;
+            }
             _ => {}
+        }
+    }
+    pub(in crate::ui) fn submit_command_line(
+        &mut self,
+        cmd: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let command = cmd.trim().to_ascii_lowercase();
+        if matches!(command.as_str(), "clip.rename" | "clip.gain" | "clip.color") {
+            self.open_clip_catalog_page(&command, window.mouse_position(), window.viewport_size());
+            cx.notify();
+            return;
+        }
+        let action_command = match command.as_str() {
+            "tempo" => "tempo.set",
+            "meter" => "meter.set",
+            other => other,
+        };
+        if let Some(entry) = elevate::catalog::entries().iter().find(|entry| {
+                matches!(entry.action, elevate::catalog::CatalogAction::Invoke(value) if value == action_command)
+            })
+            && let Some(spec) = entry.action.parameters()
+        {
+            self.open_action_form(entry, spec, window, cx);
+            return;
+        }
+        self.execute_command_with_context(cmd, window, cx);
+    }
+    pub(super) fn execute_command_with_context(
+        &mut self,
+        cmd: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if matches!(cmd.trim().to_ascii_lowercase().as_str(), "note" | "note.edit") {
+            self.open_general_note(window, cx);
+            return;
+        }
+        if cmd.trim() == "view.maximize" {
+            self.toggle_workspace_focus(window, cx);
+            return;
+        }
+        if !self.execute_audio_command(cmd.trim(), cx)
+            && !self.execute_vst_command(cmd.trim(), cx)
+            && !self.execute_roll_command(cmd.trim(), window, cx)
+            && !self.execute_script_command(cmd.trim(), cx)
+        {
+            self.execute_command(cmd);
         }
     }
     pub(super) fn execute_command(&mut self, cmd: &str) {
         // El parser de export conserva mayúsculas y espacios entrecomillados en nombres/rutas.
         let cmd = cmd.trim();
+        if matches!(cmd, "vim.toggle" | "vim toggle") { self.toggle_vim(); return; }
+        if self.execute_roll_grid_command(cmd) {
+            return;
+        }
+        if self.execute_timing_command(cmd) {
+            return;
+        }
         if self.handle_fx_command(cmd) {
             return;
         }
@@ -309,7 +396,7 @@ impl DawApp {
             "capture" | "dump" => self.capture_midi_to_track(),
             "materialize" => self.materialize_midi_selection(),
             "arrangement" | "arr" => self.set_center_view(CenterView::Arrangement),
-            "piano" | "instrument" | "inst" => self.set_center_view(CenterView::Instrument),
+            "piano" | "instrument" | "inst" => self.open_selected_instrument(),
             "session" | "pat" | "pattern" => self.set_center_view(CenterView::Session),
             "mixer" | "mix" => self.set_center_view(CenterView::Mixer),
             "midi" | "kbd" => self.toggle_controller(),

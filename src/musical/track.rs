@@ -12,6 +12,7 @@ pub const TRACK_COUNT: usize = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TrackId(pub u32);
+static NEXT_TRACK_ID: AtomicU32 = AtomicU32::new(9);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrackKind {
@@ -57,9 +58,8 @@ pub enum TrackDevice {
 
 impl Track {
     pub fn new(name: impl Into<String>, kind: TrackKind) -> Self {
-        static NEXT: AtomicU32 = AtomicU32::new(9);
         Self {
-            id: TrackId(NEXT.fetch_add(1, Ordering::Relaxed)),
+            id: TrackId(NEXT_TRACK_ID.fetch_add(1, Ordering::Relaxed)),
             name: Cow::Owned(name.into()),
             kind,
             instrument: None,
@@ -68,6 +68,12 @@ impl Track {
             parent: None,
             chain: FxChain::new(),
         }
+    }
+    /// Evita colisiones al volver a insertar pistas después de abrir un proyecto.
+    pub fn reserve_restored_id(id: TrackId) -> Result<(), String> {
+        let next = id.0.checked_add(1).ok_or("Se agotaron los IDs de pista")?;
+        NEXT_TRACK_ID.fetch_max(next, Ordering::Relaxed);
+        Ok(())
     }
     pub fn accepts_clips(&self) -> bool {
         self.kind != TrackKind::Group

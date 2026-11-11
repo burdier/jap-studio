@@ -1,0 +1,70 @@
+app-id: io.github.YIAN6557.Elevate
+runtime: org.freedesktop.Platform
+runtime-version: '26.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+
+command: daw-gpui
+
+finish-args:
+  # Gráficos y Ventanas (GPUI / Wayland / Vulkan)
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  - --device=dri
+
+  # Audio (PipeWire / PulseAudio)
+  - --socket=pulseaudio
+  - --filesystem=xdg-run/pipewire-0
+
+  # Acceso a archivos del usuario para samples, soundfonts y proyectos
+  - --filesystem=xdg-music:ro
+  - --filesystem=xdg-documents:rw
+  - --filesystem=home:ro
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/daw-gpui/cargo
+    RUST_BACKTRACE: '1'
+
+modules:
+  # Módulo 1: Motor C++ Sampler (sfizz 1.2.3)
+  - name: sfizz
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DSFIZZ_JACK=OFF
+      - -DSFIZZ_RENDER=OFF
+      - -DSFIZZ_TESTS=OFF
+      - -DSFIZZ_SHARED=ON
+      - -DSFIZZ_GIT_SUBMODULE_CHECK=OFF
+    sources:
+      - type: git
+        url: https://github.com/sfztools/sfizz.git
+        tag: 1.2.3
+        commit: 4e70dc0bef53b41f2853ed46e26f5911114c92d0
+
+  # Módulo 2: Elevate DAW (Rust + GPUI)
+  - name: daw-gpui
+    buildsystem: simple
+    build-commands:
+      # Compilación offline con los crates pre-descargados por Flatpak
+      - cargo build --release --locked --bin daw-gpui
+      
+      # Instalación del binario
+      - install -Dm755 target/release/daw-gpui /app/bin/daw-gpui
+      
+      # Instalación de metadatos del escritorio e iconos
+      - install -Dm644 packaging/flatpak/io.github.YIAN6557.Elevate.desktop /app/share/applications/io.github.YIAN6557.Elevate.desktop
+      - install -Dm644 packaging/flatpak/io.github.YIAN6557.Elevate.metainfo.xml /app/share/metainfo/io.github.YIAN6557.Elevate.metainfo.xml
+      - install -Dm644 packaging/flatpak/io.github.YIAN6557.Elevate.svg /app/share/icons/hicolor/scalable/apps/io.github.YIAN6557.Elevate.svg
+      
+      # Copia de assets internos (temas, scripts, soundfonts por defecto)
+      - mkdir -p /app/share/daw-gpui
+      - cp -r assets /app/share/daw-gpui/
+    sources:
+      - type: dir
+        path: ../..
+      - cargo-sources.json

@@ -10,6 +10,54 @@
 > Esta filosofía guía las próximas implementaciones. Ahora estamos organizando la arquitectura;
 > el registro de plugins, el sistema común de acciones/eventos y los mapeos aún no están implementados.
 
+## Interfaz de audio
+
+Pianoteq mediante Wine/yabridge: `[+]` → Instrumentos → Pianoteq. Carga y reproducción
+MIDI integradas; inicia con `bash scripts/run.sh` o el acceso del escritorio.
+El catálogo también identifica efectos VST3 genéricos y los inserta en Track FX
+con su editor original (`fx.vst3.load`). Cathar Restore validado mediante yabridge.
+[Alcance del host VST3 y límites actuales](docs/VST3.md).
+
+`:list device` abre Configuración → Audio con las interfaces detectadas.
+`:use device` abre el selector; `:use device 2` o `:use device 'Nombre exacto'`
+aplica y guarda la salida. Para entrada: `:use device input 2`.
+Los números corresponden a la última lista; se persiste el ID, no el número.
+`:use device default` vuelve a la salida predeterminada.
+
+El panel permite elegir driver, canales, sample rate y buffer, con las capacidades
+reportadas por CPAL. En Linux se usa **PipeWire** cuando no hay una selección previa.
+En **Configuración → Audio**, elige **PipeWire** (o «Compartir audio con Linux» si
+estabas en ALSA), selecciona **SSL 2+ Mk II Line Outputs 3 + 4** y pulsa
+**Aplicar y guardar**. Linux puede seguir usando **Line Outputs 1/L + 2/R**: Hay
+no cambia la salida predeterminada del sistema. El selector **Salida estéreo** muestra
+las rutas hermanas con sus nombres reales; cada ruta estéreo usa dos canales locales.
+ALSA directo sigue disponible y puede requerir acceso exclusivo a toda la interfaz.
+**Aplicar y guardar** detiene la reproducción y actualiza piano,
+sampler, percusión y clips. El tono de prueba dura dos segundos a −24 dBFS; el medidor
+solo comprueba la entrada, sin grabar ni monitorizarla. Para cancelar una prueba,
+pulsa de nuevo el botón o cierra el panel. Las preferencias de exportación son separadas.
+
+Para compilar el backend nativo en Fedora/gpui-dev: `sudo dnf install pipewire-devel clang-devel`.
+CPAL activa su feature `pipewire`; no se necesita modificar la configuración de ALSA
+ni la salida de otras aplicaciones.
+
+## Espacio de trabajo y teclado
+
+Pulsa **f en Normal** sobre el panel activo para ampliarlo; repite **f** o pulsa
+**Esc** para restaurar la distribución acoplada. También existe el botón **Ampliar**,
+**F11** y la acción `view.maximize`. En ventanas GPUI separadas se maximiza la ventana.
+
+En **Configuración → Atajos → Navegación Vim** puedes desactivarlo y reactivarlo.
+La misma operación está en `[+]` como **Vim · activar/desactivar** (`vim.toggle`).
+La preferencia se guarda; MIDI, Espacio, flechas, Delete y edición con ratón se mantienen.
+
+## Spectrum en la cadena FX
+
+Busca **Hay Spectrum** en `[+]` o usa `:fx.spectrum`. Arrastra sus nodos para colocar
+`Spectrum → VST3 → Spectrum`; los inspectores bajo el árbol permiten comparar señal.
+`< >` cambia entre espectro, onda, espectrogramas log/lineal y nivel estéreo. El piano
+comparte el mismo componente. [Alcance y acciones](docs/VISUAL_MODULATION.md).
+
 ## Explorador de bibliotecas
 
 El explorador de bibliotecas se abre con **e en modo Normal**, a la izquierda del Arrangement.
@@ -45,6 +93,15 @@ catálogo todavía necesitan su procesador/host; no se simulan. El Utility de sa
 **:utility**, independiente del árbol. El proyecto aún no guarda estas cadenas al reiniciar.
 
 ## Principios que guían el desarrollo
+
+Las herramientas Lua pueden transformar notas MIDI desde `[+]` o `:midi.script`.
+El ejemplo `:midi.script.accent` acentúa la selección. Lua corre fuera del hilo de
+audio y Rust valida cada resultado. [API y límites](docs/LUA.md).
+
+Al escribir `:` aparecen sugerencias de comandos y acciones. Usa `↑/↓` para elegir,
+Tab o clic para completar, Enter para ejecutar y Esc para cancelar. El texto con
+argumentos se ejecuta tal como se escribió; los comandos sin argumentos que requieren
+datos abren el formulario existente.
 
 1. **Plugins desde la base.** Un plugin aporta capacidades al DAW: primitivos, componentes,
    parámetros y acciones. Los plugins propios deben usar el mismo contrato que las extensiones.
@@ -139,6 +196,9 @@ Prototipo de DAW en Rust + GPUI. [Visión del proyecto](SPEC.md).
 `src/instruments/` el estado de ejecución de los instrumentos, `src/audio/` los adaptadores
 y `src/musical/` el núcleo headless exportado por Elevate. `src/catalog.rs` es el índice
 headless de instrumentos, primitivos, componentes y acciones.
+`src/project.rs` inicia la gestión de proyecto con un documento Loro headless para
+identidad, orden, datos básicos de pistas, cadenas FX y clips MIDI. Aún no incluye audio;
+la UI no ofrece abrir/guardar un proyecto incompleto. Véase `docs/ARCHITECTURE.md`.
 La vista **2 / Pattern** edita notas y velocity y las reproduce en loop con percusión
 sintetizada; sus samples reales siguen pendientes. `examples/sequencer.rs` muestra la
 programación de eventos offline.
@@ -180,8 +240,14 @@ Los headers y carriles comparten el desplazamiento vertical de GPUI; la regla pe
   inicial; alturas, colores y tipografía de la regla también proceden del perfil.
 - **Configuración → Apariencia → Contraste de selección** ajusta y guarda la intensidad.
   En el perfil: `SELECTION_CONTRAST=0.18` (rango `0.0–0.4`; mayor valor, mayor contraste).
+- **Ableton Live Dark** está en Configuración → Apariencia. Su perfil completo está en
+  [`assets/themes/ableton-live-dark.profile`](assets/themes/ableton-live-dark.profile): la
+  paleta y los tamaños que la UI reconoce se aplican al elegir el tema y se guardan en
+  `~/.jaybu.profile`. Algunas claves tipográficas y de gaps del archivo siguen reservadas.
 
-Esta vista usa pulsos en **4/4 a 120 BPM**. El click es libre, sin snapping;
+El proyecto comienza en **4/4 a 120 BPM**. Haz clic en el BPM o compás del transporte
+para editarlos; también puedes usar `:tempo 95` y `:meter 6/8` (o abrir sus formularios
+con `:tempo` y `:meter`). El click es libre, sin snapping;
 el grid adapta su densidad al zoom. El cursor azul es de edición y el verde muestra la posición
 enviada al dispositivo durante la reproducción (sin compensación de latencia de salida).
 El efecto visual del playhead usa `particula-rs` y `fastrand`, aislados en
@@ -264,7 +330,8 @@ Pattern (ticks) → PreparedPattern (frames, offsets)
 ```
 
 Esta audición usa síntesis provisional para validar el scheduler; todavía no carga
-samples ni permite cambiar el BPM desde la interfaz. Los detalles y límites están en
+samples. El BPM se edita desde el transporte y se aplica al volver a reproducir;
+los detalles y límites están en
 [`docs/PROTOTYPE.md`](docs/PROTOTYPE.md).
 
 ## Buscador de instrumentos, componentes y acciones
@@ -277,7 +344,7 @@ El catálogo headless vive en [`src/catalog.rs`](src/catalog.rs) y distingue cua
 categorías: instrumento, primitivo, componente y acción. El overlay y su estado están en
 `ui/views/palette.rs` y `ui/palette.rs`; las acciones se traducen a los comandos existentes.
 
-- **Upright Piano KW** asigna el piano a la pista seleccionada y abre la vista Instrument;
+- **Upright Piano KW** asigna el piano a la pista seleccionada y lo muestra en Track FX;
   comparte el catálogo con Hay Sampler. La cabecera muestra `Upright Piano KW` en esa pista.
 - **Volume** y **Componente serial** aparecen como metadatos: todavía no se instancian
   desde el buscador ni se asignan a una pista.
@@ -308,17 +375,34 @@ Slice y mezcla multipista live siguen pendientes. [Uso y construcción nativa](d
 
 ## Primer instrumento: piano
 
-La vista **INSTRUMENT** (tecla **4** o **Tab**) contiene un piano de dos octavas.
-Usa **RustySynth 1.3.8** como motor SoundFont y el banco **Upright Piano KW** de FreePats,
+El filtro del piano muestra un panel `<` `>` que alterna espectro de salida con RealFFT
+y visualizador de forma de onda. La guía de frecuencia de corte aparece en Espectro.
+El panel es reutilizable para futuros dispositivos y cabeceras de pista.
+
+El piano aparece como instrumento de la pista en Track FX. Al seleccionarlo se abre su
+editor bajo el Arrangement; la tecla **4** abre ese editor para la pista activa.
+Usa **FluidSynth** cuando está disponible, con **RustySynth 1.3.8** como respaldo,
+y el banco **Upright Piano KW** de FreePats,
 incluido en [`assets/soundfonts/UprightPianoKW-20220221.sf2`](assets/soundfonts/) bajo **CC0**.
 
 **Créditos:** *Upright Piano KW* es un Kawai vertical grabado en enero de 2017 por Gonzalo y Roberto
 (proyecto [FreePats](http://freepats.zenvoid.org/Piano/acoustic-grand-piano.html#UprightKW)),
 con la colaboración de Inma Martínez de Miguel, que cedió su piano. Publicado bajo CC0.
 RustySynth es solo el motor: no incluye instrumentos propios.
-El SoundFont se precarga en segundo plano; se puede sustituir con la variable `HAY_SOUNDFONT`.
+El banco y el motor se preparan en segundo plano **al abrir el editor o solicitar audio**;
+el arranque no carga SoundFonts. `HAY_SOUNDFONT` añade un banco al descubrimiento.
 
-La vista ya no conoce RustySynth ni CPAL: pinta el descriptor del catálogo y envía notas a
+El panel sigue la línea visual de **Hay Sampler**: fuente/preset, afinación y voces,
+filtro, efectos y salida, con perillas compactas y teclado. **Bancos** y **Créditos**
+despliegan información adicional. Arrastra o usa la rueda; **Shift** permite precisión
+y **doble clic** restablece valores. Los controles conservan MIDI Learn.
+
+El bloque **Filtro estéreo** ofrece **LP 12 / HP 12 / BP 12**, frecuencia y resonancia;
+su botón ON/OFF permite comparar. Procesa la salida del instrumento, también al exportar.
+Durante la primera preparación aparece «Preparando SoundFont…»: solo se disparan las notas
+que sigan pulsadas al terminar; Stop cancela un Play pendiente.
+
+El editor no conoce RustySynth ni CPAL: pinta el descriptor del catálogo y envía notas a
 [`src/instruments/piano.rs`](src/instruments/piano.rs), que posee el reproductor, las notas
 sostenidas y la nota del ratón. La primera nota abre el dispositivo.
 

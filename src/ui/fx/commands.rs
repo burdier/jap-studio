@@ -43,6 +43,28 @@ impl DawApp {
                 .ok_or_else(|| "Selecciona un efecto o contenedor".to_string())
         };
         let edit = match command {
+            "fx.spectrum" => {
+                return self.insert_fx(target, elevate::devices::spectrum::ID);
+            }
+            "fx.spectrum.next" | "fx.spectrum.previous" | "fx.spectrum.reset" => {
+                let id = selected()?;
+                if !self
+                    .fx_node(target)
+                    .is_some_and(super::analyzers::is_analyzer)
+                {
+                    return Err("Selecciona un nodo Hay Spectrum".into());
+                }
+                if command == "fx.spectrum.reset" {
+                    self.fx.analyzers.reset(id);
+                } else if let Some(view) = self.fx.analyzers.views.get_mut(&id) {
+                    view.mode = if command == "fx.spectrum.next" {
+                        view.mode.next()
+                    } else {
+                        view.mode.previous()
+                    };
+                }
+                return Ok(());
+            }
             "fx.add" => {
                 self.open_fx_palette(target);
                 return Ok(());
@@ -91,8 +113,12 @@ impl DawApp {
             }
             "fx.parameters" => {
                 let node = self.fx_node(target).ok_or("El efecto ya no existe")?;
-                if node.children().is_some() {
-                    return Err("Selecciona un efecto para editar parámetros".into());
+                if !matches!(&node.kind, FxKind::Effect { plugin_id: elevate::musical::track::TrackDevice::Hay { catalog_id }, .. } if catalog_id == "hay.utility")
+                {
+                    return Err(
+                        "La ganancia es un parámetro de Hay Utility; abre el editor de este efecto"
+                            .into(),
+                    );
                 }
                 let value: f32 = parts
                     .get(1)
@@ -126,6 +152,27 @@ impl DawApp {
         if command == "fx.parameters" && node.children().is_some() {
             self.status_message = "Selecciona un efecto para editar parámetros".into();
             return;
+        }
+        if command == "fx.parameters" {
+            if super::analyzers::is_analyzer(node) {
+                self.show_fx();
+                self.status_message = "Spectrum · cambia vista con < > · arrastra el nodo para cambiar el punto de análisis".into();
+                return;
+            }
+            if let Some(effect) = self.vst_effects.instances.get(&node.id) {
+                effect.editor.open();
+                return;
+            }
+            if matches!(
+                node.kind,
+                FxKind::Effect {
+                    plugin_id: elevate::musical::track::TrackDevice::Vst3 { .. },
+                    ..
+                }
+            ) {
+                self.status_message = "VST3 sin instancia: vuelve a cargarlo desde [+]".into();
+                return;
+            }
         }
         let id = if command == "fx.rename" {
             "action.fx.rename"

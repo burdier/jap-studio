@@ -1,5 +1,5 @@
 //! Plan inmutable preparado fuera del callback; consulta sin asignaciones por bloque.
-//! Primera etapa: una pasada a tempo constante. Loop/tempo map requieren segmentación futura.
+//! Una vuelta a tempo constante; el reproductor segmenta bloques en los límites del loop.
 use super::{
     model::{InstrumentId, NoteId, Pattern},
     time::{FrameWindow, Tick, TimeBase, TimeError},
@@ -8,7 +8,13 @@ use super::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum EventKind {
     NoteOff,
-    NoteOn { velocity: u8 },
+    Control {
+        lane: super::automation::ControlLane,
+        value: i16,
+    },
+    NoteOn {
+        velocity: u8,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,6 +24,7 @@ pub struct ScheduledEvent {
     pub instrument: InstrumentId,
     pub pitch: u8,
     pub kind: EventKind,
+    pub expression: super::note_expression::NoteExpression,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -48,6 +55,7 @@ impl PreparedPattern {
                 note: note.id,
                 instrument: note.instrument,
                 pitch: note.pitch,
+                expression: note.expression,
                 kind: EventKind::NoteOn {
                     velocity: note.velocity,
                 },
@@ -64,7 +72,23 @@ impl PreparedPattern {
                 },
             });
         }
-        // Off antes de On en un retrigger. IDs estabilizan notas simultáneas.
+        for point in pattern.controls().points() {
+            events.push(PreparedEvent {
+                frame: time_base.frame_at(point.at)?,
+                event: ScheduledEvent {
+                    sample_offset: 0,
+                    note: NoteId(0),
+                    instrument: InstrumentId(0),
+                    pitch: 0,
+                    expression: Default::default(),
+                    kind: EventKind::Control {
+                        lane: point.lane,
+                        value: point.value,
+                    },
+                },
+            });
+        }
+        // Off antes de Control y On en un retrigger. IDs estabilizan notas simultáneas.
         events.sort_by_key(|item| (item.frame, item.event.kind, item.event.note));
         Ok(Self {
             events,

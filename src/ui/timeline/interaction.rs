@@ -1,11 +1,13 @@
 //! Picking, arrastre y scroll. Mismo viewport que utiliza paint.rs.
-use super::{DragKind, Timeline, TimelineArea};
+use super::{ClipHover, DragKind, Timeline, TimelineArea, clip_frame::ClipEdge, trim::EDGE_PX};
 use crate::ui::navigation::{Navigation, pinch_factor, scroll_navigation};
+use crate::ui::time_grid::TimeSpan;
 use gpui::{PinchEvent, Pixels, Point, ScrollEvent, px};
 
 impl Timeline {
     pub(crate) fn begin_clip_drag(&mut self, position: Point<Pixels>, track_height: f32) {
         self.clip_drag = None;
+        self.slip_drag = None;
         let bounds = self.lanes_bounds.get();
         if !bounds.contains(&position) {
             return;
@@ -34,7 +36,7 @@ impl Timeline {
         if let Some(clip) = &self.clip
             && track == clip.track
             && beat >= clip.start_beat
-            && beat < clip.end_beat()
+            && beat < clip.end_beat(self.tempo.bpm())
         {
             if !clip.props.locked {
                 self.clip_drag = Some((position, beat - clip.start_beat, false, DragKind::Audio));
@@ -48,7 +50,11 @@ impl Timeline {
         tracks: &[elevate::musical::track::Track],
     ) -> Option<usize> {
         let bounds = self.lanes_bounds.get();
-        if height > 0.0 && !tracks.is_empty() && self.trim_drag.is_none() {
+        if height > 0.0
+            && !tracks.is_empty()
+            && self.trim_drag.is_none()
+            && self.slip_drag.is_none()
+        {
             let index =
                 self.drag_track_at_y(f32::from(position.y - bounds.top()), height, tracks.len())?;
             if !tracks[index].accepts_clips() {
@@ -63,6 +69,9 @@ impl Timeline {
         track_height: f32,
         track_count: usize,
     ) -> Option<usize> {
+        if self.slip_drag.is_some() {
+            return self.apply_slip(position);
+        }
         if self.trim_drag.is_some() {
             return self.apply_trim(position);
         }
@@ -86,14 +95,43 @@ impl Timeline {
         )?;
         match kind {
             DragKind::Audio => {
+                let bpm = self.tempo.bpm();
                 let clip = self.clip.as_mut()?;
-                clip.start_beat = (beat - grab_offset).max(0.0);
+                let span = TimeSpan {
+                    start: clip.start_beat,
+                    end: clip.end_beat(bpm),
+                };
+                clip.start_beat = self
+                    .viewport
+                    .grid()
+                    .move_span(
+                        span,
+                        beat - grab_offset - span.start,
+                        0.0,
+                        f64::INFINITY,
+                        0.0,
+                    )
+                    .start;
                 clip.track = track;
                 self.edit_beat = clip.start_beat;
             }
             DragKind::Midi => {
                 let clip = self.midi_clip.as_mut()?;
-                clip.start_beat = (beat - grab_offset).max(0.0);
+                let span = TimeSpan {
+                    start: clip.start_beat,
+                    end: clip.end_beat(),
+                };
+                clip.start_beat = self
+                    .viewport
+                    .grid()
+                    .move_span(
+                        span,
+                        beat - grab_offset - span.start,
+                        0.0,
+                        f64::INFINITY,
+                        0.0,
+                    )
+                    .start;
                 clip.track = track;
                 self.edit_beat = clip.start_beat;
             }
@@ -103,6 +141,7 @@ impl Timeline {
     pub(crate) fn end_clip_drag(&mut self) {
         self.clip_drag = None;
         self.trim_drag = None;
+        self.slip_drag = None;
         self.hover_dragging = false;
     }
     pub(crate) fn hover_track(&self) -> Option<usize> {
@@ -129,10 +168,90 @@ impl Timeline {
             None
         };
         let next_drag = next_track.is_some() && (dragging || self.clip_drag.is_some());
-        let changed = self.hover_track != next_track || self.hover_dragging != next_drag;
+        let next_clip = self.clip_hover_at(position, track_height);
+        let changed = self.hover_track != next_track
+            || self.hover_dragging != next_drag
+            || self.hover_clip != next_clip;
         self.hover_track = next_track;
         self.hover_dragging = next_drag;
+        self.hover_clip = next_clip;
         changed
+    }
+
+    fn clip_hover_at(&self, position: Point<Pixels>, track_height: f32) -> Option<ClipHover> {
+        let bounds = self.lanes_bounds.get();
+        if !bounds.contains(&position) {
+            return None;
+        }
+        let track = self
+            .row_at_y(f32::from(position.y - bounds.top()), track_height)?
+            .track;
+        let beat = self
+            .viewport
+            .beat_at(f64::from(f32::from(position.x - bounds.left())));
+        let hit = |kind, clip_track, start, end, locked| {
+            if clip_track != track || beat < start || beat >= end {
+                return None;
+            }
+            let edge_beats = self.viewport.grid().edge_beats(EDGE_PX, end - start);
+            let edge = if locked {
+                None
+            } else if beat - start <= edge_beats {
+                Some(ClipEdge::Left)
+            } else if end - beat <= edge_beats {
+                Some(ClipEdge::Right)
+            } else {
+                None
+            };
+            Some(ClipHover {
+                kind,
+                track,
+                start_beat: start,
+                edge,
+            })
+        };
+        if let Some(clip) = self.midi_clip.as_ref()
+            && let Some(hover) = hit(
+                DragKind::Midi,
+                clip.track,
+                clip.start_beat,
+                clip.end_beat(),
+                clip.props.locked,
+            )
+        {
+            return Some(hover);
+        }
+        for clip in self.other_midi_clips.iter().rev() {
+            if let Some(hover) = hit(
+                DragKind::Midi,
+                clip.track,
+                clip.start_beat,
+                clip.end_beat(),
+                clip.props.locked,
+            ) {
+                return Some(hover);
+            }
+        }
+        if let Some(clip) = self.clip.as_ref()
+            && let Some(hover) = hit(
+                DragKind::Audio,
+                clip.track,
+                clip.start_beat,
+                clip.end_beat(self.tempo.bpm()),
+                clip.props.locked,
+            )
+        {
+            return Some(hover);
+        }
+        self.other_audio_clips.iter().rev().find_map(|clip| {
+            hit(
+                DragKind::Audio,
+                clip.track,
+                clip.start_beat,
+                clip.end_beat(self.tempo.bpm()),
+                clip.props.locked,
+            )
+        })
     }
     pub(crate) fn place_cursor(
         &mut self,

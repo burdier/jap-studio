@@ -4,7 +4,7 @@ use crate::ui::{
     DawApp,
     navigation::{Navigation, pinch_factor, scroll_navigation},
 };
-use gpui::{PinchEvent, Pixels, Point, ScrollEvent, px};
+use gpui::{Context, PinchEvent, Pixels, Point, ScrollEvent, px};
 
 #[derive(Clone, Copy)]
 pub(in crate::ui) struct RollViewport {
@@ -26,13 +26,11 @@ impl Default for RollViewport {
 }
 
 impl RollViewport {
-    /// Super controla la altura; Alt controla el ancho. El resto conserva la
+    /// Super controla la altura; Ctrl controla el ancho. El resto conserva la
     /// navegación común, incluidos Ctrl+rueda y el desplazamiento con dos dedos.
     pub fn scroll(&mut self, grid: Grid, beats: f64, event: &ScrollEvent) {
         if event.modifiers.platform {
             self.zoom_vertical_at(grid, event.position, axis_zoom_factor(event, -1.0));
-        } else if event.modifiers.alt {
-            self.zoom_at(grid, event.position, beats, axis_zoom_factor(event, 1.0));
         } else {
             match scroll_navigation(event) {
                 Navigation::Zoom(factor) => self.zoom_at(grid, event.position, beats, factor),
@@ -103,7 +101,54 @@ impl RollViewport {
 }
 
 impl DawApp {
-    pub(in crate::ui) fn scroll_piano_roll(&mut self, event: &ScrollEvent) {
+    /// Sigue la posición leída del motor; nunca programa notas ni avanza el reloj.
+    pub(in crate::ui) fn follow_roll_playhead(&mut self) {
+        if !self.piano_roll.open || !self.piano_roll.follow || self.piano_roll.drag.is_some() {
+            return;
+        }
+        let Some(clip) = self.timeline.midi_clip.as_ref() else {
+            return;
+        };
+        if !self.instrument.clip_playing() && !self.sampler.clip_playing() {
+            return;
+        }
+        let Some(beat) = self
+            .timeline
+            .visual_playhead()
+            .map(|beat| beat - clip.start_beat + clip.trim_start)
+        else {
+            return;
+        };
+        let beats = clip.pattern_beats();
+        let viewport = &mut self.piano_roll.viewport;
+        let visible = beats / viewport.zoom;
+        if beat < viewport.first_beat || beat >= viewport.first_beat + visible * 0.85 {
+            viewport.first_beat = (beat - visible * 0.15).clamp(0.0, (beats - visible).max(0.0));
+        }
+    }
+
+    pub(in crate::ui) fn scroll_piano_roll(&mut self, event: &ScrollEvent, cx: &mut Context<Self>) {
+        if self.action_form.is_some() || self.mode == crate::ui::VimMode::Command {
+            return;
+        }
+        if event.modifiers.alt && !event.modifiers.platform && !event.modifiers.control {
+            let delta = event.delta.pixel_delta(px(24.0));
+            let amount = if delta.y.abs() >= delta.x.abs() {
+                delta.y
+            } else {
+                delta.x
+            };
+            if self
+                .piano_roll
+                .split_gesture
+                .wheel(f32::from(amount), event.touch_phase)
+                && self.script_task.is_none()
+            {
+                self.execute_script_command("midi.subdivide", cx);
+            }
+            return;
+        }
+        self.piano_roll.split_gesture = Default::default();
         let Some(clip) = &self.timeline.midi_clip else {
             return;
         };
@@ -113,7 +158,26 @@ impl DawApp {
             .scroll(grid, clip.pattern_beats(), event);
     }
 
-    pub(in crate::ui) fn pinch_piano_roll(&mut self, event: &PinchEvent) {
+    pub(in crate::ui) fn pinch_piano_roll(&mut self, event: &PinchEvent, cx: &mut Context<Self>) {
+        if self.action_form.is_some() || self.mode == crate::ui::VimMode::Command {
+            return;
+        }
+        if event.modifiers.shift
+            && !event.modifiers.control
+            && !event.modifiers.platform
+            && !event.modifiers.alt
+        {
+            if self
+                .piano_roll
+                .split_gesture
+                .pinch(event.delta, event.phase)
+                && self.script_task.is_none()
+            {
+                self.execute_script_command("midi.subdivide", cx);
+            }
+            return;
+        }
+        self.piano_roll.split_gesture = Default::default();
         if let Some(clip) = &self.timeline.midi_clip
             && let Some(factor) = pinch_factor(event)
         {

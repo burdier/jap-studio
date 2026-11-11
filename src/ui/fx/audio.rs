@@ -5,16 +5,22 @@ impl DawApp {
         let Some(track) = self.tracks.get(index) else {
             return 1.0;
         };
-        let own = elevate::devices::fx_gain::compile(&track.chain).unwrap_or(1.0);
+        // Una ruta VST procesa toda la cadena, incluidas las Utility y ramas bypass.
+        let own = if crate::audio::effects::contains_vst(&track.chain) {
+            1.0
+        } else {
+            elevate::devices::fx_gain::compile(&track.chain).unwrap_or(1.0)
+        };
         let parent = track
             .parent
             .and_then(|id| self.tracks.iter().find(|track| track.id == id))
             .map_or(1.0, |track| {
-                elevate::devices::fx_gain::compile(&track.chain).unwrap_or(1.0)
+                elevate::devices::fx_gain::compile(&track.chain).unwrap_or(0.0)
             });
         own * parent
     }
     pub(in crate::ui) fn publish_track_fx(&mut self) {
+        self.mix_vst();
         if let Some(track) = self.sampler_track() {
             self.sampler.mix(
                 self.sampler_gain(track),

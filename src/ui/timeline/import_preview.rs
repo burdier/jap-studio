@@ -65,6 +65,7 @@ impl ImportPreview {
         viewport: Viewport,
         bounds: Bounds<Pixels>,
         layout: &crate::ui::track_layout::TrackLayout,
+        beats_per_bar: f64,
         design: &DesignSystem,
         window: &mut Window,
         cx: &mut App,
@@ -91,7 +92,7 @@ impl ImportPreview {
         let rect = Bounds::new(
             point(x, y),
             size(
-                px((viewport.pixels_per_beat * 4.0) as f32),
+                px((viewport.pixels_per_beat * beats_per_bar) as f32),
                 px((row.height - 8.0).max(1.0)),
             ),
         );

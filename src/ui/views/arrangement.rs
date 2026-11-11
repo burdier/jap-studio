@@ -3,15 +3,44 @@ use super::super::{
     DawApp,
     components::splitter::{SplitDrag, vertical_splitter},
     timeline::TimelineArea,
+    track_drag::TrackReorderVisual,
 };
-use gpui::{Context, IntoElement, MouseButton, MouseDownEvent, div, prelude::*, px, rgb};
+use gpui::{Context, IntoElement, MouseButton, MouseDownEvent, div, prelude::*, px, rgb, rgba};
 
 impl DawApp {
     pub(in crate::ui) fn render_arrangement(&self, cx: &mut Context<Self>) -> impl IntoElement {
         if self.tracks.is_empty() {
             return self.render_empty_arrangement(cx).into_any_element();
         }
-        let layout = self.track_layout();
+        let track_visual = self.track_reorder_visual();
+        let layout = track_visual
+            .as_ref()
+            .map_or_else(|| self.track_layout(), |visual| visual.layout.clone());
+        let track_preview = track_visual.as_ref().and_then(|visual| {
+            let index = visual.source_rows.first().copied()?;
+            let original = self.track_layout();
+            let rows = visual
+                .source_rows
+                .iter()
+                .enumerate()
+                .filter_map(|(position, track)| {
+                    let row = original.row(*track)?;
+                    Some((
+                        row.height,
+                        self.track_title(*track),
+                        self.ds.track_color(*track),
+                        position == 0,
+                        self.tracks[*track].parent.is_some(),
+                    ))
+                })
+                .collect::<Vec<_>>();
+            Some((
+                visual.floating_top,
+                visual.placeholder_top,
+                self.ds.track_color(index),
+                rows,
+            ))
+        });
         let ds = &self.ds;
         let dragging_headers = matches!(self.split_drag, Some(SplitDrag::TrackHeaders { .. }));
         div()
@@ -60,6 +89,7 @@ impl DawApp {
                             .child(self.render_timeline_area(
                                 TimelineArea::Ruler,
                                 self.tracks.len(),
+                                None,
                                 cx,
                             )),
                     ),
@@ -82,17 +112,73 @@ impl DawApp {
                                     .flex_shrink_0()
                                     .flex()
                                     .flex_col()
+                                    .relative()
                                     .bg(rgb(ds.panel))
                                     .rounded_bl(px(ds.radius_lg))
                                     .border_x_1()
                                     .border_b_1()
                                     .border_color(rgb(ds.border))
                                     .overflow_hidden()
-                                    .children(
-                                        layout
-                                            .rows
-                                            .iter()
-                                            .map(|row| self.render_track_header(row.track, cx)),
+                                    .children(layout.rows.iter().map(|row| {
+                                        if track_visual.as_ref().is_some_and(|visual| {
+                                            visual.source_rows.contains(&row.track)
+                                        }) {
+                                            div()
+                                                .w_full()
+                                                .h(px(row.height))
+                                                .flex_shrink_0()
+                                                .bg(rgb(ds.panel_dark))
+                                                .border_l_2()
+                                                .border_color(rgb(ds.track_color(row.track)))
+                                                .into_any_element()
+                                        } else {
+                                            self.render_track_header(row.track, cx)
+                                                .into_any_element()
+                                        }
+                                    }))
+                                    .when_some(
+                                        track_preview,
+                                        |column, (top, line, color, rows)| {
+                                            column
+                                                .child(
+                                                    div()
+                                                        .absolute()
+                                                        .left(px(0.0))
+                                                        .top(px(line.clamp(
+                                                            1.0,
+                                                            (layout.height - 2.0).max(1.0),
+                                                        ) - 1.0))
+                                                        .w_full()
+                                                        .h(px(2.0))
+                                                        .bg(rgb(color)),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .absolute()
+                                                        .left(px(0.0))
+                                                        .top(px(top))
+                                                        .w_full()
+                                                        .flex()
+                                                        .flex_col()
+                                                        .children(rows.into_iter().map(|(height, title, row_color, first, child)| {
+                                                            div()
+                                                                .w_full()
+                                                                .h(px(height))
+                                                                .flex_shrink_0()
+                                                                .flex()
+                                                                .items_center()
+                                                                .px_3()
+                                                                .when(child, |row| row.pl(px(24.0)))
+                                                                .bg(rgb(ds.panel_hover))
+                                                                .border_1()
+                                                                .border_color(rgb(row_color))
+                                                                .text_size(px(ds.font_size_xs))
+                                                                .text_color(rgb(ds.text))
+                                                                .when(first, |row| row.child(div().mr_2().text_color(rgba((color << 8) | 0xe0)).child("↕")))
+                                                                .child(title)
+                                                        })),
+                                                )
+                                        },
                                     ),
                             )
                             .child(
@@ -132,6 +218,7 @@ impl DawApp {
                                     .child(self.render_timeline_area(
                                         TimelineArea::Lanes,
                                         self.tracks.len(),
+                                        track_visual.as_ref(),
                                         cx,
                                     )),
                             ),
@@ -175,6 +262,7 @@ impl DawApp {
                             .child(self.render_timeline_area(
                                 TimelineArea::TimeRuler,
                                 self.tracks.len(),
+                                None,
                                 cx,
                             )),
                     ),
@@ -186,6 +274,7 @@ impl DawApp {
         &self,
         area: TimelineArea,
         track_count: usize,
+        track_visual: Option<&TrackReorderVisual>,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         div()
@@ -214,6 +303,20 @@ impl DawApp {
                             cx.stop_propagation();
                             cx.notify();
                             return;
+                        }
+                        if event.modifiers.shift && !event.modifiers.alt && !event.modifiers.platform {
+                            if let Some(track) = this.timeline.begin_slip(event.position, this.ds.track_header_height) {
+                                this.select_track(track, false, false);
+                                this.status_message = if this.timeline.slip_has_room() {
+                                    "Desplazar contenido · bordes y pista fijos".into()
+                                } else {
+                                    "El clip muestra toda la fuente: recorta un borde para desplazar contenido oculto".into()
+                                };
+                                window.focus(&this.focus_handle, cx);
+                                cx.stop_propagation();
+                                cx.notify();
+                                return;
+                            }
                         }
                         if let Some(hit) = this
                             .timeline
@@ -324,6 +427,7 @@ impl DawApp {
                 area,
                 track_count,
                 (0..track_count).map(|i| self.track_selected(i)).collect(),
+                track_visual,
                 &self.ds,
             ))
     }

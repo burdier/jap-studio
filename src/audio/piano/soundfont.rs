@@ -2,14 +2,14 @@
 //! Sin dispositivos ni widgets: `audio/piano` lo usa para abrir el sintetizador.
 use rustysynth::SoundFont;
 use std::{
-    collections::HashMap,
     fs::{self, File},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, OnceLock},
+    sync::{Arc, Mutex, OnceLock, Weak},
 };
 
 const DEFAULT_SOUNDFONT: &str = "UprightPianoKW-20220221.sf2";
-static CACHE: OnceLock<Mutex<HashMap<PathBuf, Arc<SoundFont>>>> = OnceLock::new();
+// Una entrada débil: los bancos visitados no quedan retenidos en memoria.
+static CACHE: OnceLock<Mutex<Option<(PathBuf, Weak<SoundFont>)>>> = OnceLock::new();
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SoundFontBank {
@@ -25,20 +25,14 @@ pub(crate) struct PresetEntry {
     pub name: String,
 }
 
-pub(crate) fn preload() -> Result<(), String> {
-    let banks = discover();
-    let first = banks
-        .first()
-        .ok_or_else(|| format!("No se encontró {DEFAULT_SOUNDFONT} ni otros bancos .sf2"))?;
-    load_path(&first.path).map(|_| ())
-}
-
 pub(crate) fn load_path(path: &Path) -> Result<Arc<SoundFont>, String> {
-    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let cache = CACHE.get_or_init(|| Mutex::new(None));
     if let Ok(guard) = cache.lock()
-        && let Some(sound_font) = guard.get(path)
+        && let Some((cached_path, cached_font)) = guard.as_ref()
+        && cached_path == path
+        && let Some(sound_font) = cached_font.upgrade()
     {
-        return Ok(sound_font.clone());
+        return Ok(sound_font);
     }
     let mut file = File::open(path)
         .map_err(|error| format!("No se pudo abrir el SoundFont {}: {error}", path.display()))?;
@@ -47,7 +41,7 @@ pub(crate) fn load_path(path: &Path) -> Result<Arc<SoundFont>, String> {
             .map_err(|error| format!("SoundFont inválido ({}): {error}", path.display()))?,
     );
     if let Ok(mut guard) = cache.lock() {
-        guard.insert(path.to_path_buf(), sound_font.clone());
+        *guard = Some((path.to_path_buf(), Arc::downgrade(&sound_font)));
     }
     Ok(sound_font)
 }

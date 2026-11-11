@@ -1,10 +1,25 @@
-//! Controlador compartido por menú contextual, toolbar y teclado del mock.
-use super::{PianoRoll, RollAction, RollTool, demo};
+//! Controlador compartido por menú contextual, toolbar y teclado del piano roll.
+use super::{RollAction, RollTool, demo};
 use crate::ui::DawApp;
 use elevate::musical::time::{PPQ, Tick};
 use gpui::{Context, Window};
 
 impl DawApp {
+    pub(super) fn open_roll_action_form(
+        &mut self,
+        command: &'static str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(entry) = elevate::catalog::entries().iter().find(|entry| {
+            matches!(entry.action, elevate::catalog::CatalogAction::Invoke(value) if value == command)
+        }) else { return; };
+        let Some(spec) = entry.action.parameters() else {
+            return;
+        };
+        self.open_action_form(entry, spec, window, cx);
+    }
+
     pub(in crate::ui) fn insert_midi_clip_from_menu(&mut self) {
         let Some(target) = self.clip_menu.take() else {
             return;
@@ -38,14 +53,29 @@ impl DawApp {
             return;
         };
         self.cursor_row = clip.track;
-        let cursor = Tick((13 * PPQ).min(clip.pattern.length().0 - 1));
-        let copied_note = self.piano_roll.copied_note;
-        self.piano_roll = PianoRoll {
-            open: true,
-            cursor,
-            copied_note,
-            ..PianoRoll::default()
-        };
+        let cursor = Tick(
+            (((self.timeline.edit_beat() - clip.start_beat + clip.trim_start) * PPQ as f64).round()
+                as i64)
+                .clamp(0, clip.pattern.length().0 - 1),
+        );
+        // Solo reiniciar estado ligado a la identidad del clip; conservar preferencias.
+        self.piano_roll.opened_clip = Some(clip.clone());
+        self.piano_roll.open = true;
+        self.piano_roll.cursor = cursor;
+        self.piano_roll.selected = None;
+        self.piano_roll.selected_notes.clear();
+        self.piano_roll.hovered_note = None;
+        self.piano_roll.hovered_resize_edge = false;
+        self.piano_roll.drag = None;
+        self.piano_roll.motion.borrow_mut().clear();
+        self.piano_roll.push = None;
+        self.piano_roll.push_error = None;
+        self.piano_roll.paint_stroke = None;
+        self.piano_roll.control_drag = false;
+        self.piano_roll.selected_control = None;
+        self.piano_roll.lane_menu = None;
+        self.piano_roll.choices = None;
+        self.piano_roll.viewport = Default::default();
         self.timeline.end_clip_drag();
     }
 
@@ -56,6 +86,22 @@ impl DawApp {
         cx: &mut Context<Self>,
     ) {
         match action {
+            RollAction::ChooseLane => {
+                self.piano_roll.choices = None;
+                self.piano_roll.lane_menu = Some(super::RollLaneMenu {
+                    position: gpui::point(gpui::px(10.0), gpui::px(320.0)),
+                    selected: super::lane::LANE_MENU_ITEMS
+                        .iter()
+                        .position(|item| item.lane == self.piano_roll.active_lane)
+                        .unwrap_or(0),
+                });
+            }
+            RollAction::TrackSolo => {
+                if let Some(clip) = &self.timeline.midi_clip {
+                    self.toggle_track_solo(clip.track);
+                }
+            }
+            RollAction::Form(command) => self.open_roll_action_form(command, window, cx),
             RollAction::ZoomWidth(factor) => {
                 if let Some(clip) = &self.timeline.midi_clip {
                     let grid = self.piano_roll.grid.get();
@@ -85,11 +131,50 @@ impl DawApp {
             RollAction::PreviousClip => self.step_roll_clip(-1),
             RollAction::NextClip => self.step_roll_clip(1),
             RollAction::Tool(tool) => {
+                self.end_roll_drag();
                 self.piano_roll.tool = tool;
-                self.piano_roll.hint = "Herramienta MIDI activa".into();
+                self.piano_roll.hint = match tool {
+                    RollTool::Select => "Pointer: clic selecciona · arrastra para mover · doble clic crea / borra · Delete elimina selección",
+                    RollTool::Box => "Arrastra una región para seleccionar · Delete: borrar · Esc: cancelar",
+                    RollTool::EraseRegion => "Arrastra una región; al soltar se eliminan sus notas · Esc: cancelar",
+                    _ => "Herramienta MIDI activa",
+                }.into();
             }
-            RollAction::Quantize => self.roll_quantize(),
-            RollAction::Humanize => self.roll_humanize(),
+            RollAction::Quantize => self.open_roll_action_form("midi.quantize", window, cx),
+            RollAction::Humanize => {
+                self.execute_script_command("midi.humanize", cx);
+            }
+            RollAction::Gate => self.open_roll_action_form("midi.gate", window, cx),
+            RollAction::Swing => self.open_roll_action_form("midi.swing", window, cx),
+            RollAction::ClampScale => {
+                self.execute_script_command("midi.scale.clamp", cx);
+            }
+            RollAction::Velocity => self.open_roll_action_form("midi.velocity", window, cx),
+            RollAction::Random => self.open_roll_action_form("midi.random", window, cx),
+            RollAction::ChooseDrawLength => self.choose_roll_value("length"),
+            RollAction::ChooseRoot => self.choose_roll_value("root"),
+            RollAction::ChooseScale => self.choose_roll_value("scale"),
+            RollAction::ToggleScaleKeyboard => {
+                self.piano_roll.show_scale_keyboard = !self.piano_roll.show_scale_keyboard
+            }
+            RollAction::NoteNames => {
+                self.piano_roll.show_note_names = !self.piano_roll.show_note_names
+            }
+            RollAction::ToggleClipLoop => {
+                self.toggle_roll_clip_property(true);
+            }
+            RollAction::ToggleClipMute => {
+                self.toggle_roll_clip_property(false);
+            }
+            RollAction::ChooseClipColor => self.choose_roll_value("color"),
+            RollAction::ChooseClip => self.choose_roll_value("clip"),
+            RollAction::OpenSettings => self.open_settings(),
+            RollAction::InspectorTab(tab) => self.piano_roll.inspector_tab = tab.min(3),
+            RollAction::Subdivide => {
+                self.execute_script_command("midi.subdivide", cx);
+            }
+            RollAction::GridFiner => self.change_roll_grid(true),
+            RollAction::GridCoarser => self.change_roll_grid(false),
             RollAction::HumanizeAmount(amount) => {
                 self.piano_roll.humanize_amount = amount;
                 self.piano_roll.hint = format!("Humanize: {amount}%");
@@ -97,62 +182,23 @@ impl DawApp {
             RollAction::Copy => self.roll_copy(false),
             RollAction::Cut => self.roll_copy(true),
             RollAction::Paste => self.roll_paste(),
+            RollAction::SelectAll => self.select_all_roll_notes(),
+            RollAction::ClearSelection => self.clear_roll_selection(),
+            RollAction::DeleteSelection => self.delete_roll_selection(),
             RollAction::GhostNotes => self.piano_roll.ghost_notes = !self.piano_roll.ghost_notes,
             RollAction::Follow => self.piano_roll.follow = !self.piano_roll.follow,
             RollAction::Velocities => self.piano_roll.velocities = !self.piano_roll.velocities,
+            RollAction::SetLane(lane) => {
+                self.piano_roll.active_lane = lane;
+                self.piano_roll.selected_control = None;
+                self.piano_roll.control_drag = false;
+                self.piano_roll.lane_menu = None;
+                self.piano_roll.hint =
+                    format!("Carril activo: {} · {}", lane.label(), lane.description());
+            }
             RollAction::HighlightScale => {
                 self.piano_roll.highlight_scale = !self.piano_roll.highlight_scale
             }
-            RollAction::Preview(label) => self.piano_roll.hint = format!("Mock visual · {label}"),
-        }
-    }
-
-    pub(in crate::ui) fn handle_roll_key(
-        &mut self,
-        key: &str,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let action = match key {
-            "0" => Some(RollAction::ResetView),
-            "escape" => Some(RollAction::Close),
-            "v" => Some(RollAction::Tool(RollTool::Select)),
-            "b" => Some(RollAction::Tool(RollTool::Draw)),
-            "e" | "E" => Some(RollAction::Tool(RollTool::Erase)),
-            "p" => Some(RollAction::Tool(RollTool::Paint)),
-            "m" => Some(RollAction::Tool(RollTool::Mute)),
-            "q" => Some(RollAction::Quantize),
-            "H" => Some(RollAction::Humanize),
-            "h" | "left" | "l" | "right" => {
-                let direction = if matches!(key, "h" | "left") { -1 } else { 1 };
-                if let Some(clip) = &self.timeline.midi_clip {
-                    self.piano_roll.cursor.0 = (self.piano_roll.cursor.0 + direction * PPQ / 4)
-                        .clamp(0, clip.pattern.length().0 - 1);
-                }
-                None
-            }
-            "j" | "down" | "k" | "up" => {
-                if let Some(clip) = &self.timeline.midi_clip {
-                    let notes = clip.notes();
-                    if !notes.is_empty() {
-                        let current = notes
-                            .iter()
-                            .position(|n| Some(n.id) == self.piano_roll.selected);
-                        let next = match (current, matches!(key, "j" | "down")) {
-                            (Some(i), true) => (i + 1) % notes.len(),
-                            (Some(i), false) => (i + notes.len() - 1) % notes.len(),
-                            (None, _) => 0,
-                        };
-                        self.piano_roll.selected = Some(notes[next].id);
-                        self.piano_roll.selected_notes = vec![notes[next].id];
-                    }
-                }
-                None
-            }
-            _ => None,
-        };
-        if let Some(action) = action {
-            self.apply_roll_action(action, window, cx);
         }
     }
 }

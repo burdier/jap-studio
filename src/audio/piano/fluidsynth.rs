@@ -6,6 +6,10 @@ use libc::{
 };
 use std::{ffi::CString, path::Path, sync::OnceLock};
 
+mod voices;
+
+// Este límite también acota las listas de voces usadas para expresión por nota.
+const MAX_VOICES: usize = 256;
 type FluidSettings = c_void;
 type FluidSynth = c_void;
 
@@ -17,10 +21,15 @@ struct FluidApi {
     new_synth: unsafe extern "C" fn(*mut FluidSettings) -> *mut FluidSynth,
     delete_synth: unsafe extern "C" fn(*mut FluidSynth),
     sfload: unsafe extern "C" fn(*mut FluidSynth, *const c_char, c_int) -> c_int,
+    get_voicelist: unsafe extern "C" fn(*mut FluidSynth, *mut *mut c_void, c_int, c_int),
+    voice_get_id: unsafe extern "C" fn(*const c_void) -> c_uint,
+    voice_gen_incr: unsafe extern "C" fn(*mut c_void, c_int, c_float),
+    voice_update_param: unsafe extern "C" fn(*mut c_void, c_int),
     noteon: unsafe extern "C" fn(*mut FluidSynth, c_int, c_int, c_int) -> c_int,
     noteoff: unsafe extern "C" fn(*mut FluidSynth, c_int, c_int) -> c_int,
     all_notes_off: unsafe extern "C" fn(*mut FluidSynth, c_int) -> c_int,
     cc: unsafe extern "C" fn(*mut FluidSynth, c_int, c_int, c_int) -> c_int,
+    channel_pressure: unsafe extern "C" fn(*mut FluidSynth, c_int, c_int) -> c_int,
     pitch_bend: unsafe extern "C" fn(*mut FluidSynth, c_int, c_int) -> c_int,
     pitch_wheel_sens: unsafe extern "C" fn(*mut FluidSynth, c_int, c_int) -> c_int,
     bank_select: unsafe extern "C" fn(*mut FluidSynth, c_int, c_uint) -> c_int,
@@ -71,10 +80,15 @@ fn api() -> Option<&'static FluidApi> {
             new_synth: sym(handle, b"new_fluid_synth\0")?,
             delete_synth: sym(handle, b"delete_fluid_synth\0")?,
             sfload: sym(handle, b"fluid_synth_sfload\0")?,
+            get_voicelist: sym(handle, b"fluid_synth_get_voicelist\0")?,
+            voice_get_id: sym(handle, b"fluid_voice_get_id\0")?,
+            voice_gen_incr: sym(handle, b"fluid_voice_gen_incr\0")?,
+            voice_update_param: sym(handle, b"fluid_voice_update_param\0")?,
             noteon: sym(handle, b"fluid_synth_noteon\0")?,
             noteoff: sym(handle, b"fluid_synth_noteoff\0")?,
             all_notes_off: sym(handle, b"fluid_synth_all_notes_off\0")?,
             cc: sym(handle, b"fluid_synth_cc\0")?,
+            channel_pressure: sym(handle, b"fluid_synth_channel_pressure\0")?,
             pitch_bend: sym(handle, b"fluid_synth_pitch_bend\0")?,
             pitch_wheel_sens: sym(handle, b"fluid_synth_pitch_wheel_sens\0")?,
             bank_select: sym(handle, b"fluid_synth_bank_select\0")?,
@@ -132,7 +146,7 @@ impl FluidEngine {
             (api.settings_setint)(
                 settings,
                 c"synth.polyphony".as_ptr(),
-                polyphony.clamp(8, 256) as c_int,
+                polyphony.clamp(8, MAX_VOICES) as c_int,
             );
             (api.settings_setint)(
                 settings,
@@ -196,7 +210,7 @@ impl FluidEngine {
 
     pub fn set_polyphony(&mut self, polyphony: usize) {
         unsafe {
-            (self.api.set_polyphony)(self.synth, polyphony.clamp(8, 256) as c_int);
+            (self.api.set_polyphony)(self.synth, polyphony.clamp(8, MAX_VOICES) as c_int);
         }
     }
 
@@ -228,6 +242,9 @@ impl FluidEngine {
                         (self.api.cc)(self.synth, channel, c_int::from(data1), c_int::from(data2));
                     }
                 },
+                0xD0 => {
+                    (self.api.channel_pressure)(self.synth, channel, c_int::from(data1));
+                }
                 0xC0 => {
                     (self.api.program_change)(self.synth, channel, c_int::from(data1));
                 }

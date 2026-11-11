@@ -1,5 +1,249 @@
 # Arquitectura del prototipo
 
+## Foco visual y navegación opcional
+
+`ui/workspace_focus` guarda solo el panel activo y el panel ampliado; la vista usa
+las mismas entidades y componentes con todo el espacio del área de trabajo. No
+modifica la proporción de división, anchos de docks ni contenido musical. El cierre
+u ocultación del editor invalida la ampliación. Las ventanas GPUI separadas usan
+`Window::zoom_window`; el foco de entrada determina el destino de `view.maximize`.
+Los overlays y campos de formulario conservan las teclas de texto. `f` se reserva
+para ampliar en Normal antes de interpretar notas del teclado; F11 queda disponible
+sin Vim. Espacio y el audio comparten los controladores existentes.
+
+`ui/keyboard_preferences` carga y guarda `VIM_ENABLED` mediante el escritor atómico
+del perfil. No pertenece al tema ni al controlador MIDI. Desactivar cancela estados
+modales y operadores pendientes, conserva entrada convencional y mantiene la acción
+`vim.toggle` accesible desde catálogo y Configuración → Atajos. Por defecto Vim
+sigue activado para preservar el comportamiento de perfiles existentes.
+
+## Spectrum dentro del plan FX
+
+`devices/spectrum` declara `hay.spectrum` sin importar UI ni audio. El árbol guarda un
+`TrackDevice::Hay` y conserva las operaciones existentes por `FxId`. `audio/effects`
+compila un nodo de captura en su posición de señal, incluida cada rama serie/paralelo.
+En cadenas VST3 el tap recibe el bloque real entre procesadores. Las cadenas puramente
+Utility conservan la ruta escalar y su rampa existente: el plan de observación evalúa
+una copia acotada con los coeficientes de cada nodo para capturar puntos intermedios,
+sin duplicar ganancias en la salida. Durante una rampa Utility, esa captura representa
+el coeficiente objetivo del nodo; el medidor del piano sigue observando su salida real.
+
+`audio/analyzer/tap` copia bloques estéreo en una cola SPSC acotada. Un CAS sin espera
+protege al productor si coinciden fuentes; saturación omite mediciones, nunca audio.
+No hay FFT, GPUI, bloqueo, E/S ni reserva de memoria en la captura. Los planes se
+publican usando el RCU existente y se destruyen fuera del callback. Sin VST3 la ruta
+acepta la frecuencia real del stream, transportada junto a cada bloque de muestras.
+
+`ui/fx/analyzers` mantiene consumidores, modos e historia por ID; limpia datos al
+cambiar topología, frecuencia o disponibilidad. Desactiva tomas ocultas y heredadas
+por bypass. `audio/analyzer` calcula energía estéreo (evita cancelación mono), FFT
+Hann de 2048 muestras, 96 bandas, historia de 128 ventanas, peak y RMS. `ui/spectrum`
+adapta resultados a datos visuales; `ui/components/spectrum` no importa el motor.
+Piano e inspectores Track FX comparten ese canvas y los controles `< >`. Cambiar la
+vista no modifica el plan de audio. Las acciones del catálogo comparten controladores
+con esos controles; el historial/modo no se serializan como parámetros DSP.
+
+## Dispositivos y configuración de audio
+
+`audio/device::AudioConfig` es una configuración de máquina, separada del proyecto
+musical: backend, IDs CPAL de entrada/salida, frecuencia, buffer y canales físicos.
+`audio/device/inventory` consulta capacidades en background. Conserva los dispositivos
+que CPAL enumera aunque consultar formatos falle (por ejemplo, ALSA ocupado), junto
+a dirección y error por entrada/salida; no confunde un error con ausencia de hardware.
+En Linux, `audio/device/aliases` agrupa rutas ALSA conocidas por tarjeta/endpoint
+físico (resolviendo el ID de tarjeta mediante `/proc/asound`), conservando los alias
+para reconocer preferencias anteriores. No agrupa solo por nombre; conserva endpoints
+distintos y rutas personalizadas. Las capacidades visibles proceden de `hw`, evitando
+confundir los canales virtuales de `plughw` con salidas físicas. Los pares estéreo
+se exponen como Salida 1 (1/2), Salida 2 (3/4), etc.
+La negociación valida los formatos compatibles al aplicar. `audio/output` negocia
+un formato compatible y distribuye el master estéreo a la pareja elegida, dejando
+las otras salidas en silencio; hasta 256 canales físicos, sin reservas en el callback.
+CPAL habilita `pipewire` (dependencias pipewire/libspa 0.10, licencia MIT).
+En Linux, la configuración Auto sin IDs previos prefiere PipeWire. Los perfiles con
+IDs existentes conservan su backend; la UI ofrece cambiar explícitamente a PipeWire.
+Los endpoints se seleccionan por ID de nodo y conservan las descripciones del sistema.
+`DeviceInfo.address` permite ofrecer salidas hermanas del mismo endpoint físico en el
+selector estéreo sin fusionar sus IDs ni sumar sus canales. La operación `OutputRoute`
+cambia nodo y canal local juntos: la salida física 3/4 es un nodo estéreo de dos canales.
+El stream nativo comparte el servidor y no reserva el dispositivo ALSA ni cambia el
+sink predeterminado. La enumeración/negociación continúa fuera del callback.
+
+`ui/audio_preferences` coordina borrador, validación asíncrona, comandos y aplicación.
+`components/select` adapta el Select existente de GPUI Kit con valores tipados, búsqueda,
+popup y foco. No depende de audio ni de `DawApp`; los selectores de Audio mantienen
+entidades y suscripciones por ventana, sincronizadas únicamente cuando cambian las
+opciones o el valor. Tab recorre los controles y el teclado del popup queda en Kit.
+`list device` / `use device [input|output] <número|ID|nombre|default>` y las acciones
+`audio.*` comparten ese controlador con Configuración → Audio. Aplicar detiene la
+reproducción, invalida las preparaciones antiguas del piano y reconfigura el sampler.
+Los cuatro adaptadores reciben la misma configuración; no se introduce otro transporte
+ni se implementa mezcla multipista. Los IDs se guardan en las claves `AUDIO_*` del perfil
+existente mediante reemplazo atómico. Un dispositivo ausente produce un error explícito;
+no se cambia silenciosamente a otra salida. La validación consulta capacidades; abrir el
+stream todavía puede fallar por permisos, exclusividad o desconexión.
+
+`ui/file_playback` prepara la salida y el remuestreo de clips con el SoXR existente en un
+worker. Solo abre el stream cuando el resultado sigue vigente; Stop cancela el arranque.
+Se comprueba la fuente activa y se leen los valores actuales de mezcla antes de empezar.
+Exportación conserva sus propios ajustes, independientes de los del dispositivo.
+
+`audio/device_probe` ofrece un tono temporal a −24 dBFS y un medidor de entrada mono.
+Los callbacks solo generan muestras o publican pico/tamaño de bloque mediante atómicos.
+Las pruebas usan el borrador y terminan al cerrar Audio. No hay grabación a pistas ni
+monitorización de entrada a salida. La duración de bloque mostrada no equivale a latencia
+round-trip medida; con Auto se consulta el tamaño observado durante la prueba.
+
+## Tempo y compás
+
+`musical/time.rs` define `Tempo` y `Meter` sin dependencias de UI/audio. `Timeline`
+mantiene los valores actuales (120 BPM, 4/4 al iniciar). El transporte, los formularios
+de acciones `tempo.set`/`meter.set`, comandos `:tempo`/`:meter`, la regla en segundos,
+rejillas, captura e importación MIDI, reproducción y exportación leen ese estado.
+El audio se coloca en negras; modificar BPM altera su longitud visual en negras sin
+alterar los segundos de la fuente. El compás modifica divisiones y etiquetas sin
+mover eventos. El documento Loro aún no guarda tempo ni compás porque la UI todavía
+no expone guardado completo del proyecto.
+
+## Sugerencias de comandos
+
+`ui/command_suggestions` combina alias ejecutables y acciones invocables del catálogo,
+elimina duplicados y prioriza coincidencias exactas o por prefijo. `ui/input` conserva
+el texto libre de `:` y gestiona la selección con flechas, Tab y Enter; si el comando
+exacto requiere parámetros, abre el formulario existente. El panel visual compartido
+`views/command_bar` se superpone al pie de la ventana principal y del piano roll separado.
+Las sugerencias no ejecutan operaciones hasta Enter; un clic solo completa el texto.
+
+## Scripts Lua para edición MIDI
+
+`src/scripting/builtin.rs` prepara solo las notas afectadas para las herramientas
+integradas; sus fuentes Lua siguen siendo las mismas. Controles y notas omitidas
+se reincorporan sin serializar a Lua y sin reutilizar IDs. La acción de subdivisión
+acotada se ejecuta dentro del evento UI: máximo 16 notas seleccionadas, 128 segmentos,
+4096 notas de entrada y 8192 controles. No usa worker ni snapshots en ese caso.
+`ui/scripting::apply_midi_script_result` es el commit compartido para ambas vías.
+Los scripts de usuario conservan la API completa y siempre corren en background.
+
+`scripting::edit_midi` es headless: una VM Lua 5.4 recibe una copia de las notas
+del patrón y devuelve un `MidiEdit` validado. No importa GPUI ni audio. `ui/scripting`
+lee los archivos y ejecuta las operaciones grandes en un worker; aplica su resultado al clip activo solo si
+su ID y patrón siguen iguales y el clip no se bloqueó. El comando `midi.script` usa el
+formulario de parámetros existente; `midi.quantize`, `midi.humanize`, `midi.subdivide`
+y `midi.script.accent` comparten controlador con botones, atajos y gestos. Sus algoritmos
+viven en `assets/scripts/midi/`; `scripting/actions` declara parámetros y opciones.
+`musical/grid::NoteGrid` define la resolución 1/1–1/128, independiente del zoom y compás.
+`ui/piano_roll/grid_actions` coordina resolución y acumulación de gestos, sin editar notas
+al cambiar la rejilla. Alt+1 afina, Alt+2 engrosa; Alt+rueda o Shift+pellizco invocan
+subdivisión sobre la selección explícita. La rejilla gobierna dibujo, snap y paso del cursor.
+Lua solicita cortes mediante `note.cuts`; `scripting/output` valida límites, asigna IDs
+monótonos y devuelve la relación de descendientes para heredar selección y silencio.
+Cada primer segmento conserva su ID; se preserva la cobertura completa de la nota.
+La expansión está limitada a 16 384 notas; no hay inserción/borrado arbitrario ni undo.
+La futura capa de
+displays usará datos declarativos y un renderizador GPUI común; todavía no está conectada.
+Detalles de API y límites en [LUA.md](LUA.md).
+
+## Acciones del piano roll
+
+`ui/piano_roll/commands` adapta comandos del catálogo al controlador compartido;
+`properties` valida longitud, canal y preferencias; `choices` alimenta el menú
+contextual existente; `keyboard` conserva navegación y atajos. Las barras e inspector
+no implementan transformaciones. Los iconos aceptan las mismas acciones y comandos
+con parámetros, tanto en el panel como en la ventana separada.
+
+`pointer` reutiliza inserción y borrado del controlador; `selection` concentra selección
+y eliminación por lote (conserva CC, expresión e IDs), y `clipboard` conserva copiar/cortar/pegar.
+`drag` confirma el patrón con el mismo eje temporal que Arrangement al soltar el ratón.
+`motion` interpola únicamente el dibujo a demanda de frames, con retraso limitado a 6 px
+y acomodo breve al snap; nunca programa notas ni cambia el tiempo del motor.
+`Delete`/Backspace afectan solo notas seleccionadas; borrar región confirma al soltar,
+y Esc cancela el gesto antes de restaurar un panel ampliado.
+
+El empuje se define en `assets/scripts/midi/push.lua`; `scripting/push` prepara una VM
+por gesto y transmite solo geometría/selección, sin CC ni expresión. Una búsqueda de
+fronteras por tono calcula contactos a ambos lados; la vecina se recorta hasta un tick
+y limita el avance, sin eliminar notas ni alterar solapamientos preexistentes. La entrada
+original es inmutable: retroceder restaura el tamaño dentro del gesto. `ui/piano_roll/push`
+aplica los límites del clip y el eje/snap compartido; Lua devuelve geometría validada,
+y el canvas solo consume offsets suavizados de `motion`. Sin Lua en paint ni en audio.
+La confirmación conserva IDs, expresión, CC y mute y rechaza cambios de snapshot.
+El marco se dibuja en `views/piano_roll/note_frame` con borde fino y sombra GPU.
+
+`Pattern::resize` rechaza perder notas. `MidiClip::channel` declara salida 1–16;
+Loro lo persiste de forma compatible (ausencia = canal 1). Materialize exige el mismo
+canal. El render live/offline entrega eventos al canal elegido de SoundFont;
+sfizz recibe todos en su instancia. El importador todavía normaliza canales SMF.
+El comando de canal viaja por la cola existente y prepara preset/parámetros fuera del
+callback. La repetición de audición se ejecuta por segmentos en límites de frames,
+sin reservas ni temporizadores de UI; exportación MIDI produce la duración finita del clip.
+`Follow` solo ajusta el viewport según el reloj leído del motor.
+
+Inventario y límites: [PIANO_ROLL_ACTIONS.md](PIANO_ROLL_ACTIONS.md).
+
+## Controles MIDI temporales
+
+`musical/automation` posee puntos con ID estable, carril tipado, tick y valor. `Pattern`
+los incluye en su igualdad y copia; cambiar notas conserva sus controles. El scheduler
+compila un flujo único de Off → Control → On en cada frame. El motor live/offline consume
+mensajes nativos de CC, bend y presión; ninguna edición ni asignación sucede en el callback.
+Al recortar se persigue el último control anterior por carril y al iniciar playback
+intermedio el adaptador prepara los valores previos fuera del callback.
+
+`project/midi_controls` usa listas/mapas Loro por ID; ausencia de claves significa
+patrón antiguo sin controles. `scripting/controls` codifica y valida el arreglo Lua;
+`ui/piano_roll/control_actions` es el controlador común al canvas y a los comandos.
+`views/piano_roll/control_lane` dibuja eventos reales sobre la geometría compartida.
+El importador SMF conserva controles y release velocity, todavía consolidando canales.
+`musical/note_expression` contiene release velocity, probabilidad y pan por nota.
+La propiedad viaja con ambos eventos del scheduler, en Lua y en Loro (claves opcionales
+para compatibilidad). Probabilidad usa ID/vuelta sin memoria de voces; NoteOn y NoteOff
+comparten decisión. sfizz recibe release velocity. `audio/piano/fluidsynth/voices` aplica
+pan relativo solo a voces recién creadas, con buffers fijos de 256 entradas y sin
+conservar punteros entre renderizados. sfizz/RustySynth aún no aplican pan por nota;
+no se traduce a CC10 porque alteraría las demás notas.
+
+## Documento de proyecto (Loro)
+
+`src/project.rs` y sus adaptadores aportan un documento CRDT headless con
+Loro 1.17.1 (MIT).
+El esquema 4 guarda nombre, identidad, orden, tipo, grupo padre, asignación de instrumento,
+mute y solo de las pistas. El orden usa `LoroMovableList` y cada pista tiene un mapa propio;
+renombrar o silenciar una pista no reemplaza toda la lista. `reconcile_tracks` adapta el
+modelo musical existente conservando las entradas del documento. `snapshot`/`save` y
+`import`/`load` permiten intercambiar el documento binario; `all_updates`/`merge` exponen
+las operaciones Loro y validan esquema, IDs y jerarquía antes de aceptar datos externos.
+`src/project/fx.rs` guarda cada nodo FX por ID, sus parámetros y el orden de hijos en listas
+movibles. Al cargar, reconstruye serie/paralelo y reserva los IDs restaurados para nuevas
+inserciones. El guardado ocurre fuera del callback y reemplaza el archivo de forma atómica.
+`src/project/midi.rs` guarda clips MIDI en una lista movible y cada nota en un mapa por ID.
+Cada clip refiere su pista por TrackId; al materializar el documento, se resuelve el índice
+de carril actual y se reservan los IDs de pistas, FX y clips para futuras inserciones.
+El siguiente ID de nota se guarda por patrón, el silencio de cada nota se guarda en su
+mapa, y el siguiente ID de clip se guarda en el
+documento, incluso cuando se eliminó la última entidad creada.
+`from_session` captura pistas, FX y clips MIDI; `materialize_midi_session` los reconstruye.
+
+Este esquema aún no representa referencias a audio, parámetros de mezcla
+ni colores. Por eso no se conecta a «Abrir/Guardar proyecto» en la UI: cargarlo
+como proyecto completo descartaría material. Tampoco hay sincronización de red ni undo
+del proyecto. El siguiente incremento debe adaptar los recursos de audio por ruta y
+capturar los controles de mezcla antes de activar esos comandos.
+
+## Análisis espectral para efectos
+
+La evolución a dispositivo Spectro enrutable y el contrato interno de puertos/eventos
+están definidos en [VISUAL_MODULATION.md](VISUAL_MODULATION.md).
+
+`audio/analyzer` usa RealFFT 3.5.1 (MIT) para convertir bloques reales de 2048 muestras
+en 48 bandas logarítmicas. El callback del piano solo empuja muestras mono a una cola
+`rtrb` acotada, cuando el editor está visible; nunca ejecuta FFT, reserva memoria ni
+espera un bloqueo. La UI drena la cola y calcula el espectro con buffers preparados.
+`ui/components/spectrum` es un panel reutilizable con cabecera `<` `>`, modo Espectro
+o Visualizador, bandas, forma de onda y guía de frecuencia; recibe datos y callbacks
+sin conocer el piano ni el motor. El modo elegido vive en la UI del instrumento.
+El filtro SVF TPT sigue procesando audio por separado;
+el espectro muestra señal medida, no la respuesta teórica del filtro.
+
 ## Sampler sfizz
 
 `devices/sampler` describe parámetros sin GPUI ni audio. `audio/sampler` posee el ABI C,
@@ -7,6 +251,9 @@ SFZ generado y recursos preparados. `instruments/sampler` posee teclas, motor pr
 y reproductor; `ui/sampler` solo carga, coordina y presenta controles existentes.
 La instancia de sampler usa InstrumentId(2), el piano conserva InstrumentId(1).
 El [+] asigna cada instancia mediante `musical::track::assign_instrument`.
+Track FX proyecta el instrumento asignado como fila virtual antes de los efectos;
+no lo duplica en `FxChain` ni cambia la topología DSP. Su editor se muestra bajo el
+Arrangement, sin una vista central Instrument independiente.
 La acción `track.insert_sampler` (`:sa`) reutiliza `ui/track_actions` para insertar
 una pista de instrumento (tipo Synth, presentada como Sampler por su asignación).
 Si la instancia ya está asignada, selecciona y abre su pista sin cambiar la topología.
@@ -18,6 +265,30 @@ viajan como CC de alta resolución; cambios estructurales reemplazan el motor pr
 fuera del callback y cortan las notas anteriores. `SamplerSnapshot` retiene el WAV
 compartido durante exportación; las instancias offline conservan colas de release.
 Detalles de uso, límites y dependencia fijada: [SAMPLER.md](SAMPLER.md).
+
+## Piano: presentación, filtros y carga diferida
+
+El editor SoundFont sigue la jerarquía visual de Hay Sampler: cabecera compacta, fuente,
+bloques de perillas (afinación/voces, filtro, efectos y salida) y teclado de altura fija.
+`views/instrument` compone `instrument_banks`, `instrument_params` e `instrument_actions`.
+Bancos y créditos se construyen al desplegarlos; MIDI Learn conserva los índices previos.
+
+`Piano::new` no descubre ni decodifica bancos. Abrir el editor o solicitar notas/Play inicia
+un worker en `instruments/piano/loading`; `audio/piano/prepare` descubre la salida y prepara
+el sintetizador sin abrir el stream. La UI recoge el resultado, nunca programa el scheduler.
+Solo hay una preparación en curso: cambios de banco/configuración invalidan su generación;
+el resultado antiguo se descarta antes de preparar el destino más reciente. El stream se
+abre al tocar/reproducir. NoteOff y Stop cancelan la intención pendiente durante la carga;
+un error permanece visible hasta recargar o elegir otro banco. La caché SoundFont tiene una
+única referencia débil, sin retener todos los bancos visitados. Exportar puede cargar el banco
+en su worker aunque no se haya abierto el editor.
+
+`devices/filter` declara el estado headless del filtro. `audio/piano/filter` aplica un SVF
+TPT estéreo LP/HP/BP después de sumar las voces y antes de FX/fader/pan/Utility, tanto con
+FluidSynth como con RustySynth. Corte, resonancia y bypass/modo se suavizan durante 5 ms;
+no hay reservas ni E/S en su procesamiento. El estado viaja por la cola del reproductor
+y se captura en `PianoSnapshot` para el mismo procesamiento offline. El filtro propio de
+sfizz permanece en el sampler; el filtro estéreo adicional está desactivado por defecto.
 
 ## Dos targets, un paquete
 
@@ -50,13 +321,21 @@ aplica la edición deteniendo reproducción/grabación, y remapea clips, niveles
 MIDI Learn. Los clips aún guardan índices de fila: la traducción se centraliza en
 `timeline/track_edit`, con IDs MIDI nuevos solo al duplicar. Las importaciones asíncronas
 capturan TrackId y resuelven la fila al terminar, o descartan el resultado si se eliminó.
+`ui/track_drag.rs` conserva el orden musical durante el arrastre y proyecta un orden visual
+provisional. La cabecera y los clips de la pista salen del flujo para seguir el puntero;
+las demás filas ocupan el hueco y se dibuja un destino vacío. `TrackEdit::Move` aplica un
+único cambio al soltar.
+Solo se reordena dentro del mismo nivel: una hija entre sus hermanas, una pista raíz entre
+raíces. Un grupo raíz conserva y mueve todos sus hijos. La identidad del clip MIDI activo
+y la vista del piano roll se conservan al reordenar.
 `Track.chain` es ahora `musical::fx::FxChain`, con nodos Effect/SerialChain/ParallelChain e IDs
 estables. Cada hijo directo de ParallelChain es una rama de la misma entrada; una rama con
 varios pasos se representa mediante SerialChain. Las ramas se suman sin normalizar; un
 contenedor vacío o en bypass pasa la entrada. La edición es transaccional: mover no cambia
 IDs, duplicar renueva todos los IDs, y se rechazan ciclos/destinos inexistentes. Se limitan
 las cadenas a 256 nodos y 32 niveles. Duplicar pistas también renueva sus IDs FX.
-Hay Utility es el efecto disponible. VST3 conserva su identidad declarativa, sin host.
+Hay Utility es el efecto disponible. Los nodos de efectos VST3 conservan identidad
+declarativa; el host de instrumento Pianoteq es una etapa previa, descrita en `VST3.md`.
 Un bus general de grupo y la carga de plugins requieren un incremento específico del motor.
 
 El plegado y las alturas de pista pertenecen a `ui::TrackPresentation`, indexado por TrackId,
@@ -183,6 +462,7 @@ El descriptor que pinta la vista procede de `elevate::catalog`.
 | Zoom/cursor/arrastre | `Timeline` | Convierte píxeles ↔ beats, no gobierna audio |
 | Gestos de navegación | `ui/navigation.rs` | Normaliza scroll/pinch nativos de GPUI; conserva ambos ejes y deltas precisos |
 | Encuadre del piano roll | `PianoRoll::viewport`, `piano_roll/navigation.rs` | Tiempo, escalas horizontal/vertical independientes y registro compartidos por canvas/picking; sin modificar notas ni transporte |
+| Pertenencia de notas a escala | `musical/scale.rs::PitchScale` | Regla musical headless; el mock usa Do menor fijo para sombreado y advertencia solo durante el arrastre, sin corregir ni bloquear notas |
 | Clips del Arrangement | `Timeline::{clip,other_*_clips}`, provisional | Se conservan al insertar, mover y solapar; aún no hay modelo de proyecto |
 | Archivo decodificado | `Arc<AudioFile>` | Preparado fuera del callback |
 | Voces del piano | RustySynth dentro del callback | No pasan por GPUI |
@@ -193,6 +473,23 @@ El descriptor que pinta la vista procede de `elevate::catalog`.
 | Partículas | `ParticleTrail` | Tiempo visual; no afecta al scheduler |
 
 ## Catálogo y buscador
+
+`catalog/plugins` enumera bundles VST3
+con módulo Linux para la arquitectura actual, incluidos los wrappers de yabridge.
+No ejecuta código de plugins. `audio/vst3/scan` consulta `IPluginFactory2` en un proceso
+separado y devuelve ID de clase, nombre y tipo (instrumento/efecto). Prefiere
+VST3 a VST2, deduplica rutas canónicas y limita profundidad y trabajo del recorrido.
+`ui/palette/plugins` adapta metadatos propios al mismo listado y despacho por clic/Enter
+del catálogo estático. La exploración corre en background al abrir Add; la actualización
+conserva filtro y selección. La selección de un instalado delega a `ui/vst`, que prepara
+el instrumento fuera de UI/RT y asigna la pista tras abrir la salida correctamente.
+`audio/vst3` usa el binding vst3 0.3.0 (MIT/Apache); `instruments/vst` posee la ejecución
+y comparte PianoPlayer, cola MIDI y scheduler con piano/sampler. Una instancia VST3 por
+sesión, sin persistencia de estado. `audio/vst3/editor` conserva componente/controlador
+y ventana X11 en un hilo propietario, separado del procesador transferido al stream.
+`IPlugView` dibuja el editor original y `IComponentHandler` comunica sus cambios por
+una cola SPSC acotada. No hay panel de parámetros específico por plugin; el mapeo Lua
+queda pendiente. Ver `VST3.md` para compatibilidad y verificación.
 
 `elevate::catalog` es un índice estático y headless de cuatro categorías: instrumentos,
 primitivos, componentes y acciones. Cada entrada declara ID, nombre, resumen y palabras
@@ -213,7 +510,7 @@ la asignación entre ratón y Enter. `ui/icons.rs` conserva carga SVG y asignaci
 
 Al elegir un instrumento, `ui/palette.rs` llama a `musical/track.rs::assign_instrument`,
 que asigna su identidad a la pista destino y la retira de cualquier otra. La cabecera y la
-vista Instrument muestran esa asignación. Piano y sampler tienen una instancia cada uno: moverlo de pista lo reasigna. `Volume` y `Componente serial` aparecen como
+fila de instrumento en Track FX muestran esa asignación. Piano y sampler tienen una instancia cada uno: moverlo de pista lo reasigna. `Volume` y `Componente serial` aparecen como
 metadatos: el buscador aún no crea primitivos, componentes ni instancias nuevas. Ese paso
 pertenece al futuro host de plugins y al sistema de acciones, no a esta paleta.
 
@@ -357,3 +654,35 @@ Capas, de dato a pantalla; ninguna importa a la siguiente:
 4. `musical/keyboard.rs` + `ui/components/keyboard.rs` (hecho): teclado clicable reutilizable
    con barra de octavas; emite la nota por callback.
 5. Pendiente: pitch bend / CC y su mapa fuente → destino; MIDI físico (`midir`, requiere aprobar).
+
+## Foco musical y posición visual
+
+`ui/transport::handle_performance_key` prioriza Espacio y teclado MIDI activado en los
+focos musicales del workspace, FX y ventana de instrumento. La fase capture evita que
+la navegación del árbol consuma notas; se respetan focos de texto y overlays. El destino
+sigue en MidiServer; enfocar el mismo instrumento no cancela notas. La ventana separada
+comparte el drenaje de MIDI físico sin crear otro transporte.
+
+`timeline/visual_transport` interpola exclusivamente coordenadas dibujadas. Conserva
+la posición exacta de audio y edición; extrapola como máximo 80 ms entre muestras del
+reloj y reinicia el trazo ante discontinuidades. El cursor converge en unos pocos frames.
+El ciclo visual pide frames mientras converge; nunca programa notas ni avanza el audio.
+
+`timeline/slip` comparte el gesto de desplazamiento de contenido entre audio y MIDI,
+con coordenadas en beats durante el gesto y conversión a segundos solo para audio.
+La ventana visible permanece fija y los offsets de origen están acotados al contenido
+existente. No se altera el archivo/patrón, ni se introduce otro modelo de reproducción.
+`toolbar_icon_button` recibe estado activo; el controlador sigue siendo la única fuente
+de verdad para icono, texto de estado y botón del instrumento.
+
+
+### Efectos VST3 en el plan de audio
+
+`audio/effects` adapta los FxNode existentes a planes de Utility, serie, paralelo y
+procesadores VST3 estéreo. Las instancias viven por FxId; la edición del árbol no cambia
+su identidad. `ui/vst/effects` coordina la carga en background y publica planes por RCU.
+El callback solo lee el plan publicado; la publicación y la retirada de planes son
+externas al callback. La topología musical conserva exclusivamente IDs y parámetros,
+sin importar audio ni GPUI. `FxGain` mantiene su rampa escalar para cadenas Utility y
+recibe además una ruta de efectos para los streams de audio/MIDI. El guardado binario,
+la duplicación de instancias, los buses de grupo y el export VST3 quedan pendientes.

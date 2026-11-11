@@ -1,11 +1,14 @@
 //! Estado del buscador de instrumentos, primitivos, componentes y acciones.
 //! La UI solo presenta resultados; el catálogo y las acciones viven fuera de GPUI.
-use super::{CenterView, DawApp};
+use super::DawApp;
 use elevate::{
     catalog::{self, CatalogAction, CatalogEntry, EntryKind},
     musical::track::assign_instrument,
 };
 use gpui::{Context, Window};
+
+mod plugins;
+use plugins::PaletteEntry;
 
 pub(super) struct Palette {
     open: bool,
@@ -14,7 +17,10 @@ pub(super) struct Palette {
     category: Option<EntryKind>,
     query: String,
     selected: usize,
-    results: Vec<&'static CatalogEntry>,
+    results: Vec<PaletteEntry>,
+    plugins: Vec<catalog::plugins::InstalledInstrument>,
+    scan_needed: bool,
+    scan_task: Option<gpui::Task<()>>,
 }
 
 impl Palette {
@@ -34,7 +40,10 @@ impl Palette {
             category: None,
             query: String::new(),
             selected: 0,
-            results: catalog::search(""),
+            results: catalog::search("").into_iter().map(Into::into).collect(),
+            plugins: Vec::new(),
+            scan_needed: false,
+            scan_task: None,
         }
     }
 
@@ -68,7 +77,7 @@ impl Palette {
         &self.query
     }
 
-    pub fn results(&self) -> &[&'static CatalogEntry] {
+    pub fn results(&self) -> &[PaletteEntry] {
         &self.results
     }
 
@@ -78,6 +87,7 @@ impl Palette {
 
     pub fn open_for_track(&mut self, track: usize) {
         self.open = true;
+        self.scan_needed = true;
         self.target_track = Some(track);
         self.fx_target = None;
         self.category = None;
@@ -95,7 +105,7 @@ impl Palette {
     }
 
     /// Devuelve la entrada elegida al pulsar Enter. El llamador decide cómo actuar.
-    pub fn handle_key(&mut self, key: &str, text: bool) -> Option<&'static CatalogEntry> {
+    pub fn handle_key(&mut self, key: &str, text: bool) -> Option<PaletteEntry> {
         match key {
             "tab" => self.cycle_category(),
             "up" => {
@@ -108,7 +118,7 @@ impl Palette {
                     self.selected = (self.selected + 1) % self.results.len();
                 }
             }
-            "enter" => return self.results.get(self.selected).copied(),
+            "enter" => return self.results.get(self.selected).cloned(),
             "backspace" => {
                 if self.query.pop().is_some() {
                     self.refresh();
@@ -126,6 +136,13 @@ impl Palette {
     fn refresh(&mut self) {
         self.results = catalog::search(&self.query)
             .into_iter()
+            .map(PaletteEntry::from)
+            .chain(
+                self.plugins
+                    .iter()
+                    .filter(|plugin| plugin.matches(&self.query))
+                    .map(PaletteEntry::from),
+            )
             .filter(|entry| self.category.is_none_or(|kind| entry.kind == kind))
             .collect();
         self.selected = 0;
@@ -173,7 +190,7 @@ impl DawApp {
             return;
         }
         if let Some(entry) = self.palette.handle_key(key, text) {
-            self.activate_catalog_entry(entry, window, cx);
+            self.activate_palette_entry(entry, window, cx);
         } else if key == "enter" {
             self.status_message = "El buscador no tiene resultados".into();
         }
@@ -238,7 +255,7 @@ impl DawApp {
                     );
                     cx.notify();
                 } else {
-                    self.execute_command(command);
+                    self.execute_command_with_context(command, window, cx);
                 }
                 if entry.kind == EntryKind::Instrument {
                     self.status_message = format!("Instrumento abierto · {}", entry.name);
@@ -269,8 +286,9 @@ impl DawApp {
             return;
         }
         let previous = assign_instrument(&mut self.tracks, track, self.instrument.id());
+        self.mix_vst();
         self.cursor_row = track;
-        self.set_center_view(CenterView::Instrument);
+        self.open_track_instrument(self.tracks[track].id);
         self.sync_midi_focus();
         let name = self.tracks[track].name.clone();
         self.status_message = match previous {

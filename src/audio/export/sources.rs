@@ -162,7 +162,8 @@ impl Sources {
                     start: frame_at(clip.start_beat * 60.0 / snapshot.bpm, rate)?,
                     synth: None,
                     sampler,
-                    mix: Mix::new(track, clip.props, rate)?,
+                    // El loop MIDI es de audición; exportar conserva la duración finita del clip.
+                    mix: Mix::new(track, ClipProps { looped: false, ..clip.props }, rate)?,
                 });
             }
         }
@@ -217,6 +218,7 @@ impl Sources {
                         &source.clip.playback_pattern(),
                         self.rate,
                         self.bpm,
+                        source.clip.channel.saturating_sub(1).min(15),
                     )?
                 } else {
                     OfflinePiano::new(
@@ -224,6 +226,7 @@ impl Sources {
                         &source.clip.playback_pattern(),
                         self.rate,
                         self.bpm,
+                        source.clip.channel.saturating_sub(1).min(15),
                     )?
                 });
             }

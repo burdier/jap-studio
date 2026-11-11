@@ -60,6 +60,29 @@ fn save_appearance_at(path: &Path, design: &DesignSystem) -> io::Result<()> {
         ]
         .map(|(key, value)| (key, format!("{value:06x}"))),
     );
+    values.extend(
+        [
+            ("TRACK_HEADER_WIDTH", design.track_header_width),
+            ("TRACK_HEADER_HEIGHT", design.track_header_height),
+            ("TIMELINE_BAR_HEIGHT", design.timeline_bar_height),
+            ("TIMELINE_PIXELS_PER_BEAT", design.timeline_pixels_per_beat),
+            ("TITLE_BAR_HEIGHT", design.title_bar_height),
+            ("TRANSPORT_HEIGHT", design.transport_height),
+            ("STATUS_BAR_HEIGHT", design.status_bar_height),
+            ("PAN_BAR_WIDTH", design.pan_bar_width),
+            ("VOL_BAR_WIDTH", design.vol_bar_width),
+            ("CONTROL_BAR_HEIGHT", design.control_bar_height),
+            ("TRANSPORT_BTN_SIZE", design.transport_btn_size),
+            ("FONT_SIZE_XS", design.font_size_xs),
+            ("PADDING_XS", design.padding_xs),
+            ("PADDING_SM", design.padding_sm),
+            ("PADDING_LG", design.padding_lg),
+            ("RADIUS_SM", design.radius_sm),
+            ("RADIUS_MD", design.radius_md),
+            ("RADIUS_LG", design.radius_lg),
+        ]
+        .map(|(key, value)| (key, value.to_string())),
+    );
     update_at(path, &values)
 }
 

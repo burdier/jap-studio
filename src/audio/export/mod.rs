@@ -60,3 +60,5 @@ impl Drop for ExportJob {
             .store(true, std::sync::atomic::Ordering::Relaxed);
     }
 }
+
+pub(crate) use soxr::resample;

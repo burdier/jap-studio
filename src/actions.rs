@@ -1,7 +1,10 @@
 //! Contratos headless de argumentos. La UI recoge valores; el comando recibe los mismos datos.
 use std::collections::BTreeMap;
 mod command;
+mod audio;
 mod fx;
+mod piano_roll;
+mod vst;
 pub use command::tokenize;
 
 #[derive(Clone, Copy, Debug)]
@@ -165,16 +168,106 @@ fn quote(text: &str) -> String {
 /// Registro compartido por catálogo, botones y futuros consumidores headless.
 pub fn find(command: &str) -> Option<&'static ActionSpec> {
     match command {
+        "instrument.vst3.load" => Some(&vst::LOAD),
+        "fx.vst3.load" => Some(&vst::EFFECT),
         "fx.rename" => Some(&fx::RENAME),
         "fx.parameters" => Some(&fx::PARAMETERS),
         "export" => Some(&crate::export::action::SPEC),
         "file.import" => Some(&FILE_IMPORT),
+        "midi.script" => Some(&MIDI_SCRIPT),
+        "midi.quantize" => Some(&crate::scripting::actions::QUANTIZE),
+        "midi.humanize" => Some(&crate::scripting::actions::HUMANIZE),
+        "midi.subdivide" => Some(&crate::scripting::actions::SUBDIVIDE),
+        "midi.gate" => Some(&crate::scripting::actions::GATE),
+        "midi.swing" => Some(&crate::scripting::actions::SWING),
+        "midi.scale.clamp" => Some(&crate::scripting::actions::CLAMP_SCALE),
+        "midi.release_velocity" => Some(&crate::scripting::actions::RELEASE_VELOCITY),
+        "midi.pan" => Some(&crate::scripting::actions::PAN),
+        "midi.probability" => Some(&crate::scripting::actions::PROBABILITY),
+        "midi.velocity" => Some(&crate::scripting::actions::VELOCITY),
+        "midi.random" => Some(&crate::scripting::actions::RANDOM),
+        "tempo.set" => Some(&TEMPO_SET),
+        "meter.set" => Some(&METER_SET),
         "track.height" => Some(&TRACK_HEIGHT),
         "track.rename" => Some(&TRACK_RENAME),
         "utility.gain" => Some(&UTILITY_GAIN),
-        _ => None,
+        _ => piano_roll::find(command).or_else(|| audio::find(command)),
     }
 }
+
+static TEMPO_SET: ActionSpec = ActionSpec {
+    command: "tempo.set",
+    description: "Tempo constante del proyecto en BPM.",
+    parameters: &[ActionParameter {
+        key: "bpm",
+        label: "Tempo",
+        hint: "Pulsos por minuto (negras)",
+        kind: ParameterKind::Number {
+            unit: "BPM",
+            min: 1.0,
+            min_exclusive: false,
+            max: 1000.0,
+            step: 1.0,
+            whole: false,
+        },
+        default: "120",
+        empty_value: None,
+        argument: Argument::Positional,
+    }],
+};
+
+static METER_SET: ActionSpec = ActionSpec {
+    command: "meter.set",
+    description: "Compás del proyecto; posiciones internas en negras.",
+    parameters: &[
+        ActionParameter {
+            key: "numerator",
+            label: "Pulsos por compás",
+            hint: "De 1 a 32",
+            kind: ParameterKind::Number {
+                unit: "pulsos",
+                min: 1.0,
+                min_exclusive: false,
+                max: 32.0,
+                step: 1.0,
+                whole: true,
+            },
+            default: "4",
+            empty_value: None,
+            argument: Argument::Positional,
+        },
+        ActionParameter {
+            key: "denominator",
+            label: "Figura del pulso",
+            hint: "1, 2, 4, 8 o 16",
+            kind: ParameterKind::Number {
+                unit: "denominador",
+                min: 1.0,
+                min_exclusive: false,
+                max: 16.0,
+                step: 1.0,
+                whole: true,
+            },
+            default: "4",
+            empty_value: None,
+            argument: Argument::Positional,
+        },
+    ],
+};
+
+static MIDI_SCRIPT: ActionSpec = ActionSpec {
+    command: "midi.script",
+    description: "Ejecutar un script Lua sobre las notas del clip MIDI activo",
+    parameters: &[ActionParameter {
+        key: "path",
+        label: "Archivo Lua",
+        hint: "Ruta a un archivo .lua (máximo 256 KiB)",
+        kind: ParameterKind::Text,
+        default: "",
+        empty_value: None,
+        argument: Argument::Positional,
+    }],
+};
 
 static FILE_IMPORT: ActionSpec = ActionSpec {
     command: "file.import",

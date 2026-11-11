@@ -1,4 +1,4 @@
-use super::{FxEvent, FxTree};
+use super::{FxEvent, FxTarget, FxTree};
 use elevate::musical::fx::FxEdit;
 use gpui::{Context, KeyDownEvent, ScrollStrategy};
 impl FxTree {
@@ -11,6 +11,13 @@ impl FxTree {
         };
         let view = self.views.entry(track).or_default();
         view.selected = row.id;
+        view.instrument_selected = row.instrument;
+        if row.instrument {
+            cx.emit(FxEvent::Instrument(track));
+            cx.emit(FxEvent::Selection(FxTarget { track, node: None }));
+            cx.notify();
+            return;
+        }
         if row.container && !double {
             if let Some(id) = row.id {
                 if !view.collapsed.remove(&id) {
@@ -39,6 +46,7 @@ impl FxTree {
             return;
         }
         cx.stop_propagation();
+        if !self.vim_enabled && matches!(key, "h" | "j" | "k" | "l") { return; }
         let Some(target) = self.target() else {
             return;
         };
@@ -57,7 +65,10 @@ impl FxTree {
         let current = self
             .rows
             .iter()
-            .position(|row| row.id == target.node)
+            .position(|row| {
+                row.id == target.node
+                    && row.instrument == self.views[&target.track].instrument_selected
+            })
             .unwrap_or(0);
         match key {
             "escape" => cx.emit(FxEvent::Close),
@@ -82,6 +93,7 @@ impl FxTree {
                 };
                 let view = self.views.get_mut(&target.track).unwrap();
                 view.selected = self.rows.get(index).and_then(|row| row.id);
+                view.instrument_selected = self.rows.get(index).is_some_and(|row| row.instrument);
                 view.scroll.scroll_to_item(index, ScrollStrategy::Nearest);
             }
             "right" | "l" | "left" | "h" => {
@@ -103,6 +115,7 @@ impl FxTree {
                     };
                     let view = self.views.get_mut(&target.track).unwrap();
                     view.selected = self.rows[index].id;
+                    view.instrument_selected = self.rows[index].instrument;
                     view.scroll.scroll_to_item(index, ScrollStrategy::Nearest);
                 }
             }

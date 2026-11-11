@@ -1,5 +1,5 @@
 //! Inicialización de GPUI Kit y proyección del tema de Hay, sin estado de audio.
-use super::{DawApp, DesignSystem};
+use super::{DawApp, DesignSystem, VimMode};
 use gpui::{
     App, Context, Global, KeyBinding, KeyDownEvent, Keystroke, Modifiers, Window,
     component::{Theme, ThemeMode},
@@ -12,7 +12,9 @@ gpui::actions!(
         WorkspaceTab,
         WorkspaceBackTab,
         ConfirmActionForm,
-        CancelActionForm
+        CancelActionForm,
+        SaveGeneralNote,
+        CancelGeneralNote
     ]
 );
 
@@ -25,6 +27,8 @@ pub(super) fn init(cx: &mut App) {
         KeyBinding::new("escape", CancelActionForm, Some("HayActionForm")),
         KeyBinding::new("enter", ConfirmActionForm, Some("HayActionForm")),
         KeyBinding::new("ctrl-enter", ConfirmActionForm, Some("HayActionForm")),
+        KeyBinding::new("escape", CancelGeneralNote, Some("HayGeneralNote")),
+        KeyBinding::new("ctrl-enter", SaveGeneralNote, Some("HayGeneralNote")),
     ]);
 }
 
@@ -36,7 +40,11 @@ impl DawApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.palette.is_open()
+        if self.tab_audio_select(backwards, window, cx) {
+            return;
+        }
+        if self.mode != VimMode::Command
+            && !self.palette.is_open()
             && !self.settings.is_visible()
             && !self.toolbar_icons.picker_open
             && (self.explorer.view.read(cx).focus.is_focused(window)

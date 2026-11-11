@@ -1,7 +1,7 @@
 //! Inspector visual del clip: usa las mismas etiquetas y barras que las cabeceras.
 use crate::ui::{
     DawApp, DesignSystem,
-    components::{button::badge_tag, meter::horizontal_bar},
+    components::button::badge_tag,
     piano_roll::RollAction,
 };
 use gpui::{Context, Div, IntoElement, MouseButton, div, prelude::*, px, rgb};
@@ -28,8 +28,8 @@ impl DawApp {
                     .items_center()
                     .gap_1()
                     .px_1()
-                    .children(["Clip", "Notes", "Scale", "Map"].map(|label| {
-                        self.roll_button(label, label == "Clip", RollAction::Preview(label), cx)
+                    .children(["Clip", "Notes", "Scale", "View"].into_iter().enumerate().map(|(index, label)| {
+                        self.roll_button(label, self.piano_roll.inspector_tab == index as u8, RollAction::InspectorTab(index as u8), cx)
                             .px(px(5.0))
                             .h(px(21.0))
                     })),
@@ -41,9 +41,9 @@ impl DawApp {
                     .min_h_0()
                     .overflow_y_scroll()
                     .px(px(5.0))
-                    .child(
+                    .child(div().when(self.piano_roll.inspector_tab == 0, |container| container.child(
                         section(ds, "Clip Properties")
-                            .child(property(ds, "Name", clip.name.clone()))
+                            .child(self.roll_button(clip.name.clone(), false, RollAction::Form("midi.clip.rename"), cx))
                             .child(
                                 div()
                                     .flex()
@@ -56,56 +56,46 @@ impl DawApp {
                                             .text_size(px(10.5))
                                             .child("Color"),
                                     )
-                                    .child(horizontal_bar(ds, 1.0, 90.0, ds.accent)),
+                                    .child(self.roll_button("Cambiar", false, RollAction::ChooseClipColor, cx)),
                             )
-                            .child(property(ds, "Channel", "1"))
-                            .child(property(
-                                ds,
-                                "Length",
-                                format!("{} bars", (clip.duration_beats() / 4.0).ceil() as u64),
-                            ))
-                            .child(property(ds, "Start", "1.1.1"))
+                            .child(self.roll_button(format!("Channel: {}", clip.channel), false, RollAction::Form("midi.clip.channel"), cx))
+                            .child(self.roll_button(format!("Length: {:.2} bars", clip.pattern_beats() / self.timeline.meter.beats_per_bar()), false, RollAction::Form("midi.clip.length"), cx))
+                            .child(property(ds, "Start", self.timeline.meter.position_label(elevate::musical::time::Tick((clip.start_beat * elevate::musical::time::PPQ as f64).round() as i64))))
                             .child(property(
                                 ds,
                                 "End",
-                                format!("{}.1.1", (clip.duration_beats() / 4.0).ceil() as u64 + 1),
+                                self.timeline.meter.position_label(elevate::musical::time::Tick((clip.end_beat() * elevate::musical::time::PPQ as f64).round() as i64)),
                             ))
-                            .child(property(ds, "Loop", "ON"))
-                            .child(property(ds, "Mute", "OFF"))
-                            .child(property(ds, "Solo", "OFF")),
-                    )
-                    .child(
+                            .child(self.roll_checkbox("Loop", clip.props.looped, RollAction::ToggleClipLoop, cx))
+                            .child(self.roll_checkbox("Mute", clip.props.muted, RollAction::ToggleClipMute, cx))
+                            .child(self.roll_checkbox("Solo de pista", self.tracks.get(clip.track).is_some_and(|track| track.solo), RollAction::TrackSolo, cx)),
+                    )))
+                    .child(div().when(self.piano_roll.inspector_tab == 1, |container| container.child(
                         section(ds, "Quantize")
-                            .child(property(ds, "Q", "1/16"))
-                            .child(property(ds, "Strength", "100%"))
-                            .child(property(ds, "Swing", "0%"))
-                            .child(property(ds, "Random", "0%"))
+                            .child(self.roll_button(format!("Q: 1/{} · Strength…", self.piano_roll.resolution.denominator()), false, RollAction::Quantize, cx))
+                            .child(self.roll_button("Swing…", false, RollAction::Swing, cx))
+                            .child(self.roll_button("Random…", false, RollAction::Random, cx))
                             .child(self.roll_humanize_row(cx)),
-                    )
-                    .child(
+                    )))
+                    .child(div().when(self.piano_roll.inspector_tab == 2, |container| container.child(
                         section(ds, "Scale")
-                            .child(property(ds, "Scale", "C minor (Aeolian) ▾"))
-                            .child(property(ds, "Root", "C ▾"))
+                            .child(self.roll_button(if self.piano_roll.scale_minor { "Natural minor ▾" } else { "Major ▾" }, false, RollAction::ChooseScale, cx))
+                            .child(self.roll_button(format!("Root: {} ▾", ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"][usize::from(self.piano_roll.scale_root)]), false, RollAction::ChooseRoot, cx))
                             .child(self.roll_checkbox(
                                 "Highlight scale notes",
                                 self.piano_roll.highlight_scale,
                                 RollAction::HighlightScale,
                                 cx,
                             ))
-                            .child(self.roll_checkbox(
-                                "Clamp to scale",
-                                false,
-                                RollAction::Preview("ajustar a escala"),
-                                cx,
-                            ))
+                            .child(self.roll_button("Clamp selected to scale", false, RollAction::ClampScale, cx))
                             .child(self.roll_checkbox(
                                 "Show scale in keyboard",
-                                false,
-                                RollAction::Preview("escala en teclado"),
+                                self.piano_roll.show_scale_keyboard,
+                                RollAction::ToggleScaleKeyboard,
                                 cx,
                             )),
-                    )
-                    .child(
+                    )))
+                    .child(div().when(self.piano_roll.inspector_tab == 3, |container| container.child(
                         section(ds, "View")
                             .child(self.roll_checkbox(
                                 "Ghost notes (other clips)",
@@ -114,20 +104,21 @@ impl DawApp {
                                 cx,
                             ))
                             .child(self.roll_checkbox(
-                                "Show velocities",
+                                "Show lane / velocities",
                                 self.piano_roll.velocities,
                                 RollAction::Velocities,
                                 cx,
                             ))
+                            .child(self.roll_button(format!("{} ▾", self.piano_roll.active_lane.label()), false, RollAction::ChooseLane, cx))
                             .child(self.roll_checkbox(
                                 "Note names",
-                                false,
-                                RollAction::Preview("nombres de nota"),
+                                self.piano_roll.show_note_names,
+                                RollAction::NoteNames,
                                 cx,
                             ))
-                            .child(property(ds, "Grid", "Bars + Beats ▾"))
-                            .child(property(ds, "Zoom", "1 bar ▾")),
-                    ),
+                            .child(self.roll_button(format!("Grid: 1/{}", self.piano_roll.resolution.denominator()), false, RollAction::Form("midi.grid"), cx))
+                            .child(self.roll_button("Ajustar vista", false, RollAction::ResetView, cx)),
+                    ))),
             )
     }
 
