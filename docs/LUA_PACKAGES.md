@@ -1,24 +1,24 @@
 # Paquetes de herramientas Lua · contrato v1
 
-Estado: **registro headless implementado en el commit 2 de PR-01**. La conexión
-al catálogo, worker de recarga, formulario y ejecutor pertenece al commit 3;
-Acentuar como paquete recargable, al commit 4. La ejecución disponible hoy en la
-aplicación está descrita en [LUA.md](LUA.md). Este documento fija el contrato completo.
+Estado: **registro, catálogo, recarga, formulario y ejecutor implementados hasta el
+commit 3 de PR-01**. Acentuar como paquete distribuido recargable queda para el
+commit 4. [Uso en la aplicación](LUA.md#herramientas-registradas). Este documento
+fija el contrato completo.
 No habilita componentes DSP, pistas, plugins, ejecución live ni undo/redo global.
 
 ## Formato y ejemplo
 
 Un paquete es un archivo UTF-8 `.lua` que devuelve una tabla con metadatos y una
-función `run(context, params)`. Se leerá con `mlua`, ya presente en el proyecto;
+función `run(context, params)`. Se lee con `mlua`, ya presente en el proyecto;
 v1 no requiere un manifiesto TOML, Serde ni un gestor de dependencias Lua.
 El archivo se evalúa dentro del sandbox incluso cuando solo se leen metadatos.
 
-Ejemplo de contrato para Acentuar, aún no instalable en la aplicación actual:
+Ejemplo instalable en el directorio de herramientas del usuario:
 
 ```lua
 return {
     api_version = 1,
-    id = "hay.midi.accent",
+    id = "user.midi.accent",
     name = "Lua · acentuar notas",
     description = "Aumenta la velocity de las notas seleccionadas.",
     parameters = {
@@ -79,7 +79,7 @@ Campos de otro tipo de parámetro se rechazan; v1 no incorpora listas ni widgets
 personalizados. La validación de números, texto y booleanos reutiliza el contrato
 de acciones, con los límites adicionales del paquete comprobados por el host.
 
-El comando previsto es `midi.tool <id> [valores...]`, con argumentos posicionales
+El comando es `midi.tool <id> [valores...]`, con argumentos posicionales
 en el orden declarado. Con parámetros y sin valores abre el formulario con los
 valores iniciales. Si se proporcionan valores, deben estar todos; una cantidad
 incorrecta produce error. Una herramienta sin parámetros se ejecuta directamente.
@@ -99,11 +99,11 @@ de compatibilidad, por la misma ruta de edición MIDI. Una invocación explícit
 Los paquetes distribuidos se ubicarán en `assets/scripts/tools/midi/` bajo la raíz
 del proyecto que el host conoce por `CARGO_MANIFEST_DIR`, siguiendo la convención
 actual de recursos. Es la ubicación de desarrollo; distribuir una aplicación
-independiente del checkout queda fuera de PR-01. El directorio de usuario será
+independiente del checkout queda fuera de PR-01. El directorio de usuario es
 `dirs::config_dir()/hay-daw/tools/midi/`; en Linux respeta `XDG_CONFIG_HOME`.
 El núcleo headless recibe las rutas del host y no importa `dirs` ni GPUI.
 
-La acción prevista `midi.tools.reload` lee y registra los paquetes de ambos
+La acción `midi.tools.reload` lee y registra los paquetes de ambos
 directorios en un worker. El usuario copia un `.lua` y solicita esa acción para
 que aparezca en `[+]`. No se escanea al dibujar, abrir un formulario o ejecutar
 una herramienta; tampoco hay vigilancia automática de archivos en v1.
@@ -139,14 +139,12 @@ No hay precedencia silenciosa por orden de lectura ni sobrescritura de nativas.
    Puede completar con esa versión tras una recarga, incluida la retirada del
    paquete; siempre debe superar la validación del clip descrita abajo.
 
-`ActionParameter<String>` ya conserva los parámetros del paquete con el mismo
-validador de las acciones nativas; estas mantienen las cadenas estáticas por defecto.
-Las referencias `&'static` de `ActionSpec`, `CatalogEntry` y `ActionForm` actuales
-todavía no sirven para metadatos recargables. El commit siguiente debe darles una
-representación con propietario y conservar el formulario/validador compartidos.
-No convertir cadenas cargadas en referencias permanentes mediante fugas de memoria
-ni crear un segundo validador independiente para Lua. Las acciones nativas deben
-seguir funcionando durante la adaptación.
+`ActionParameter<String>`, `OwnedActionSpec` y `OwnedCatalogEntry` conservan cadenas
+y parámetros propios. Los tipos genéricos mantienen referencias estáticas por defecto
+para las acciones nativas. `ActionForm` usa la representación propia para ambas rutas;
+comparte controles Kit y validación de valores, sin fugas de memoria ni VM retenida.
+`PackageForm` captura paquete y generación; `ToolInvocation` conserva la fuente y
+los valores tipados ya validados. El catálogo contiene metadatos y comandos, no VMs.
 
 ## Ejecución y conservación de la edición
 
@@ -198,21 +196,29 @@ error queda a la implementación; estos datos observables son obligatorios.
 | Commit de PR-01 | Capacidad y comprobación |
 |---|---|
 | 2 · registro · implementado | Lectura headless, tipos/campos, límites, API desconocida, IDs duplicados, publicación completa, retirada y conservación de snapshots ante fallo |
-| 3 · ejecución · pendiente | Formulario/comando con la misma validación; errores de Lua y resultado intacto; edición concurrente rechazada; generaciones y trabajo pendiente |
+| 3 · ejecución · implementado | Catálogo/comando/formulario, validación compartida, VM nueva y metadatos estables, resultado intacto ante errores, edición concurrente rechazada y trabajo pendiente tras retirar el paquete |
 | 4 · Acentuar · pendiente | Paquete real con alias anterior, recarga válida/inválida; añadir una segunda herramienta sin recompilar y conservar las acciones nativas |
 
 La API actual está en `elevate::scripting::packages`: `PackageDirectories` recibe
 las rutas del host y `PackageRegistry::reload` carga de forma síncrona fuera de
 UI/audio. `get` y `packages` exponen snapshots inmutables con fuente y descriptor;
 `generation` cambia solo al publicar una recarga válida. `PackageError` conserva
-fase (`load` o `descriptor`), ruta, ID conocido, campo y explicación. No se consulta
+fase, ruta, ID conocido, campo y explicación. Si el ID no se ha resuelto, la ruta se
+identifica como `<registro>`, pues todavía no hay archivo asociado. No se consulta
 el disco al leer un snapshot. Las raíces que son enlaces simbólicos se rechazan.
-El host del commit 3 resolverá las rutas de configuración, informará si no existe
-directorio de usuario y coordinará un único worker de recarga.
+`ui/lua_tools` resuelve las rutas de configuración, informa si no existe directorio
+de usuario y coordina un único worker de recarga. `PackageRegistry::request` resuelve
+los dos comandos; el formulario y los argumentos escritos preparan `ToolInvocation`
+con el mismo validador. `ToolInvocation::edit_midi` reevalúa fuente/metadatos y llama
+a `run` con un solo presupuesto de VM. `MidiScriptTarget` valida el destino antes
+del controlador común que aplica el `MidiEdit`.
 
-Las 18 pruebas de `tests/lua_packages.rs` y `tests/lua_packages/` ejercitan esta API
-con archivos temporales reales, fuentes capturadas y evaluaciones acotadas de Lua:
+Las pruebas de `tests/lua_packages.rs` y `tests/lua_tools.rs` ejercitan archivos
+temporales reales, comandos y formularios, fuentes capturadas, evaluación acotada,
+errores de resultado y un trabajo en otro hilo tras retirar el paquete. Las pruebas
+de biblioteca y paleta cubren metadatos inestables, búsqueda, selección y sugerencias.
 
 ```bash
-distrobox enter gpui-dev -- cargo test --no-default-features --test lua_packages --test scripting --test hay_acent --test catalog --locked
+distrobox enter gpui-dev -- cargo test --no-default-features --lib --test lua_packages --test lua_tools --test scripting --test hay_acent --test catalog --locked
+distrobox enter gpui-dev -- cargo test --bin daw-gpui ui::palette --locked
 ```

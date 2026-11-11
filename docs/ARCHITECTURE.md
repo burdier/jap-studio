@@ -123,11 +123,27 @@ descriptor se evalúa en una VM aislada del sandbox compartido, sin ejecutar `ru
 Solo se conservan fuente y metadatos propios de Rust en snapshots `Arc<Package>`.
 Una carga válida reemplaza el registro e incrementa su generación; cualquier error
 conserva el registro anterior. Los snapshots ya capturados sobreviven a su retirada.
-`ActionParameter<String>` reutiliza el validador de las acciones nativas, cuyo tipo
-por defecto conserva cadenas estáticas. No hay fugas de memoria ni VM en el catálogo.
-Esta API es síncrona y debe invocarse fuera de UI/audio; su worker, comandos,
-formulario dinámico y ejecutor corresponden al siguiente commit de PR-01. No se
-escanean directorios desde la aplicación todavía. [Contrato y estado](LUA_PACKAGES.md).
+`ActionParameter<String>` y `OwnedActionSpec` reutilizan la validación de las acciones
+nativas, cuyo tipo por defecto conserva cadenas estáticas. `catalog/{entry,tools}`
+indexa metadatos propios y comandos; no hay fugas de memoria ni VM en el catálogo.
+
+`ui/lua_tools` coordina una recarga explícita a la vez en un worker mediante
+`midi.tools.reload`; el arranque, render, buscador y ejecución no escanean paquetes.
+`PackageRegistry::request` resuelve `midi.tool <id> [valores...]`. La paleta y las
+sugerencias usan ese mismo comando. `ActionForm` conserva un `OwnedActionSpec`
+tanto para nativas como para Lua, con los controles Kit y el validador compartidos.
+Su `PackageForm` rechaza confirmaciones de una generación anterior antes de leer
+valores. `ToolInvocation` conserva fuente y valores tipados; puede terminar tras
+una recarga o retirada. Cada invocación crea una VM y verifica metadatos estables
+antes de llamar a `run(context, params)`, con un solo plazo para evaluación y run.
+Los arreglos originales de notas/controles se validan completos; sustituirlos o
+devolver un resultado distinto de nil rechaza la edición.
+
+`scripting/{notes,controls,arrays,output}` comparte codificación y validación con
+los scripts existentes. `MidiScriptTarget` conserva ID/patrón y valida identidad,
+bloqueo y arrastre al regresar del worker. `ui/scripting` aplica por el mismo
+controlador, conservando selección, silencios y descendientes. Acentuar integrado
+todavía usa su script anterior; su migración es el commit 4. [Contrato](LUA_PACKAGES.md).
 
 `src/scripting/builtin.rs` prepara solo las notas afectadas para las herramientas
 integradas; sus fuentes Lua siguen siendo las mismas. Controles y notas omitidas

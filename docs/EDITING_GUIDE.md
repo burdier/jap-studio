@@ -62,7 +62,7 @@
 | Audio de cadenas Utility | `src/devices/fx_gain.rs`, `src/audio/fx_gain.rs` | Compilación lineal fuera del callback, publicación atómica y rampa de 256 frames; `ui/fx/audio.rs`, streams audio/piano y snapshot export |
 | Explorador visual independiente | `src/ui/explorer/` | Entidad GPUI propia, `uniform_list`, E/S en workers y guardados serializados |
 | Atajo e, ancho y acción insertar archivo | `src/ui/explorer_host.rs` | `input.rs`, `views/workspace.rs`, `render.rs`, `catalog.rs`, `actions.rs`; acción compartida con doble clic e iconos |
-| Catálogo de instrumentos/acciones | `src/catalog.rs` | `tests/catalog.rs` |
+| Catálogo de instrumentos/acciones | `src/catalog.rs`, `src/catalog/{entry,tools}.rs` | `tests/catalog.rs`, `tests/lua_tools.rs`; entradas nativas estáticas y metadatos Lua propios, sin VM |
 | Plugins VST3 instalados en el buscador | `src/catalog/plugins.rs` | `ui/palette/plugins.rs`, `ui/palette.rs`; enumera bundles; `audio/vst3/scan.rs` consulta fábricas en proceso separado y clasifica sus clases |
 | Host VST3 de instrumento | `src/audio/vst3/{mod,lifecycle,module,buffers,events,parameters,process,host}.rs` | `instruments/vst.rs`, `ui/vst{,/commands,/view}.rs`, `audio/piano/{backend,prepare}.rs`; lifecycle COM, MIDI y audio estéreo; límites en `docs/VST3.md` |
 | Efectos VST3 en pistas | `src/audio/effects/{mod,plan,publication}.rs`, `src/ui/vst/effects.rs` | Plan de audio publicado por RCU; FX Tree, catálogo y comandos `fx.vst3.load/editor`; alcance en `docs/VST3.md` |
@@ -70,10 +70,11 @@
 | Wine del host desde distrobox | `scripts/wine-host.sh` | `scripts/run.sh`, `audio/vst3/environment.rs`, `ui/app.rs`; WINELOADER, prefijo compartido, diagnóstico `examples/vst3_probe.rs` |
 | Contrato/registro de parámetros de acciones | `src/actions.rs` | `CatalogAction::parameters()`, `export/action.rs`; texto, cantidades con unidad y booleanos |
 | Herramientas Lua para MIDI | `src/scripting.rs`, `src/scripting/{actions,builtin,output}.rs` | `ui/scripting.rs`, `assets/scripts/midi/`, `tests/scripting.rs`, `docs/LUA.md`; Q/H/subdividir/acento; entrada reducida para integradas, subdivisión pequeña inmediata, worker para grandes/archivos; `examples/midi_edit_latency.rs`, cortes validados por ID |
-| Registro headless de paquetes Lua v1 (PR-01, commit 2) | `src/scripting/packages/{mod,scan,descriptor,fields,parameters,error}.rs` | `scripting/sandbox.rs`, `actions.rs`, `tests/lua_packages.rs`: carga explícita acotada, metadatos propios, generaciones y conservación ante fallo; contrato en `docs/LUA_PACKAGES.md`, integración UI/ejecutor pendiente |
+| Registro headless de paquetes Lua v1 | `src/scripting/packages/{mod,scan,descriptor,fields,parameters,error}.rs` | `scripting/sandbox.rs`, `actions.rs`, `tests/lua_packages.rs`: carga explícita acotada, metadatos propios, generaciones y conservación ante fallo; contrato en `docs/LUA_PACKAGES.md` |
+| Ejecutar/recargar herramientas Lua (PR-01, commit 3) | `src/scripting/packages/{command,invocation,execute}.rs`, `src/ui/lua_tools.rs` | `ui/scripting{,/commands}.rs`, `scripting/{notes,controls,arrays,target}.rs`, `ui/palette/{entry,activate,tools}.rs`, `tests/lua_tools.rs`; formulario por generación, worker con snapshot, commit MIDI compartido |
 | Presets Hay Acent para selección MIDI | `assets/scripts/midi/hay_acent/` | Pulso, Alternado, Creciente y Clic 4/4 por `midi.script`; `tests/hay_acent.rs`, `docs/LUA.md#hay-acent`; modifican notas existentes, sin registro dinámico ni metrónomo global |
 | Rejilla y subdivisión de notas | `src/musical/grid.rs`, `src/ui/piano_roll/grid_actions.rs` | `piano_roll/{actions,edit,navigation}.rs`, `views/piano_roll/{toolbar,grid_background}.rs`; Alt+1/2, Alt+rueda, Shift+pellizco; `midi.subdivide` ejecuta Lua |
-| Formulario flotante de acciones | `src/ui/action_form.rs` | `action_form/input.rs`, `views/action_form.rs`; entidades InputState, suscripciones, foco limitado al diálogo y ventana de origen |
+| Formulario flotante de acciones | `src/ui/action_form.rs` | `action_form/{input,defaults,submit}.rs`, `views/action_form.rs`, `actions/owned.rs`; contratos propios, controles compartidos, suscripciones, generación Lua y foco en la ventana de origen |
 | Select reutilizable y selectores Audio | `src/ui/components/select.rs` | Adaptador tipado de GPUI Kit: búsqueda, popup anclado, teclado; `audio_preferences/{selectors,selector_models}.rs` conserva entidades por ventana; diagnóstico `cargo run --example audio_devices -- SSL` |
 | Controles de parámetros reutilizables | `src/ui/components/parameter_field.rs` | Input, NumberInput y Checkbox de Kit; conserva unidades/límites del contrato y delega edición, IME, selección y portapapeles |
 | Acciones del catálogo y despacho de edición de clips | `src/catalog.rs` | `ui/palette.rs`, `ui/clip_actions.rs`, `ui/input.rs` |
@@ -191,7 +192,7 @@ distrobox enter gpui-dev -- bash scripts/check.sh
 distrobox enter gpui-dev -- cargo test --no-default-features --test musical --locked
 
 # Registro de paquetes, sandbox MIDI y compatibilidad de acciones Lua
-distrobox enter gpui-dev -- cargo test --no-default-features --test lua_packages --test scripting --test hay_acent --test catalog --locked
+distrobox enter gpui-dev -- cargo test --no-default-features --lib --test lua_packages --test lua_tools --test scripting --test hay_acent --test catalog --locked
 
 # Catálogo y asignación de acciones a iconos, sin ventana ni dispositivo
 distrobox enter gpui-dev -- cargo test --bin daw-gpui ui::toolbar --locked

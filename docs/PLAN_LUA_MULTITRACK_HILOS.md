@@ -1,13 +1,14 @@
 # Plan de PRs: kit Lua, multipista e Hilos
 
-Fecha: 2026-11-11. Estado: PR-01 en progreso (contrato documentado, 1 de 4 commits);
-los demás PRs están pendientes. La carga de paquetes todavía no está implementada.
+Fecha: 2026-11-11. Estado: PR-01 en progreso (3 de 4 commits); los demás PRs están
+pendientes. Registro, recarga, catálogo, formulario y ejecución de paquetes disponibles;
+falta migrar Acentuar y cerrar la aceptación de PR-01.
 Los números identifican entregas de este plan, no PRs abiertos en GitHub. El repositorio
 todavía no tiene remoto configurado.
 
 Entrega complementaria: **Hay Acent**, cuatro presets de scripts MIDI en `1fc521f`
-([uso](LUA.md#hay-acent)). Usa el ejecutor existente; los commits 2–4 de PR-01 siguen
-pendientes. Tiempo desde la primera lectura registrada hasta el commit: 3 min 42 s
+([uso](LUA.md#hay-acent)). Usa el ejecutor de scripts de archivo; su formato es
+independiente del registro de paquetes. Tiempo desde la primera lectura registrada hasta el commit: 3 min 42 s
 (2026-11-11, 06:40:06–06:43:48 UTC), incluidas comprobaciones y espera de permisos,
 sin el commit posterior de documentación/seguimiento. Pasaron las 4 pruebas de
 Hay Acent y las 7 del ejecutor existente; `scripts/check.sh` se detuvo en diferencias
@@ -164,8 +165,9 @@ interoperabilidad y capacidad de procesamiento.
 
 **Título sugerido:** `feat(lua): cargar herramientas desde paquetes declarativos`
 
-**Avance:** commit 1 completado en `5bec9fe`: [contrato v1](LUA_PACKAGES.md).
-Tiempo transcurrido desde el inicio de esta ejecución hasta ese commit: **12 min 50 s**
+**Avance:** 3 de 4 commits: contrato `5bec9fe`, registro `7ce9d63` y ejecución
+`0fd3849`. [Contrato v1](LUA_PACKAGES.md).
+Tiempo transcurrido hasta el primer commit documental: **12 min 50 s**
 (2026-11-11, 05:45:16–05:58:06 UTC), incluida la espera de permisos. El sondeo previo
 y el commit posterior de seguimiento del tablero no están incluidos. Es una medición
 del paso documental; no extrapolar ese tiempo a los commits de implementación.
@@ -173,19 +175,32 @@ del paso documental; no extrapolar ese tiempo a los commits de implementación.
 **Valor:** añadir una herramienta MIDI nueva copiando un paquete Lua, con entrada en
 `[+]`, comando y formulario generado desde sus parámetros.
 
-**Puntos de entrada:** `src/scripting{,/actions,/builtin}.rs`, `src/catalog.rs`,
-`src/actions.rs`, `src/ui/{scripting,action_form,palette}.rs`, `assets/scripts/midi/`.
+El commit 3 (`0fd3849`) conecta `midi.tools.reload` y
+`midi.tool <id>` a catálogo, formulario y controlador MIDI. La recarga conserva
+el registro ante errores; los formularios antiguos se rechazan y los trabajos
+enviados conservan su fuente. [Uso y estado](LUA.md#herramientas-registradas).
+
+Comprobaciones del commit 3: 91 pruebas headless aprobadas, compilación correcta y
+62/63 pruebas del binario. Persiste el fallo anterior de perfiles (ancho 180 frente
+a 237); `scripts/check.sh` se detiene en formato previo. Se añadieron 16 pruebas.
+No hubo comprobación interactiva. Tiempo desde la marca registrada hasta el commit:
+48 min 14 s (22:53:14–23:41:28 UTC), incluidas comprobaciones y espera de permisos;
+sin exploración inicial ni seguimiento documental posterior.
+
+**Puntos de entrada:** `src/scripting/packages/`, `src/scripting/{notes,controls,output,target}.rs`,
+`src/catalog/{entry,tools}.rs`, `src/actions{,/owned}.rs`,
+`src/ui/{lua_tools,scripting,action_form,palette}.rs`, `assets/scripts/midi/`.
 
 **Tareas**
 
 - [x] Definir paquete v1: ID estable, versión de API, nombre, parámetros y función de
   edición. Documentar su ubicación y carga explícita; evitar escanear disco al dibujar.
-- [ ] Crear un registro de metadatos dinámicos que conviva con las acciones nativas.
+- [x] Crear un registro de metadatos dinámicos que conviva con las acciones nativas.
   El catálogo no instancia plugins ni conserva una VM como descriptor.
-- [ ] Adaptar el formulario y despacho actuales para usar el mismo contrato validado.
+- [x] Adaptar el formulario y despacho actuales para usar el mismo contrato validado.
 - [ ] Migrar Acentuar como ejemplo y conservar su comando actual. Permitir recargar el
   paquete; un error conserva la versión válida anterior.
-- [ ] Mantener límites, validación por IDs y descarte de resultados obsoletos de la
+- [x] Mantener límites, validación por IDs y descarte de resultados obsoletos de la
   edición MIDI. Un paquete duplicado o con API incompatible produce un error claro.
 
 **Aceptación:** una segunda herramienta aparece y transforma una selección sin tocar

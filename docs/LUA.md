@@ -5,9 +5,36 @@ Lua permite crear transformaciones MIDI sin tocar el motor de audio. Desde `[+]`
 `:midi.script '/ruta/herramienta.lua'`. Para probar la integración, usa
 **Lua · acentuar notas** o `:midi.script.accent`. El botón **Lua…** abre el formulario para un archivo propio.
 
-El [contrato de paquetes v1](LUA_PACKAGES.md) ya cuenta con un registro headless
-probado (PR-01, commit 2). Su conexión al catálogo, formulario y ejecutor sigue
-pendiente; los comandos de esta guía describen la API disponible en la aplicación.
+Los [paquetes v1](LUA_PACKAGES.md) ya se conectan al catálogo, formulario y ejecutor
+(PR-01, commit 3). Los scripts de archivo anteriores siguen disponibles.
+
+## Herramientas registradas
+
+Guarda un archivo `.lua` con el [formato de paquete](LUA_PACKAGES.md#formato-y-ejemplo)
+en el directorio de herramientas del usuario. En Linux es
+`~/.config/hay-daw/tools/midi/`, o `$XDG_CONFIG_HOME/hay-daw/tools/midi/` si defines
+esa variable; crea la carpeta si aún no existe. El archivo devuelve metadatos y
+`run(context, params)`, y su ID usa un prefijo propio, por ejemplo `user.midi.accent`.
+Los presets de Hay Acent de la sección siguiente usan otra API: no basta con copiarlos
+a esta carpeta. La aplicación todavía no distribuye Acentuar como paquete; esa
+migración corresponde al commit 4.
+
+1. Ejecuta `:midi.tools.reload` o **Lua · recargar herramientas** desde `[+]`.
+2. Abre un clip MIDI y selecciona notas; sin selección se incluyen todas.
+3. Elige la herramienta en `[+]` o escribe `:midi.tool user.midi.accent` para abrir
+   sus parámetros. Las herramientas sin parámetros se ejecutan directamente.
+4. También puedes escribir todos sus valores en orden, por ejemplo
+   `:midi.tool user.midi.accent 12`. Texto con espacios usa las citas de los comandos
+   habituales; booleanos usan `true`/`false`. No se ejecuta un shell.
+
+La recarga lee ambos directorios en un worker y publica el registro completo. Una
+sola recarga puede estar activa. Si falla, conserva el registro anterior; si termina
+correctamente, hay que reabrir los formularios que ya estaban abiertos. Los trabajos
+enviados conservan su fuente hasta terminar, incluso si se retira el paquete. Su
+resultado solo se aplica si el clip sigue siendo el mismo, conserva su patrón y
+no está bloqueado ni en arrastre. No hay búsqueda automática de cambios en disco.
+Los mensajes distinguen errores de carga, descriptor, argumentos, ejecución,
+resultado y estado obsoleto; un ID ausente nunca usa una herramienta de respaldo.
 
 ## Hay Acent
 
@@ -44,8 +71,8 @@ Desde la raíz del proyecto puedes usar, por ejemplo:
 ```
 
 Si la app se abrió desde otra carpeta, utiliza la ruta absoluta del archivo.
-Estos presets usan la API actual de scripts; el registro de paquetes v1 sigue
-pendiente. Verificación headless: `cargo test --no-default-features --test hay_acent --locked`.
+Estos presets conservan la API de scripts de archivo y no se registran como paquetes.
+Verificación headless: `cargo test --no-default-features --test hay_acent --locked`.
 
 ## Acciones del piano roll
 
