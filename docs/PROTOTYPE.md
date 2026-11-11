@@ -4,6 +4,12 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
 
 ## Disponible
 
+- Registro **headless de paquetes Lua v1** (PR-01, commit 2): descubrimiento explícito,
+  validación estricta, límites de fuente/VM y recarga completa por generación. Un fallo
+  conserva fuentes y metadatos anteriores; los snapshots pendientes siguen válidos.
+  18 pruebas nuevas, sin dependencias añadidas. La integración con `[+]`, formulario,
+  `midi.tool` y `midi.tools.reload` sigue pendiente del commit 3. [Contrato](LUA_PACKAGES.md).
+
 - **Hay Acent**: presets Lua Pulso, Alternado, Creciente y Clic 4/4, ejecutables
   sobre el clip MIDI con `midi.script`/Lua… sin recompilar. El clic transforma cuatro
   notas existentes en una guía a negras; usa el instrumento de la pista, sin

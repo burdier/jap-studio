@@ -309,7 +309,7 @@
         <div class="score" aria-label="Avance total">
           <strong><span id="done-count">0</span> / <span id="total-count">15</span></strong>
           <span>PR completados · <span id="percent">0%</span></span>
-          <span class="commit-score"><span id="commit-done">1</span>/<span id="commit-total">69</span> commits · <span id="commit-percent">1%</span></span>
+          <span class="commit-score"><span id="commit-done">2</span>/<span id="commit-total">69</span> commits · <span id="commit-percent">3%</span></span>
           <div class="bar" aria-hidden="true"><span id="bar-fill"></span></div>
         </div>
       </header>
@@ -339,7 +339,7 @@
         <summary>✓ Hay Acent · cuatro presets Lua disponibles</summary>
         <p>Pulso, Alternado, Creciente y Clic 4/4. Usa Lua… sobre un clip MIDI.
           <a href="docs/LUA.md#hay-acent" style="color: var(--accent)">Cómo probarlos</a>.
-          Esta entrega usa scripts de archivo; el registro de paquetes de PR-01 sigue pendiente.</p>
+          Esta entrega usa scripts de archivo; su conexión al registro de paquetes de PR-01 sigue pendiente.</p>
         <p><small>Commit 1fc521f · 11 nov 2026 · 3 min 42 s hasta el commit, desde
           la primera lectura registrada (06:40:06–06:43:48 UTC), incluida la verificación y espera de permisos.
           11 pruebas pasaron; la comprobación completa se detuvo por formato previo en otros archivos.
@@ -357,10 +357,10 @@
             <p>Añadir una herramienta al catálogo sin recompilar.</p>
             <div class="depends">Base del kit</div>
             <details class="commit-plan">
-              <summary>1 de 4 commits completado · 2–4 días estimados para el PR</summary>
+              <summary>2 de 4 commits completados · 2–4 días estimados para el PR</summary>
               <ol>
                 <li data-status="done" data-commit="5bec9fe"><strong>docs(lua): definir el paquete de herramientas v1</strong>IDs, versión, parámetros, ubicación, recarga y límites definidos en el <a href="docs/LUA_PACKAGES.md">contrato v1</a>.<br><small>5bec9fe · 11 nov 2026 · 12 min 50 s transcurridos hasta el commit (05:45:16–05:58:06 UTC), incluida espera de permisos y sin el sondeo previo. Solo documentación; implementación pendiente.</small></li>
-                <li><strong>feat(lua): descubrir y validar metadatos de paquetes</strong>Añadir lectura headless con IDs duplicados, versión inválida y errores cubiertos por pruebas.</li>
+                <li data-status="done" data-commit="7ce9d63"><strong>feat(lua): descubrir y validar metadatos de paquetes</strong>Registro headless con metadatos propios, validación estricta y recarga completa que conserva el estado anterior ante errores. 18 pruebas nuevas; integración UI/ejecutor pendiente.<br><small>7ce9d63 · 11 nov 2026 · 10 min 24 s desde la marca de inicio registrada (22:38:37–22:49:01 UTC), excluida la exploración inicial. 77 pruebas headless y compilación correctas; binario: 60/61, con fallo aislado en perfiles (ancho 180 frente a 237) en código sin cambios. La comprobación completa se detiene por formato previo; formato localizado correcto.</small></li>
                 <li><strong>feat(lua): ejecutar herramientas del registro dinámico</strong>Conectar una herramienta descubierta al sandbox, formulario y ruta de edición MIDI actuales.</li>
                 <li><strong>feat(lua): migrar acento a un paquete recargable</strong>Usarlo como primera herramienta externa; documentar instalación, recarga y el estado válido anterior ante errores.</li>
               </ol>
@@ -610,7 +610,7 @@
       </section>
 
       <footer>
-        <span>Estimación inicial total: 68–127 jornadas-persona (aprox. 14–26 semanas a tiempo completo). PR-01 aún no está implementado.</span>
+        <span>Estimación inicial total: 68–127 jornadas-persona (aprox. 14–26 semanas a tiempo completo). PR-01: 2 de 4 commits; registro headless implementado, conexión UI/ejecutor y migración pendientes.</span>
         <a href="docs/PLAN_LUA_MULTITRACK_HILOS.md">Ver tareas y criterios completos</a>
       </footer>
     </main>

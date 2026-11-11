@@ -1,8 +1,9 @@
 # Paquetes de herramientas Lua · contrato v1
 
-Estado: contrato acordado para PR-01, primer commit. **Todavía no implementado.**
-La ejecución disponible hoy está descrita en [LUA.md](LUA.md). Este documento fija
-el formato que deben consumir el registro, el formulario y el ejecutor siguientes.
+Estado: **registro headless implementado en el commit 2 de PR-01**. La conexión
+al catálogo, worker de recarga, formulario y ejecutor pertenece al commit 3;
+Acentuar como paquete recargable, al commit 4. La ejecución disponible hoy en la
+aplicación está descrita en [LUA.md](LUA.md). Este documento fija el contrato completo.
 No habilita componentes DSP, pistas, plugins, ejecución live ni undo/redo global.
 
 ## Formato y ejemplo
@@ -138,8 +139,10 @@ No hay precedencia silenciosa por orden de lectura ni sobrescritura de nativas.
    Puede completar con esa versión tras una recarga, incluida la retirada del
    paquete; siempre debe superar la validación del clip descrita abajo.
 
+`ActionParameter<String>` ya conserva los parámetros del paquete con el mismo
+validador de las acciones nativas; estas mantienen las cadenas estáticas por defecto.
 Las referencias `&'static` de `ActionSpec`, `CatalogEntry` y `ActionForm` actuales
-no sirven para metadatos recargables. Los commits siguientes deben darles una
+todavía no sirven para metadatos recargables. El commit siguiente debe darles una
 representación con propietario y conservar el formulario/validador compartidos.
 No convertir cadenas cargadas en referencias permanentes mediante fugas de memoria
 ni crear un segundo validador independiente para Lua. Las acciones nativas deben
@@ -190,13 +193,26 @@ Ejemplo: `descriptor · /ruta/acento.lua · user.midi.accent · parameters[1].de
 fuera de 0–126`. El host comunica el error fuera del audio. El formato interno del
 error queda a la implementación; estos datos observables son obligatorios.
 
-## Entregas que comprobarán este contrato
+## Estado de las entregas y comprobaciones
 
-| Commit de PR-01 | Capacidad y comprobación pendiente |
+| Commit de PR-01 | Capacidad y comprobación |
 |---|---|
-| 2 · registro | Lectura headless, tipos/campos, límites, API desconocida, IDs duplicados, publicación completa y conservación ante fallo |
-| 3 · ejecución | Formulario/comando con la misma validación; errores de Lua y resultado intacto; edición concurrente rechazada; generaciones y trabajo pendiente |
-| 4 · Acentuar | Paquete real con alias anterior, recarga válida/inválida; añadir una segunda herramienta sin recompilar y conservar las acciones nativas |
+| 2 · registro · implementado | Lectura headless, tipos/campos, límites, API desconocida, IDs duplicados, publicación completa, retirada y conservación de snapshots ante fallo |
+| 3 · ejecución · pendiente | Formulario/comando con la misma validación; errores de Lua y resultado intacto; edición concurrente rechazada; generaciones y trabajo pendiente |
+| 4 · Acentuar · pendiente | Paquete real con alias anterior, recarga válida/inválida; añadir una segunda herramienta sin recompilar y conservar las acciones nativas |
 
-Este primer commit entrega el contrato y su ejemplo documental. Las comprobaciones
-de comportamiento se añaden junto al registro y al ejecutor que lo implementen.
+La API actual está en `elevate::scripting::packages`: `PackageDirectories` recibe
+las rutas del host y `PackageRegistry::reload` carga de forma síncrona fuera de
+UI/audio. `get` y `packages` exponen snapshots inmutables con fuente y descriptor;
+`generation` cambia solo al publicar una recarga válida. `PackageError` conserva
+fase (`load` o `descriptor`), ruta, ID conocido, campo y explicación. No se consulta
+el disco al leer un snapshot. Las raíces que son enlaces simbólicos se rechazan.
+El host del commit 3 resolverá las rutas de configuración, informará si no existe
+directorio de usuario y coordinará un único worker de recarga.
+
+Las 18 pruebas de `tests/lua_packages.rs` y `tests/lua_packages/` ejercitan esta API
+con archivos temporales reales, fuentes capturadas y evaluaciones acotadas de Lua:
+
+```bash
+distrobox enter gpui-dev -- cargo test --no-default-features --test lua_packages --test scripting --test hay_acent --test catalog --locked
+```

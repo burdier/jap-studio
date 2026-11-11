@@ -70,7 +70,7 @@
 | Wine del host desde distrobox | `scripts/wine-host.sh` | `scripts/run.sh`, `audio/vst3/environment.rs`, `ui/app.rs`; WINELOADER, prefijo compartido, diagnóstico `examples/vst3_probe.rs` |
 | Contrato/registro de parámetros de acciones | `src/actions.rs` | `CatalogAction::parameters()`, `export/action.rs`; texto, cantidades con unidad y booleanos |
 | Herramientas Lua para MIDI | `src/scripting.rs`, `src/scripting/{actions,builtin,output}.rs` | `ui/scripting.rs`, `assets/scripts/midi/`, `tests/scripting.rs`, `docs/LUA.md`; Q/H/subdividir/acento; entrada reducida para integradas, subdivisión pequeña inmediata, worker para grandes/archivos; `examples/midi_edit_latency.rs`, cortes validados por ID |
-| Contrato previsto de paquetes Lua v1 (PR-01) | `docs/LUA_PACKAGES.md` | Formato, parámetros, carga explícita, recarga y límites; enlazado desde `docs/LUA.md`, todavía sin registro dinámico implementado |
+| Registro headless de paquetes Lua v1 (PR-01, commit 2) | `src/scripting/packages/{mod,scan,descriptor,fields,parameters,error}.rs` | `scripting/sandbox.rs`, `actions.rs`, `tests/lua_packages.rs`: carga explícita acotada, metadatos propios, generaciones y conservación ante fallo; contrato en `docs/LUA_PACKAGES.md`, integración UI/ejecutor pendiente |
 | Presets Hay Acent para selección MIDI | `assets/scripts/midi/hay_acent/` | Pulso, Alternado, Creciente y Clic 4/4 por `midi.script`; `tests/hay_acent.rs`, `docs/LUA.md#hay-acent`; modifican notas existentes, sin registro dinámico ni metrónomo global |
 | Rejilla y subdivisión de notas | `src/musical/grid.rs`, `src/ui/piano_roll/grid_actions.rs` | `piano_roll/{actions,edit,navigation}.rs`, `views/piano_roll/{toolbar,grid_background}.rs`; Alt+1/2, Alt+rueda, Shift+pellizco; `midi.subdivide` ejecuta Lua |
 | Formulario flotante de acciones | `src/ui/action_form.rs` | `action_form/input.rs`, `views/action_form.rs`; entidades InputState, suscripciones, foco limitado al diálogo y ventana de origen |
@@ -189,6 +189,9 @@ distrobox enter gpui-dev -- bash scripts/check.sh
 
 # Solo contratos musicales, sin UI ni dispositivo
 distrobox enter gpui-dev -- cargo test --no-default-features --test musical --locked
+
+# Registro de paquetes, sandbox MIDI y compatibilidad de acciones Lua
+distrobox enter gpui-dev -- cargo test --no-default-features --test lua_packages --test scripting --test hay_acent --test catalog --locked
 
 # Catálogo y asignación de acciones a iconos, sin ventana ni dispositivo
 distrobox enter gpui-dev -- cargo test --bin daw-gpui ui::toolbar --locked

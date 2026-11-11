@@ -116,6 +116,19 @@ Las sugerencias no ejecutan operaciones hasta Enter; un clic solo completa el te
 
 ## Scripts Lua para edición MIDI
 
+`scripting/packages` implementa el registro headless del contrato v1. El host entrega
+las rutas distribuida y de usuario; `PackageRegistry::reload` construye un candidato
+completo de archivos regulares `.lua` del nivel inmediato, ordenados y acotados. Cada
+descriptor se evalúa en una VM aislada del sandbox compartido, sin ejecutar `run`.
+Solo se conservan fuente y metadatos propios de Rust en snapshots `Arc<Package>`.
+Una carga válida reemplaza el registro e incrementa su generación; cualquier error
+conserva el registro anterior. Los snapshots ya capturados sobreviven a su retirada.
+`ActionParameter<String>` reutiliza el validador de las acciones nativas, cuyo tipo
+por defecto conserva cadenas estáticas. No hay fugas de memoria ni VM en el catálogo.
+Esta API es síncrona y debe invocarse fuera de UI/audio; su worker, comandos,
+formulario dinámico y ejecutor corresponden al siguiente commit de PR-01. No se
+escanean directorios desde la aplicación todavía. [Contrato y estado](LUA_PACKAGES.md).
+
 `src/scripting/builtin.rs` prepara solo las notas afectadas para las herramientas
 integradas; sus fuentes Lua siguen siendo las mismas. Controles y notas omitidas
 se reincorporan sin serializar a Lua y sin reutilizar IDs. La acción de subdivisión
