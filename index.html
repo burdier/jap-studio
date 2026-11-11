@@ -81,6 +81,8 @@
 
       .score span { color: var(--muted); }
 
+      .score .commit-score { display: block; margin-top: 8px; }
+
       .bar {
         height: 8px;
         margin-top: 14px;
@@ -223,9 +225,17 @@
       }
 
       .commit-plan li {
+        position: relative;
         padding-left: 3px;
         color: var(--muted);
         font-size: 0.82rem;
+      }
+
+      .commit-plan li::marker { color: var(--border); }
+      .commit-plan li[data-status="done"]::marker { color: var(--done); }
+      .commit-plan li[data-status="done"] strong::after {
+        content: " ✓";
+        color: var(--done);
       }
 
       .commit-plan strong {
@@ -297,6 +307,7 @@
         <div class="score" aria-label="Avance total">
           <strong><span id="done-count">0</span> / <span id="total-count">15</span></strong>
           <span>PR completados · <span id="percent">0%</span></span>
+          <span class="commit-score"><span id="commit-done">0</span>/<span id="commit-total">0</span> commits · <span id="commit-percent">0%</span></span>
           <div class="bar" aria-hidden="true"><span id="bar-fill"></span></div>
         </div>
       </header>
@@ -317,6 +328,8 @@
           <li>Antes de cada commit, revisar <code>git status</code> y añadir solo los archivos de su intención. Preservar cambios locales ajenos.</li>
           <li>Respetar las capacidades existentes: no simular operaciones de FX, buses o audio que aún no estén implementadas.</li>
           <li>Para PR-02, el orden es contrato → lectura → validación compartida → escritura atómica → Lua.</li>
+          <li>Cada <code>li</code> representa uno de los commits planeados. El contador calcula el total desde la lista. Al integrar un commit, marca su elemento con <code>data-status="done"</code> en un commit separado <code>docs(progress)</code>; así el cambio funcional conserva una sola intención. El coordinador actualiza este tablero después de integrar, no cada agente desde su rama.</li>
+          <li>Estimaciones en jornadas-persona de trabajo concentrado, incluyendo comprobaciones localizadas e integración; no incluyen esperas de revisión, disponibilidad de plugins ni bloqueos externos. Se recalibran al cerrar cada PR.</li>
         </ul>
       </details>
 
@@ -324,14 +337,14 @@
         <h2>1 · Kit Lua</h2>
         <p class="phase-note">Extensiones útiles antes de ampliar el motor.</p>
         <div class="grid">
-          <!-- Para actualizar: cambia data-status a pending, progress o done. -->
-          <article data-pr="PR-01" data-status="progress">
+          <!-- Estado por commit: añade data-status="done" al li ya integrado. -->
+          <article data-pr="PR-01" data-status="pending">
             <div class="pr-head"><span class="pr-number">PR-01</span><span class="status">Pendiente</span></div>
             <h3>Herramientas Lua declarativas</h3>
             <p>Añadir una herramienta al catálogo sin recompilar.</p>
             <div class="depends">Base del kit</div>
             <details class="commit-plan">
-              <summary>4 commits · contrato antes del registro</summary>
+              <summary>4 commits · 2–4 días · contrato antes del registro</summary>
               <ol>
                 <li><strong>docs(lua): definir el paquete de herramientas v1</strong>Fijar IDs, versión, parámetros, ubicación y límites antes de cambiar el catálogo.</li>
                 <li><strong>feat(lua): descubrir y validar metadatos de paquetes</strong>Añadir lectura headless con IDs duplicados, versión inválida y errores cubiertos por pruebas.</li>
@@ -346,7 +359,7 @@
             <p>Crear y configurar varias pistas mediante lotes validados.</p>
             <div class="depends">Depende de PR-01</div>
             <details class="commit-plan">
-              <summary>9 commits · orden: contrato → lectura → validación → escritura → Lua</summary>
+              <summary>9 commits · 3–5 días · orden: contrato → lectura → validación → escritura → Lua</summary>
               <ol>
                 <li><strong>docs(plan): concretar el contrato de lotes de pistas</strong>Fijar snapshot, operaciones permitidas, revisión de origen, handles, errores y límites; sin undo/redo.</li>
                 <li><strong>feat(musical): exponer snapshot estable de pistas, mezcla y FX</strong>Añadir lectura headless con IDs estables; no añadir mutaciones ni UI.</li>
@@ -366,7 +379,7 @@
             <p>Componer primitivas y controlar el resultado desde la interfaz.</p>
             <div class="depends">Depende de PR-01</div>
             <details class="commit-plan">
-              <summary>5 commits · cada etapa se usa en el componente</summary>
+              <summary>5 commits · 4–7 días · cada etapa se usa en el componente</summary>
               <ol>
                 <li><strong>docs(component): fijar el contrato Lua de primitivas</strong>Precisar puertos, parámetros, valores y límites del grafo mínimo.</li>
                 <li><strong>feat(component): validar grafos declarativos con primitivas existentes</strong>Conectar el validador a la creación de un componente reproducible.</li>
@@ -389,7 +402,7 @@
             <p>Escuchar varias pistas de audio con mezcla independiente.</p>
             <div class="depends">Depende de PR-03</div>
             <details class="commit-plan">
-              <summary>4 commits · una salida y un transporte</summary>
+              <summary>4 commits · 6–10 días · una salida y un transporte</summary>
               <ol>
                 <li><strong>refactor(audio): separar fuente de clip y salida CPAL</strong>Conservar un reproductor de un clip con la misma ruta de preparación.</li>
                 <li><strong>feat(audio): mezclar dos fuentes en una salida</strong>Construir stream compartido, preparar buffers y probar la suma. La prueba del stream acompaña a su primer consumidor.</li>
@@ -404,7 +417,7 @@
             <p>Ejecutar instancias internas independientes y MIDI simultáneo.</p>
             <div class="depends">Depende de PR-04</div>
             <details class="commit-plan">
-              <summary>5 commits · fuentes MIDI dentro del motor</summary>
+              <summary>5 commits · 5–8 días · fuentes MIDI dentro del motor</summary>
               <ol>
                 <li><strong>refactor(instrument): separar síntesis de su stream</strong>Mantener piano y sampler utilizables a través del motor común.</li>
                 <li><strong>feat(audio): crear instancias internas por ID</strong>Preparar dos reproductores y comprobar independencia de voces y parámetros.</li>
@@ -420,7 +433,7 @@
             <p>Usar varias instancias VST3 bajo el mismo transporte.</p>
             <div class="depends">Depende de PR-05</div>
             <details class="commit-plan">
-              <summary>4 commits · adaptar el host VST3 que ya existe</summary>
+              <summary>4 commits · 5–9 días · adaptar el host VST3 que ya existe</summary>
               <ol>
                 <li><strong>refactor(vst3): implementar el procesador común</strong>Conectar el host actual, sus buses principales y ciclo de vida a una instancia por ID.</li>
                 <li><strong>feat(vst3): sincronizar contexto y eventos</strong>Pasar tiempo, tempo y offsets del motor; cubrir NoteOn, NoteOff y cambios por frame.</li>
@@ -442,7 +455,7 @@
             <p>Combinar instrumentos, ramas y efectos dentro de una pista.</p>
             <div class="depends">Depende de PR-02, 03 y 06</div>
             <details class="commit-plan">
-              <summary>4 commits · Hilos como estructura que ya suena</summary>
+              <summary>4 commits · 4–8 días · Hilos como estructura que ya suena</summary>
               <ol>
                 <li><strong>docs(hilos): fijar identidad y tipos de rama</strong>Separar contenedor musical, nodo de plugin y threads del sistema.</li>
                 <li><strong>feat(hilos): representar capas y serie existentes</strong>Conectar el modelo con ramas de audio y eventos que se puedan ejecutar.</li>
@@ -457,7 +470,7 @@
             <p>Procesar eventos musicales y medir el coste real de ejecución.</p>
             <div class="depends">Depende de PR-01 y 05</div>
             <details class="commit-plan">
-              <summary>5 commits · medir antes de decidir el runtime</summary>
+              <summary>5 commits · 5–10 días · medir antes de decidir el runtime</summary>
               <ol>
                 <li><strong>docs(lua): fijar el perfil de ejecución musical</strong>Separar edición en sandbox de procesamiento live y establecer cómo medir.</li>
                 <li><strong>feat(lua): preparar el procesador y sus límites</strong>Crear el procesador musical genérico con memoria/eventos acotados; sin lógica particular de transpositor en Rust.</li>
@@ -473,7 +486,7 @@
             <p>Distribuir notas round robin sin perder liberaciones ni expresión.</p>
             <div class="depends">Depende de PR-07 y 08</div>
             <details class="commit-plan">
-              <summary>4 commits · reglas Tejer en Lua</summary>
+              <summary>4 commits · 4–8 días · reglas Tejer en Lua</summary>
               <ol>
                 <li><strong>docs(tejer): especificar selección y reinicio</strong>Fijar avance, simultaneidad, seek/Play, edición del Hilo y manejo de errores.</li>
                 <li><strong>feat(tejer): enrutar NoteOn y registrar su destino</strong>Aplicar A-B-C con orden estable, guardar destino por voz y probar NoteOff/expresión, repeticiones y acordes. El registro se necesita para no perder liberaciones.</li>
@@ -488,7 +501,7 @@
             <p>Guardar, recuperar y duplicar configuraciones independientes.</p>
             <div class="depends">Depende de PR-09</div>
             <details class="commit-plan">
-              <summary>5 commits · estado recuperable y copias independientes</summary>
+              <summary>5 commits · 5–9 días · estado recuperable y copias independientes</summary>
               <ol>
                 <li><strong>docs(preset): definir formato versionado de Hilo</strong>Describir topología, IDs de tipo, versiones Lua, parámetros y referencias a recursos.</li>
                 <li><strong>feat(vst3): capturar y restaurar el estado permitido</strong>Usar ciclo de vida e hilos correctos; cubrir ida y vuelta de un estado de prueba.</li>
@@ -511,7 +524,7 @@
             <p>Alinear pistas y ramas que atraviesan plugins con retraso.</p>
             <div class="depends">Depende de PR-07</div>
             <details class="commit-plan">
-              <summary>3 commits · latencia declarada a audio alineado</summary>
+              <summary>3 commits · 4–8 días · latencia declarada a audio alineado</summary>
               <ol>
                 <li><strong>feat(audio): exponer latencia por procesador</strong>Traducir y verificar la latencia de formatos a una unidad común.</li>
                 <li><strong>feat(audio): calcular y preparar compensación por ruta</strong>Calcular el retraso en cada suma, preasignar buffers y probar impulsos alineados, bypass, frecuencia y bloques parciales.</li>
@@ -525,7 +538,7 @@
             <p>Mezclar por buses y conectar envíos e inputs auxiliares.</p>
             <div class="depends">Depende de PR-11</div>
             <details class="commit-plan">
-              <summary>3 commits · routing sin feedback</summary>
+              <summary>3 commits · 4–7 días · routing sin feedback</summary>
               <ol>
                 <li><strong>feat(routing): mezclar hijos en grupos existentes</strong>Conectar hijos al bus y probar la suma antes de añadir destinos auxiliares.</li>
                 <li><strong>feat(routing): añadir envíos y entradas sidechain compatibles</strong>Agregar pre/post fader y entradas auxiliares con prueba de aislamiento; es un recorrido completo de envío.</li>
@@ -539,7 +552,7 @@
             <p>Renderizar el mismo procesamiento que se escucha.</p>
             <div class="depends">Depende de PR-10 y 12</div>
             <details class="commit-plan">
-              <summary>4 commits · un grafo para reproducir y exportar</summary>
+              <summary>4 commits · 5–9 días · un grafo para reproducir y exportar</summary>
               <ol>
                 <li><strong>refactor(export): preparar fuentes con el motor común</strong>Separar instancias offline y mantener codecs/cancelación existentes.</li>
                 <li><strong>feat(export): renderizar Hilos, MIDI y Tejer</strong>Transportar los mismos offsets, parámetros y semilla/reinicio.</li>
@@ -554,7 +567,7 @@
             <p>Repartir ramas independientes según el grafo de dependencias.</p>
             <div class="depends">Depende de PR-08, 12 y 13</div>
             <details class="commit-plan">
-              <summary>5 commits · paralelismo medido por dependencias</summary>
+              <summary>5 commits · 5–10 días · paralelismo medido por dependencias</summary>
               <ol>
                 <li><strong>perf(audio): planificar tareas según el grafo</strong>Derivar orden y ramas independientes; probar orden estable con sidechain.</li>
                 <li><strong>feat(audio): preparar trabajadores y buffers acotados</strong>Crear el equipo fuera del callback y demostrar propiedad exclusiva de cada instancia.</li>
@@ -570,7 +583,7 @@
             <p>Insertar CLAP en las mismas pistas, Hilos y exportaciones.</p>
             <div class="depends">Depende del motor completo</div>
             <details class="commit-plan">
-              <summary>5 commits · adaptador CLAP al contrato común</summary>
+              <summary>5 commits · 7–14 días · adaptador CLAP al contrato común</summary>
               <ol>
                 <li><strong>docs(clap): revisar crate, API y licencia</strong>Documentar compatibilidad y dependencias; obtener autorización antes de instalar.</li>
                 <li><strong>feat(clap): descubrir e instanciar clases</strong>Conectar el cargador al catálogo y probar plugin de prueba.</li>
@@ -584,14 +597,15 @@
       </section>
 
       <footer>
-        <span>Estado inicial: todos los PR están pendientes.</span>
+        <span>Estimación inicial total: 68–127 jornadas-persona (aprox. 14–26 semanas a tiempo completo). PR-01 aún no está implementado.</span>
         <a href="docs/PLAN_LUA_MULTITRACK_HILOS.md">Ver tareas y criterios completos</a>
       </footer>
     </main>
 
     <script>
-      // En cada PR cambia únicamente data-status="pending" por "progress" o "done".
+      // El coordinador marca cada commit integrado con data-status="done" en su li.
       const cards = [...document.querySelectorAll("article[data-pr]")];
+      const commits = [...document.querySelectorAll(".commit-plan li")];
       const labels = { pending: "Pendiente", progress: "En progreso", done: "Completado" };
       const done = cards.filter((card) => card.dataset.status === "done").length;
       const percent = Math.round((done / cards.length) * 100);
@@ -603,6 +617,12 @@
       document.querySelector("#total-count").textContent = cards.length;
       document.querySelector("#percent").textContent = `${percent}%`;
       document.querySelector("#bar-fill").style.width = `${percent}%`;
+
+      const completedCommits = commits.filter((commit) => commit.dataset.status === "done").length;
+      const commitPercent = commits.length ? Math.round((completedCommits / commits.length) * 100) : 0;
+      document.querySelector("#commit-done").textContent = completedCommits;
+      document.querySelector("#commit-total").textContent = commits.length;
+      document.querySelector("#commit-percent").textContent = `${commitPercent}%`;
     </script>
   </body>
 </html>

@@ -86,6 +86,37 @@ prerrequisitos técnicos; no autoriza empezar varios cambios a la vez.
 | PR-14 | Aprovechar varios núcleos en proyectos con ramas independientes | PR-08, PR-12, PR-13 |
 | PR-15 | Insertar plugins CLAP en las mismas pistas e Hilos | PR-06, PR-10, PR-12, PR-13, PR-14 |
 
+## Estimación inicial
+
+Rangos de esfuerzo para una persona con experiencia en Rust y audio, trabajando a tiempo
+completo. Incluyen implementación, comprobaciones localizadas, integración y documentación
+propia del PR. No incluyen espera por revisión, dependencias externas, disponibilidad de
+plugins de prueba ni bloqueos del entorno. Son una primera estimación y deben recalibrarse
+con el trabajo real de cada entrega; no son fechas comprometidas.
+
+| PR | Jornadas-persona |
+|---|---:|
+| PR-01 | 2–4 |
+| PR-02 | 3–5 |
+| PR-03 | 4–7 |
+| PR-04 | 6–10 |
+| PR-05 | 5–8 |
+| PR-06 | 5–9 |
+| PR-07 | 4–8 |
+| PR-08 | 5–10 |
+| PR-09 | 4–8 |
+| PR-10 | 5–9 |
+| PR-11 | 4–8 |
+| PR-12 | 4–7 |
+| PR-13 | 5–9 |
+| PR-14 | 5–10 |
+| PR-15 | 7–14 |
+| **Total secuencial** | **68–127 (aprox. 14–26 semanas)** |
+
+El cálculo secuencial supone una sola persona y cinco jornadas por semana. La concurrencia
+puede reducir el tiempo de calendario solo cuando las dependencias estén satisfechas; la
+integración y resolución de conflictos añaden trabajo y el esfuerzo total no desaparece.
+
 Primer hito: PR-01 a PR-03 hacen útil el kit Lua. PR-04 a PR-07 entregan multipista
 y composición de instrumentos. PR-09 entrega Tejer. Los últimos PRs amplían fidelidad,
 interoperabilidad y capacidad de procesamiento.
@@ -109,7 +140,14 @@ interoperabilidad y capacidad de procesamiento.
    el árbol como parte de un PR pequeño.
 7. Actualizar mapa de archivos, contratos y estado cuando cambien. Hacer commits
    pequeños que incluyan solo el alcance elegido.
-8. No marcar el PR como completo si solo existe infraestructura o una alternativa que
+8. Cada elemento de la lista de commits del tablero `index.html` representa un commit
+   planeado. Tras integrar ese commit, el coordinador marca el elemento correspondiente
+   con `data-status="done"` y actualiza el tablero en un commit separado `docs(progress)`.
+   Así el commit funcional mantiene una sola intención y varios agentes no editan el
+   tablero concurrentemente desde sus ramas. Si se cambia la secuencia de commits, actualizar
+   también el número y descripción del tablero. No marques un commit solo por haberlo creado
+   en una rama: debe estar integrado en la rama acordada.
+9. No marcar el PR como completo si solo existe infraestructura o una alternativa que
    cambia su valor anunciado. Si necesita dividirse, conservar una demostración útil
    en cada entrega y actualizar aquí sus dependencias.
 
