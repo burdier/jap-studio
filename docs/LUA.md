@@ -5,6 +5,10 @@ Lua permite crear transformaciones MIDI sin tocar el motor de audio. Desde `[+]`
 `:midi.script '/ruta/herramienta.lua'`. Para probar la integración, usa
 **Lua · acentuar notas** o `:midi.script.accent`. El botón **Lua…** abre el formulario para un archivo propio.
 
+El [contrato de paquetes v1](LUA_PACKAGES.md) define el siguiente incremento de
+PR-01: herramientas registrables y recargables. Es una especificación pendiente
+de implementación; los comandos de esta guía siguen describiendo la API actual.
+
 ## Acciones del piano roll
 
 Cada herramienta tiene una acción propia en el catálogo y una implementación Lua en
