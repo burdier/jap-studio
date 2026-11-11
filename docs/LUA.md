@@ -9,6 +9,44 @@ El [contrato de paquetes v1](LUA_PACKAGES.md) define el siguiente incremento de
 PR-01: herramientas registrables y recargables. Es una especificación pendiente
 de implementación; los comandos de esta guía siguen describiendo la API actual.
 
+## Hay Acent
+
+Colección de cuatro scripts utilizables con el ejecutor actual. Abre un clip MIDI,
+selecciona notas y, desde **Lua…** o **Ejecutar script MIDI…** en `[+]`, introduce
+la ruta del preset en `assets/scripts/midi/hay_acent/`. No requiere recompilar:
+la aplicación lee el archivo en cada ejecución. Si no seleccionas notas, se aplica
+a todas las del patrón, como los demás scripts de archivo.
+
+| Archivo | Resultado |
+|---|---|
+| `pulso.lua` | Intensidad 112–72–72–72, repetida en orden temporal |
+| `alternado.lua` | Intensidad 112–72, repetida en orden temporal |
+| `creciente.lua` | Intensidad progresiva de 48 a 112; un solo ataque recibe 112 |
+| `clic_4_4.lua` | Cuatro notas cortas a negras, con intensidad 112–72–72–72 |
+
+Los tres primeros solo cambian velocity. Las notas con el mismo inicio forman un
+ataque y reciben el mismo acento; el patrón comienza en el primer ataque seleccionado.
+Fijan valores absolutos, de modo que repetir un preset no acumula intensidad.
+
+Para probar el clic, usa un clip de un compás **4/4**, con un instrumento cargado,
+dibuja cuatro notas del mismo tono, selecciónalas y ejecuta `clic_4_4.lua`.
+Reproduce el clip en loop. El script conserva los tonos e instrumentos: el sonido
+lo produce la pista. Alinea las notas al comienzo del compás 4/4 que contiene la
+primera seleccionada, con duración de 1/8 de negra y un pulso entre inicios.
+Exige exactamente cuatro notas y espacio para ese compás completo; si falla,
+conserva el patrón. Es una guía MIDI de 4/4 fijo, no un metrónomo global ni una
+adaptación automática al compás del proyecto.
+
+Desde la raíz del proyecto puedes usar, por ejemplo:
+
+```text
+:midi.script 'assets/scripts/midi/hay_acent/clic_4_4.lua'
+```
+
+Si la app se abrió desde otra carpeta, utiliza la ruta absoluta del archivo.
+Estos presets usan la API actual de scripts; el registro de paquetes v1 sigue
+pendiente. Verificación headless: `cargo test --no-default-features --test hay_acent --locked`.
+
 ## Acciones del piano roll
 
 Cada herramienta tiene una acción propia en el catálogo y una implementación Lua en

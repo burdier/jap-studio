@@ -5,6 +5,14 @@ los demás PRs están pendientes. La carga de paquetes todavía no está impleme
 Los números identifican entregas de este plan, no PRs abiertos en GitHub. El repositorio
 todavía no tiene remoto configurado.
 
+Entrega complementaria: **Hay Acent**, cuatro presets de scripts MIDI en `1fc521f`
+([uso](LUA.md#hay-acent)). Usa el ejecutor existente; los commits 2–4 de PR-01 siguen
+pendientes. Tiempo desde la primera lectura registrada hasta el commit: 3 min 42 s
+(2026-11-11, 06:40:06–06:43:48 UTC), incluidas comprobaciones y espera de permisos,
+sin el commit posterior de documentación/seguimiento. Pasaron las 4 pruebas de
+Hay Acent y las 7 del ejecutor existente; `scripts/check.sh` se detuvo en diferencias
+de formato previas de archivos ajenos. No se hizo audición manual.
+
 ## Objetivo
 
 Poder crear herramientas, componentes, configuraciones de pistas y comportamientos

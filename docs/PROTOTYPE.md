@@ -4,6 +4,11 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
 
 ## Disponible
 
+- **Hay Acent**: presets Lua Pulso, Alternado, Creciente y Clic 4/4, ejecutables
+  sobre el clip MIDI con `midi.script`/Lua… sin recompilar. El clic transforma cuatro
+  notas existentes en una guía a negras; usa el instrumento de la pista, sin
+  metrónomo global. [Uso y límites](LUA.md#hay-acent).
+
 - Acción **Nota general…** desde `[+]`, `:note` o `:note.edit`. Abre el mismo apunte
   multilínea para editarlo y guardarlo en los datos del usuario (`hay-daw/general-note.md`);
   no queda atado a una pista o proyecto. Ctrl+Enter guarda y Esc cierra.
