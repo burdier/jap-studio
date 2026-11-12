@@ -6,7 +6,9 @@ use std::{
     sync::atomic::{AtomicU32, Ordering},
 };
 mod management;
+mod snapshot;
 pub use management::{TrackEdit, edit_tracks};
+pub use snapshot::{TrackMix, TrackSnapshot, TrackSnapshotEntry};
 
 pub const TRACK_COUNT: usize = 8;
 
