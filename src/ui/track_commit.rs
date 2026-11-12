@@ -14,8 +14,6 @@ impl DawApp {
         select_new: bool,
         revision: Option<u64>,
     ) {
-        let active_midi = self.timeline.midi_clip.as_ref().map(|clip| clip.id);
-        let selected_midi = self.timeline.selected_midi.clone();
         self.stop_all();
         if self.midi_capture.is_recording() {
             self.midi_capture.stop_recording(
@@ -41,13 +39,8 @@ impl DawApp {
             .iter()
             .map(|old| tracks.iter().position(|t| t.id == old.id))
             .collect();
-        self.timeline.remap_tracks(&sources, &original);
-        if preserve_midi {
-            if let Some(id) = active_midi {
-                self.timeline.focus_midi_clip(id);
-            }
-            self.timeline.selected_midi = selected_midi;
-        }
+        self.timeline
+            .remap_tracks_preserving_selection(&sources, &original, preserve_midi);
         self.midi_mapper.remap_tracks(&original);
         self.track_levels = levels;
         self.track_pans = pans;
