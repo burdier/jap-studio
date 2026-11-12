@@ -248,6 +248,9 @@ no se anuncia como undo/redo global, que todavía no existe.
 
 **Título sugerido:** `feat(lua): componer dispositivos de audio con primitivas existentes`
 
+**Contrato inicial:** [descriptor, puertos, grafo, macro, límites y recarga](LUA_AUDIO_COMPONENTS.md).
+La implementación y la demostración audible siguen pendientes.
+
 **Valor:** insertar desde `[+]` un componente Lua con dos etapas Volume y una macro de
 ganancia que realmente modifica el audio.
 
