@@ -8,7 +8,8 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
   El grafo estéreo de primitivas Volume se valida fuera de audio y procesa en el
   rack FX existente; macro, comando `fx.parameter`, bypass, duplicación y recarga
   explícita conservan instancias independientes. Pruebas headless de sonido y
-  recarga; sin audición manual registrada. Auto puede negociar una frecuencia
+  recarga; el usuario confirmó funcionamiento y estilo en la aplicación, sin
+  registrar pasos ni mediciones de audición. Auto puede negociar una frecuencia
   distinta de los 48 kHz usados al preparar el suavizado. Export offline y
   persistencia global de UI siguen pendientes. [Uso](LUA_AUDIO_COMPONENTS.md).
 

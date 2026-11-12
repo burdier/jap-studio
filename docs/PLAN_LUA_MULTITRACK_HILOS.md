@@ -1,7 +1,8 @@
 # Plan de PRs: kit Lua, multipista e Hilos
 
 Fecha: 2026-11-11. Estado: PR-01 y PR-02 implementados; PR-03 tiene sus cinco
-incrementos implementados y pruebas headless, pendiente de audición manual.
+incrementos implementados, pruebas headless y funcionamiento confirmado por el usuario
+en la aplicación. No se registraron pasos ni mediciones de la audición.
 Acentuar y Subdividir usan paquetes recargables.
 Los números identifican entregas de este plan, no PRs abiertos en GitHub. El repositorio
 todavía no tiene remoto configurado.
@@ -250,7 +251,8 @@ no se anuncia como undo/redo global, que todavía no existe.
 
 **Contrato inicial:** [descriptor, puertos, grafo, macro, límites y recarga](LUA_AUDIO_COMPONENTS.md).
 Implementación headless y en Track FX disponible. La prueba de audio del rack y la
-recarga pasan; falta una audición manual de aceptación en la ventana.
+recarga pasan; el usuario confirmó que funciona en la aplicación y aprobó el estilo.
+No se registraron pasos ni mediciones de la audición.
 
 **Valor:** insertar desde `[+]` un componente Lua con dos etapas Volume y una macro de
 ganancia que realmente modifica el audio.

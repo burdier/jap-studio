@@ -180,8 +180,9 @@ el registro anterior. La recarga no escanea durante el render ni cambia por sí
 sola el procesador que está sonando.
 
 Las pruebas headless cubren descriptor, ciclos, serie, paralelo, dos instancias,
-bypass, ganancia en el rack y recarga válida/inválida. No se ha registrado una
-audición manual en la ventana. El efecto se prepara con la frecuencia solicitada
+bypass, ganancia en el rack y recarga válida/inválida. El usuario confirmó que
+funciona en la aplicación y aprobó su estilo; no se registraron pasos ni mediciones
+de la audición. El efecto se prepara con la frecuencia solicitada
 en Audio, o 48 kHz si está en Auto; el ajuste del tiempo de suavizado podría
 diferir ligeramente si Auto negocia otra frecuencia. El proyecto completo aún
 no se guarda desde la UI ni comparte fuentes Lua entre colaboradores. Exportar
