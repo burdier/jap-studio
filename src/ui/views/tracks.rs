@@ -316,9 +316,8 @@ impl DawApp {
         let next = (initial + (delta * 0.8).round() as i32).clamp(0, 100);
         if pan {
             self.set_track_pan(track, next);
-        } else if let Some(level) = self.track_levels.get_mut(track) {
-            *level = next;
-            self.apply_track_gains();
+        } else {
+            self.set_track_level(track, next);
         }
         self.track_control_drag = Some((track, pan, start_y, initial, next != initial));
     }
@@ -333,9 +332,8 @@ impl DawApp {
         if pan {
             let value = self.track_pans.get(track).copied().unwrap_or(50);
             self.set_track_pan(track, (value + 5).clamp(0, 100));
-        } else if let Some(level) = self.track_levels.get_mut(track) {
-            *level = (*level + 4).clamp(0, 100);
-            self.apply_track_gains();
+        } else if let Some(level) = self.track_levels.get(track).copied() {
+            self.set_track_level(track, level + 4);
         }
     }
 
@@ -677,8 +675,7 @@ impl DawApp {
                     .on_scroll(cx.listener(move |this, event: &gpui::ScrollEvent, _, cx| {
                         let delta = f32::from(event.delta.pixel_delta(px(24.0)).y);
                         let step = if delta > 0.0 { 4 } else { -4 };
-                        this.track_levels[i] = (this.track_levels[i] + step).clamp(0, 100);
-                        this.apply_track_gains();
+                        this.set_track_level(i, this.track_levels[i] + step);
                         this.status_message =
                             format!("{}: {}%", this.tracks[i].name, this.track_levels[i]);
                         cx.stop_propagation();
@@ -702,8 +699,7 @@ impl DawApp {
                     .on_mouse_down(
                         MouseButton::Right,
                         cx.listener(move |this, _, _, cx| {
-                            this.track_levels[i] = TRACK_UNITY_LEVEL;
-                            this.apply_track_gains();
+                            this.set_track_level(i, TRACK_UNITY_LEVEL);
                             cx.stop_propagation();
                             cx.notify();
                         }),

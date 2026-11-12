@@ -83,6 +83,7 @@ impl DawApp {
             piano_roll_focus: cx.focus_handle(),
             piano_roll_window: None,
             tracks: DEMO_TRACKS.to_vec(),
+            track_revision: 0,
             selected_tracks: vec![],
             track_anchor: None,
             track_menu: None,

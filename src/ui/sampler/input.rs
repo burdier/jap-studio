@@ -47,6 +47,7 @@ impl DawApp {
     pub(in crate::ui) fn add_sampler(&mut self, track: usize) {
         self.stop_all();
         assign_instrument(&mut self.tracks, track, SAMPLER_ID);
+        self.track_revision = self.track_revision.wrapping_add(1);
         self.mix_vst();
         self.cursor_row = track;
         self.open_track_instrument(self.tracks[track].id);

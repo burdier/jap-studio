@@ -40,6 +40,9 @@ mod timing;
 mod timeline;
 mod toolbar;
 mod track_actions;
+mod track_batch;
+mod track_commit;
+mod track_scripts;
 mod track_drag;
 mod track_layout;
 mod track_menu;
@@ -131,6 +134,7 @@ struct DawApp {
     piano_roll_focus: FocusHandle,
     piano_roll_window: Option<WindowHandle<gpui::base::Root>>,
     tracks: Vec<Track>,
+    track_revision: u64,
     selected_tracks: Vec<TrackId>,
     track_anchor: Option<TrackId>,
     track_menu: Option<track_menu::TrackMenu>,

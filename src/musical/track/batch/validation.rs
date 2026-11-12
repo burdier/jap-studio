@@ -3,7 +3,7 @@ use super::{TrackBatchError, TrackRef};
 use crate::{
     devices,
     musical::{
-        fx::{FxEdit, FxKind},
+        fx::{FxEdit, FxKind, FxNode},
         track::{TrackDevice, TrackId, TrackSnapshotEntry},
     },
 };
@@ -84,8 +84,15 @@ pub(super) fn validate_fx(
     edit: &FxEdit,
     entry: &TrackSnapshotEntry,
 ) -> Result<(), TrackBatchError> {
+    if !utility_only(entry.track.chain.nodes()) {
+        return Err(error(
+            "recurso_no_disponible",
+            "Esta cadena necesita una instancia o toma FX; el lote admite solo Hay Utility",
+        ));
+    }
     match edit {
         FxEdit::Insert(node, _) => {
+            name(&node.name)?;
             if node.children().is_some_and(|children| !children.is_empty()) {
                 return Err(error(
                     "operacion_invalida",
@@ -103,6 +110,12 @@ pub(super) fn validate_fx(
                         "La inserción VST3 requiere preparar una instancia en el host",
                     ));
                 };
+                if catalog_id != "hay.utility" {
+                    return Err(error(
+                        "recurso_no_disponible",
+                        "El lote admite solo Hay Utility",
+                    ));
+                }
                 let descriptor = devices::find(catalog_id).ok_or_else(|| {
                     error(
                         "recurso_no_disponible",
@@ -151,7 +164,20 @@ pub(super) fn validate_fx(
             spec.validate(*value)
                 .map_err(|e| error("operacion_invalida", e.to_string()))?;
         }
+        FxEdit::Rename(_, value) => name(value)?,
         _ => {}
     }
     Ok(())
+}
+
+fn utility_only(nodes: &[FxNode]) -> bool {
+    nodes.iter().all(|node| match &node.kind {
+        FxKind::Effect {
+            plugin_id: TrackDevice::Hay { catalog_id },
+            ..
+        } => catalog_id == "hay.utility",
+        FxKind::Effect { .. } => false,
+        FxKind::SerialChain { children } => utility_only(children),
+        FxKind::ParallelChain { branches } => utility_only(branches),
+    })
 }

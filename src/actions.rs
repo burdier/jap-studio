@@ -192,6 +192,7 @@ pub fn find(command: &str) -> Option<&'static ActionSpec> {
         "export" => Some(&crate::export::action::SPEC),
         "file.import" => Some(&FILE_IMPORT),
         "midi.script" => Some(&MIDI_SCRIPT),
+        "track.script" => Some(&TRACK_SCRIPT),
         "midi.quantize" => Some(&crate::scripting::actions::QUANTIZE),
         "midi.humanize" => Some(&crate::scripting::actions::HUMANIZE),
         "midi.subdivide" => Some(&crate::scripting::actions::SUBDIVIDE),
@@ -278,6 +279,20 @@ static MIDI_SCRIPT: ActionSpec = ActionSpec {
     parameters: &[ActionParameter {
         key: "path",
         label: "Archivo Lua",
+        hint: "Ruta a un archivo .lua (máximo 256 KiB)",
+        kind: ParameterKind::Text,
+        default: "",
+        empty_value: None,
+        argument: Argument::Positional,
+    }],
+};
+
+static TRACK_SCRIPT: ActionSpec = ActionSpec {
+    command: "track.script",
+    description: "Ejecutar un archivo Lua que produzca un lote de pistas validado",
+    parameters: &[ActionParameter {
+        key: "path",
+        label: "Archivo Lua de pistas",
         hint: "Ruta a un archivo .lua (máximo 256 KiB)",
         kind: ParameterKind::Text,
         default: "",

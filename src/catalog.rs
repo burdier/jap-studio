@@ -421,6 +421,14 @@ pub const CATALOG: &[CatalogEntry] = &[
         action: CatalogAction::Invoke("midi.script"),
     },
     CatalogEntry {
+        id: "action.track.script",
+        kind: EntryKind::Action,
+        name: "Ejecutar script de pistas…",
+        summary: "Crear y configurar pistas con un lote Lua validado",
+        keywords: &["lua", "pistas", "lote", "automatizar", "archivo"],
+        action: CatalogAction::Invoke("track.script"),
+    },
+    CatalogEntry {
         id: "action.midi.quantize",
         kind: EntryKind::Action,
         name: "Cuantizar notas…",

@@ -278,6 +278,7 @@ impl DawApp {
             elevate::devices::fx_gain::compile(&chain)?;
         }
         self.tracks[index].chain = chain;
+        self.track_revision = self.track_revision.wrapping_add(1);
         if !preserve {
             self.fx.select_request = Some(FxTarget {
                 track,

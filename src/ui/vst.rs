@@ -93,6 +93,7 @@ impl DawApp {
                                     this.cursor_row
                                 });
                                 assign_instrument(&mut this.tracks, index, VST_ID);
+                                this.track_revision = this.track_revision.wrapping_add(1);
                                 this.vst = candidate;
                                 this.cursor_row = index;
                                 this.open_track_instrument(this.tracks[index].id);
@@ -179,6 +180,7 @@ impl DawApp {
         self.vst.unload();
         if let Some(index) = self.vst_track() {
             self.tracks[index].instrument = None;
+            self.track_revision = self.track_revision.wrapping_add(1);
         }
         self.fx.editor_track = None;
         self.sync_midi_focus();

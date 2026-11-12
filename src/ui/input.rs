@@ -287,6 +287,7 @@ impl DawApp {
             && !self.execute_vst_command(cmd.trim(), cx)
             && !self.execute_roll_command(cmd.trim(), window, cx)
             && !self.execute_tool_command(cmd.trim(), window, cx)
+            && !self.execute_track_script_command(cmd.trim(), cx)
             && !self.execute_script_command(cmd.trim(), cx)
         {
             self.execute_command(cmd);
@@ -333,6 +334,7 @@ impl DawApp {
                 Ok(parts) if parts.len() == 1 && !parts[0].trim().is_empty() => {
                     if let Some(track) = self.tracks.get_mut(self.cursor_row) {
                         track.name = parts[0].trim().to_string().into();
+                        self.track_revision = self.track_revision.wrapping_add(1);
                     }
                 }
                 _ => self.status_message = "Uso: track.rename 'Nombre de pista'".into(),

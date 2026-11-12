@@ -297,6 +297,7 @@ impl DawApp {
             return;
         }
         let previous = assign_instrument(&mut self.tracks, track, self.instrument.id());
+        self.track_revision = self.track_revision.wrapping_add(1);
         self.mix_vst();
         self.cursor_row = track;
         self.open_track_instrument(self.tracks[track].id);

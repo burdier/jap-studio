@@ -11,6 +11,7 @@ mod arrays;
 pub mod packages;
 pub mod push;
 mod sandbox;
+pub mod tracks;
 use crate::musical::{
     model::{NoteId, Pattern},
     time::PPQ,

@@ -19,6 +19,7 @@ impl DawApp {
             track_state.muted = !track_state.muted;
             (track_state.name.clone(), track_state.muted)
         };
+        self.track_revision = self.track_revision.wrapping_add(1);
         self.apply_track_gains();
         self.status_message = format!("{name}: {}", if muted { "Mute ON" } else { "Mute OFF" });
     }
@@ -31,6 +32,7 @@ impl DawApp {
             track_state.solo = !track_state.solo;
             (track_state.name.clone(), track_state.solo)
         };
+        self.track_revision = self.track_revision.wrapping_add(1);
         self.apply_track_gains();
         self.status_message = format!("{name}: {}", if solo { "Solo ON" } else { "Solo OFF" });
     }
@@ -47,7 +49,19 @@ impl DawApp {
         let Some(pan) = self.track_pans.get_mut(track) else {
             return;
         };
-        *pan = value.clamp(0, 100);
+        let next = value.clamp(0, 100);
+        if *pan == next { return; }
+        *pan = next;
+        self.track_revision = self.track_revision.wrapping_add(1);
+        self.apply_track_gains();
+    }
+
+    pub(super) fn set_track_level(&mut self, track: usize, value: i32) {
+        let Some(level) = self.track_levels.get_mut(track) else { return; };
+        let next = value.clamp(0, 100);
+        if *level == next { return; }
+        *level = next;
+        self.track_revision = self.track_revision.wrapping_add(1);
         self.apply_track_gains();
     }
 
@@ -129,8 +143,7 @@ impl DawApp {
             }
             MappedEffect::SetNormalized { target, fraction } => match target {
                 MidiBindTarget::TrackVolume(idx) if idx < self.track_levels.len() => {
-                    self.track_levels[idx] = (fraction * 100.0).round() as i32;
-                    self.apply_track_gains();
+                    self.set_track_level(idx, (fraction * 100.0).round() as i32);
                     self.status_message =
                         format!("{}: {}%", self.tracks[idx].name, self.track_levels[idx]);
                 }
