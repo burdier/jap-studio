@@ -84,6 +84,7 @@ impl DawApp {
     }
 
     pub(in crate::ui) fn render_fx_column(&self, cx: &mut Context<Self>) -> gpui::Div {
+        let lua_component = self.selected_lua_component();
         let analyzers = self
             .tracks
             .get(self.cursor_row)
@@ -111,6 +112,9 @@ impl DawApp {
                         .overflow_y_scroll()
                         .child(self.render_fx_analyzers(cx)),
                 )
+            })
+            .when_some(lua_component, |column, target| {
+                column.child(self.render_lua_component_controls(target, cx))
             })
     }
 

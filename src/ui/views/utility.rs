@@ -52,7 +52,7 @@ impl DawApp {
             )
             .child(param_slider(
                 ds,
-                "Ganancia · clic para 1x",
+                "Ganancia · clic para 1x".into(),
                 format!("{:.2}x", state.gain),
                 (state.gain - spec.min) / (spec.max - spec.min),
                 set,

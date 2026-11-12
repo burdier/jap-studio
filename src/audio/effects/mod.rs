@@ -1,8 +1,10 @@
 //! Plan FX inmutable publicado fuera de RT; instancias independientes por FxId.
+mod component;
 mod plan;
 mod publication;
 use super::vst3::{EditorHandle, VstEngine};
-pub(crate) use plan::{Plan, compile, contains_vst, needs_rack};
+pub(crate) use component::ComponentEffect;
+pub(crate) use plan::{Plan, compile, contains_component, contains_vst, needs_rack};
 use publication::Publication;
 use std::{
     cell::UnsafeCell,

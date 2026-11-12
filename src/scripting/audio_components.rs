@@ -60,7 +60,7 @@ pub fn parse(source: &str) -> Result<AudioComponent, String> {
         ],
         "descriptor",
     )?;
-    if number(&root, "api_version")? != 1.0 || string(&root, "kind")? != "audio_component" {
+    if integer(&root, "api_version")? != 1 || string(&root, "kind")? != "audio_component" {
         return Err("Se requiere api_version=1 y kind=audio_component".into());
     }
     let id = string(&root, "id")?;
@@ -74,7 +74,7 @@ pub fn parse(source: &str) -> Result<AudioComponent, String> {
     for key in ["input", "output"] {
         let port = table(&ports, key)?;
         fields(&port, &["kind", "channels"], key)?;
-        if string(&port, "kind")? != "audio" || number(&port, "channels")? != 2.0 {
+        if string(&port, "kind")? != "audio" || integer(&port, "channels")? != 2 {
             return Err(format!("ports.{key}: se requiere audio estéreo"));
         }
     }
@@ -142,10 +142,9 @@ pub fn parse(source: &str) -> Result<AudioComponent, String> {
             ],
             &path,
         )?;
-        let id = number(&row, "id")?;
+        let id = integer(&row, "id")?;
         let key = string(&row, "key")?;
-        if id.fract() != 0.0
-            || !(0.0..=65535.0).contains(&id)
+        if !(0..=65535).contains(&id)
             || !control_ids.insert(id as u32)
             || !identifier(&key)
             || !keys.insert(key.clone())
@@ -161,7 +160,14 @@ pub fn parse(source: &str) -> Result<AudioComponent, String> {
         let max = number(&row, "max")?;
         let default = number(&row, "default")?;
         let step = number(&row, "step")?;
-        if min < 0.0 || max > 2.0 || min >= max || default < min || default > max || step <= 0.0 {
+        if min < 0.0
+            || max > 2.0
+            || min >= max
+            || default < min
+            || default > max
+            || step <= 0.0
+            || step > f32::MAX as f64
+        {
             return Err(format!("{path}: rango de ganancia inválido"));
         }
         let target_rows = array(&table(&row, "targets")?, 1, 32, &format!("{path}.targets"))?;
@@ -278,6 +284,12 @@ fn number(parent: &Table, key: &str) -> Result<f64, String> {
         Value::Integer(n) => Ok(n as f64),
         Value::Number(n) if n.is_finite() => Ok(n),
         _ => Err(format!("{key}: se esperaba número finito")),
+    }
+}
+fn integer(parent: &Table, key: &str) -> Result<i64, String> {
+    match parent.raw_get::<Value>(key).map_err(|e| e.to_string())? {
+        Value::Integer(value) => Ok(value),
+        _ => Err(format!("{key}: se esperaba entero")),
     }
 }
 fn label(parent: &Table, key: &str, max: usize) -> Result<String, String> {

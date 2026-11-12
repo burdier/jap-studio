@@ -14,7 +14,7 @@ const WIDTH: f32 = 220.0;
 
 pub(in crate::ui) fn param_slider(
     ds: &DesignSystem,
-    label: &'static str,
+    label: SharedString,
     value_text: String,
     fraction: f32,
     on_set: FractionSet,
@@ -52,7 +52,7 @@ pub(in crate::ui) fn param_slider(
     )
 }
 
-fn frame(ds: &DesignSystem, label: &'static str, value_text: String, on_reset: Reset) -> gpui::Div {
+fn frame(ds: &DesignSystem, label: SharedString, value_text: String, on_reset: Reset) -> gpui::Div {
     div().w(px(WIDTH)).flex().flex_col().gap(px(2.0)).child(
         div()
             .flex()
@@ -65,7 +65,7 @@ fn frame(ds: &DesignSystem, label: &'static str, value_text: String, on_reset: R
                     .on_mouse_down(MouseButton::Left, move |_, window, cx| {
                         on_reset(&(), window, cx)
                     })
-                    .child(SharedString::from(label)),
+                    .child(label),
             )
             .child(div().text_color(rgb(ds.text)).child(value_text)),
     )

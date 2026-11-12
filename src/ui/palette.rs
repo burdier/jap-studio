@@ -23,6 +23,7 @@ pub(super) struct Palette {
     results: Vec<PaletteEntry>,
     plugins: Vec<catalog::plugins::InstalledInstrument>,
     tools: Vec<catalog::tools::ToolCatalogEntry>,
+    components: Vec<(String, String, String)>,
     scan_needed: bool,
     scan_task: Option<gpui::Task<()>>,
 }
@@ -47,6 +48,11 @@ impl Palette {
             results: catalog::search("").into_iter().map(Into::into).collect(),
             plugins: Vec::new(),
             tools: Vec::new(),
+            components: vec![(
+                "hay.fx.double_volume".into(),
+                "Hay Double Volume".into(),
+                "Dos etapas Volume con una macro de ganancia".into(),
+            )],
             scan_needed: false,
             scan_task: None,
         }
@@ -154,9 +160,26 @@ impl Palette {
                     .filter(|tool| tool.entry.matches(&self.query))
                     .map(PaletteEntry::from),
             )
+            .chain(
+                self.components
+                    .iter()
+                    .filter(|(id, name, _)| {
+                        let query = self.query.to_ascii_lowercase();
+                        id.to_ascii_lowercase().contains(&query)
+                            || name.to_ascii_lowercase().contains(&query)
+                    })
+                    .map(|(id, name, description)| {
+                        PaletteEntry::component(id.clone(), name.clone(), description.clone())
+                    }),
+            )
             .filter(|entry| self.category.is_none_or(|kind| entry.kind == kind))
             .collect();
         self.selected = 0;
+    }
+
+    pub(in crate::ui) fn replace_components(&mut self, components: Vec<(String, String, String)>) {
+        self.components = components;
+        self.refresh();
     }
 }
 
@@ -343,7 +366,7 @@ mod tests {
         for _ in 0.."volume".len() {
             palette.handle_key("backspace", true);
         }
-        assert_eq!(palette.results().len(), catalog::entries().len());
+        assert_eq!(palette.results().len(), catalog::entries().len() + 1);
         let entry = palette
             .handle_key("enter", true)
             .expect("catálogo no vacío");

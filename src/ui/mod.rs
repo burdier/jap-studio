@@ -22,6 +22,7 @@ mod icons;
 mod input;
 mod keyboard_preferences;
 mod kit;
+mod lua_components;
 mod lua_tools;
 mod navigation;
 mod palette;
@@ -120,6 +121,7 @@ struct DawApp {
     import_task: Option<gpui::Task<()>>,
     script_task: Option<gpui::Task<()>>,
     lua_tools: lua_tools::LuaTools,
+    lua_components: lua_components::LuaComponents,
     export_job: Option<crate::audio::export::ExportJob>,
     utility: elevate::devices::utility_slot::UtilitySlot,
     utility_open: bool,

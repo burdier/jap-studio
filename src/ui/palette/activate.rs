@@ -12,6 +12,16 @@ impl DawApp {
     ) {
         if let Some(builtin) = entry.builtin {
             self.activate_catalog_entry(builtin, window, cx);
+        } else if let Some(id) = entry.component_id {
+            let target = self.palette.fx_target.or_else(|| self.selected_fx_target());
+            self.palette.close();
+            if let Some(target) = target {
+                if let Err(error) = self.insert_lua_component(target, &id) {
+                    self.status_message = error;
+                }
+            } else {
+                self.status_message = "Selecciona una pista para insertar el componente".into();
+            }
         } else if entry.is_tool {
             self.palette.close();
             if let CatalogAction::Invoke(command) = entry.action {

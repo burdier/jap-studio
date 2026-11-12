@@ -121,6 +121,7 @@ impl DawApp {
             import_task: None,
             script_task: None,
             lua_tools: Default::default(),
+            lua_components: super::lua_components::LuaComponents::new(),
             sampler,
             sampler_ui: Default::default(),
             vst: Default::default(),

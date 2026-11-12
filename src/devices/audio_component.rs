@@ -141,4 +141,24 @@ mod tests {
         first.process(&mut dry);
         assert_eq!(dry[0], [0.8, -0.4]);
     }
+
+    #[test]
+    fn parallel_paths_sum_without_normalizing() {
+        let source = include_str!("../../assets/scripts/components/audio/double_volume.lua")
+            .replace(
+                "{ from = \"first\", to = \"second\" },",
+                "{ from = \"input\", to = \"second\" },",
+            )
+            .replace(
+                "{ from = \"second\", to = \"output\" },",
+                "{ from = \"first\", to = \"output\" },\n{ from = \"second\", to = \"output\" },",
+            );
+        let descriptor = Arc::new(parse(&source).unwrap());
+        let mut device =
+            AudioComponentDevice::new(descriptor, ProcessSpec::new(48_000.0).unwrap()).unwrap();
+        let mut frames = vec![[0.25, -0.25]; 1024];
+        device.process(&mut frames);
+        assert!((frames.last().unwrap()[0] - 0.5).abs() < 0.005);
+        assert!((frames.last().unwrap()[1] + 0.5).abs() < 0.005);
+    }
 }

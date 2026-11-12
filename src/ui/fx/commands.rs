@@ -69,6 +69,21 @@ impl DawApp {
                 self.open_fx_palette(target);
                 return Ok(());
             }
+            "fx.parameter" => {
+                if parts.len() != 3 {
+                    return Err("Uso: fx.parameter <id> <valor>".into());
+                }
+                let node = selected()?;
+                if !self.lua_components.instances.contains_key(&node) {
+                    return Err("Selecciona un componente de audio Lua".into());
+                }
+                let parameter: u32 = parts[1].parse().map_err(|_| "ID de control inválido")?;
+                let value: f32 = parts[2]
+                    .replace(',', ".")
+                    .parse()
+                    .map_err(|_| "Valor inválido")?;
+                FxEdit::Parameter(node, parameter, value)
+            }
             "fx.rename" | "fx.parameters" if parts.len() == 1 => {
                 let command = if command == "fx.rename" {
                     "fx.rename"
@@ -154,6 +169,11 @@ impl DawApp {
             return;
         }
         if command == "fx.parameters" {
+            if self.lua_components.instances.contains_key(&node.id) {
+                self.show_fx();
+                self.status_message = "Controles del componente debajo de Track FX".into();
+                return;
+            }
             if super::analyzers::is_analyzer(node) {
                 self.show_fx();
                 self.status_message = "Spectrum · cambia vista con < > · arrastra el nodo para cambiar el punto de análisis".into();

@@ -14,6 +14,7 @@ pub(in crate::ui) struct PaletteEntry {
     pub bundle: Option<std::path::PathBuf>,
     pub plugin: Option<InstalledInstrument>,
     pub is_tool: bool,
+    pub component_id: Option<String>,
     pub has_parameters: bool,
 }
 
@@ -29,6 +30,7 @@ impl From<&'static CatalogEntry> for PaletteEntry {
             bundle: None,
             plugin: None,
             is_tool: false,
+            component_id: None,
             has_parameters: entry.action.parameters().is_some(),
         }
     }
@@ -66,6 +68,7 @@ impl From<&InstalledInstrument> for PaletteEntry {
             bundle: Some(plugin.bundle.clone()),
             plugin: Some(plugin.clone()),
             is_tool: false,
+            component_id: None,
             has_parameters: false,
         }
     }
@@ -83,7 +86,26 @@ impl From<&ToolCatalogEntry> for PaletteEntry {
             bundle: None,
             plugin: None,
             is_tool: true,
+            component_id: None,
             has_parameters: !tool.spec.parameters.is_empty(),
+        }
+    }
+}
+
+impl PaletteEntry {
+    pub fn component(id: String, name: String, summary: String) -> Self {
+        Self {
+            id: format!("lua.component.{id}"),
+            name,
+            summary,
+            kind: EntryKind::Component,
+            action: CatalogAction::Invoke(format!("fx.component {id}")),
+            builtin: None,
+            bundle: None,
+            plugin: None,
+            is_tool: false,
+            component_id: Some(id),
+            has_parameters: false,
         }
     }
 }

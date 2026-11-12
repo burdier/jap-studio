@@ -256,7 +256,31 @@ impl DawApp {
             FxEdit::Toggle(_) | FxEdit::Parameter(..) | FxEdit::Rename(..) | FxEdit::Remove(_)
         );
         let mut chain = self.tracks[index].chain.clone();
+        let parameter_change = match &edit {
+            FxEdit::Parameter(id, parameter, value) => Some((*id, *parameter, *value)),
+            _ => None,
+        };
+        let duplicate_source = match &edit {
+            FxEdit::Duplicate(id) => self.lua_components.instances.get(id).map(|effect| {
+                (
+                    effect.descriptor().clone(),
+                    self.tracks[index].chain.find(*id).cloned(),
+                )
+            }),
+            _ => None,
+        };
         let selected = chain.apply(edit)?;
+        let mut component_instances = self.lua_components.instances.clone();
+        if let (Some(id), Some((descriptor, Some(source)))) = (selected, duplicate_source) {
+            let rate = self.settings.audio.saved.sample_rate.unwrap_or(48_000);
+            let effect = crate::audio::effects::ComponentEffect::prepare(descriptor, rate)?;
+            if let elevate::musical::fx::FxKind::Effect { parameters, .. } = source.kind {
+                for (parameter, value) in parameters {
+                    effect.set(parameter, value)?;
+                }
+            }
+            component_instances.insert(id, effect);
+        }
         if crate::audio::effects::needs_rack(&chain) {
             if !self.tracks[index].accepts_clips() {
                 return Err("Spectrum/VST3 requieren una pista de audio o MIDI; los buses de grupo aún no están implementados".into());
@@ -271,12 +295,19 @@ impl DawApp {
             crate::audio::effects::compile(
                 &chain,
                 &self.vst_effects.instances,
+                &component_instances,
                 &self.fx.analyzers.taps,
                 rate,
             )?;
         } else {
             elevate::devices::fx_gain::compile(&chain)?;
         }
+        if let Some((id, parameter, value)) = parameter_change {
+            if let Some(effect) = component_instances.get(&id) {
+                effect.set(parameter, value)?;
+            }
+        }
+        self.lua_components.instances = component_instances;
         self.tracks[index].chain = chain;
         self.track_revision = self.track_revision.wrapping_add(1);
         if !preserve {

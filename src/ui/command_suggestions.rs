@@ -28,6 +28,11 @@ const KNOWN: &[(&str, &str)] = &[
     ("explorer.insert", "Insertar selección del explorador"),
     ("explorer.toggle", "Mostrar/ocultar explorador"),
     ("file.import", "Importar archivo de audio o MIDI"),
+    ("fx.components.reload", "Recargar componentes de audio Lua"),
+    (
+        "fx.parameter",
+        "Cambiar un control del FX seleccionado por ID",
+    ),
     ("icons", "Selector de iconos de la barra"),
     ("inst", "Abrir editor de instrumento"),
     ("instrument", "Abrir editor de instrumento"),

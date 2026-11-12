@@ -13,6 +13,7 @@ mod instrument;
 mod instrument_actions;
 mod instrument_banks;
 pub(super) mod instrument_params;
+mod lua_component;
 mod mixer;
 mod palette;
 mod pattern;

@@ -165,6 +165,7 @@ impl DawApp {
             match effects::compile(
                 &track.chain,
                 &self.vst_effects.instances,
+                &self.lua_components.instances,
                 &self.fx.analyzers.taps,
                 rate,
             ) {
@@ -223,6 +224,9 @@ impl DawApp {
         self.vst.set_fx_rack(vst_rack);
         // Las rutas publicadas mantienen las instancias vivas hasta terminar el bloque activo.
         self.vst_effects
+            .instances
+            .retain(|id, _| self.tracks.iter().any(|t| t.chain.find(*id).is_some()));
+        self.lua_components
             .instances
             .retain(|id, _| self.tracks.iter().any(|t| t.chain.find(*id).is_some()));
         for effect in self.vst_effects.instances.values() {

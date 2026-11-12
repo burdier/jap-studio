@@ -303,6 +303,19 @@ impl DawApp {
             self.toggle_workspace_focus(window, cx);
             return;
         }
+        if cmd.trim() == "fx.components.reload" {
+            self.reload_lua_components(cx);
+            return;
+        }
+        if let Some(id) = cmd.trim().strip_prefix("fx.component ") {
+            self.status_message = self
+                .selected_fx_target()
+                .ok_or_else(|| "Selecciona una pista".to_string())
+                .and_then(|target| self.insert_lua_component(target, id.trim()))
+                .map(|()| format!("Componente {id} insertado"))
+                .unwrap_or_else(|error| error);
+            return;
+        }
         if !self.execute_audio_command(cmd.trim(), cx)
             && !self.execute_vst_command(cmd.trim(), cx)
             && !self.execute_roll_command(cmd.trim(), window, cx)

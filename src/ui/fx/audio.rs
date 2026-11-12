@@ -6,7 +6,11 @@ impl DawApp {
             return 1.0;
         };
         // Una ruta VST procesa toda la cadena, incluidas las Utility y ramas bypass.
-        let own = if crate::audio::effects::contains_vst(&track.chain) {
+        let own = if crate::audio::effects::contains_vst(&track.chain)
+            || crate::audio::effects::contains_component(
+                &track.chain,
+                &self.lua_components.instances,
+            ) {
             1.0
         } else {
             elevate::devices::fx_gain::compile(&track.chain).unwrap_or(1.0)

@@ -1,3 +1,4 @@
+use super::ComponentEffect;
 use super::Effect;
 use crate::audio::analyzer::tap::Tap;
 use elevate::musical::{
@@ -8,6 +9,7 @@ use std::{collections::BTreeMap, sync::Arc};
 pub(crate) enum Plan {
     Gain(f32),
     Effect(Arc<Effect>),
+    Component(Arc<ComponentEffect>),
     Analyzer(Arc<Tap>),
     Observe(Box<Plan>),
     Serial(Vec<Plan>),
@@ -23,6 +25,7 @@ impl Plan {
                 }
             }
             Self::Effect(effect) => effect.process(frames),
+            Self::Component(effect) => effect.process(frames),
             Self::Analyzer(tap) => tap.capture(frames, rate),
             // Las cadenas Utility conservan su salida escalar y su rampa existentes.
             // Evaluar sus puntos de análisis sobre una copia evita aplicar la ganancia
@@ -66,7 +69,7 @@ pub(crate) fn needs_rack(chain: &FxChain) -> bool {
                 plugin_id: TrackDevice::Vst3 { .. },
                 ..
             }
-        ) || matches!(&node.kind, FxKind::Effect { plugin_id: TrackDevice::Hay { catalog_id }, .. } if catalog_id == elevate::devices::spectrum::ID)
+        ) || matches!(&node.kind, FxKind::Effect { plugin_id: TrackDevice::Hay { catalog_id }, .. } if catalog_id != "hay.utility")
             || node
                 .children()
                 .is_some_and(|children| children.iter().any(visit))
@@ -88,15 +91,29 @@ pub(crate) fn contains_vst(chain: &FxChain) -> bool {
     }
     chain.nodes().iter().any(visit)
 }
+pub(crate) fn contains_component(
+    chain: &FxChain,
+    components: &BTreeMap<FxId, Arc<ComponentEffect>>,
+) -> bool {
+    fn visit(node: &FxNode, components: &BTreeMap<FxId, Arc<ComponentEffect>>) -> bool {
+        components.contains_key(&node.id)
+            || node
+                .children()
+                .is_some_and(|children| children.iter().any(|child| visit(child, components)))
+    }
+    chain.nodes().iter().any(|node| visit(node, components))
+}
 pub(crate) fn compile(
     chain: &FxChain,
     effects: &BTreeMap<FxId, Arc<Effect>>,
+    components: &BTreeMap<FxId, Arc<ComponentEffect>>,
     taps: &BTreeMap<FxId, Arc<Tap>>,
     rate: u32,
 ) -> Result<Plan, String> {
     fn node(
         n: &FxNode,
         effects: &BTreeMap<FxId, Arc<Effect>>,
+        components: &BTreeMap<FxId, Arc<ComponentEffect>>,
         taps: &BTreeMap<FxId, Arc<Tap>>,
         rate: u32,
         depth: usize,
@@ -140,17 +157,21 @@ pub(crate) fn compile(
                     .ok_or("Spectrum sin captura preparada")?
                     .clone(),
             ),
+            FxKind::Effect {
+                plugin_id: TrackDevice::Hay { .. },
+                ..
+            } if components.contains_key(&n.id) => Plan::Component(components[&n.id].clone()),
             FxKind::Effect { .. } => return Err(format!("{}: procesador no disponible", n.name)),
             FxKind::SerialChain { children } => Plan::Serial(
                 children
                     .iter()
-                    .map(|n| node(n, effects, taps, rate, depth + 1))
+                    .map(|n| node(n, effects, components, taps, rate, depth + 1))
                     .collect::<Result<_, _>>()?,
             ),
             FxKind::ParallelChain { branches } => Plan::Parallel(
                 branches
                     .iter()
-                    .map(|n| node(n, effects, taps, rate, depth + 1))
+                    .map(|n| node(n, effects, components, taps, rate, depth + 1))
                     .collect::<Result<_, _>>()?,
             ),
         })
@@ -159,12 +180,70 @@ pub(crate) fn compile(
         chain
             .nodes()
             .iter()
-            .map(|n| node(n, effects, taps, rate, 0))
+            .map(|n| node(n, effects, components, taps, rate, 0))
             .collect::<Result<_, _>>()?,
     );
-    Ok(if contains_vst(chain) {
-        plan
-    } else {
-        Plan::Observe(Box::new(plan))
-    })
+    Ok(
+        if contains_vst(chain) || contains_component(chain, components) {
+            plan
+        } else {
+            Plan::Observe(Box::new(plan))
+        },
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use elevate::scripting::audio_components::parse;
+
+    #[test]
+    fn lua_component_changes_real_rack_audio_and_keeps_utility_order() {
+        let descriptor = Arc::new(
+            parse(include_str!(
+                "../../../assets/scripts/components/audio/double_volume.lua"
+            ))
+            .unwrap(),
+        );
+        let effect = ComponentEffect::prepare(descriptor.clone(), 48_000).unwrap();
+        let mut chain = FxChain::new();
+        let utility = FxNode::new(
+            "Utility",
+            FxKind::Effect {
+                plugin_id: TrackDevice::Hay {
+                    catalog_id: "hay.utility".into(),
+                },
+                parameters: [(0, 0.5)].into(),
+            },
+        );
+        chain
+            .apply(elevate::musical::fx::FxEdit::Insert(
+                utility,
+                elevate::musical::fx::FxPlacement::Inside(None),
+            ))
+            .unwrap();
+        let node = FxNode::new(
+            descriptor.name.clone(),
+            FxKind::Effect {
+                plugin_id: TrackDevice::Hay {
+                    catalog_id: descriptor.id.clone(),
+                },
+                parameters: [(0, 1.0)].into(),
+            },
+        );
+        let id = node.id;
+        chain
+            .apply(elevate::musical::fx::FxEdit::Insert(
+                node,
+                elevate::musical::fx::FxPlacement::Inside(None),
+            ))
+            .unwrap();
+        let components = BTreeMap::from([(id, effect.clone())]);
+        let plan = compile(&chain, &BTreeMap::new(), &components, &BTreeMap::new(), 0).unwrap();
+        effect.set(0, 0.5).unwrap();
+        let mut frames = vec![[0.8, -0.4]; 4096];
+        plan.process(&mut frames, 48_000);
+        assert!((frames.last().unwrap()[0] - 0.1).abs() < 0.005);
+        assert!((frames.last().unwrap()[1] + 0.05).abs() < 0.005);
+    }
 }
