@@ -18,8 +18,8 @@ Las preferencias visuales se conservan al cambiar de clip durante la sesión.
 | Swing | `midi.swing <0–100>`; formulario y transformación Lua |
 | Q | `midi.quantize [denominador] [strength]`; formulario con rejilla e intensidad |
 | H | `midi.humanize [cantidad]`; jitter de tiempo y velocity. Usa la cantidad actual si se omite |
-| Subdividir | `midi.subdivide [denominador]`; exige selección explícita; genera segmentos con IDs y mute heredados |
-| Lua… | `midi.script <ruta>`; formulario para un script propio. `midi.script.accent` sigue disponible como ejemplo integrado |
+| Subdividir | `midi.subdivide [denominador]`; usa el paquete recargable `hay.midi.subdivide` si está registrado; exige selección explícita; genera segmentos con IDs y mute heredados |
+| Lua… | `midi.script <ruta>`; formulario para un script propio. `midi.script.accent` conserva el alias de Acentuar, migrado a `hay.midi.accent` |
 | V: figura | `midi.draw.length <denominador>`; menú de duración de inserción, independiente del snap |
 | Ghost | `midi.ghost`; muestra otros clips de la misma pista en su posición temporal |
 | Follow | `midi.follow`; sigue el playhead leído del motor cuando sale de la zona visible; suspende desplazamiento durante arrastre |
@@ -73,8 +73,9 @@ fino y la sombra no cambian la geometría del picking.
 
 ## Lua y procesamiento
 
-Q, H, Subdividir, Gate, Swing, Velocity, Release Velocity, Probability, Pan, Random, Clamp y Accent viven en
-`assets/scripts/midi/`. Lua recibe una copia de las notas en un worker; Rust valida
+Q, H, Gate, Swing, Velocity, Release Velocity, Probability, Pan, Random y Clamp viven en
+`assets/scripts/midi/`; Acentuar y Subdividir viven en `assets/scripts/tools/midi/` como
+paquetes recargables. Lua recibe una copia de las notas en un worker; Rust valida
 IDs, posiciones, duraciones y límites antes de aplicar por ClipId. No hay GPUI ni
 trabajo Lua en el callback. `midi.random` sigue disponible en Notes y el catálogo.
 

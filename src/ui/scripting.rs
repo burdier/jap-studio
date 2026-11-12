@@ -34,6 +34,31 @@ impl DawApp {
         options: MidiOptions,
         cx: &mut Context<Self>,
     ) {
+        let mut source = source;
+        let package_alias = match &source {
+            ScriptSource::Builtin(MidiTool::Accent) => {
+                Some(("hay.midi.accent", vec!["12".to_owned()]))
+            }
+            ScriptSource::Builtin(MidiTool::Subdivide) => Some(("hay.midi.subdivide", vec![])),
+            _ => None,
+        };
+        if let Some((id, arguments)) = package_alias
+            && let Some(package) = self.lua_tools.registry.get(id)
+        {
+            match package.invoke(&arguments) {
+                Ok(invocation) => source = ScriptSource::Tool(invocation),
+                Err(error) => {
+                    self.status_message = error.to_string();
+                    return;
+                }
+            }
+        }
+        let require_selection = matches!(&source, ScriptSource::Builtin(MidiTool::Subdivide))
+            || matches!(
+                &source,
+                ScriptSource::Tool(invocation)
+                    if invocation.package().descriptor().id == "hay.midi.subdivide"
+            );
         let package = match &source {
             ScriptSource::Tool(invocation) => Some(invocation.package().clone()),
             _ => None,
@@ -63,7 +88,7 @@ impl DawApp {
             self.status_message = input_error("Termina el arrastre antes de editar con Lua");
             return;
         }
-        if matches!(source, ScriptSource::Builtin(MidiTool::Subdivide))
+        if require_selection
             && !clip
                 .notes()
                 .iter()

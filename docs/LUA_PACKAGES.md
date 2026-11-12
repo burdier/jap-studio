@@ -1,9 +1,8 @@
 # Paquetes de herramientas Lua · contrato v1
 
-Estado: **registro, catálogo, recarga, formulario y ejecutor implementados hasta el
-commit 3 de PR-01**. Acentuar como paquete distribuido recargable queda para el
-commit 4. [Uso en la aplicación](LUA.md#herramientas-registradas). Este documento
-fija el contrato completo.
+Estado: **Acentuar y Subdividir migrados a paquetes distribuidos recargables en el
+commit 4 de PR-01**. [Uso en la aplicación](LUA.md#herramientas-registradas).
+Este documento fija el contrato completo.
 No habilita componentes DSP, pistas, plugins, ejecución live ni undo/redo global.
 
 ## Formato y ejemplo
@@ -88,11 +87,13 @@ citas actuales se conservan; los comandos no se pasan a un shell.
 
 El host entrega `params` como una tabla por clave, con valores tipados y validados.
 No interpola valores en fuente Lua. El paquete no puede registrar nombres de
-comandos arbitrarios. Al migrar Acentuar en el commit 4, `midi.script.accent`
-ejecutará el paquete registrado `hay.midi.accent` con `amount = 12`. Si ese paquete
-no está registrado, el alias conserva su fuente integrada actual como respaldo
-de compatibilidad, por la misma ruta de edición MIDI. Una invocación explícita
-`midi.tool` con un ID ausente siempre da error; no usa ese respaldo.
+comandos arbitrarios. `midi.script.accent` conserva su alias y ejecuta
+`hay.midi.accent` con `amount = 12` cuando está registrado; `midi.subdivide`
+conserva su alias y ejecuta `hay.midi.subdivide` con la rejilla capturada al invocar.
+El botón y los gestos de subdivisión usan esa misma ruta. Antes de una recarga válida,
+o si el paquete no figura en el registro, ambos alias conservan la implementación
+integrada anterior. Una recarga fallida mantiene el último registro válido. Una
+invocación explícita `midi.tool` con un ID ausente siempre da error; no usa ese respaldo.
 
 ## Ubicación y carga explícita
 
@@ -197,7 +198,7 @@ error queda a la implementación; estos datos observables son obligatorios.
 |---|---|
 | 2 · registro · implementado | Lectura headless, tipos/campos, límites, API desconocida, IDs duplicados, publicación completa, retirada y conservación de snapshots ante fallo |
 | 3 · ejecución · implementado | Catálogo/comando/formulario, validación compartida, VM nueva y metadatos estables, resultado intacto ante errores, edición concurrente rechazada y trabajo pendiente tras retirar el paquete |
-| 4 · Acentuar · pendiente | Paquete real con alias anterior, recarga válida/inválida; añadir una segunda herramienta sin recompilar y conservar las acciones nativas |
+| 4 · Acentuar y Subdividir · implementado | Paquetes distribuidos recargables, alias y controles existentes conservados; fallo de recarga conserva el registro anterior |
 
 La API actual está en `elevate::scripting::packages`: `PackageDirectories` recibe
 las rutas del host y `PackageRegistry::reload` carga de forma síncrona fuera de

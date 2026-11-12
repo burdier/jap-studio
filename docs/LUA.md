@@ -5,8 +5,9 @@ Lua permite crear transformaciones MIDI sin tocar el motor de audio. Desde `[+]`
 `:midi.script '/ruta/herramienta.lua'`. Para probar la integración, usa
 **Lua · acentuar notas** o `:midi.script.accent`. El botón **Lua…** abre el formulario para un archivo propio.
 
-Los [paquetes v1](LUA_PACKAGES.md) ya se conectan al catálogo, formulario y ejecutor
-(PR-01, commit 3). Los scripts de archivo anteriores siguen disponibles.
+Los [paquetes v1](LUA_PACKAGES.md) se conectan al catálogo, formulario y ejecutor.
+`Acentuar` y `Subdividir` también están distribuidos como paquetes recargables
+(PR-01, commit 4). Los scripts de archivo anteriores siguen disponibles.
 
 ## Herramientas registradas
 
@@ -15,9 +16,9 @@ en el directorio de herramientas del usuario. En Linux es
 `~/.config/hay-daw/tools/midi/`, o `$XDG_CONFIG_HOME/hay-daw/tools/midi/` si defines
 esa variable; crea la carpeta si aún no existe. El archivo devuelve metadatos y
 `run(context, params)`, y su ID usa un prefijo propio, por ejemplo `user.midi.accent`.
+Los paquetes incluidos con la aplicación viven en `assets/scripts/tools/midi/`.
 Los presets de Hay Acent de la sección siguiente usan otra API: no basta con copiarlos
-a esta carpeta. La aplicación todavía no distribuye Acentuar como paquete; esa
-migración corresponde al commit 4.
+a esta carpeta.
 
 1. Ejecuta `:midi.tools.reload` o **Lua · recargar herramientas** desde `[+]`.
 2. Abre un clip MIDI y selecciona notas; sin selección se incluyen todas.
@@ -28,13 +29,24 @@ migración corresponde al commit 4.
    habituales; booleanos usan `true`/`false`. No se ejecuta un shell.
 
 La recarga lee ambos directorios en un worker y publica el registro completo. Una
-sola recarga puede estar activa. Si falla, conserva el registro anterior; si termina
+sola recarga puede estar activa. Si falla, conserva el último registro válido; antes
+de la primera recarga correcta, los alias nativos de Acentuar y Subdividir siguen
+funcionando con la implementación integrada anterior. Si la recarga termina
 correctamente, hay que reabrir los formularios que ya estaban abiertos. Los trabajos
 enviados conservan su fuente hasta terminar, incluso si se retira el paquete. Su
 resultado solo se aplica si el clip sigue siendo el mismo, conserva su patrón y
 no está bloqueado ni en arrastre. No hay búsqueda automática de cambios en disco.
 Los mensajes distinguen errores de carga, descriptor, argumentos, ejecución,
 resultado y estado obsoleto; un ID ausente nunca usa una herramienta de respaldo.
+
+La aplicación incluye `hay.midi.accent` y `hay.midi.subdivide`. Acentuar también se
+puede ejecutar con `:midi.script.accent`, que conserva el acento anterior de +12 de
+velocity. Subdividir conserva `:midi.subdivide [denominador]`, el botón del piano roll
+y los gestos; captura la rejilla actual, exige una selección explícita y genera
+fragmentos con los mismos IDs, silencios y selección que antes. Una vez recargados,
+los alias ejecutan la fuente del paquete, con el mismo sandbox y límites que cualquier
+otra herramienta. Si la recarga falla, la edición puede seguir usando el registro
+válido anterior; una primera carga fallida deja disponibles los alias integrados.
 
 ## Hay Acent
 
