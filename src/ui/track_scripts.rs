@@ -79,10 +79,18 @@ impl DawApp {
                 this.script_task = None;
                 this.status_message = match result {
                     Ok(batch) => match this.apply_track_script_batch(batch) {
-                        Ok(handles) => format!(
-                            "Lua pistas · lote aplicado · {} handles resueltos",
-                            handles.len()
-                        ),
+                        Ok(handles) => {
+                            let ids = handles
+                                .iter()
+                                .map(|(handle, id)| format!("{handle}={}", id.0))
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            if ids.is_empty() {
+                                "Lua pistas · lote aplicado".into()
+                            } else {
+                                format!("Lua pistas · lote aplicado · {ids}")
+                            }
+                        }
                         Err(error) => format!("Lua pistas: {error}"),
                     },
                     Err(error) => format!("Lua pistas: {error}"),

@@ -15,6 +15,10 @@ pub(super) fn snapshot(lua: &Lua, snapshot: &TrackSnapshot) -> Result<Table, Str
             .map_err(|e| e.to_string())?;
         row.raw_set("kind", kind(entry.track.kind))
             .map_err(|e| e.to_string())?;
+        if let Some(instrument) = entry.track.instrument {
+            row.raw_set("instrument", instrument.0)
+                .map_err(|e| e.to_string())?;
+        }
         if let Some(parent) = entry.track.parent {
             row.raw_set("parent", parent.0).map_err(|e| e.to_string())?;
         }
