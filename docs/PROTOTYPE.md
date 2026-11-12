@@ -4,14 +4,15 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
 
 ## Disponible
 
-- **Paquetes Lua v1 en catálogo y formulario** (PR-01, commit 3):
+- **Paquetes Lua v1 en catálogo y formulario** (PR-01, commit 4):
   `midi.tools.reload` publica la carga completa desde un worker; `midi.tool <id>`
   abre parámetros, y con todos los valores ejecuta la herramienta. `[+]` y las
   sugerencias usan la misma invocación. Una recarga fallida conserva el registro;
   una válida invalida formularios anteriores, mientras los trabajos enviados
   conservan su fuente. Sandbox y validación MIDI compartidos; cambios concurrentes
-  del clip, bloqueo o arrastre descartan el resultado. Sin dependencias añadidas.
-  Acentuar integrado sigue pendiente de migrar en el commit 4. [Uso](LUA.md#herramientas-registradas).
+  del clip, bloqueo o arrastre descartan el resultado. Acentuar y Subdividir se
+  distribuyen como paquetes; los alias anteriores siguen disponibles antes de la
+  primera recarga correcta. Sin dependencias añadidas. [Uso](LUA.md#herramientas-registradas).
 
 - **Hay Acent**: presets Lua Pulso, Alternado, Creciente y Clic 4/4, ejecutables
   sobre el clip MIDI con `midi.script`/Lua… sin recompilar. El clic transforma cuatro
@@ -22,11 +23,10 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
   multilínea para editarlo y guardarlo en los datos del usuario (`hay-daw/general-note.md`);
   no queda atado a una pista o proyecto. Ctrl+Enter guarda y Esc cierra.
 
-- Subdivisión MIDI de selecciones pequeñas en el mismo evento UI, manteniendo el
-  script Lua y los IDs/mute/selección. Las herramientas integradas serializan solo
-  notas afectadas y conservan CC en Rust. Diagnóstico headless: ~0,19 ms para cortar
-  una nota entre 38 con 8192 CC (antes ~82 ms); cortes masivos y scripts propios
-  siguen en background. Compilación y medición local, sin suite de tests.
+- Subdivisión MIDI desde el paquete recargable `hay.midi.subdivide`; el alias y los
+  gestos del piano roll conservan selección explícita, IDs, mute y selección de
+  fragmentos. Si no hay un paquete registrado, queda disponible la implementación
+  integrada anterior, incluida su vía inmediata para selecciones pequeñas.
 
 - `f` en Normal amplía el panel con foco (piano roll, Arrangement, instrumento,
   Track FX o explorador) y otra pulsación restaura el layout sin cambiar anchos ni

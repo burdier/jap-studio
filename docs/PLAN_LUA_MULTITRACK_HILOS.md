@@ -1,8 +1,8 @@
 # Plan de PRs: kit Lua, multipista e Hilos
 
-Fecha: 2026-11-11. Estado: PR-01 en progreso (3 de 4 commits); los demás PRs están
-pendientes. Registro, recarga, catálogo, formulario y ejecución de paquetes disponibles;
-falta migrar Acentuar y cerrar la aceptación de PR-01.
+Fecha: 2026-11-11. Estado: PR-01 en progreso (4 de 4 commits); los demás PRs están
+pendientes. Acentuar y Subdividir ya usan paquetes recargables; falta la comprobación
+interactiva de aceptación de PR-01.
 Los números identifican entregas de este plan, no PRs abiertos en GitHub. El repositorio
 todavía no tiene remoto configurado.
 
@@ -165,8 +165,8 @@ interoperabilidad y capacidad de procesamiento.
 
 **Título sugerido:** `feat(lua): cargar herramientas desde paquetes declarativos`
 
-**Avance:** 3 de 4 commits: contrato `5bec9fe`, registro `7ce9d63` y ejecución
-`0fd3849`. [Contrato v1](LUA_PACKAGES.md).
+**Avance:** 4 de 4 commits: contrato `5bec9fe`, registro `7ce9d63`, ejecución
+`0fd3849` y migración de herramientas `8d6b0aa`. [Contrato v1](LUA_PACKAGES.md).
 Tiempo transcurrido hasta el primer commit documental: **12 min 50 s**
 (2026-11-11, 05:45:16–05:58:06 UTC), incluida la espera de permisos. El sondeo previo
 y el commit posterior de seguimiento del tablero no están incluidos. Es una medición
@@ -187,9 +187,16 @@ No hubo comprobación interactiva. Tiempo desde la marca registrada hasta el com
 48 min 14 s (22:53:14–23:41:28 UTC), incluidas comprobaciones y espera de permisos;
 sin exploración inicial ni seguimiento documental posterior.
 
+El commit 4 (`8d6b0aa`) distribuye `hay.midi.accent` y `hay.midi.subdivide` como
+paquetes; mantiene `midi.script.accent`, `midi.subdivide`, el botón y los gestos del
+piano roll. Los alias usan el registro publicado y conservan la implementación
+integrada hasta la primera recarga válida. No se ejecutaron pruebas ni compilación
+en este incremento; tampoco hubo comprobación interactiva.
+
 **Puntos de entrada:** `src/scripting/packages/`, `src/scripting/{notes,controls,output,target}.rs`,
 `src/catalog/{entry,tools}.rs`, `src/actions{,/owned}.rs`,
-`src/ui/{lua_tools,scripting,action_form,palette}.rs`, `assets/scripts/midi/`.
+`src/ui/{lua_tools,scripting,action_form,palette}.rs`, `assets/scripts/tools/midi/`,
+`assets/scripts/midi/`.
 
 **Tareas**
 
@@ -198,14 +205,15 @@ sin exploración inicial ni seguimiento documental posterior.
 - [x] Crear un registro de metadatos dinámicos que conviva con las acciones nativas.
   El catálogo no instancia plugins ni conserva una VM como descriptor.
 - [x] Adaptar el formulario y despacho actuales para usar el mismo contrato validado.
-- [ ] Migrar Acentuar como ejemplo y conservar su comando actual. Permitir recargar el
-  paquete; un error conserva la versión válida anterior.
+- [x] Migrar Acentuar y Subdividir como paquetes y conservar los alias actuales.
+  Recargar publica ambas herramientas; un error conserva el último registro válido.
 - [x] Mantener límites, validación por IDs y descarte de resultados obsoletos de la
   edición MIDI. Un paquete duplicado o con API incompatible produce un error claro.
 
 **Aceptación:** una segunda herramienta aparece y transforma una selección sin tocar
 Rust ni recompilar. Un script inválido deja intacto el clip. Las acciones existentes
-siguen resolviendo sus parámetros por la misma ruta.
+siguen resolviendo sus parámetros por la misma ruta. La implementación está lista;
+queda comprobarla en la aplicación.
 
 ## PR-02 — Automatizar pistas desde Lua
 

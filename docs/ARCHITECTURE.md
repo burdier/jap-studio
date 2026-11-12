@@ -142,14 +142,17 @@ devolver un resultado distinto de nil rechaza la edición.
 `scripting/{notes,controls,arrays,output}` comparte codificación y validación con
 los scripts existentes. `MidiScriptTarget` conserva ID/patrón y valida identidad,
 bloqueo y arrastre al regresar del worker. `ui/scripting` aplica por el mismo
-controlador, conservando selección, silencios y descendientes. Acentuar integrado
-todavía usa su script anterior; su migración es el commit 4. [Contrato](LUA_PACKAGES.md).
+controlador, conservando selección, silencios y descendientes. Los alias de Acentuar
+y Subdividir usan los paquetes recargados `hay.midi.accent` y `hay.midi.subdivide`;
+antes de la primera recarga correcta siguen disponibles sus fuentes integradas.
+[Contrato](LUA_PACKAGES.md).
 
-`src/scripting/builtin.rs` prepara solo las notas afectadas para las herramientas
-integradas; sus fuentes Lua siguen siendo las mismas. Controles y notas omitidas
-se reincorporan sin serializar a Lua y sin reutilizar IDs. La acción de subdivisión
-acotada se ejecuta dentro del evento UI: máximo 16 notas seleccionadas, 128 segmentos,
-4096 notas de entrada y 8192 controles. No usa worker ni snapshots en ese caso.
+`src/scripting/builtin.rs` conserva la ruta de respaldo de las herramientas integradas;
+sus fuentes Lua siguen siendo las mismas. Los paquetes `hay.midi.accent` y
+`hay.midi.subdivide` se publican en `assets/scripts/tools/midi/` y los alias actuales
+los invocan tras una recarga válida. Si falta el paquete, la subdivisión integrada
+conserva su vía inmediata acotada: máximo 16 notas seleccionadas, 128 segmentos,
+4096 notas de entrada y 8192 controles. Los paquetes se ejecutan en el worker.
 `ui/scripting::apply_midi_script_result` es el commit compartido para ambas vías.
 Los scripts de usuario conservan la API completa y siempre corren en background.
 
