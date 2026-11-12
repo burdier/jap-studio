@@ -4,6 +4,15 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
 
 ## Disponible
 
+- **Lotes Lua de pistas** (PR-02): `track.script 'archivo.lua'` y
+  `track.template.two` desde comandos o `[+]` crean/configuran pistas en una
+  confirmación local. Snapshot con revisión, handles, niveles, panorama y cadenas
+  Hay Utility; validación estructural compartida con `TrackEdit` y Loro. Un fallo
+  de referencia, FX o revisión descarta el lote; clips, foco y MIDI Learn se
+  remapean por identidad. `ProjectDoc` se valida como candidato, todavía sin
+  conexión persistente de UI, mezcla/audio en el esquema, red ni undo/redo global.
+  [Uso y límites](LUA_TRACK_BATCHES.md).
+
 - Las asignaciones de iconos y comandos personalizados del Transporte y Piano Roll se
   guardan en `~/.jaybu.profile` y se restauran al abrir el DAW.
 

@@ -9,6 +9,10 @@ Los [paquetes v1](LUA_PACKAGES.md) se conectan al catálogo, formulario y ejecut
 `Acentuar` y `Subdividir` también están distribuidos como paquetes recargables
 (PR-01, commit 4). Los scripts de archivo anteriores siguen disponibles.
 
+Para crear y configurar varias pistas desde Lua, usa `:track.template.two` o
+`:track.script '/ruta/script.lua'`. Su [contrato de lotes](LUA_TRACK_BATCHES.md)
+es independiente de las herramientas MIDI registradas.
+
 ## Herramientas registradas
 
 Guarda un archivo `.lua` con el [formato de paquete](LUA_PACKAGES.md#formato-y-ejemplo)

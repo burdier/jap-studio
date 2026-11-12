@@ -1,7 +1,42 @@
 # Lotes de pistas desde Lua · contrato de PR-02
 
-Estado: **contrato de diseño**. Este commit no añade comandos, snapshots ni edición
-de pistas desde Lua. La implementación seguirá el orden del [plan](PLAN_LUA_MULTITRACK_HILOS.md#pr-02--automatizar-pistas-desde-lua).
+Estado: **implementado en PR-02**. `track.script` ejecuta un archivo Lua y
+`track.template.two` ejecuta la plantilla incluida. Ambos confirman el lote
+mediante el mismo ejecutor headless. [Plan](PLAN_LUA_MULTITRACK_HILOS.md#pr-02--automatizar-pistas-desde-lua).
+
+## Uso
+
+Desde `[+]` elige **Lua · plantilla de dos pistas** o escribe
+`:track.template.two`. Se crean «Voz principal» y «Voz doble» con nivel, panorama
+y un Hay Utility cada una. La fuente editable está en
+[`assets/scripts/tracks/two_tracks.lua`](../assets/scripts/tracks/two_tracks.lua).
+Para ejecutar una copia propia, usa `[+]` → **Ejecutar script de pistas…** o
+`:track.script '/ruta/script.lua'`.
+
+El script recibe `tracks` (arreglo ordenado de pistas con `id`, `name`, `kind`,
+`parent`, `instrument`, `muted`, `solo`, `level`, `pan` y árbol `fx`) y
+`track_revision`. Devuelve un arreglo denso de operaciones; editar la tabla
+`tracks` no cambia la sesión. Los IDs existentes son enteros; las pistas nuevas
+se referencian por el texto de su handle:
+
+```lua
+return {
+    { op = "insert_audio", handle = "voz", name = "Voz" },
+    { op = "level", track = "voz", value = 75 },
+    { op = "pan", track = "voz", value = 60 },
+    { op = "fx.insert_utility", track = "voz", gain = 0.9 },
+}
+```
+
+También hay `group` (`handle`, `name`, `members`), `rename` (`track`, `name`),
+`move` (`track`, `after`), `mute` y `solo` (`track`, `value` booleano). Las
+operaciones FX admitidas son `fx.insert_utility`, `fx.insert_serial`,
+`fx.insert_parallel`, `fx.rename`, `fx.toggle`, `fx.remove`, `fx.duplicate`,
+`fx.parameter` y `fx.move`. Un FX existente se referencia por `fx` (ID entero);
+las posiciones usan **uno** de `inside`, `before` o `after` (IDs FX), y sin
+posición se inserta al final de la raíz. Los contenedores nuevos se insertan
+vacíos. Los handles de pistas creadas se muestran como `handle=TrackId` al
+confirmar; la confirmación fallida no devuelve IDs.
 
 ## Fuente y snapshot
 
@@ -12,17 +47,17 @@ El controlador captura en el hilo de la sesión una copia inmutable y coherente 
   de 0 a 100; 75 es unidad de fader y 50 es panorama central);
 - árbol FX por pista, con `FxId`, tipo, posición, nombre, bypass, identidad de
   dispositivo y parámetros. Se copian datos musicales, nunca instancias DSP;
-- una revisión de origen de la sesión para pistas, mezcla y FX. Esta revisión
-  monotónica **aún no existe**: debe avanzar con cualquier edición por teclado,
-  ratón, MIDI Learn, Lua o importación que cambie esos datos.
+- una revisión de origen de la sesión para pistas, mezcla y FX. Avanza con las
+  ediciones conectadas de teclado, ratón, MIDI Learn y Lua; una futura importación
+  Loro conectada a la UI tendrá que avanzar la misma revisión.
 
 Las referencias públicas usan `TrackId`/`FxId`, no índices de fila. El índice solo
 sirve para mostrar el orden y para reconciliar los vectores actuales de mezcla.
 El snapshot no incluye clips ni estado visual como campos editables del script.
-La lectura de Loro (`ProjectDoc`) aporta la identidad y topología persistibles;
-el documento de esquema 4 todavía no guarda niveles, panorama, audio ni colores.
-Por eso el snapshot de lote combina la proyección musical con la mezcla de sesión
-sin presentar a Loro como fuente completa de la sesión actual.
+La UI captura el modelo musical y sus vectores de mezcla. Antes de confirmar
+construye y valida una proyección candidata en `ProjectDoc` (Loro) con pistas, FX
+y clips MIDI. El esquema 4 todavía no guarda niveles, panorama, audio ni colores;
+la UI aún no mantiene un documento Loro conectado en vivo.
 
 ## Operaciones tipadas de la primera versión
 
@@ -30,24 +65,22 @@ Un lote ordenado puede pedir:
 
 | Operación | Restricción |
 |---|---|
-| Crear pista Audio | Nombre y handle temporal obligatorios; posición explícita, opcionalmente dentro de un grupo existente o creado antes en el lote |
+| Crear pista Audio | Nombre y handle temporal obligatorios; `after` y `parent` son opcionales. Sin posición se añade al final del nivel elegido |
 | Renombrar pista | Nombre no vacío, de una línea, hasta 128 bytes UTF-8 |
 | Mover pista | Destino existente, dentro del mismo grupo o nivel; respeta el orden de hijos contiguos |
 | Fijar mute, solo, nivel o panorama | Valores absolutos; nivel y panorama enteros de 0 a 100 |
-| Editar FX de una pista | Solo variantes ya soportadas por `FxEdit`: insertar, quitar, duplicar, renombrar, activar/desactivar, parámetro y mover; la inserción usa dispositivos disponibles en el catálogo y `FxPlacement` |
+| Editar FX de una pista | Variantes soportadas por `FxEdit` sobre cadenas de Hay Utility y contenedores serie/paralelo; valores de parámetros validados por el descriptor |
 
-Para crear un grupo desde un lote se usará una operación estructural tipada con
-handle, miembros existentes y al menos dos pistas que acepten clips, con las
-restricciones actuales de un nivel de grupos. Esta operación deberá entrar por la
-misma validación que `TrackEdit::Group`; no se expone como una escritura arbitraria
-de `parent`. El lote inicial de dos pistas no necesita un grupo.
+`group` usa un handle y al menos dos miembros raíz existentes o creados antes
+en el lote. Comparte `TrackEdit::Group` y la validación de un nivel de grupos;
+no expone una escritura arbitraria de `parent`.
 
 No se aceptan índices Lua como IDs, nombres como referencias, mutación libre de
 tablas `Track`/`FxNode`, borrado o duplicación de pistas, grabación, buses, estado
-de plugins, audio ni funciones DSP nuevas. Los efectos VST3 solo se podrán usar
-cuando el host pueda validar y preparar esa inserción por la ruta existente; la
-plantilla incluida usará capacidades Hay ya disponibles. La API MIDI de paquetes
-v1 sigue separada hasta que un commit posterior añada la invocación de lotes.
+de plugins, audio ni funciones DSP nuevas. Una cadena con VST3 o Spectrum no se
+edita por lote porque requiere preparar instancias o tomas en el host; sí se
+conserva intacta al editar otros campos. La API MIDI de paquetes v1 sigue
+separada: los lotes usan `track.script`, no `midi.tool`.
 
 ## Handles, revisión y confirmación
 
@@ -62,15 +95,17 @@ valida después cada paso y el estado completo: IDs únicos, destinos presentes,
 tipo de padre, un nivel de grupos, hijos contiguos, asignación exclusiva de
 instrumentos, FX sin ciclos ni destinos obsoletos, parámetros finitos y límites
 de `FxChain` (32 niveles y 256 nodos por pista). El lote acepta como máximo 128
-operaciones y 64 pistas nuevas; se rechaza entero si excede el límite. Las
+operaciones y 64 pistas nuevas. La fuente ocupa hasta 256 KiB y usa el sandbox
+Lua de 8 MiB y 250 ms. Se rechaza entero si excede un límite. Las
 acciones UI y Lua deben compartir la validación estructural, no duplicarla.
 
 Antes de publicar se compara la revisión capturada con la vigente. Si cambió,
 se rechaza el lote completo como obsoleto; no se intenta rebasarlo automáticamente.
 La publicación de pistas, niveles, panorama, FX y mapas de filas ocurre como una
 sola transición de sesión con un único avance de revisión. Clips y mapeos MIDI
-conservan su `TrackId`; selección, cursor, color y presentación se reconcilian
-contra el mapa anterior/nuevo. Si falla la preparación o validación, ninguna de
+conservan su destino mediante el mapa de índices anterior/nuevo por `TrackId`.
+Selección, cursor, color y presentación se reconcilian con ese mismo mapa. Si
+falla la preparación o validación, ninguna de
 esas estructuras se sustituye. Los recursos de audio se preparan fuera del
 callback; el callback solo recibe los planes ya preparados.
 
@@ -85,13 +120,12 @@ lote**, no undo/redo global.
 
 `ProjectDoc` ya conserva IDs, campos de pistas y FX en mapas/listas movibles,
 reconcilia sin recrear el orden y valida un `merge` sobre copia antes de publicarlo.
-La implementación del lote debe validar la proyección Loro en un candidato antes
-de sustituir la sesión; si existe un documento de proyecto conectado, sus cambios
-de pistas/FX se reconcilian por ID en ese candidato y se publican junto con la
-edición local. Nunca se reconstruye el orden CRDT completo para una simple
-renominación. Mientras mezcla, audio y colores no estén en el esquema, se
-conservan por separado; no se promete que un snapshot Loro por sí solo restaure
-todo el lote.
+El lote valida una proyección candidata antes de sustituir la sesión. La
+conexión persistente de `ProjectDoc` a la UI queda pendiente: cuando exista,
+deberá reconciliar pistas/FX por ID y publicar el documento junto con la edición
+local. No se reconstruirá el orden CRDT completo para una simple renominación.
+Mientras mezcla, audio y colores no estén en el esquema, se conservan por
+separado; un snapshot Loro por sí solo no restaura todo el lote.
 
 Una futura colaboración puede transportar las actualizaciones Loro existentes.
 Para ello el snapshot deberá guardar también la frontera causal del documento,

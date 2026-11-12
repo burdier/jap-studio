@@ -219,8 +219,9 @@ queda comprobarla en la aplicación.
 
 **Título sugerido:** `feat(lua): editar pistas mediante lotes validados`
 
-**Contrato del primer commit:** [snapshot, operaciones, revisión, handles, errores,
-Loro y límites](LUA_TRACK_BATCHES.md). Es un diseño; la API aún no está disponible.
+**Contrato e implementación:** [snapshot, operaciones, revisión, handles, errores,
+Loro y límites](LUA_TRACK_BATCHES.md). `track.script` y `track.template.two`
+están disponibles; Loro sigue sin conexión persistente a la UI.
 
 **Valor:** ejecutar una plantilla Lua que cree dos pistas, las nombre y configure sus
 niveles o cadenas, sin repetir operaciones a mano.
@@ -230,13 +231,13 @@ niveles o cadenas, sin repetir operaciones a mano.
 
 **Tareas**
 
-- [ ] Exponer un snapshot con IDs y operaciones tipadas para pistas, mezcla y FX ya
+- [x] Exponer un snapshot con IDs y operaciones tipadas para pistas, mezcla y FX ya
   soportados. Compartir la validación con las operaciones de teclado y ratón.
-- [ ] Hacer que Lua produzca un lote de cambios. Validar el resultado completo contra
+- [x] Hacer que Lua produzca un lote de cambios. Validar el resultado completo contra
   la revisión de origen antes de publicarlo; no dejar medio lote aplicado.
-- [ ] Resolver referencias entre pistas nuevas del mismo lote mediante handles
+- [x] Resolver referencias entre pistas nuevas del mismo lote mediante handles
   temporales y devolver sus IDs definitivos al confirmar.
-- [ ] Añadir una plantilla incluida y errores asociados a la operación que falló.
+- [x] Añadir una plantilla incluida y errores asociados a la operación que falló.
   Conservar clips, selección y mapeos al editar la estructura.
 
 **Aceptación:** la plantilla produce las dos pistas configuradas. Un destino inexistente,

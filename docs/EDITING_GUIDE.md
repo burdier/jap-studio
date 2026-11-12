@@ -81,7 +81,7 @@
 | Apunte general persistente (`:note`) | `src/ui/general_note.rs` | `views/general_note.rs`, `catalog.rs`; textarea de GPUI Kit, guardado en datos del usuario |
 | Pistas y asignación de instrumento | `src/musical/track.rs` | `ui/palette.rs`, `views/tracks.rs` |
 | Insertar/eliminar/duplicar/agrupar pistas | `src/musical/track/management.rs` | `ui/track_actions.rs`, `timeline/track_edit.rs`; devuelve mapa de origen para conservar clips, controles y MIDI Learn |
-| Contrato de lotes Lua para pistas (PR-02) | `docs/LUA_TRACK_BATCHES.md` | `musical/track{,/management}.rs`, `musical/fx/`, `ui/{track_actions,audio_actions}.rs`, `project{,/track,/fx}.rs`; diseño previo a la implementación, incluye revisión de sesión y frontera Loro |
+| Lotes Lua de pistas (PR-02) | `src/musical/track/{snapshot,validation,batch}.rs` | `scripting/tracks/`, `ui/{track_scripts,track_batch,track_commit}.rs`, `ui/timeline/track_edit.rs`, `project{,/track,/fx}.rs`, `assets/scripts/tracks/`, `tests/track_batch*.rs`; contrato y límites en `docs/LUA_TRACK_BATCHES.md` |
 | Arrastrar cabeceras para ordenar pistas | `src/ui/track_drag.rs` | `views/{tracks,arrangement}.rs`, `timeline/paint.rs`: proyecta filas y clips sin cambiar el modelo, deja un hueco y flota la pista por píxel; `TrackEdit::Move` al soltar |
 | Selección y menú de pistas | `src/ui/{track_actions,track_menu}.rs` | `views/{tracks,track_menu,empty_arrangement}.rs`; reutiliza `context_menu` y formulario declarativo para nombre |
 | Plegar grupos y altura individual de pistas | `src/ui/{track_layout,track_presentation}.rs` | Presentación por TrackId; `timeline/rows.rs` centraliza coordenadas para dibujo, picking, arrastre, recorte y preview |

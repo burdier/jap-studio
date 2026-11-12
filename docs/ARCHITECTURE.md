@@ -114,6 +114,32 @@ exacto requiere parámetros, abre el formulario existente. El panel visual compa
 `views/command_bar` se superpone al pie de la ventana principal y del piano roll separado.
 Las sugerencias no ejecutan operaciones hasta Enter; un clic solo completa el texto.
 
+## Lotes Lua de pistas (PR-02)
+
+`musical/track/snapshot` copia pistas, mezcla de sesión y árboles FX por ID con
+una revisión de origen. `musical/track/validation` es la regla de jerarquía que
+comparten `TrackEdit`, el ejecutor de lotes y `project/track` al importar Loro:
+IDs únicos, un nivel de grupos e hijos contiguos. `musical/track/batch` aplica
+operaciones tipadas en una copia, resuelve handles locales, limita tamaño y
+devuelve el mapa de origen. Una revisión distinta o un error en cualquier paso
+descarta el candidato completo.
+
+`scripting/tracks` evalúa Lua en el sandbox de edición existente y convierte
+el arreglo devuelto en operaciones Rust; las tablas de snapshot no son mutables
+para la sesión. `ui/track_scripts` lee archivos en un worker. `ui/track_batch`
+compara el snapshot vigente, valida la compilación de las cadenas Hay Utility modificadas y
+valida una proyección candidata `ProjectDoc::from_session` con pistas, FX y MIDI.
+Después `ui/track_commit` publica filas, mezcla, clips, selección y MIDI Learn
+mediante el mismo remapeo que las acciones normales. La revisión de sesión
+avanza en ambas rutas. La plantilla incluida se invoca desde el catálogo.
+
+El documento Loro de esquema 4 conserva identidad y orden de pistas, FX y MIDI,
+pero aún no está conectado en vivo a la UI ni representa mezcla, audio o colores.
+La proyección candidata verifica compatibilidad antes del commit local; no crea
+una transacción distribuida ni sincronización de red. Las futuras importaciones
+remotas deberán avanzar la revisión de sesión y añadir una frontera causal al
+snapshot antes de habilitar colaboración. [API y límites](LUA_TRACK_BATCHES.md).
+
 ## Scripts Lua para edición MIDI
 
 `scripting/packages` implementa el registro headless del contrato v1. El host entrega

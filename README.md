@@ -98,6 +98,12 @@ Las herramientas Lua pueden transformar notas MIDI desde `[+]` o `:midi.script`.
 El ejemplo `:midi.script.accent` acentúa la selección. Lua corre fuera del hilo de
 audio y Rust valida cada resultado. [API y límites](docs/LUA.md).
 
+Para automatizar pistas, usa `[+]` → **Lua · plantilla de dos pistas** o
+`:track.template.two`. También puedes ejecutar un archivo propio con
+`:track.script '/ruta/script.lua'`. El script devuelve operaciones que Rust
+valida y aplica como un solo lote; se conservan clips y mapeos. Los cambios FX
+por lote admiten Hay Utility y contenedores serie/paralelo. [Contrato y ejemplo](docs/LUA_TRACK_BATCHES.md).
+
 Al escribir `:` aparecen sugerencias de comandos y acciones. Usa `↑/↓` para elegir,
 Tab o clic para completar, Enter para ejecutar y Esc para cancelar. El texto con
 argumentos se ejecuta tal como se escribió; los comandos sin argumentos que requieren
