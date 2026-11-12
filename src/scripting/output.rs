@@ -1,17 +1,19 @@
-//! Validación del resultado y expansión acotada de cortes solicitados por Lua.
+//! Validación del resultado y expansión acotada de cortes/notas solicitados por Lua.
 use crate::musical::{
     clip::MidiClip,
-    model::{NoteId, Pattern},
+    model::{NoteEvent, NoteId, Pattern},
     time::Tick,
 };
 use mlua::Table;
+use std::collections::HashSet;
 
 pub const MAX_NOTES: usize = 16_384;
 
 pub struct MidiEdit {
     pub pattern: Pattern,
-    /// (nuevo ID, ID original); el primer segmento conserva el ID original.
+    /// (nuevo ID, nota de origen), para cortes y notas generadas.
     descendants: Vec<(NoteId, NoteId)>,
+    unselected_descendants: HashSet<NoteId>,
 }
 
 impl MidiEdit {
@@ -48,7 +50,7 @@ impl MidiEdit {
             if clip.muted_notes.contains(&original) {
                 clip.muted_notes.insert(new);
             }
-            if selected.contains(&original) {
+            if selected.contains(&original) && !self.unselected_descendants.contains(&new) {
                 selection.push(new);
             }
         }
@@ -127,5 +129,71 @@ pub(super) fn decode(notes: Table, pattern: &Pattern) -> Result<MidiEdit, String
     Ok(MidiEdit {
         pattern,
         descendants,
+        unselected_descendants: HashSet::new(),
     })
+}
+
+/// Añade filas solicitadas por paquetes. Lua proporciona valores musicales y un
+/// origen seleccionado; el host conserva instrumento/expresión y asigna el ID.
+pub(super) fn append_generated(
+    rows: Table,
+    original: &Pattern,
+    selected: &[NoteId],
+    edit: &mut MidiEdit,
+) -> Result<(), String> {
+    let count = super::arrays::length(&rows, MAX_NOTES)?;
+    if edit.pattern.notes().len().saturating_add(count) > MAX_NOTES {
+        return Err("El resultado supera 16384 notas".into());
+    }
+    if count == 0 {
+        return Ok(());
+    }
+
+    let mut notes = edit.pattern.notes().to_vec();
+    let mut next_id = edit.pattern.next_id();
+    for index in 1..=count {
+        let row: Table = rows.raw_get(index).map_err(|e| e.to_string())?;
+        let source_id = NoteId(row.raw_get("source_id").map_err(|e| e.to_string())?);
+        let _source = original
+            .notes()
+            .iter()
+            .find(|note| note.id == source_id)
+            .ok_or("source_id debe referirse a una nota existente")?;
+        if !selected.is_empty() && !selected.contains(&source_id) {
+            return Err("Solo se pueden generar notas desde la selección".into());
+        }
+
+        let mut note: NoteEvent = edit
+            .pattern
+            .notes()
+            .iter()
+            .find(|note| note.id == source_id)
+            .copied()
+            .ok_or("No se encontró la nota de origen en el resultado")?;
+        note.id = NoteId(next_id);
+        next_id = next_id.checked_add(1).ok_or("No quedan IDs de nota")?;
+        note.start = Tick(row.raw_get("start").map_err(|e| e.to_string())?);
+        note.duration = Tick(row.raw_get("duration").map_err(|e| e.to_string())?);
+        note.pitch = row.raw_get("pitch").map_err(|e| e.to_string())?;
+        let end = note
+            .start
+            .0
+            .checked_add(note.duration.0)
+            .ok_or("Fin de nota inválido")?;
+        if note.start.0 < 0 || note.duration.0 <= 0 || end > original.length().0 || note.pitch > 127
+        {
+            return Err("Posición, duración o pitch de nota generada inválida".into());
+        }
+        let select: Option<bool> = row.raw_get("selected").map_err(|e| e.to_string())?;
+        if !select.unwrap_or(false) {
+            edit.unselected_descendants.insert(note.id);
+        }
+        edit.descendants.push((note.id, source_id));
+        notes.push(note);
+    }
+    edit.pattern = edit
+        .pattern
+        .with_notes(notes, next_id)
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }

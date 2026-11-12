@@ -21,8 +21,11 @@ impl DawApp {
         invocation: ToolInvocation,
         cx: &mut Context<Self>,
     ) {
+        let scale = self.piano_roll.pitch_scale();
         let options = MidiOptions {
             grid: self.piano_roll.resolution,
+            scale_root: scale.root,
+            scale_intervals: scale.intervals,
             ..Default::default()
         };
         self.start_midi_script(ScriptSource::Tool(invocation), options, cx);
@@ -57,7 +60,10 @@ impl DawApp {
             || matches!(
                 &source,
                 ScriptSource::Tool(invocation)
-                    if invocation.package().descriptor().id == "hay.midi.subdivide"
+                    if matches!(
+                        invocation.package().descriptor().id.as_str(),
+                        "hay.midi.subdivide" | "hay.midi.note_midi_to_chord"
+                    )
             );
         let package = match &source {
             ScriptSource::Tool(invocation) => Some(invocation.package().clone()),
@@ -94,7 +100,15 @@ impl DawApp {
                 .iter()
                 .any(|note| self.piano_roll.selected_notes.contains(&note.id))
         {
-            self.piano_roll.hint = "Selecciona notas para subdividir".into();
+            self.piano_roll.hint = if matches!(
+                &source,
+                ScriptSource::Tool(invocation)
+                    if invocation.package().descriptor().id == "hay.midi.note_midi_to_chord"
+            ) {
+                "Selecciona las fundamentales para crear acordes".into()
+            } else {
+                "Selecciona notas para subdividir".into()
+            };
             self.status_message = self.piano_roll.hint.clone();
             return;
         }

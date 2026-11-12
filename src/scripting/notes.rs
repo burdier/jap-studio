@@ -9,9 +9,11 @@ pub(super) fn encode(lua: &Lua, pattern: &Pattern, selected: &[NoteId]) -> Resul
         .map_err(|error| error.to_string())?;
     for (index, note) in pattern.notes().iter().enumerate() {
         let row = lua
-            .create_table_with_capacity(0, 10)
+            .create_table_with_capacity(0, 11)
             .map_err(|error| error.to_string())?;
         row.set("id", note.id.0)
+            .map_err(|error| error.to_string())?;
+        row.set("instrument", note.instrument.0)
             .map_err(|error| error.to_string())?;
         row.set("start", note.start.0)
             .map_err(|error| error.to_string())?;

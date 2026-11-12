@@ -14,6 +14,11 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
   distribuyen como paquetes; los alias anteriores siguen disponibles antes de la
   primera recarga correcta. Sin dependencias añadidas. [Uso](LUA.md#herramientas-registradas).
 
+- **Fundamentales MIDI a acordes**: paquete Lua que añade terceras y quintas diatónicas
+  a las raíces seleccionadas según la escala activa del piano roll. Conserva instrumento,
+  expresión, inicio y duración; el host valida las notas y asigna sus IDs. Requiere
+  `:midi.tools.reload` y una selección explícita. [Uso](LUA.md#herramientas-registradas).
+
 - **Hay Acent**: presets Lua Pulso, Alternado, Creciente y Clic 4/4, ejecutables
   sobre el clip MIDI con `midi.script`/Lua… sin recompilar. El clic transforma cuatro
   notas existentes en una guía a negras; usa el instrumento de la pista, sin

@@ -154,18 +154,29 @@ comprueba que sus metadatos coinciden con los registrados antes de llamar a `run
 El descriptor debe ser estable entre evaluaciones de una misma fuente; una
 discrepancia se rechaza. El estado de una VM no persiste entre invocaciones.
 
-`context` contiene `notes`, `controls`, `length`, `ppq` y `grid_ticks`, con las
-unidades y reglas de [la API MIDI actual](LUA.md#contrato-lua). `notes` y `controls`
-son copias; sin selección todas las notas tienen `selected = true`. El host
-conserva las referencias a ambos arreglos: sustituirlos se rechaza. `length`,
-`ppq` y `grid_ticks` son información de entrada; escribirlos no modifica el clip.
-`run` modifica las filas y devuelve `nil`; otro resultado se rechaza.
+`context` contiene `notes`, `controls`, `new_notes`, `length`, `ppq`, `grid_ticks`
+y `scale`, con las unidades y reglas de [la API MIDI actual](LUA.md#contrato-lua).
+`notes` y `controls` son copias; sin selección todas las notas tienen
+`selected = true`. Cada fila de nota incluye `instrument` como dato de lectura.
+`scale.root` y `scale.intervals` capturan la escala activa del piano roll. El host
+conserva las referencias a los tres arreglos; sustituirlos se rechaza. `length`,
+`ppq`, `grid_ticks` y `scale` son datos de entrada.
 
-Se conserva el contrato de identidad: no añadir/quitar/reordenar notas ni cambiar
-sus IDs; para subdividir se usa `note.cuts`. Los controles permiten las operaciones
-ya documentadas en [Controles MIDI](LUA.md#controles-midi). El host valida notas y
-controles completos, crea IDs y produce el mismo `MidiEdit` que la ruta existente.
-Un error en cualquiera de los dos arreglos rechaza la edición completa.
+Las filas existentes de `notes` mantienen su identidad y orden. Para añadir notas,
+un paquete puede agregar filas a `new_notes` con `source_id`, `start`, `duration` y
+`pitch`; `selected` es opcional y por defecto `false`. `source_id` debe señalar una
+nota existente y, cuando hay selección, pertenecer a ella. Rust copia su instrumento
+y expresión, valida posición,
+duración y pitch, asigna IDs y hereda el silencio. El límite de 16 384 notas se aplica
+al resultado completo. Esta salida no permite quitar ni reordenar notas existentes.
+`run` devuelve `nil`; otro resultado se rechaza.
+
+Se conserva el contrato de identidad: no quitar/reordenar notas existentes ni cambiar
+sus IDs; para subdividir se usa `note.cuts`, y para generar voces nuevas se usa
+`context.new_notes`. Los controles permiten las operaciones ya documentadas en
+[Controles MIDI](LUA.md#controles-midi). El host valida notas y controles completos,
+crea IDs y produce el mismo `MidiEdit` que la ruta existente. Un error en cualquiera
+de los arreglos rechaza la edición completa.
 
 La UI aplica ese resultado por el controlador común solo si coinciden el `ClipId`
 y el patrón capturados, el clip no está bloqueado y no hay un arrastre activo.

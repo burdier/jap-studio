@@ -74,8 +74,10 @@ fino y la sombra no cambian la geometría del picking.
 ## Lua y procesamiento
 
 Q, H, Gate, Swing, Velocity, Release Velocity, Probability, Pan, Random y Clamp viven en
-`assets/scripts/midi/`; Acentuar y Subdividir viven en `assets/scripts/tools/midi/` como
-paquetes recargables. Lua recibe una copia de las notas en un worker; Rust valida
+`assets/scripts/midi/`; Acentuar, Subdividir y Fundamental a acordes viven en
+`assets/scripts/tools/midi/` como paquetes recargables. El último genera terceras y
+quintas según la escala activa mediante la salida validada del paquete. Lua recibe una copia de las notas
+en un worker; Rust valida
 IDs, posiciones, duraciones y límites antes de aplicar por ClipId. No hay GPUI ni
 trabajo Lua en el callback. `midi.random` sigue disponible en Notes y el catálogo.
 

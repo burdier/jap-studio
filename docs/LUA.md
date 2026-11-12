@@ -39,7 +39,8 @@ no está bloqueado ni en arrastre. No hay búsqueda automática de cambios en di
 Los mensajes distinguen errores de carga, descriptor, argumentos, ejecución,
 resultado y estado obsoleto; un ID ausente nunca usa una herramienta de respaldo.
 
-La aplicación incluye `hay.midi.accent` y `hay.midi.subdivide`. Acentuar también se
+La aplicación incluye `hay.midi.accent`, `hay.midi.subdivide` y
+`hay.midi.note_midi_to_chord`. Acentuar también se
 puede ejecutar con `:midi.script.accent`, que conserva el acento anterior de +12 de
 velocity. Subdividir conserva `:midi.subdivide [denominador]`, el botón del piano roll
 y los gestos; captura la rejilla actual, exige una selección explícita y genera
@@ -47,6 +48,10 @@ fragmentos con los mismos IDs, silencios y selección que antes. Una vez recarga
 los alias ejecutan la fuente del paquete, con el mismo sandbox y límites que cualquier
 otra herramienta. Si la recarga falla, la edición puede seguir usando el registro
 válido anterior; una primera carga fallida deja disponibles los alias integrados.
+Para armonizar, selecciona las fundamentales y ejecuta
+`:midi.tool hay.midi.note_midi_to_chord`. Añade la tercera y la quinta diatónicas
+según la escala activa, en el mismo inicio y duración; las notas generadas heredan el
+instrumento y la expresión de cada fundamental.
 
 ## Hay Acent
 
@@ -126,9 +131,10 @@ conservan el zoom horizontal. Funciona en el editor acoplado y separado.
 
 ## Contrato Lua
 
-El script recibe `notes`, un arreglo de tablas con `id`, `start`, `duration`, `pitch`,
-`velocity`, `release_velocity`, `probability`, `pan` y `selected`. `start`, `duration` y `length` son ticks; `ppq` indica ticks
-por negra. Si no hay selección, todas las notas llevan `selected = true`.
+El script recibe `notes`, un arreglo de tablas con `id`, `instrument`, `start`, `duration`,
+`pitch`, `velocity`, `release_velocity`, `probability`, `pan` y `selected`. `start`,
+`duration` y `length` son ticks; `ppq` indica ticks por negra. Si no hay selección,
+todas las notas llevan `selected = true`.
 También recibe `grid_ticks` (rejilla capturada al invocar) y `amount` (intensidad 0–100).
 
 ```lua
@@ -148,20 +154,31 @@ y `pan` transportan sus argumentos. Release velocity se envía a sfizz; el pan p
 se aplica en FluidSynth. Los otros backends conservan los datos sin aplicar esas
 expresiones no soportadas (véase [inventario](PIANO_ROLL_ACTIONS.md)).
 Puede solicitar subdivisiones con `note.cuts = {tick_absoluto, ...}`: deben ser enteros
-crecientes, estrictamente interiores a la nota. Rust crea los segmentos y sus IDs; no se
-permite insertar/borrar filas de `notes` ni cambiar IDs. Los scripts de archivo se ejecutan sobre una
-copia en un worker; Rust valida el patrón completo antes de sustituir el clip. Si el
-clip cambió, se bloqueó o hay un arrastre activo al terminar, se descarta el resultado. Errores
-de Lua y notas inválidas dejan el clip intacto. No existe todavía undo/redo de proyecto.
+crecientes, estrictamente interiores a la nota. Rust crea los segmentos y sus IDs; los
+scripts de archivo no pueden insertar/borrar filas de `notes` ni cambiar IDs. Los
+scripts de archivo se ejecutan sobre una copia en un worker; Rust valida el patrón
+completo antes de sustituir el clip. Si el clip cambió, se bloqueó o hay un arrastre
+activo al terminar, se descarta el resultado. Errores de Lua y notas inválidas dejan
+el clip intacto. No existe todavía undo/redo de proyecto.
 
 La VM usa Lua 5.4 mediante `mlua` con bibliotecas matemáticas, de cadenas y tablas;
 no recibe acceso a GPUI, audio, archivos ni red. El host lee el archivo solicitado
 antes de ejecutarlo. Límite por script: 256 KiB de fuente, 8 MiB de memoria de Lua y
 250 ms de ejecución medidos por hook de instrucciones. No se ejecuta Lua en el callback
 de audio ni durante el dibujo de GPUI.
-Entrada y resultado limitados a 16 384 notas; la validación de cortes se hace antes de
-publicar el patrón. El plazo por hook no es un temporizador estricto para funciones C.
+Entrada y resultado limitados a 16 384 notas; la validación de cortes y notas generadas
+se hace antes de publicar el patrón. El plazo por hook no es un temporizador estricto
+para funciones C.
 `mlua`, `mlua-sys` y el Lua vendorizado de `lua-src` declaran licencia MIT.
+
+Los paquetes registrados además reciben `context.scale` y pueden solicitar notas nuevas
+mediante `context.new_notes`; el host hereda instrumento y expresión de una fundamental
+seleccionada y asigna IDs. `Fundamentales MIDI a acordes`
+(`hay.midi.note_midi_to_chord`) añade la tercera y la quinta diatónicas sobre cada
+fundamental seleccionada, con el inicio, duración y velocity de origen, según la escala
+activa del piano roll. Requiere que las fundamentales pertenezcan a esa escala; las notas
+creadas quedan sin seleccionar para que repetir la operación sobre las raíces no cree
+voces adicionales.
 
 ## Latencia de acciones integradas
 

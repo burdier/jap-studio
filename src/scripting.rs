@@ -19,7 +19,7 @@ use actions::MidiOptions;
 use mlua::chunk::ChunkMode;
 pub use output::MidiEdit;
 
-/// API v1: `notes` contiene id, start, duration, pitch, velocity y selected.
+/// API v1: `notes` contiene identidad, instrumento, tiempo, pitch, expresión y selección.
 /// `start`, `duration` y `length` se miden en ticks; `ppq` indica ticks por negra.
 /// Compatibilidad para consumidores que solo necesitan el patrón transformado.
 pub fn transform_midi(

@@ -167,10 +167,12 @@ viven en `assets/scripts/midi/`; `scripting/actions` declara parámetros y opcio
 `ui/piano_roll/grid_actions` coordina resolución y acumulación de gestos, sin editar notas
 al cambiar la rejilla. Alt+1 afina, Alt+2 engrosa; Alt+rueda o Shift+pellizco invocan
 subdivisión sobre la selección explícita. La rejilla gobierna dibujo, snap y paso del cursor.
-Lua solicita cortes mediante `note.cuts`; `scripting/output` valida límites, asigna IDs
-monótonos y devuelve la relación de descendientes para heredar selección y silencio.
-Cada primer segmento conserva su ID; se preserva la cobertura completa de la nota.
-La expansión está limitada a 16 384 notas; no hay inserción/borrado arbitrario ni undo.
+Lua solicita cortes mediante `note.cuts`; los paquetes también pueden pedir notas nuevas
+en `context.new_notes`. `scripting/output` valida límites, asigna IDs monótonos y devuelve
+la relación de descendientes para heredar silencio y, cuando corresponde, selección.
+Cada primer segmento conserva su ID; las notas nuevas heredan instrumento y expresión
+de una fuente seleccionada. La expansión está limitada a 16 384 notas; no hay borrado
+arbitrario ni undo.
 La futura capa de
 displays usará datos declarativos y un renderizador GPUI común; todavía no está conectada.
 Detalles de API y límites en [LUA.md](LUA.md).

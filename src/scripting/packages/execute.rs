@@ -53,12 +53,24 @@ impl ToolInvocation {
             .map_err(|e| error(PackagePhase::Execute, "context.notes", e))?;
         let controls = controls::encode(&lua, pattern)
             .map_err(|e| error(PackagePhase::Execute, "context.controls", e))?;
+        let new_notes = lua.create_table().map_err(execution_error)?;
+        let scale = lua.create_table().map_err(execution_error)?;
+        scale
+            .raw_set("root", options.scale_root)
+            .map_err(execution_error)?;
+        scale
+            .raw_set("intervals", options.scale_intervals)
+            .map_err(execution_error)?;
         context
             .raw_set("notes", notes.clone())
             .map_err(execution_error)?;
         context
             .raw_set("controls", controls.clone())
             .map_err(execution_error)?;
+        context
+            .raw_set("new_notes", new_notes.clone())
+            .map_err(execution_error)?;
+        context.raw_set("scale", scale).map_err(execution_error)?;
         context
             .raw_set("length", pattern.length().0)
             .map_err(execution_error)?;
@@ -86,7 +98,11 @@ impl ToolInvocation {
                 "run debe devolver nil".into(),
             ));
         }
-        for (key, original) in [("notes", &notes), ("controls", &controls)] {
+        for (key, original) in [
+            ("notes", &notes),
+            ("controls", &controls),
+            ("new_notes", &new_notes),
+        ] {
             let value: Value = context.raw_get(key).map_err(execution_error)?;
             if !matches!(value, Value::Table(table) if table.to_pointer() == original.to_pointer())
             {
@@ -101,6 +117,8 @@ impl ToolInvocation {
             output::decode(notes, pattern).map_err(|e| error(PackagePhase::Result, "notes", e))?;
         controls::decode(controls, pattern, &mut edit.pattern)
             .map_err(|e| error(PackagePhase::Result, "controls", e))?;
+        output::append_generated(new_notes, pattern, selected, &mut edit)
+            .map_err(|e| error(PackagePhase::Result, "new_notes", e))?;
         Ok(edit)
     }
 }
