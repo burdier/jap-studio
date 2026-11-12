@@ -8,6 +8,7 @@ mod output;
 mod target;
 pub use target::MidiScriptTarget;
 mod arrays;
+pub mod audio_components;
 pub mod packages;
 pub mod push;
 mod sandbox;
