@@ -1,9 +1,15 @@
 //! Descriptores Lua de efectos estéreo; lectura y validación siempre fuera de audio.
 use crate::scripting::sandbox;
 use mlua::{Table, Value, chunk::ChunkMode};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
+mod fields;
+mod graph;
+use fields::*;
+use graph::*;
 
-const VOLUME: &str = "elevate.amplitude.volume";
+mod native;
+use crate::ParameterId;
+pub use native::{AudioNode, NativeKind};
 
 #[derive(Debug, Clone)]
 pub struct AudioComponent {
@@ -14,12 +20,7 @@ pub struct AudioComponent {
     pub edges: Vec<(usize, usize)>,
     pub order: Vec<usize>,
     pub controls: Vec<AudioControl>,
-}
-
-#[derive(Debug, Clone)]
-pub struct AudioNode {
-    pub id: String,
-    pub gain: f32,
+    pub response_node: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -32,7 +33,39 @@ pub struct AudioControl {
     pub default: f32,
     pub step: f32,
     pub unit: String,
-    pub targets: Vec<usize>,
+    pub targets: Vec<(usize, ParameterId)>,
+    pub logarithmic: bool,
+    pub choices: Vec<String>,
+}
+
+impl AudioControl {
+    pub fn accepts(&self, value: f32) -> bool {
+        value.is_finite()
+            && value >= self.min
+            && value <= self.max
+            && (self.choices.is_empty() || value.fract() == 0.)
+    }
+    pub fn from_fraction(&self, fraction: f32) -> f32 {
+        let f = fraction.clamp(0., 1.);
+        let value = if self.logarithmic {
+            self.min * (self.max / self.min).powf(f)
+        } else {
+            self.min + f * (self.max - self.min)
+        };
+        if self.choices.is_empty() {
+            value.clamp(self.min, self.max)
+        } else {
+            value.round()
+        }
+    }
+    pub fn fraction(&self, value: f32) -> f32 {
+        if self.logarithmic {
+            (value / self.min).ln() / (self.max / self.min).ln()
+        } else {
+            (value - self.min) / (self.max - self.min)
+        }
+        .clamp(0., 1.)
+    }
 }
 
 pub fn parse(source: &str) -> Result<AudioComponent, String> {
@@ -57,11 +90,13 @@ pub fn parse(source: &str) -> Result<AudioComponent, String> {
             "ports",
             "graph",
             "controls",
+            "response_node",
         ],
         "descriptor",
     )?;
-    if integer(&root, "api_version")? != 1 || string(&root, "kind")? != "audio_component" {
-        return Err("Se requiere api_version=1 y kind=audio_component".into());
+    let version = integer(&root, "api_version")?;
+    if ![1, 2].contains(&version) || string(&root, "kind")? != "audio_component" {
+        return Err("Se requiere api_version=1 o 2 y kind=audio_component".into());
     }
     let id = string(&root, "id")?;
     if id.len() < 3 || id.len() > 64 || !id.contains('.') || !id.split('.').all(identifier) {
@@ -94,19 +129,7 @@ pub fn parse(source: &str) -> Result<AudioComponent, String> {
         {
             return Err(format!("{path}.id: ID inválido o duplicado"));
         }
-        if string(&row, "primitive")? != VOLUME {
-            return Err(format!("{path}.primitive: solo se admite {VOLUME}"));
-        }
-        let params = table(&row, "parameters")?;
-        fields(&params, &["gain"], &format!("{path}.parameters"))?;
-        let gain = number(&params, "gain")?;
-        if !(0.0..=2.0).contains(&gain) || gain > f32::MAX as f64 {
-            return Err(format!("{path}.parameters.gain: fuera de 0..2"));
-        }
-        nodes.push(AudioNode {
-            id: node_id,
-            gain: gain as f32,
-        });
+        nodes.push(native::parse_node(&row, node_id, version, &path)?);
     }
     let edge_rows = array(&table(&graph, "edges")?, 2, 64, "graph.edges")?;
     let mut edges = Vec::with_capacity(edge_rows.len());
@@ -139,6 +162,7 @@ pub fn parse(source: &str) -> Result<AudioComponent, String> {
             &row,
             &[
                 "id", "key", "label", "kind", "min", "max", "default", "step", "unit", "targets",
+                "scale", "choices",
             ],
             &path,
         )?;
@@ -151,9 +175,13 @@ pub fn parse(source: &str) -> Result<AudioComponent, String> {
         {
             return Err(format!("{path}: ID o clave inválidos o duplicados"));
         }
-        if string(&row, "kind")? != "number" {
-            return Err(format!("{path}.kind: solo number"));
-        }
+        let kind = string(&row, "kind")?;
+        let choices = native::choices(&row, &kind, version)?;
+        let logarithmic = match row.raw_get::<Value>("scale").map_err(|e| e.to_string())? {
+            Value::Nil => false,
+            Value::String(s) if version == 2 && s.to_str().is_ok_and(|s| s == "log") => true,
+            _ => return Err(format!("{path}.scale: solo log en v2")),
+        };
         let unit = label(&row, "unit", 32)?;
         let label = label(&row, "label", 128)?;
         let min = number(&row, "min")?;
@@ -161,14 +189,20 @@ pub fn parse(source: &str) -> Result<AudioComponent, String> {
         let default = number(&row, "default")?;
         let step = number(&row, "step")?;
         if min < 0.0
-            || max > 2.0
-            || min >= max
+            || max > f32::MAX as f64
+            || (logarithmic && (min as f32 <= 0. || !choices.is_empty()))
+            || (!choices.is_empty()
+                && (min != 0.
+                    || max != (choices.len() - 1) as f64
+                    || default.fract() != 0.
+                    || step != 1.))
+            || min as f32 >= max as f32
             || default < min
             || default > max
-            || step <= 0.0
+            || step as f32 <= 0.0
             || step > f32::MAX as f64
         {
-            return Err(format!("{path}: rango de ganancia inválido"));
+            return Err(format!("{path}: rango de control inválido"));
         }
         let target_rows = array(&table(&row, "targets")?, 1, 32, &format!("{path}.targets"))?;
         let mut targets = Vec::with_capacity(target_rows.len());
@@ -182,15 +216,26 @@ pub fn parse(source: &str) -> Result<AudioComponent, String> {
             let Some(&node_index) = indices.get(&node) else {
                 return Err(format!("{path}: nodo destino desconocido"));
             };
-            if string(&target, "parameter")? != "gain"
-                || !destinations.insert(node_index)
-                || (nodes[node_index].gain as f64 - default).abs() > 1e-6
+            let parameter = string(&target, "parameter")?;
+            let spec = nodes[node_index]
+                .info()
+                .parameters
+                .iter()
+                .find(|s| s.key == parameter)
+                .ok_or_else(|| format!("{path}: parámetro desconocido"))?;
+            if min < spec.min as f64
+                || max > spec.max as f64
+                || !destinations.insert((node_index, spec.id))
+                || nodes[node_index].values[spec.id.0 as usize] != default as f32
+                || (nodes[node_index].kind == NativeKind::Filter
+                    && spec.id.0 == 2
+                    && choices.len() != 3)
             {
                 return Err(format!(
-                    "{path}: destino repetido, parámetro inválido o valor inicial distinto"
+                    "{path}: destino repetido, rango inválido o valor inicial distinto"
                 ));
             }
-            targets.push(node_index);
+            targets.push((node_index, spec.id));
         }
         controls.push(AudioControl {
             id: id as u32,
@@ -202,8 +247,27 @@ pub fn parse(source: &str) -> Result<AudioComponent, String> {
             step: step as f32,
             unit,
             targets,
+            logarithmic,
+            choices,
         });
     }
+    let response_node = match root
+        .raw_get::<Value>("response_node")
+        .map_err(|e| e.to_string())?
+    {
+        Value::Nil => None,
+        Value::String(s) if version == 2 => {
+            let id = s.to_str().map_err(|e| e.to_string())?;
+            let index = *indices
+                .get(id.as_ref())
+                .ok_or("response_node desconocido")?;
+            if nodes[index].kind != NativeKind::Filter {
+                return Err("response_node requiere filtro".into());
+            }
+            Some(index)
+        }
+        _ => return Err("response_node requiere ID textual y v2".into()),
+    };
     Ok(AudioComponent {
         id,
         name,
@@ -212,135 +276,8 @@ pub fn parse(source: &str) -> Result<AudioComponent, String> {
         edges,
         order,
         controls,
+        response_node,
     })
-}
-
-fn validate_graph(count: usize, edges: &[(usize, usize)]) -> Result<Vec<usize>, String> {
-    let input = count;
-    let output = count + 1;
-    let mut indegree = vec![0; count + 2];
-    let mut forward = vec![Vec::new(); count + 2];
-    for &(from, to) in edges {
-        indegree[to] += 1;
-        forward[from].push(to);
-    }
-    let mut queue = VecDeque::from([input]);
-    let mut order = Vec::new();
-    while let Some(node) = queue.pop_front() {
-        order.push(node);
-        for &next in &forward[node] {
-            indegree[next] -= 1;
-            if indegree[next] == 0 {
-                queue.push_back(next);
-            }
-        }
-    }
-    if order.len() != count + 2 || order.last() != Some(&output) {
-        return Err("graph: ciclo o salida inaccesible".into());
-    }
-    let mut reaches_output = vec![false; count + 2];
-    reaches_output[output] = true;
-    for &node in order.iter().rev().skip(1) {
-        reaches_output[node] = forward[node].iter().any(|&next| reaches_output[next]);
-    }
-    if (0..count).any(|node| !reaches_output[node]) {
-        return Err("graph: nodo sin camino a output".into());
-    }
-    Ok(order)
-}
-
-fn endpoint(name: &str, indices: &HashMap<String, usize>, count: usize) -> Result<usize, String> {
-    match name {
-        "input" => Ok(count),
-        "output" => Ok(count + 1),
-        _ => indices
-            .get(name)
-            .copied()
-            .ok_or_else(|| format!("graph: referencia {name} desconocida")),
-    }
-}
-fn identifier(s: &str) -> bool {
-    let mut bytes = s.bytes();
-    bytes.next().is_some_and(|b| b.is_ascii_lowercase())
-        && bytes.all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
-}
-fn as_table(value: Value, path: &str) -> Result<Table, String> {
-    match value {
-        Value::Table(t) if t.metatable().is_none() => Ok(t),
-        _ => Err(format!("{path}: se esperaba tabla sin metatabla")),
-    }
-}
-fn table(parent: &Table, key: &str) -> Result<Table, String> {
-    as_table(parent.raw_get(key).map_err(|e| e.to_string())?, key)
-}
-fn string(parent: &Table, key: &str) -> Result<String, String> {
-    match parent.raw_get::<Value>(key).map_err(|e| e.to_string())? {
-        Value::String(s) => s.to_str().map(|s| s.to_string()).map_err(|e| e.to_string()),
-        _ => Err(format!("{key}: se esperaba texto")),
-    }
-}
-fn number(parent: &Table, key: &str) -> Result<f64, String> {
-    match parent.raw_get::<Value>(key).map_err(|e| e.to_string())? {
-        Value::Integer(n) => Ok(n as f64),
-        Value::Number(n) if n.is_finite() => Ok(n),
-        _ => Err(format!("{key}: se esperaba número finito")),
-    }
-}
-fn integer(parent: &Table, key: &str) -> Result<i64, String> {
-    match parent.raw_get::<Value>(key).map_err(|e| e.to_string())? {
-        Value::Integer(value) => Ok(value),
-        _ => Err(format!("{key}: se esperaba entero")),
-    }
-}
-fn label(parent: &Table, key: &str, max: usize) -> Result<String, String> {
-    let value = string(parent, key)?;
-    if value.is_empty()
-        || value.len() > max
-        || value.contains(['\0', '\r', '\n'])
-        || value.trim().is_empty()
-    {
-        Err(format!("{key}: texto inválido"))
-    } else {
-        Ok(value)
-    }
-}
-fn fields(table: &Table, allowed: &[&str], path: &str) -> Result<(), String> {
-    for pair in table.clone().pairs::<Value, Value>() {
-        let (key, _) = pair.map_err(|e| e.to_string())?;
-        let Value::String(key) = key else {
-            return Err(format!("{path}: clave no textual"));
-        };
-        let key = key.to_str().map_err(|e| e.to_string())?;
-        if !allowed.contains(&key.as_ref()) {
-            return Err(format!("{path}.{key}: campo desconocido"));
-        }
-    }
-    Ok(())
-}
-fn array(table: &Table, min: usize, max: usize, path: &str) -> Result<Vec<Table>, String> {
-    let len = table.raw_len();
-    if len < min || len > max {
-        return Err(format!("{path}: tamaño fuera de {min}..{max}"));
-    }
-    let mut rows = Vec::with_capacity(len);
-    for i in 1..=len {
-        rows.push(as_table(
-            table.raw_get(i).map_err(|e| e.to_string())?,
-            &format!("{path}[{i}]"),
-        )?);
-    }
-    let mut count = 0;
-    for pair in table.clone().pairs::<Value, Value>() {
-        let (key, _) = pair.map_err(|e| e.to_string())?;
-        if !matches!(key, Value::Integer(i) if i >= 1 && i as usize <= len) {
-            return Err(format!("{path}: arreglo disperso o con claves adicionales"));
-        }
-        count += 1;
-    }
-    if count != len {
-        return Err(format!("{path}: arreglo disperso"));
-    }
-    Ok(rows)
 }
 
 #[cfg(test)]
@@ -354,7 +291,10 @@ mod tests {
         let component = parse(EXAMPLE).unwrap();
         assert_eq!(component.id, "hay.fx.double_volume");
         assert_eq!(component.order, vec![2, 0, 1, 3]);
-        assert_eq!(component.controls[0].targets, vec![0, 1]);
+        assert_eq!(
+            component.controls[0].targets,
+            vec![(0, crate::ParameterId(0)), (1, crate::ParameterId(0))]
+        );
     }
 
     #[test]

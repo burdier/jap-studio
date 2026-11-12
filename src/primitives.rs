@@ -1,6 +1,7 @@
 use std::fmt;
 
 pub mod amplitude;
+pub mod filter;
 
 pub type StereoFrame = [f32; 2];
 

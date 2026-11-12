@@ -2,8 +2,8 @@
 use super::Device;
 use crate::{
     ComponentError, ParameterId, ProcessSpec, StereoFrame,
-    primitives::{Primitive, amplitude::Volume},
-    scripting::audio_components::AudioComponent,
+    primitives::{Primitive, amplitude::Volume, filter::Filter},
+    scripting::audio_components::{AudioComponent, NativeKind},
 };
 use std::sync::Arc;
 
@@ -11,7 +11,7 @@ const BLOCK: usize = 512;
 
 pub struct AudioComponentDevice {
     descriptor: Arc<AudioComponent>,
-    volumes: Vec<Volume>,
+    processors: Vec<Box<dyn Primitive>>,
     incoming: Vec<Vec<usize>>,
     buffers: Vec<Box<[StereoFrame; BLOCK]>>,
     scratch: Box<[StereoFrame; BLOCK]>,
@@ -21,9 +21,17 @@ pub struct AudioComponentDevice {
 impl AudioComponentDevice {
     pub fn new(descriptor: Arc<AudioComponent>, spec: ProcessSpec) -> Result<Self, ComponentError> {
         let count = descriptor.nodes.len();
-        let mut volumes = Vec::with_capacity(count);
+        let mut processors = Vec::with_capacity(count);
         for node in &descriptor.nodes {
-            volumes.push(Volume::with_gain(spec, node.gain)?);
+            let mut primitive: Box<dyn Primitive> = match node.kind {
+                NativeKind::Volume => Box::new(Volume::new(spec)),
+                NativeKind::Filter => Box::new(Filter::new(spec)),
+            };
+            for (id, value) in node.values.iter().enumerate() {
+                primitive.set_parameter(ParameterId(id as u32), *value)?;
+            }
+            primitive.reset();
+            processors.push(primitive);
         }
         let mut incoming = vec![Vec::new(); count + 2];
         for &(from, to) in &descriptor.edges {
@@ -32,7 +40,7 @@ impl AudioComponentDevice {
         let buffers = (0..=count).map(|_| Box::new([[0.0; 2]; BLOCK])).collect();
         Ok(Self {
             descriptor,
-            volumes,
+            processors,
             incoming,
             buffers,
             scratch: Box::new([[0.0; 2]; BLOCK]),
@@ -45,7 +53,7 @@ impl AudioComponentDevice {
     }
 
     fn process_chunk(&mut self, frames: &mut [StereoFrame]) {
-        let count = self.volumes.len();
+        let count = self.processors.len();
         self.buffers[count][..frames.len()].copy_from_slice(frames);
         for &node in &self.descriptor.order {
             if node >= count {
@@ -59,7 +67,7 @@ impl AudioComponentDevice {
                     out[1] += input[1];
                 }
             }
-            self.volumes[node].process(scratch);
+            self.processors[node].process(scratch);
             self.buffers[node][..frames.len()].copy_from_slice(scratch);
         }
         frames.fill([0.0; 2]);
@@ -80,7 +88,7 @@ impl Device for AudioComponentDevice {
             .iter()
             .find(|control| control.id == parameter.0)
             .ok_or(crate::PrimitiveError::UnknownParameter(parameter))?;
-        if !value.is_finite() || value < control.min || value > control.max {
+        if !control.accepts(value) {
             return Err(crate::PrimitiveError::InvalidValue {
                 parameter,
                 value,
@@ -89,8 +97,8 @@ impl Device for AudioComponentDevice {
             }
             .into());
         }
-        for &node in &control.targets {
-            self.volumes[node].set_gain(value)?;
+        for &(node, parameter) in &control.targets {
+            self.processors[node].set_parameter(parameter, value)?;
         }
         Ok(())
     }
@@ -110,7 +118,7 @@ impl Device for AudioComponentDevice {
     }
 
     fn reset(&mut self) {
-        for node in &mut self.volumes {
+        for node in &mut self.processors {
             node.reset();
         }
     }

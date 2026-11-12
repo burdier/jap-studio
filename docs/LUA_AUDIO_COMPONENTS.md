@@ -25,8 +25,9 @@ operación de control validada.
 El paquete de componentes es una familia distinta del paquete MIDI v1 de
 [herramientas Lua](LUA_PACKAGES.md): no tiene `run(context, params)` ni acceso a
 notas. Usa el mismo sandbox de lectura y las mismas reglas de ID y texto, pero su
-esquema es el de esta página. La primera versión solo admite audio estéreo y
-`elevate.amplitude.volume`; ampliar puertos o primitivas requerirá otra versión.
+esquema es el de esta página. La versión 1 admite audio estéreo y `elevate.amplitude.volume`. La versión 2
+añade `elevate.filter.svf`, controles discretos y frecuencia logarítmica; conserva
+los descriptores v1. Los puertos siguen siendo estéreo.
 
 ## Descriptor mínimo
 
@@ -187,3 +188,59 @@ en Audio, o 48 kHz si está en Auto; el ajuste del tiempo de suavizado podría
 diferir ligeramente si Auto negocia otra frecuencia. El proyecto completo aún
 no se guarda desde la UI ni comparte fuentes Lua entre colaboradores. Exportar
 esta cadena con el render offline actual sigue pendiente.
+
+## Incremento PR-03B: Hay Filter y kit v2
+
+`assets/scripts/components/audio/filter.lua` define **Hay Filter**. `[+]` lo ofrece
+al arrancar; `fx.components.reload` permite recargar variantes instaladas por el
+usuario. El descriptor v2 conserva grafo, IDs y reglas de recarga de v1. Las
+instancias existentes conservan su descriptor al recargar.
+
+La primitiva `elevate.filter.svf` usa filtros SVF de FunDSP 0.23 (dependencia existente,
+MIT/Apache-2.0), con estados estéreo independientes y suavizado de 5 ms para
+frecuencia, Q y transición entre modos. Todos los modos permanecen preparados;
+no hay reconstrucción del procesador al seleccionar otro tipo. Parámetros:
+
+| ID nativo | Clave | Rango | Inicial |
+|---|---|---|---|
+| 0 | `cutoff` | 20–20000 Hz | 1000 |
+| 1 | `resonance` | 0.5–10 Q | 0.707 |
+| 2 | `mode` | 0 LP, 1 HP, 2 BP; enteros | 0 |
+
+`parameters` debe declarar las tres claves. El límite efectivo de frecuencia es
+0.45 × sample rate. LP/HP son de segundo orden (12 dB/oct); BP es un paso banda
+con caída de 6 dB/oct por lado. Drive, Mix, otras pendientes, envolvente y LFO
+sincronizado quedan para incrementos posteriores.
+
+En v2, `controls` puede usar `scale = "log"` para rangos numéricos positivos, o
+`kind = "choice"` con `choices = { "LP", "HP", "BP" }`. Choice exige min=0,
+max=cantidad−1, step=1 y valores enteros; también se valida desde el comando.
+Los targets ahora identifican nodo **y parámetro**; el mismo nodo puede exponer
+frecuencia, Q y modo en controles distintos. Los rangos de controles deben caber
+en cada destino, y los valores iniciales deben coincidir. El modo requiere tres
+opciones. Los sliders v1 conservan su conversión lineal.
+
+El campo opcional `response_node = "filter"` selecciona un nodo SVF para mostrar
+su respuesta estacionaria, calculada fuera de audio con FunDSP. La curva pertenece
+a ese nodo, no al grafo completo; no representa un espectro medido. La vista usa
+los colores, bordes y controles actuales. Esto es una primera capacidad de
+presentación declarativa, no un editor de layouts arbitrarios.
+
+Prueba manual: reiniciar con `bash scripts/run.sh`, fijar Audio a **48000 Hz**,
+insertar Hay Filter en una pista con audio y pulsar Play. Seleccionar el efecto;
+mover Frecuencia/Resonancia y alternar LP/HP/BP. Para valores exactos usar
+`:fx.parameter 0 300`, `:fx.parameter 1 1` y `:fx.parameter 2 1` (HP).
+El bypass permite comparar con el audio original. Duplicar y cambiar una sola
+instancia comprueba su independencia. `:fx.parameter 2 0.5` debe rechazarse.
+
+El adaptador actual prepara el FX con la frecuencia solicitada en Audio, o 48 kHz
+en Auto. Si el dispositivo negocia otra frecuencia, el corte audible puede diferir
+de la curva y del valor mostrado. La preparación con la frecuencia real del motor
+compartido debe resolverse en PR-04. Exportación de esta cadena, guardado global
+y colaboración completa siguen pendientes; Loro conserva tipo y parámetros
+numéricos, no estado DSP ni fuente Lua.
+
+Pruebas automáticas: equivalencia de audio Lua/nativo, respuesta frente a señal
+senoidal medida a 44.1/96 kHz, aislamiento estéreo y de instancias, bypass,
+particiones de bloque y rechazo de parámetros/descriptores inválidos. La prueba
+interactiva de este filtro está pendiente.
