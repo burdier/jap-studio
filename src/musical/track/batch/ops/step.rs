@@ -1,7 +1,7 @@
 //! Una edición sobre un candidato privado; estructura y recursos se validan por paso.
 use super::super::{
     TrackBatchEdit, TrackBatchError,
-    validation::{error, index, name, new_handle, reference, validate_fx},
+    validation::{error, index, name, new_handle, reference, validate_fx, validate_instruments},
 };
 use crate::musical::track::{
     Track, TrackEdit, TrackId, TrackKind, TrackMix, TrackSnapshot, TrackSnapshotEntry, edit_tracks,
@@ -241,5 +241,6 @@ pub(super) fn apply_edit(
             .map(|entry| (entry.track.id, entry.track.kind, entry.track.parent)),
     )
     .map_err(|e| error("estructura_invalida", e))?;
+    validate_instruments(&candidate.entries)?;
     Ok(())
 }

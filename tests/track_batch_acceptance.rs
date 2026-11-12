@@ -120,3 +120,24 @@ fn lua_rejects_unknown_fields_and_loro_rejects_a_bad_merge_without_changing_stat
     assert!(project.merge(&[0, 1, 2, 3]).is_err());
     assert_eq!(project.snapshot().unwrap(), snapshot);
 }
+
+#[test]
+fn batch_rejects_a_session_with_duplicate_instrument_assignments() {
+    let mut before = origin();
+    let instrument = elevate::musical::model::InstrumentId(9);
+    before.entries[0].track.instrument = Some(instrument);
+    before.entries[1].track.instrument = Some(instrument);
+    let batch = TrackBatch {
+        origin: before.clone(),
+        edits: vec![TrackBatchEdit::Rename {
+            track: TrackRef::Id(before.entries[0].track.id),
+            name: "Nueva".into(),
+        }],
+    };
+    let error = apply_track_batch(&before, &batch).unwrap_err();
+    assert_eq!(
+        (error.code, error.operation),
+        ("estructura_invalida", Some(1))
+    );
+    assert_eq!(before.entries[0].track.name, "Kick");
+}

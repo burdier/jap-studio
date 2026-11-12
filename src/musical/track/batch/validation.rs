@@ -181,3 +181,18 @@ fn utility_only(nodes: &[FxNode]) -> bool {
         FxKind::ParallelChain { branches } => utility_only(branches),
     })
 }
+
+pub(super) fn validate_instruments(entries: &[TrackSnapshotEntry]) -> Result<(), TrackBatchError> {
+    let mut assigned = std::collections::HashSet::new();
+    for entry in entries {
+        if let Some(instrument) = entry.track.instrument
+            && !assigned.insert(instrument)
+        {
+            return Err(error(
+                "estructura_invalida",
+                "Un instrumento está asignado a más de una pista",
+            ));
+        }
+    }
+    Ok(())
+}
