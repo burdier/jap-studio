@@ -351,13 +351,13 @@
         <p class="phase-note">Extensiones útiles antes de ampliar el motor.</p>
         <div class="grid">
           <!-- Estado por commit: añade data-status="done" al li ya integrado. -->
-          <article data-pr="PR-01" data-status="progress">
-            <div class="pr-head"><span class="pr-number">PR-01</span><span class="status">En progreso</span></div>
+          <article data-pr="PR-01" data-status="done">
+            <div class="pr-head"><span class="pr-number">PR-01</span><span class="status">Completado</span></div>
             <h3>Herramientas Lua declarativas</h3>
             <p>Añadir una herramienta al catálogo sin recompilar.</p>
             <div class="depends">Base del kit</div>
             <details class="commit-plan">
-              <summary>4 de 4 commits completados · aceptación interactiva pendiente</summary>
+              <summary>4 de 4 commits completados · comprobación interactiva no registrada</summary>
               <ol>
                 <li data-status="done" data-commit="5bec9fe"><strong>docs(lua): definir el paquete de herramientas v1</strong>IDs, versión, parámetros, ubicación, recarga y límites definidos en el <a href="docs/LUA_PACKAGES.md">contrato v1</a>.<br><small>5bec9fe · 11 nov 2026 · 12 min 50 s transcurridos hasta el commit (05:45:16–05:58:06 UTC), incluida espera de permisos y sin el sondeo previo. Solo documentación; implementación pendiente.</small></li>
                 <li data-status="done" data-commit="7ce9d63"><strong>feat(lua): descubrir y validar metadatos de paquetes</strong>Registro headless con metadatos propios, validación estricta y recarga completa que conserva el estado anterior ante errores. 18 pruebas nuevas; integración UI/ejecutor pendiente.<br><small>7ce9d63 · 11 nov 2026 · 10 min 24 s desde la marca de inicio registrada (22:38:37–22:49:01 UTC), excluida la exploración inicial. 77 pruebas headless y compilación correctas; binario: 60/61, con fallo aislado en perfiles (ancho 180 frente a 237) en código sin cambios. La comprobación completa se detiene por formato previo; formato localizado correcto.</small></li>
@@ -366,15 +366,15 @@
               </ol>
             </details>
           </article>
-          <article data-pr="PR-02" data-status="pending">
-            <div class="pr-head"><span class="pr-number">PR-02</span><span class="status">Pendiente</span></div>
+          <article data-pr="PR-02" data-status="progress">
+            <div class="pr-head"><span class="pr-number">PR-02</span><span class="status">En progreso</span></div>
             <h3>Automatizar pistas desde Lua</h3>
             <p>Crear y configurar varias pistas mediante lotes validados.</p>
             <div class="depends">Depende de PR-01</div>
             <details class="commit-plan">
-              <summary>9 commits · 3–5 días · orden: contrato → lectura → validación → escritura → Lua</summary>
+              <summary>1 de 9 commits completados · contrato → lectura → validación → escritura → Lua</summary>
               <ol>
-                <li><strong>docs(plan): concretar el contrato de lotes de pistas</strong>Fijar snapshot, operaciones permitidas, revisión de origen, handles, errores y límites; sin undo/redo.</li>
+                <li data-status="done" data-commit="622a174"><strong>docs(plan): concretar el contrato de lotes de pistas</strong><a href="docs/LUA_TRACK_BATCHES.md">Contrato</a> de snapshot, operaciones, revisión, handles, errores y límites; incluye Loro y la colaboración futura, sin undo/redo.<br><small>622a174 · Solo documentación; la API de lotes aún no está implementada.</small></li>
                 <li><strong>feat(musical): exponer snapshot estable de pistas, mezcla y FX</strong>Añadir lectura headless con IDs estables; no añadir mutaciones ni UI.</li>
                 <li><strong>refactor(track): compartir la validación existente</strong>Extraer la validación de teclado y ratón sin cambiar comportamiento; cubrir no regresión.</li>
                 <li><strong>feat(musical): aplicar lotes tipados de forma atómica</strong>Comprobar revisión, validar todo y aplicar todo o nada con operaciones ya existentes. Probar el ejecutor desde Rust.</li>
