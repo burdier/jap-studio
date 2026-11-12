@@ -386,19 +386,19 @@
               </ol>
             </details>
           </article>
-          <article data-pr="PR-03" data-status="pending">
-            <div class="pr-head"><span class="pr-number">PR-03</span><span class="status">Pendiente</span></div>
+          <article data-pr="PR-03" data-status="done">
+            <div class="pr-head"><span class="pr-number">PR-03</span><span class="status">Completado</span></div>
             <h3>Componente audible en Lua</h3>
             <p>Componer primitivas y controlar el resultado desde la interfaz.</p>
             <div class="depends">Depende de PR-01</div>
             <details class="commit-plan">
-              <summary>5 commits · 4–7 días · cada etapa se usa en el componente</summary>
+              <summary>5 de 5 commits completados · suite correcta · audición manual pendiente</summary>
               <ol>
-                <li><strong>docs(component): fijar el contrato Lua de primitivas</strong>Precisar puertos, parámetros, valores y límites del grafo mínimo.</li>
-                <li><strong>feat(component): validar grafos declarativos con primitivas existentes</strong>Conectar el validador a la creación de un componente reproducible.</li>
-                <li><strong>feat(component): procesar un componente Lua con Utility</strong>Usar volumen serie con señal real y probar sonido/bypass. Así el contrato se valida por audio antes de añadir controles.</li>
-                <li><strong>feat(ui): controlar parámetros declarados en Lua</strong>Generar formulario y comandos con los controles existentes, con pruebas de edición de la misma instancia. Se integra solo la presentación que ya consume el componente.</li>
-                <li><strong>feat(component): aislar instancias y recuperar fallos de recarga</strong>Probar parámetros independientes, ciclos inválidos y conservar el componente anterior si la preparación falla. Agrupa solo el ciclo de vida de esa capacidad.</li>
+                <li data-status="done" data-commit="3661d35"><strong>docs(component): fijar el contrato Lua de primitivas</strong><a href="docs/LUA_AUDIO_COMPONENTS.md">Contrato</a> de puertos, parámetros, macro, grafo, límites y recarga.</li>
+                <li data-status="done" data-commit="cbfe1e5"><strong>feat(component): validar grafos declarativos con primitivas existentes</strong>Parser headless, ejemplo distribuido y rechazo de ciclos o referencias inválidas.</li>
+                <li data-status="done" data-commit="6319c2e"><strong>feat(component): procesar grafos Lua con Volume nativo</strong>Dos etapas independientes, serie/paralelo, audio de prueba y bypass.</li>
+                <li data-status="done" data-commit="7b3fc2a"><strong>feat(ui): insertar y controlar componentes Lua en Track FX</strong>Rack existente, buscador, slider y comando para el mismo FxId.</li>
+                <li data-status="done" data-commit="2509036"><strong>feat(component): aislar instancias y conservar registro ante recarga fallida</strong>Recarga en worker, instancias anteriores preservadas, uso y límites documentados.<br><small>scripts/check.sh completo pasó: 21 pruebas de biblioteca y 66 del binario; sin audición manual registrada.</small></li>
               </ol>
             </details>
           </article>
