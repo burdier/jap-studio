@@ -1,8 +1,7 @@
 //! Adaptador entre pistas musicales y el esquema CRDT.
 use super::ProjectTrack;
-use crate::musical::track::{TrackId, TrackKind};
+use crate::musical::track::{TrackId, TrackKind, validate_track_layout};
 use loro::ToJson;
-use std::collections::{HashMap, HashSet};
 
 pub(super) fn read_string(map: &loro::LoroMap, key: &str) -> Result<String, String> {
     map.get(key)
@@ -40,25 +39,7 @@ pub(super) fn order_id(order: &loro::LoroMovableList, index: usize) -> Option<Tr
         .map(TrackId)
 }
 pub(super) fn validate_tracks(tracks: &[ProjectTrack]) -> Result<(), String> {
-    let by_id: HashMap<_, _> = tracks.iter().map(|track| (track.id, track)).collect();
-    if by_id.len() != tracks.len() {
-        return Err("El proyecto contiene IDs de pista duplicados".into());
-    }
-    for track in tracks {
-        let mut seen = HashSet::new();
-        let mut parent = track.parent;
-        while let Some(id) = parent {
-            if !seen.insert(id) {
-                return Err("Los grupos de pistas forman un ciclo".into());
-            }
-            let group = by_id.get(&id).ok_or("Falta el grupo de una pista")?;
-            if group.kind != TrackKind::Group {
-                return Err("El padre de una pista no es un grupo".into());
-            }
-            parent = group.parent;
-        }
-    }
-    Ok(())
+    validate_track_layout(tracks.iter().map(|track| (track.id, track.kind, track.parent)))
 }
 pub(super) fn kind_code(kind: TrackKind) -> i64 {
     match kind {

@@ -1,5 +1,5 @@
 //! Ediciones estructurales de pistas. Un nivel de grupos, orden estable e IDs no reutilizados.
-use super::{Track, TrackId, TrackKind};
+use super::{Track, TrackId, TrackKind, validate_track_structure};
 
 #[derive(Clone, Copy)]
 pub enum TrackEdit {
@@ -160,5 +160,6 @@ pub fn edit_tracks(
             tracks.iter().position(|old| old.id == id)
         })
         .collect();
+    validate_track_structure(&ordered)?;
     Ok((ordered, sources))
 }

@@ -7,8 +7,10 @@ use std::{
 };
 mod management;
 mod snapshot;
+mod validation;
 pub use management::{TrackEdit, edit_tracks};
 pub use snapshot::{TrackMix, TrackSnapshot, TrackSnapshotEntry};
+pub use validation::{validate_track_layout, validate_track_structure};
 
 pub const TRACK_COUNT: usize = 8;
 
