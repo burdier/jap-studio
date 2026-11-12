@@ -104,7 +104,8 @@ Para automatizar pistas, usa `[+]` → **Lua · plantilla de dos pistas** o
 valida y aplica como un solo lote; se conservan clips y mapeos. Los cambios FX
 por lote admiten Hay Utility y contenedores serie/paralelo. [Contrato y ejemplo](docs/LUA_TRACK_BATCHES.md).
 
-Para efectos de audio, `[+]` ofrece **Hay Double Volume**. Su macro controla dos
+Para efectos de audio, `[+]` ofrece **Hay Filter** (SVF LP/HP/BP nativo FunDSP,
+paquete Lua v2 con frecuencia, Q y curva de respuesta) y **Hay Double Volume**. Su macro controla dos
 primitivos Volume nativos en Track FX; otros descriptores Lua se recargan con
 `:fx.components.reload`. [Uso y contrato](docs/LUA_AUDIO_COMPONENTS.md).
 
@@ -188,7 +189,8 @@ Teclado / ratón / automatización / scripts
 
 **Prioridad actual:** prototipo de secuenciador nativo inspirado en Hydrogen, con un único
 sistema de tiempo musical e independiente de sus vistas. La filosofía anterior se mantiene;
-el registro de plugins, LFO, filtro y jeyeq son extensiones futuras. Avanzamos en pasos pequeños,
+el registro general de plugins, LFO y jeyeq son extensiones futuras; el filtro SVF
+ya está disponible como primitiva nativa mediante el kit Lua v2. Avanzamos en pasos pequeños,
 consultando antes de añadir bibliotecas. El MVP incluye pruebas temporales headless.
 
 # Hay / Elevate

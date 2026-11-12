@@ -55,7 +55,10 @@ mod tests {
         let mut palette = Palette::new();
         palette.replace_tools(vec![tool()]);
         palette.open_for_track(0);
-        assert_eq!(palette.results().len(), catalog::entries().len() + 2);
+        assert_eq!(
+            palette.results().len(),
+            catalog::entries().len() + palette.components.len() + palette.tools.len()
+        );
         palette.set_category(Some(EntryKind::Action));
         for key in "acentuacion".chars() {
             palette.handle_key(&key.to_string(), true);
@@ -74,7 +77,10 @@ mod tests {
         palette.replace_tools(vec![]);
         assert!(palette.results().is_empty());
         palette.open_for_track(0);
-        assert_eq!(palette.results().len(), catalog::entries().len() + 1);
+        assert_eq!(
+            palette.results().len(),
+            catalog::entries().len() + palette.components.len()
+        );
     }
 
     #[test]

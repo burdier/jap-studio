@@ -1,11 +1,12 @@
 //! Controles declarados por el componente seleccionado; comparten la acción FX.
+mod response;
 use crate::ui::{
     DawApp,
     components::slider::{FractionSet, Reset, param_slider},
     fx::FxTarget,
 };
 use elevate::musical::fx::{FxEdit, FxKind};
-use gpui::{Context, Div, div, prelude::*, rgb};
+use gpui::{Context, Div, MouseButton, div, prelude::*, rgb};
 use std::rc::Rc;
 
 impl DawApp {
@@ -29,7 +30,7 @@ impl DawApp {
         let FxKind::Effect { parameters, .. } = &node.kind else {
             unreachable!()
         };
-        div()
+        let panel = div()
             .p_3()
             .flex()
             .flex_col()
@@ -45,14 +46,13 @@ impl DawApp {
             .children(effect.descriptor().controls.iter().map(|control| {
                 let track = target.track;
                 let parameter = control.id;
-                let min = control.min;
-                let max = control.max;
+                let spec = control.clone();
                 let default = control.default;
                 let value = parameters.get(&parameter).copied().unwrap_or(default);
                 let set: FractionSet = Rc::new(cx.listener(move |this, fraction: &f32, _, cx| {
                     if let Err(error) = this.edit_fx(
                         track,
-                        FxEdit::Parameter(id, parameter, min + fraction * (max - min)),
+                        FxEdit::Parameter(id, parameter, spec.from_fraction(*fraction)),
                     ) {
                         this.status_message = error;
                     }
@@ -68,14 +68,62 @@ impl DawApp {
                     cx.stop_propagation();
                     cx.notify();
                 }));
+                if !control.choices.is_empty() {
+                    return div()
+                        .flex()
+                        .gap_2()
+                        .child(control.label.clone())
+                        .children(control.choices.iter().enumerate().map(|(i, label)| {
+                            div()
+                                .px_2()
+                                .py_1()
+                                .border_1()
+                                .border_color(rgb(self.ds.frame_border()))
+                                .bg(rgb(if value == i as f32 {
+                                    self.ds.accent
+                                } else {
+                                    self.ds.panel_dark
+                                }))
+                                .text_color(rgb(self.ds.text))
+                                .cursor_pointer()
+                                .child(label.clone())
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(move |this, _, _, cx| {
+                                        if let Err(e) = this.edit_fx(
+                                            track,
+                                            FxEdit::Parameter(id, parameter, i as f32),
+                                        ) {
+                                            this.status_message = e;
+                                        }
+                                        cx.stop_propagation();
+                                        cx.notify();
+                                    }),
+                                )
+                        }))
+                        .into_any_element();
+                }
                 param_slider(
                     &self.ds,
                     control.label.clone().into(),
                     format!("{value:.2}{}", control.unit),
-                    ((value - min) / (max - min)).clamp(0.0, 1.0),
+                    control.fraction(value),
                     set,
                     reset,
                 )
-            }))
+                .into_any_element()
+            }));
+        if let Some(node) = effect.descriptor().response_node {
+            let rate = effect.sample_rate() as f64;
+            panel.child(response::plot(
+                &self.ds,
+                effect.descriptor(),
+                parameters,
+                node,
+                rate,
+            ))
+        } else {
+            panel
+        }
     }
 }

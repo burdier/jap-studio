@@ -143,14 +143,18 @@ snapshot antes de habilitar colaboración. [API y límites](LUA_TRACK_BATCHES.md
 ## Componentes de audio Lua (PR-03)
 
 `scripting/audio_components` evalúa descriptores en el sandbox existente y valida
-puertos estéreo, nodos Volume, aristas acíclicas, controles y límites. No lleva una
+puertos estéreo, nodos Volume (v1/v2) y SVF FunDSP (v2), aristas acíclicas, controles y límites. No lleva una
 VM Lua al callback. `devices/audio_component` prepara primitivas y buffers de 512
 frames fuera de RT; procesa el grafo en orden topológico y suma ramas paralelas.
 `audio/effects/component` mantiene una instancia por `FxId`, con valores atómicos
 para que el callback aplique la macro sin GPUI, locks ni reservas por bloque. El
 plan FX ya publicado incluye el componente junto a Utility y VST3.
 
-`ui/lua_components` carga la plantilla distribuida, recarga candidatos en un worker
+`primitives/filter` implementa el SVF reutilizable sin GPUI. Lua v2 expone parámetros
+por `(nodo, ParameterId)`, controles choice/log y una respuesta opcional del filtro;
+`ui/views/lua_component/response` calcula y dibuja esa respuesta fuera de RT.
+
+`ui/lua_components` carga las plantillas distribuidas, recarga candidatos en un worker
 y conserva registro e instancias ante error. `[+]`, `fx.parameter` y el slider de
 Track FX usan `FxEdit::Parameter`; `FxId` separa dos instancias del mismo tipo.
 Loro conserva ID de tipo y parámetros numéricos, pero su documento sigue sin

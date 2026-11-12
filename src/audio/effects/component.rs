@@ -14,6 +14,7 @@ use std::{
 
 pub(crate) struct ComponentEffect {
     descriptor: Arc<AudioComponent>,
+    sample_rate: u32,
     processor: UnsafeCell<AudioComponentDevice>,
     controls: Vec<(ParameterId, AtomicU32)>,
     busy: AtomicBool,
@@ -24,6 +25,9 @@ unsafe impl Send for ComponentEffect {}
 unsafe impl Sync for ComponentEffect {}
 
 impl ComponentEffect {
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
     pub fn descriptor(&self) -> &Arc<AudioComponent> {
         &self.descriptor
     }
@@ -38,6 +42,7 @@ impl ComponentEffect {
             .collect();
         Ok(Arc::new(Self {
             descriptor,
+            sample_rate: rate,
             processor: UnsafeCell::new(processor),
             controls,
             busy: AtomicBool::new(false),
@@ -56,7 +61,7 @@ impl ComponentEffect {
             .iter()
             .find(|c| c.id == parameter)
             .ok_or("Control inexistente")?;
-        if !value.is_finite() || value < spec.min || value > spec.max {
+        if !spec.accepts(value) {
             return Err("Valor de control fuera de rango".into());
         }
         control.1.store(value.to_bits(), Ordering::Release);

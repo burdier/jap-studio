@@ -48,11 +48,18 @@ impl Palette {
             results: catalog::search("").into_iter().map(Into::into).collect(),
             plugins: Vec::new(),
             tools: Vec::new(),
-            components: vec![(
-                "hay.fx.double_volume".into(),
-                "Hay Double Volume".into(),
-                "Dos etapas Volume con una macro de ganancia".into(),
-            )],
+            components: vec![
+                (
+                    "hay.fx.filter".into(),
+                    "Hay Filter".into(),
+                    "Filtro estéreo LP/HP/BP con frecuencia y resonancia; DSP FunDSP.".into(),
+                ),
+                (
+                    "hay.fx.double_volume".into(),
+                    "Hay Double Volume".into(),
+                    "Dos etapas Volume con una macro de ganancia".into(),
+                ),
+            ],
             scan_needed: false,
             scan_task: None,
         }
@@ -366,7 +373,10 @@ mod tests {
         for _ in 0.."volume".len() {
             palette.handle_key("backspace", true);
         }
-        assert_eq!(palette.results().len(), catalog::entries().len() + 1);
+        assert_eq!(
+            palette.results().len(),
+            catalog::entries().len() + palette.components.len()
+        );
         let entry = palette
             .handle_key("enter", true)
             .expect("catálogo no vacío");

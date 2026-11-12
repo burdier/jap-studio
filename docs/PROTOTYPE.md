@@ -4,6 +4,12 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
 
 ## Disponible
 
+- **Hay Filter (PR-03B):** paquete Lua v2 con SVF FunDSP nativo LP/HP/BP, frecuencia
+  logarítmica, Q, selector y curva de respuesta en Track FX. Controles, bypass y
+  duplicación por instancia; sin LFO/Drive/Mix. Prueba interactiva pendiente. Para
+  probar, fijar Audio a 48 kHz: Auto puede negociar una frecuencia distinta a la
+  usada al preparar el FX. [Contrato y uso](LUA_AUDIO_COMPONENTS.md#incremento-pr-03b-hay-filter-y-kit-v2).
+
 - **Componentes de audio Lua** (PR-03): `[+]` inserta Hay Double Volume en Track FX.
   El grafo estéreo de primitivas Volume se valida fuera de audio y procesa en el
   rack FX existente; macro, comando `fx.parameter`, bypass, duplicación y recarga

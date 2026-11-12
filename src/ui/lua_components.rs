@@ -21,12 +21,18 @@ pub(super) struct LuaComponents {
 
 impl LuaComponents {
     pub fn new() -> Self {
-        let example = parse(include_str!(
-            "../../assets/scripts/components/audio/double_volume.lua"
-        ))
-        .expect("Componente Lua distribuido inválido");
+        let registry = [
+            include_str!("../../assets/scripts/components/audio/double_volume.lua"),
+            include_str!("../../assets/scripts/components/audio/filter.lua"),
+        ]
+        .into_iter()
+        .map(|source| {
+            let descriptor = parse(source).expect("Componente Lua distribuido inválido");
+            (descriptor.id.clone(), Arc::new(descriptor))
+        })
+        .collect();
         Self {
-            registry: BTreeMap::from([(example.id.clone(), Arc::new(example))]),
+            registry,
             instances: BTreeMap::new(),
             task: None,
         }
