@@ -278,6 +278,21 @@ ganancia que realmente modifica el audio.
 Cambiar una instancia no afecta a la otra. El audio coincide con la composición nativa
 equivalente tras el suavizado; no se ejecuta Lua por muestra para construir esa cadena.
 
+## PR-03B — Filtro nativo reutilizable y kit Lua v2
+
+Incremento aprobado antes de PR-04: SVF de FunDSP existente, descriptor Lua v2
+compatible con v1, targets por nodo/parámetro, controles choice/log y respuesta
+visual. Paquete Hay Filter en Track FX; sin nuevas dependencias.
+
+Implementado: `dcdfc0e` (núcleo/contrato/pruebas) y `04080be` (integración UI/uso).
+`scripts/check.sh` completo pasó: formato, pruebas headless, 66 pruebas del
+binario y compilación. Las cuatro pruebas específicas verifican sonido, curva,
+aislamiento y validación. La audición interactiva queda pendiente. [Uso y límites](LUA_AUDIO_COMPONENTS.md#incremento-pr-03b-hay-filter-y-kit-v2).
+
+En PR-04 comprobar dos pistas con el filtro solo en una, respetando mute/solo/bypass,
+y preparar los FX con la frecuencia **real** del dispositivo. Con el transporte
+compartido se podrá añadir el LFO sincronizado; este incremento no lo implementa.
+
 ## PR-04 — Mezclar clips de audio bajo un único transporte
 
 **Título sugerido:** `feat(audio): reproducir varias pistas de audio en un motor compartido`
