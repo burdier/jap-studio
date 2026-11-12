@@ -219,6 +219,9 @@ queda comprobarla en la aplicación.
 
 **Título sugerido:** `feat(lua): editar pistas mediante lotes validados`
 
+**Contrato del primer commit:** [snapshot, operaciones, revisión, handles, errores,
+Loro y límites](LUA_TRACK_BATCHES.md). Es un diseño; la API aún no está disponible.
+
 **Valor:** ejecutar una plantilla Lua que cree dos pistas, las nombre y configure sus
 niveles o cadenas, sin repetir operaciones a mano.
 
