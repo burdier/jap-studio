@@ -450,7 +450,10 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
   clic derecho para restaurar al centro/defecto; tamaño por defecto 28 px y arrastre vertical
   continuo, además de presets (`standard`, `compact`, `mixer`,
   `minimal`) y conmutadores de elementos en `◈ Hay` o `~/.jaybu.profile` (`TRACK_CONTROL_STYLE`,
-  `TRACK_HEADER_LAYOUT`, `TRACK_HEADER_HIDE`, `KNOB_SIZE`).
+  `TRACK_HEADER_LAYOUT`, `TRACK_HEADER_HIDE`, `KNOB_SIZE`). La cabecera agrupa visualmente
+  identidad, mezcla, estado e instrumentos/FX; la configuración organiza los elementos con
+  las mismas asociaciones. El color de pista se concentra en la franja lateral y los controles
+  inactivos tienen menos contraste.
 - Los controles M/S/R de los headers son operativos: M silencia, S deja audible solo la pista
   seleccionada (combinable con M) y R inicia/detiene la captura MIDI dirigida a esa pista.
   El contrato de audibilidad vive en `musical::track`; el stream existente recibe la ganancia

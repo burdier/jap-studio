@@ -64,6 +64,27 @@ pub(in crate::ui) enum TcpWidget {
     Add,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::ui) enum TcpGroup {
+    Identity,
+    Mix,
+    State,
+    Fx,
+}
+
+impl TcpGroup {
+    pub const ALL: [Self; 4] = [Self::Identity, Self::Mix, Self::State, Self::Fx];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Identity => "Identidad",
+            Self::Mix => "Mezcla",
+            Self::State => "Estado",
+            Self::Fx => "Instrumentos y FX",
+        }
+    }
+}
+
 impl TcpWidget {
     pub const TOGGLEABLE: [Self; 8] = [
         Self::Type,
@@ -102,6 +123,15 @@ impl TcpWidget {
             Self::Solo => "S",
             Self::Rec => "R",
             Self::Add => "[+]",
+        }
+    }
+
+    pub fn group(self) -> TcpGroup {
+        match self {
+            Self::Name | Self::Type => TcpGroup::Identity,
+            Self::Pan | Self::Vol | Self::Pct => TcpGroup::Mix,
+            Self::Mute | Self::Solo | Self::Rec => TcpGroup::State,
+            Self::Add => TcpGroup::Fx,
         }
     }
 
@@ -352,7 +382,7 @@ impl DawApp {
             .is_some_and(|drag| drag.moved && drag.source == self.tracks[i].id);
         let hovered = self.timeline.hover_track() == Some(i);
         let drag_glow = hovered && self.timeline.hover_dragging();
-        // Mezcla sutil para conservar el panel oscuro y la legibilidad del encabezado.
+        // El color de pista identifica la cabecera sin colorear todos sus controles.
         let track_tint = if self
             .ds
             .track_color_override
@@ -368,18 +398,17 @@ impl DawApp {
             } else {
                 ds.panel
             };
-            let tint =
-                |shift: u32| ((base >> shift) & 0xff) * 3 / 4 + ((color >> shift) & 0xff) / 4;
-            Some((tint(16) << 16) | (tint(8) << 8) | tint(0))
+            Some(mix_color(base, color, 10))
         } else {
             None
         };
-        let border_col = if selected || drag_glow {
+        let stripe = if selected || drag_glow {
             color
         } else {
-            ds.border
+            mix_color(ds.panel, color, 42)
         };
         let mut track_box = div()
+            .relative()
             .w_full()
             .h(px(height))
             .flex_shrink_0()
@@ -400,8 +429,16 @@ impl DawApp {
                 ds.panel
             })))
             .border_b_1()
-            .border_l_2()
-            .border_color(rgb(border_col))
+            .border_color(rgb(mix_color(ds.panel, ds.border, 55)))
+            .child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .top_0()
+                    .bottom_0()
+                    .w(px(if selected { 3.0 } else { 2.0 }))
+                    .bg(rgb(stripe)),
+            )
             .when(dragged, |header| header.opacity(0.25))
             .drag_over::<gpui::ExternalPaths>(move |style, _, _, _| {
                 style
@@ -490,26 +527,40 @@ impl DawApp {
             } else {
                 row_el.gap_2()
             };
-            let last_idx = active.len() - 1;
-            for (idx, widget) in active.into_iter().enumerate() {
-                let push_right = !is_title_pair
-                    && idx == last_idx
-                    && idx > 0
-                    && matches!(widget, TcpWidget::Add | TcpWidget::Type);
-                row_el = row_el.child(self.render_tcp_widget(i, widget, push_right, cx));
+            let mut start = 0;
+            while start < active.len() {
+                let group = active[start].group();
+                let mut end = start + 1;
+                while end < active.len() && active[end].group() == group {
+                    end += 1;
+                }
+                let mut group_el = div().flex().items_center().gap_1();
+                if group == TcpGroup::Identity {
+                    if active[start..end].contains(&TcpWidget::Name) {
+                        group_el = group_el.flex_1().min_w_0();
+                    }
+                } else {
+                    group_el = group_el
+                        .px(px(3.0))
+                        .py(px(2.0))
+                        .rounded(px(ds.radius_sm))
+                        .bg(rgb(mix_color(ds.panel, ds.panel_dark, 35)));
+                }
+                if !is_title_pair && end == active.len() && start > 0 && group == TcpGroup::Fx {
+                    group_el = group_el.ml_auto();
+                }
+                for widget in &active[start..end] {
+                    group_el = group_el.child(self.render_tcp_widget(i, *widget, cx));
+                }
+                row_el = row_el.child(group_el);
+                start = end;
             }
             track_box = track_box.child(row_el);
         }
         track_box
     }
 
-    fn render_tcp_widget(
-        &self,
-        i: usize,
-        widget: TcpWidget,
-        push_right: bool,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
+    fn render_tcp_widget(&self, i: usize, widget: TcpWidget, cx: &mut Context<Self>) -> AnyElement {
         let ds = &self.ds;
         let track = &self.tracks[i];
         let color = ds.track_color(i);
@@ -558,11 +609,7 @@ impl DawApp {
                         .whitespace_nowrap()
                         .text_xs()
                         .font_weight(gpui::FontWeight::BOLD)
-                        .text_color(rgb(if self.track_selected(i) {
-                            ds.text
-                        } else {
-                            color
-                        }))
+                        .text_color(rgb(ds.text))
                         .child(self.track_title(i)),
                 )
                 .into_any_element(),
@@ -578,17 +625,14 @@ impl DawApp {
                 } else {
                     track.kind.label().to_string()
                 };
-                let mut el = div()
+                let el = div()
                     .text_xs()
                     .text_color(rgb(if track.instrument.is_some() {
-                        ds.accent
+                        mix_color(ds.muted, ds.accent, 45)
                     } else {
                         ds.muted
                     }))
                     .child(label);
-                if push_right {
-                    el = el.ml_auto();
-                }
                 el.into_any_element()
             }
             TcpWidget::Pan => {
@@ -760,25 +804,36 @@ impl DawApp {
                             cx.notify();
                         }),
                     );
-                let mut el = div().flex().items_center().gap_1().child(add).child(
-                    badge_tag(ds, "FX", ds.muted)
-                        .cursor_pointer()
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(move |this, _, window, cx| {
-                                this.select_track(i, false, false);
-                                this.show_fx();
-                                window.focus(&this.fx.view.read(cx).focus.clone(), cx);
-                                cx.stop_propagation();
-                                cx.notify();
-                            }),
-                        ),
-                );
-                if push_right {
-                    el = el.ml_auto();
-                }
-                el.into_any_element()
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .child(add)
+                    .child(
+                        badge_tag(ds, "FX", ds.muted)
+                            .cursor_pointer()
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |this, _, window, cx| {
+                                    this.select_track(i, false, false);
+                                    this.show_fx();
+                                    window.focus(&this.fx.view.read(cx).focus.clone(), cx);
+                                    cx.stop_propagation();
+                                    cx.notify();
+                                }),
+                            ),
+                    )
+                    .into_any_element()
             }
         }
     }
+}
+
+fn mix_color(base: u32, tint: u32, tint_percent: u32) -> u32 {
+    let blend = |shift: u32| -> u32 {
+        let base = (base >> shift) & 0xff_u32;
+        let tint = (tint >> shift) & 0xff_u32;
+        (base * (100_u32 - tint_percent) + tint * tint_percent) / 100_u32
+    };
+    (blend(16) << 16) | (blend(8) << 8) | blend(0)
 }
