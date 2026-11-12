@@ -6,6 +6,7 @@ use elevate::{
         },
     },
     project::ProjectDoc,
+    scripting::tracks::build_track_batch,
 };
 
 fn origin() -> TrackSnapshot {
@@ -134,4 +135,20 @@ fn fx_cycle_rejects_the_batch_without_changing_the_source() {
     assert_eq!(error.code, "estructura_invalida");
     assert_eq!(error.operation, Some(1));
     assert!(before.entries[0].track.chain.find(parent_id).is_some());
+}
+
+#[test]
+fn bundled_lua_template_builds_two_configured_tracks() {
+    let before = origin();
+    let source = include_str!("../assets/scripts/tracks/two_tracks.lua");
+    let batch = build_track_batch(source, &before).unwrap();
+    let result = apply_track_batch(&before, &batch).unwrap();
+    let principal = result.snapshot.get(result.handles["principal"]).unwrap();
+    let doble = result.snapshot.get(result.handles["doble"]).unwrap();
+    assert_eq!((principal.mix.level, principal.mix.pan), (75, 45));
+    assert_eq!((doble.mix.level, doble.mix.pan), (65, 70));
+    assert_eq!(principal.track.chain.nodes().len(), 1);
+    assert_eq!(doble.track.chain.nodes().len(), 1);
+    assert_eq!(principal.track.name, "Voz principal");
+    assert_eq!(doble.track.name, "Voz doble");
 }

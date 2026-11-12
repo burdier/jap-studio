@@ -429,6 +429,14 @@ pub const CATALOG: &[CatalogEntry] = &[
         action: CatalogAction::Invoke("track.script"),
     },
     CatalogEntry {
+        id: "action.track.template.two",
+        kind: EntryKind::Action,
+        name: "Lua · plantilla de dos pistas",
+        summary: "Crear dos pistas de audio con nivel, panorama y Hay Utility",
+        keywords: &["lua", "pistas", "plantilla", "utility"],
+        action: CatalogAction::Invoke("track.template.two"),
+    },
+    CatalogEntry {
         id: "action.midi.quantize",
         kind: EntryKind::Action,
         name: "Cuantizar notas…",
