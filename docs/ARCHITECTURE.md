@@ -539,8 +539,10 @@ no se pueden instanciar.
 `ui/toolbar/catalog.rs` descubre las entradas ejecutables de tipo acción y añade controles
 locales de UI por ámbito (Transporte o Piano Roll). No duplica el catálogo headless.
 `dispatch.rs` llama a los mismos controladores que buscador/teclado; `picker.rs` comparte
-la asignación entre ratón y Enter. `ui/icons.rs` conserva carga SVG y asignaciones en memoria;
-`views/icon_picker{,_browser}.rs` presenta búsquedas independientes y listas desplazables.
+la asignación entre ratón y Enter. `ui/icons.rs` carga SVG; `ui/toolbar/persistence.rs`
+guarda y restaura asignaciones de ambos ámbitos en el perfil atómico, incluidos comandos
+personalizados. `views/icon_picker{,_browser}.rs` presenta búsquedas independientes y
+listas desplazables.
 
 Al elegir un instrumento, `ui/palette.rs` llama a `musical/track.rs::assign_instrument`,
 que asigna su identidad a la pista destino y la retira de cualquier otra. La cabecera y la

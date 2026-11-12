@@ -4,6 +4,9 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
 
 ## Disponible
 
+- Las asignaciones de iconos y comandos personalizados del Transporte y Piano Roll se
+  guardan en `~/.jaybu.profile` y se restauran al abrir el DAW.
+
 - **Paquetes Lua v1 en catálogo y formulario** (PR-01, commit 4):
   `midi.tools.reload` publica la carga completa desde un worker; `midi.tool <id>`
   abre parámetros, y con todos los valores ejecuta la herramienta. `[+]` y las

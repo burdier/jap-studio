@@ -94,6 +94,9 @@ impl ToolbarBindings {
             editing_custom_command: false,
         };
         this.reload_custom_icons();
+        if let Ok(profile) = super::profile::load() {
+            super::toolbar::restore_bindings(&mut this, &profile);
+        }
         this
     }
 

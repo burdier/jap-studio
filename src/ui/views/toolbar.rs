@@ -99,6 +99,10 @@ impl DawApp {
                                     "Icono desvinculado de {} (clic en + para añadir)",
                                     scope.label()
                                 );
+                                if let Err(error) = this.toolbar_icons.save_bindings() {
+                                    this.status_message
+                                        .push_str(&format!(" · no se pudo guardar: {error}"));
+                                }
                                 cx.stop_propagation();
                                 cx.notify();
                             }),

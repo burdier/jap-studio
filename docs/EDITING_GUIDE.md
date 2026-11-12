@@ -100,7 +100,7 @@
 | Fondo modal oscurecido reutilizable | `src/ui/components/modal.rs` | `views/{palette,settings}.rs` |
 | Separadores y redimensionado de módulos (`SplitDrag`) | `src/ui/components/splitter.rs` | `ui/render.rs`, `views/{arrangement,workspace}.rs` |
 | Carga y dibujo de SVG, estado de iconos asignados | `src/ui/icons.rs` | `assets/icons/toolbar/`, `views/toolbar.rs` |
-| Acciones asignables a iconos y búsqueda del selector | `src/ui/toolbar/{catalog,dispatch,picker}.rs` | `src/catalog.rs`, `views/icon_picker{,_browser}.rs`, `toolbar/tests.rs` |
+| Acciones asignables y persistencia del toolbar | `src/ui/toolbar/{catalog,dispatch,picker,persistence}.rs` | `src/ui/profile.rs`, `src/catalog.rs`, `views/icon_picker{,_browser}.rs`, `toolbar/tests.rs`; perfil guarda ambos ámbitos y comandos personalizados |
 | Estado del piano | `src/instruments/piano.rs` | `audio/piano/`, `views/instrument.rs` |
 | Editar pasos/velocity | `src/ui/pattern_editor.rs` | `src/musical/model.rs` |
 | Dibujar pasos | `src/ui/views/pattern.rs` | Controlador anterior |

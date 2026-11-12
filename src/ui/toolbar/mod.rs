@@ -1,9 +1,11 @@
 //! Acciones vinculables a iconos. El catálogo headless se consulta sin duplicarlo.
 mod catalog;
 mod dispatch;
+mod persistence;
 mod picker;
 #[cfg(test)]
 mod tests;
+pub(in crate::ui) use persistence::restore_bindings;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::ui) enum ToolbarScope {

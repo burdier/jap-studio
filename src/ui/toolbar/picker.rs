@@ -61,11 +61,19 @@ impl DawApp {
                 "Icono «{icon}» vinculado al comando «{command}» en {}",
                 scope.label()
             );
+            if let Err(error) = self.toolbar_icons.save_bindings() {
+                self.status_message
+                    .push_str(&format!(" · no se pudo guardar: {error}"));
+            }
             return;
         }
         let (scope, icon, action) = self.toolbar_icons.bind_selected();
         self.toolbar_icons.picker_open = false;
         self.status_message = format!("Icono «{icon}» vinculado a «{action}» en {}", scope.label());
+        if let Err(error) = self.toolbar_icons.save_bindings() {
+            self.status_message
+                .push_str(&format!(" · no se pudo guardar: {error}"));
+        }
     }
 
     pub(in crate::ui) fn handle_icon_picker_key(

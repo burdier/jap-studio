@@ -213,6 +213,110 @@ impl ToolbarAction {
         }
     }
 
+    pub(in crate::ui) fn profile_key(self) -> Option<String> {
+        match self {
+            Self::Catalog(id) => Some(format!("catalog/{id}")),
+            Self::RollCatalog(id) => Some(format!("roll/{id}")),
+            _ => self.local_profile_key().map(|key| format!("local/{key}")),
+        }
+    }
+
+    pub(in crate::ui) fn from_profile_key(scope: ToolbarScope, key: &str) -> Option<Self> {
+        let action = if let Some(id) = key.strip_prefix("catalog/") {
+            if scope != ToolbarScope::Transport {
+                return None;
+            }
+            let entry = catalog::find(id)?;
+            if entry.kind != EntryKind::Action || !matches!(entry.action, CatalogAction::Invoke(_))
+            {
+                return None;
+            }
+            Self::from_catalog(entry.id)
+        } else if let Some(id) = key.strip_prefix("roll/") {
+            if scope != ToolbarScope::PianoRoll {
+                return None;
+            }
+            let entry = catalog::find(id)?;
+            if entry.kind != EntryKind::Action
+                || !id.starts_with("action.midi.")
+                || !matches!(entry.action, CatalogAction::Invoke(_))
+            {
+                return None;
+            }
+            Self::from_roll_catalog(entry.id)
+        } else if let Some(id) = key.strip_prefix("local/") {
+            LOCAL_ACTIONS
+                .iter()
+                .find(|(action, target, _, _)| {
+                    *target == scope && (*action).local_profile_key() == Some(id)
+                })
+                .map(|(action, _, _, _)| *action)?
+        } else {
+            return None;
+        };
+        (action.scope() == scope).then_some(action)
+    }
+
+    fn local_profile_key(self) -> Option<&'static str> {
+        Some(match self {
+            Self::InsertMidiClip => "insert_midi_clip",
+            Self::CaptureMidi => "capture_midi",
+            Self::DuplicateClip => "duplicate_clip",
+            Self::ToggleClipMute => "toggle_clip_mute",
+            Self::MidiLearn => "midi_learn",
+            Self::MidiScan => "midi_scan",
+            Self::ToggleBypass => "toggle_bypass",
+            Self::OpenSettings => "open_settings",
+            Self::Record => "record",
+            Self::GoToStart => "go_to_start",
+            Self::ToggleController => "toggle_controller",
+            Self::OpenPalette => "open_palette",
+            Self::OpenInstrument => "open_instrument",
+            Self::OpenPianoRoll => "open_piano_roll",
+            Self::DetachInstrument => "detach_instrument",
+            Self::DockInstrument => "dock_instrument",
+            Self::ShowShortcuts => "show_shortcuts",
+            Self::TrackMute => "track_mute",
+            Self::TrackSolo => "track_solo",
+            Self::TrackRecord => "track_record",
+            Self::GainUp => "gain_up",
+            Self::GainDown => "gain_down",
+            Self::TimelineZoomIn => "timeline_zoom_in",
+            Self::TimelineZoomOut => "timeline_zoom_out",
+            Self::PresetNext => "preset_next",
+            Self::PresetPrevious => "preset_previous",
+            Self::BankNext => "bank_next",
+            Self::BankPrevious => "bank_previous",
+            Self::RollSelect => "roll_select",
+            Self::RollDraw => "roll_draw",
+            Self::RollErase => "roll_erase",
+            Self::RollPaint => "roll_paint",
+            Self::RollMute => "roll_mute",
+            Self::RollBox => "roll_box",
+            Self::RollLength => "roll_length",
+            Self::RollQuantize => "roll_quantize",
+            Self::RollHumanize => "roll_humanize",
+            Self::RollSubdivide => "roll_subdivide",
+            Self::RollGridFiner => "roll_grid_finer",
+            Self::RollGridCoarser => "roll_grid_coarser",
+            Self::RollCut => "roll_cut",
+            Self::RollCopy => "roll_copy",
+            Self::RollPaste => "roll_paste",
+            Self::RollGhostNotes => "roll_ghost_notes",
+            Self::RollFollow => "roll_follow",
+            Self::RollVelocities => "roll_velocities",
+            Self::RollHighlightScale => "roll_highlight_scale",
+            Self::RollToggleWindow => "roll_toggle_window",
+            Self::RollResetView => "roll_reset_view",
+            Self::RollClose => "roll_close",
+            Self::RollZoomIn => "roll_zoom_in",
+            Self::RollZoomOut => "roll_zoom_out",
+            Self::RollTaller => "roll_taller",
+            Self::RollShorter => "roll_shorter",
+            Self::Catalog(_) | Self::RollCatalog(_) => return None,
+        })
+    }
+
     pub fn available(scope: ToolbarScope, query: &str) -> Vec<Self> {
         let mut actions: Vec<_> = LOCAL_ACTIONS
             .iter()
