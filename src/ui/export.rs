@@ -39,7 +39,11 @@ impl DawApp {
                     .map_err(|e| e.to_string())?
                     .join(&options.directory);
             }
-            if self.tracks.iter().any(|t| crate::audio::effects::contains_vst(&t.chain)) {
+            if self
+                .tracks
+                .iter()
+                .any(|t| crate::audio::effects::contains_vst(&t.chain))
+            {
                 return Err("La exportación con efectos VST3 todavía requiere render offline de sus estados; no se exportará sin ellos".into());
             }
             let audio = self
@@ -63,8 +67,12 @@ impl DawApp {
                     && self.tracks[c.track].instrument
                         != Some(crate::instruments::sampler::SAMPLER_ID)
             });
-            if midi.iter().any(|clip| options.includes_track(clip.track) && !clip.props.muted
-                && self.track_gain(clip.track) > 0. && self.tracks[clip.track].instrument == Some(crate::instruments::vst::VST_ID)) {
+            if midi.iter().any(|clip| {
+                options.includes_track(clip.track)
+                    && !clip.props.muted
+                    && self.track_gain(clip.track) > 0.
+                    && self.tracks[clip.track].instrument == Some(crate::instruments::vst::VST_ID)
+            }) {
                 return Err("La exportación de instrumentos VST3 todavía no está disponible; excluye esa pista del rango de exportación".into());
             }
             let piano = if needs_piano {

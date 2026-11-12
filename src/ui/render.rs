@@ -21,7 +21,9 @@ impl Render for DawApp {
             self.timeline.import_preview = None;
         }
         self.poll_live_midi();
-        if let Some(message) = self.vst.editor_message() { self.status_message = message; }
+        if let Some(message) = self.vst.editor_message() {
+            self.status_message = message;
+        }
         self.poll_export();
         self.poll_audio_probe();
         self.poll_file_playback();
@@ -69,9 +71,12 @@ impl Render for DawApp {
             }
         } else if let Some(midi_clip) = &self.timeline.midi_clip {
             if self.vst.clip_playing() {
-                self.timeline.playhead = self.vst.beat(midi_clip.start_beat, self.timeline.tempo.bpm());
+                self.timeline.playhead = self
+                    .vst
+                    .beat(midi_clip.start_beat, self.timeline.tempo.bpm());
             } else if self.vst.clip_finished() {
-                self.status_message = "Fin del clip MIDI · VST3".into(); self.stop_audio();
+                self.status_message = "Fin del clip MIDI · VST3".into();
+                self.stop_audio();
             } else if self.sampler.clip_playing() {
                 self.timeline.playhead = self
                     .sampler
@@ -90,7 +95,9 @@ impl Render for DawApp {
         }
         let cursor_animating = self.timeline.advance_visual_transport();
         if self.vst.failed() {
-            self.vst.unload(); self.status_message = "El instrumento VST3 o su salida falló; vuelve a cargarlo desde [+]".into();
+            self.vst.unload();
+            self.status_message =
+                "El instrumento VST3 o su salida falló; vuelve a cargarlo desde [+]".into();
         }
         self.follow_roll_playhead();
         if self.sampler.failed() {
@@ -170,7 +177,10 @@ impl Render for DawApp {
             .general_note
             .as_ref()
             .filter(|note| note.window_id == window.window_handle().window_id())
-            .map(|_| self.render_general_note(window.viewport_size(), cx).into_any_element());
+            .map(|_| {
+                self.render_general_note(window.viewport_size(), cx)
+                    .into_any_element()
+            });
         let fx_menu = self
             .fx
             .menu
@@ -230,7 +240,9 @@ impl Render for DawApp {
             )
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 if this.workspace_key(event, window, cx) {
-                    cx.stop_propagation(); cx.notify(); return;
+                    cx.stop_propagation();
+                    cx.notify();
+                    return;
                 }
                 let musical_focus = this.focus_handle.is_focused(window)
                     || this.fx.view.read(cx).focus.is_focused(window);
@@ -401,9 +413,10 @@ impl Render for DawApp {
                     }),
                 ),
             )
-            .when(self.utility_open && self.workspace_focus.expanded.is_none(), |root| {
-                root.child(self.render_utility(cx))
-            })
+            .when(
+                self.utility_open && self.workspace_focus.expanded.is_none(),
+                |root| root.child(self.render_utility(cx)),
+            )
             .child(self.render_center(cx))
             .child(self.render_status_bar(mode_label, mode_color))
             .when_some(clip_menu, |root, menu| root.child(menu))

@@ -9,9 +9,9 @@ pub(crate) mod environment;
 mod host;
 mod lifecycle;
 mod module;
-pub(crate) mod scan;
 mod parameters;
 mod process;
+pub(crate) mod scan;
 use lifecycle::check;
 
 use events::Events;

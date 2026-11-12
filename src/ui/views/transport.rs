@@ -91,25 +91,38 @@ impl DawApp {
                             .text_color(rgb(ds.accent))
                             .font_weight(gpui::FontWeight::BOLD)
                             .cursor_pointer()
-                            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| {
-                                if let Some(entry) = elevate::catalog::find("action.tempo.set")
-                                    && let Some(spec) = entry.action.parameters() {
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _, window, cx| {
+                                    if let Some(entry) = elevate::catalog::find("action.tempo.set")
+                                        && let Some(spec) = entry.action.parameters()
+                                    {
                                         this.open_action_form(entry, spec, window, cx);
                                     }
-                                cx.stop_propagation();
-                            }))
+                                    cx.stop_propagation();
+                                }),
+                            )
                             .child(format!("{:.2}", self.timeline.tempo.bpm())),
                     )
                     .child(div().text_color(rgb(ds.muted)).child("BPM"))
-                    .child(div().ml_2().text_color(rgb(ds.muted)).cursor_pointer()
-                        .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| {
-                            if let Some(entry) = elevate::catalog::find("action.meter.set")
-                                && let Some(spec) = entry.action.parameters() {
-                                    this.open_action_form(entry, spec, window, cx);
-                                }
-                            cx.stop_propagation();
-                        }))
-                        .child(self.timeline.meter.label()))
+                    .child(
+                        div()
+                            .ml_2()
+                            .text_color(rgb(ds.muted))
+                            .cursor_pointer()
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _, window, cx| {
+                                    if let Some(entry) = elevate::catalog::find("action.meter.set")
+                                        && let Some(spec) = entry.action.parameters()
+                                    {
+                                        this.open_action_form(entry, spec, window, cx);
+                                    }
+                                    cx.stop_propagation();
+                                }),
+                            )
+                            .child(self.timeline.meter.label()),
+                    )
                     .child(
                         div()
                             .ml_4()

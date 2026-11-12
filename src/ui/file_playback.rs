@@ -60,7 +60,14 @@ impl DawApp {
         let pan = self.track_pan(current.track);
         let fx = self.track_fx_gain(current.track);
         match result.and_then(|prepared| {
-            prepared.with_rack(self.effect_rack(current.track)).start(pending.beat, pending.bpm, gain, pending.utility, pan, fx)
+            prepared.with_rack(self.effect_rack(current.track)).start(
+                pending.beat,
+                pending.bpm,
+                gain,
+                pending.utility,
+                pan,
+                fx,
+            )
         }) {
             Ok(player) => {
                 self.player = Some(player);

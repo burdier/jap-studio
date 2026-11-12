@@ -52,7 +52,8 @@ impl Render for DetachedPanel {
                 app.instrument.loading()
                     || app.midi_hw.has_ports()
                     || app.instrument.is_running()
-                    || app.sampler.clip_playing() || app.vst.clip_playing(),
+                    || app.sampler.clip_playing()
+                    || app.vst.clip_playing(),
             )
         });
         if loading {
@@ -79,8 +80,14 @@ impl Render for DetachedPanel {
                 }),
             )
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                let workspace_handled = this.app.update(cx, |app, cx| app.workspace_key(event, window, cx));
-                if workspace_handled { cx.stop_propagation(); cx.notify(); return; }
+                let workspace_handled = this
+                    .app
+                    .update(cx, |app, cx| app.workspace_key(event, window, cx));
+                if workspace_handled {
+                    cx.stop_propagation();
+                    cx.notify();
+                    return;
+                }
                 if this.focus_handle.is_focused(window) {
                     let handled = this.app.update(cx, |app, cx| {
                         app.focus_midi_instrument();

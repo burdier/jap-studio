@@ -39,7 +39,12 @@ pub(crate) struct Piano {
 }
 
 impl Piano {
-    pub fn set_fx_rack(&mut self, rack: Option<std::sync::Arc<crate::audio::effects::Rack>>) { if let Some(player) = &self.player { player.set_fx_rack(rack.clone()); } self.fx_rack = rack; }
+    pub fn set_fx_rack(&mut self, rack: Option<std::sync::Arc<crate::audio::effects::Rack>>) {
+        if let Some(player) = &self.player {
+            player.set_fx_rack(rack.clone());
+        }
+        self.fx_rack = rack;
+    }
 
     pub fn drain_spectrum(&self, analyzer: &mut crate::audio::analyzer::SpectrumAnalyzer) {
         if let Some(player) = &self.player {
@@ -195,7 +200,7 @@ impl Piano {
                             | ParamId::Cutoff
                             | ParamId::Resonance
                     ) {
-        player.set_filter(self.params.filter());
+                        player.set_filter(self.params.filter());
                     }
                 }
                 false
@@ -346,9 +351,18 @@ impl Piano {
         let offset_beats = (edit_beat - clip.start_beat).max(0.0);
         if let Some(player) = &self.player {
             player.set_channel(clip.channel.saturating_sub(1).min(15));
-            if let Some(preset) = self.presets.get(self.preset_index) { send_preset(player, preset); }
-            for spec in piano_params::SPECS { send(player, spec.id, self.params.get(spec.id)); }
-            player.play_pattern(&clip.playback_pattern(), offset_beats, bpm, clip.props.looped)?;
+            if let Some(preset) = self.presets.get(self.preset_index) {
+                send_preset(player, preset);
+            }
+            for spec in piano_params::SPECS {
+                send(player, spec.id, self.params.get(spec.id));
+            }
+            player.play_pattern(
+                &clip.playback_pattern(),
+                offset_beats,
+                bpm,
+                clip.props.looped,
+            )?;
         }
         Ok(())
     }

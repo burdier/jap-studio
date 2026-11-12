@@ -22,7 +22,6 @@ pub(crate) struct Sampler {
     pub mouse: Option<u8>,
 }
 impl Default for Sampler {
-
     fn default() -> Self {
         Self {
             params: SamplerParams::default(),
@@ -37,7 +36,12 @@ impl Default for Sampler {
     }
 }
 impl Sampler {
-    pub fn set_fx_rack(&mut self, rack: Option<std::sync::Arc<crate::audio::effects::Rack>>) { if let Some(player) = &self.player { player.set_fx_rack(rack.clone()); } self.fx_rack = rack; }
+    pub fn set_fx_rack(&mut self, rack: Option<std::sync::Arc<crate::audio::effects::Rack>>) {
+        if let Some(player) = &self.player {
+            player.set_fx_rack(rack.clone());
+        }
+        self.fx_rack = rack;
+    }
 
     pub fn configure_audio(&mut self, config: crate::audio::device::AudioConfig) {
         self.stop();
@@ -103,7 +107,9 @@ impl Sampler {
                 &self.output_config,
             )?);
         }
-        if let Some(player) = &self.player { player.set_fx_rack(self.fx_rack.clone()); }
+        if let Some(player) = &self.player {
+            player.set_fx_rack(self.fx_rack.clone());
+        }
         self.mix(gain, pan, fx);
         Ok(())
     }

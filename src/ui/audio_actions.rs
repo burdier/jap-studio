@@ -50,16 +50,22 @@ impl DawApp {
             return;
         };
         let next = value.clamp(0, 100);
-        if *pan == next { return; }
+        if *pan == next {
+            return;
+        }
         *pan = next;
         self.track_revision = self.track_revision.wrapping_add(1);
         self.apply_track_gains();
     }
 
     pub(super) fn set_track_level(&mut self, track: usize, value: i32) {
-        let Some(level) = self.track_levels.get_mut(track) else { return; };
+        let Some(level) = self.track_levels.get_mut(track) else {
+            return;
+        };
         let next = value.clamp(0, 100);
-        if *level == next { return; }
+        if *level == next {
+            return;
+        }
         *level = next;
         self.track_revision = self.track_revision.wrapping_add(1);
         self.apply_track_gains();
@@ -212,7 +218,9 @@ impl DawApp {
                 MidiTarget::Instrument(id) if id == crate::instruments::sampler::SAMPLER_ID => {
                     self.sampler_midi(message)
                 }
-                MidiTarget::Instrument(id) if id == crate::instruments::vst::VST_ID => self.vst_midi(message),
+                MidiTarget::Instrument(id) if id == crate::instruments::vst::VST_ID => {
+                    self.vst_midi(message)
+                }
                 MidiTarget::Instrument(_) => {}
                 MidiTarget::Sequencer => {
                     if let MidiMessage::NoteOn { .. } = message {
@@ -257,7 +265,10 @@ impl DawApp {
         self.status_message = self.controller_status();
     }
     fn note_on_velocity(&mut self, note: u8, velocity: u8) {
-        if self.vst_selected() { self.vst_midi(MidiMessage::NoteOn { note, velocity }); return; }
+        if self.vst_selected() {
+            self.vst_midi(MidiMessage::NoteOn { note, velocity });
+            return;
+        }
         if self.sampler_selected() {
             self.sample_note_on(note, velocity);
             return;
@@ -298,7 +309,10 @@ impl DawApp {
         }
     }
     pub(super) fn note_off(&mut self, note: u8) {
-        if self.vst.held.contains(&note) { self.vst_midi(MidiMessage::NoteOff { note }); return; }
+        if self.vst.held.contains(&note) {
+            self.vst_midi(MidiMessage::NoteOff { note });
+            return;
+        }
         if self.sampler.held(note) {
             self.sampler.note_off(note);
             self.midi_capture.record(
@@ -324,7 +338,9 @@ impl DawApp {
         );
     }
     pub(super) fn release_mouse_note(&mut self) {
-        if let Some(note) = self.vst.mouse.take() { self.vst_midi(MidiMessage::NoteOff { note }); }
+        if let Some(note) = self.vst.mouse.take() {
+            self.vst_midi(MidiMessage::NoteOff { note });
+        }
         if let Some(note) = self.sampler.mouse.take() {
             self.note_off(note);
         }
@@ -553,8 +569,13 @@ impl DawApp {
                     return;
                 }
                 let start = edit_beat.max(midi_clip.start_beat);
-                if self.tracks.get(midi_clip.track).is_some_and(|t| t.instrument == Some(crate::instruments::vst::VST_ID)) {
-                    self.play_vst_clip(&midi_clip, start); return;
+                if self
+                    .tracks
+                    .get(midi_clip.track)
+                    .is_some_and(|t| t.instrument == Some(crate::instruments::vst::VST_ID))
+                {
+                    self.play_vst_clip(&midi_clip, start);
+                    return;
                 }
                 if self
                     .tracks

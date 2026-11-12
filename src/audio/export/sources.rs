@@ -163,7 +163,14 @@ impl Sources {
                     synth: None,
                     sampler,
                     // El loop MIDI es de audición; exportar conserva la duración finita del clip.
-                    mix: Mix::new(track, ClipProps { looped: false, ..clip.props }, rate)?,
+                    mix: Mix::new(
+                        track,
+                        ClipProps {
+                            looped: false,
+                            ..clip.props
+                        },
+                        rate,
+                    )?,
                 });
             }
         }

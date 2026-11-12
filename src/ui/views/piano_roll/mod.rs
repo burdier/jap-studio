@@ -43,19 +43,28 @@ impl DawApp {
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(|this, event: &gpui::MouseUpEvent, _, cx| {
-                    if this.piano_roll.drag.is_some() || this.piano_roll.control_drag || this.piano_roll.paint_stroke.is_some() {
+                    if this.piano_roll.drag.is_some()
+                        || this.piano_roll.control_drag
+                        || this.piano_roll.paint_stroke.is_some()
+                    {
                         this.finish_roll_drag(event.position);
                         cx.notify();
                     }
                 }),
             )
             .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
-            .on_mouse_up_out(MouseButton::Left, cx.listener(|this, event: &gpui::MouseUpEvent, _, cx| {
-                if this.piano_roll.drag.is_some() || this.piano_roll.control_drag || this.piano_roll.paint_stroke.is_some() {
-                    this.finish_roll_drag(event.position);
-                    cx.notify();
-                }
-            }))
+            .on_mouse_up_out(
+                MouseButton::Left,
+                cx.listener(|this, event: &gpui::MouseUpEvent, _, cx| {
+                    if this.piano_roll.drag.is_some()
+                        || this.piano_roll.control_drag
+                        || this.piano_roll.paint_stroke.is_some()
+                    {
+                        this.finish_roll_drag(event.position);
+                        cx.notify();
+                    }
+                }),
+            )
             .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
                 // Continúa el rectángulo/arrastre al cruzar la regla o el inspector.
                 if event.dragging() && this.piano_roll.drag.is_some() {
@@ -74,12 +83,18 @@ impl DawApp {
             .on_pinch(|_, _, cx| cx.stop_propagation())
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 if this.workspace_key(event, window, cx) {
-                    cx.stop_propagation(); cx.notify(); return;
+                    cx.stop_propagation();
+                    cx.notify();
+                    return;
                 }
-                if this.action_form.is_some() { return; }
+                if this.action_form.is_some() {
+                    return;
+                }
                 if this.toolbar_icons.picker_open || this.settings.is_visible() {
                     this.handle_key(event, window, cx);
-                    cx.stop_propagation(); cx.notify(); return;
+                    cx.stop_propagation();
+                    cx.notify();
+                    return;
                 }
                 if this.handle_roll_grid_key(event) {
                     cx.stop_propagation();
@@ -91,7 +106,10 @@ impl DawApp {
                     cx.notify();
                     return;
                 }
-                if this.piano_roll.choices.is_none() && this.piano_roll.lane_menu.is_none() && this.handle_transport_key(event) {
+                if this.piano_roll.choices.is_none()
+                    && this.piano_roll.lane_menu.is_none()
+                    && this.handle_transport_key(event)
+                {
                     cx.stop_propagation();
                     cx.notify();
                     return;
@@ -103,7 +121,8 @@ impl DawApp {
                     .unwrap_or(&event.keystroke.key);
                 let modifiers = event.keystroke.modifiers;
                 if this.mode == VimMode::Command
-                    || (this.vim_enabled && matches!(key, "e" | ":")
+                    || (this.vim_enabled
+                        && matches!(key, "e" | ":")
                         && this.mode == VimMode::Normal
                         && !modifiers.control
                         && !modifiers.alt
@@ -207,11 +226,19 @@ impl DawApp {
                         clip.track + 1,
                         clip.name,
                         clip.notes().len(),
-                        ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"][usize::from(self.piano_roll.scale_root)],
-                        if self.piano_roll.scale_minor { "minor" } else { "major" }
+                        [
+                            "C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"
+                        ][usize::from(self.piano_roll.scale_root)],
+                        if self.piano_roll.scale_minor {
+                            "minor"
+                        } else {
+                            "major"
+                        }
                     ))),
             )
-            .when(self.piano_roll.choices.is_some(), |root| root.child(self.render_roll_choices(cx)))
+            .when(self.piano_roll.choices.is_some(), |root| {
+                root.child(self.render_roll_choices(cx))
+            })
             .children(
                 self.piano_roll
                     .lane_menu
@@ -231,7 +258,10 @@ impl DawApp {
             .id("roll-lane-menu-panel")
             .max_h(px(320.0))
             .overflow_y_scroll();
-        for (index, item) in crate::ui::piano_roll::lane::LANE_MENU_ITEMS.iter().enumerate() {
+        for (index, item) in crate::ui::piano_roll::lane::LANE_MENU_ITEMS
+            .iter()
+            .enumerate()
+        {
             if let Some(section) = item.section {
                 panel = panel.child(
                     div()

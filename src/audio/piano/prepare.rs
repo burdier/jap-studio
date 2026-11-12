@@ -12,14 +12,33 @@ pub(crate) struct PreparedPiano {
 
 impl PreparedPiano {
     pub fn vst_editor(&self) -> Option<crate::audio::vst3::EditorHandle> {
-        if let SynthBackend::Vst(engine) = &self.backend { Some(engine.editor.clone()) } else { None }
+        if let SynthBackend::Vst(engine) = &self.backend {
+            Some(engine.editor.clone())
+        } else {
+            None
+        }
     }
-    pub fn load_vst(path: &Path, audio: &crate::audio::device::AudioConfig, class: Option<String>) -> Result<(Self, String), String> {
+    pub fn load_vst(
+        path: &Path,
+        audio: &crate::audio::device::AudioConfig,
+        class: Option<String>,
+    ) -> Result<(Self, String), String> {
         let device = audio.device(false)?;
         let setup = choose_output_config(&device, audio)?;
-        let engine = crate::audio::vst3::VstEngine::load_instrument_class(path, setup.config.sample_rate, class)?;
+        let engine = crate::audio::vst3::VstEngine::load_instrument_class(
+            path,
+            setup.config.sample_rate,
+            class,
+        )?;
         let name = engine.name.clone();
-        Ok((Self { device, setup, backend: SynthBackend::Vst(engine) }, name))
+        Ok((
+            Self {
+                device,
+                setup,
+                backend: SynthBackend::Vst(engine),
+            },
+            name,
+        ))
     }
     pub fn load(
         path: &Path,

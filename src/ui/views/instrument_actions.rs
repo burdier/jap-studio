@@ -24,7 +24,10 @@ impl DawApp {
             )
     }
 
-    pub(in crate::ui) fn render_midi_button(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    pub(in crate::ui) fn render_midi_button(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
         let on = self.controller.enabled();
         self.piano_action(
             "controller-toggle",
@@ -54,7 +57,10 @@ impl DawApp {
         )
     }
 
-    pub(in crate::ui) fn render_record_button(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    pub(in crate::ui) fn render_record_button(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
         let recording = self.midi_capture.is_recording();
         self.piano_action(
             "midi-record-toggle",
@@ -70,7 +76,10 @@ impl DawApp {
         )
     }
 
-    pub(in crate::ui) fn render_capture_button(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    pub(in crate::ui) fn render_capture_button(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
         let count = self.midi_capture.note_count();
         self.piano_action(
             "midi-capture-insert",

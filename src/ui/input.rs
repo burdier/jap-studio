@@ -67,7 +67,8 @@ impl DawApp {
             return;
         }
         let modifiers = event.keystroke.modifiers;
-        if self.vim_enabled && self.mode == VimMode::Normal
+        if self.vim_enabled
+            && self.mode == VimMode::Normal
             && key == "e"
             && !modifiers.control
             && !modifiers.alt
@@ -94,7 +95,23 @@ impl DawApp {
             return;
         }
         if !self.vim_enabled {
-            if matches!(key, "left" | "right" | "up" | "down" | "home" | "insert" | "enter" | "escape" | "tab" | "+" | "=" | "-" | "[" | "]") {
+            if matches!(
+                key,
+                "left"
+                    | "right"
+                    | "up"
+                    | "down"
+                    | "home"
+                    | "insert"
+                    | "enter"
+                    | "escape"
+                    | "tab"
+                    | "+"
+                    | "="
+                    | "-"
+                    | "["
+                    | "]"
+            ) {
                 self.handle_normal_key(key);
             }
             return;
@@ -275,7 +292,10 @@ impl DawApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if matches!(cmd.trim().to_ascii_lowercase().as_str(), "note" | "note.edit") {
+        if matches!(
+            cmd.trim().to_ascii_lowercase().as_str(),
+            "note" | "note.edit"
+        ) {
             self.open_general_note(window, cx);
             return;
         }
@@ -296,7 +316,10 @@ impl DawApp {
     pub(super) fn execute_command(&mut self, cmd: &str) {
         // El parser de export conserva mayúsculas y espacios entrecomillados en nombres/rutas.
         let cmd = cmd.trim();
-        if matches!(cmd, "vim.toggle" | "vim toggle") { self.toggle_vim(); return; }
+        if matches!(cmd, "vim.toggle" | "vim toggle") {
+            self.toggle_vim();
+            return;
+        }
         if self.execute_roll_grid_command(cmd) {
             return;
         }

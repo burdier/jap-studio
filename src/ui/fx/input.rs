@@ -46,7 +46,9 @@ impl FxTree {
             return;
         }
         cx.stop_propagation();
-        if !self.vim_enabled && matches!(key, "h" | "j" | "k" | "l") { return; }
+        if !self.vim_enabled && matches!(key, "h" | "j" | "k" | "l") {
+            return;
+        }
         let Some(target) = self.target() else {
             return;
         };

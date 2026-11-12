@@ -2,7 +2,9 @@ use crate::{instruments::sampler::SAMPLER_ID, ui::DawApp};
 use elevate::musical::{midi::MidiMessage, model::InstrumentId};
 impl DawApp {
     pub(in crate::ui) fn active_instrument_id(&self) -> InstrumentId {
-        if self.vst_selected() { return crate::instruments::vst::VST_ID; }
+        if self.vst_selected() {
+            return crate::instruments::vst::VST_ID;
+        }
         if self.sampler_selected() {
             SAMPLER_ID
         } else {
@@ -10,7 +12,9 @@ impl DawApp {
         }
     }
     pub(in crate::ui) fn active_instrument_name(&self) -> &str {
-        if self.vst_selected() { return &self.vst.name; }
+        if self.vst_selected() {
+            return &self.vst.name;
+        }
         if self.sampler_selected() {
             self.sampler.name()
         } else {

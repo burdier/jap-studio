@@ -161,7 +161,9 @@ impl DawApp {
                         this.vst.unload();
                         this.settings.audio.saved = config.clone();
                         if let Some(target) = this.vst_track().map(|i| this.tracks[i].id) {
-                            if let Some(bundle) = this.vst.bundle.clone() { this.load_vst(bundle, Some(target), cx); }
+                            if let Some(bundle) = this.vst.bundle.clone() {
+                                this.load_vst(bundle, Some(target), cx);
+                            }
                         }
                         this.prepare_sampler(cx);
                         match profile::save(&config) {

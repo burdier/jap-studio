@@ -113,7 +113,9 @@ pub(super) fn build_stream<T: SizedSample + FromSample<f32>>(
                     } else {
                         synthesizer.render(&mut left[..frames], &mut right[..frames]);
                     }
-                    if synthesizer.failed() { state.failed.store(true, Ordering::Relaxed); }
+                    if synthesizer.failed() {
+                        state.failed.store(true, Ordering::Relaxed);
+                    }
                     for (frame, (&left, &right)) in block[..frames]
                         .iter_mut()
                         .zip(left.iter().zip(right.iter()))

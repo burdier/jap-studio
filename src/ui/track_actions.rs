@@ -117,10 +117,25 @@ impl DawApp {
         {
             return;
         }
-        let levels = sources.iter().map(|source| source.map_or(75, |i| self.track_levels[i])).collect();
-        let pans = sources.iter().map(|source| source.map_or(50, |i| self.track_pans[i])).collect();
+        let levels = sources
+            .iter()
+            .map(|source| source.map_or(75, |i| self.track_levels[i]))
+            .collect();
+        let pans = sources
+            .iter()
+            .map(|source| source.map_or(50, |i| self.track_pans[i]))
+            .collect();
         let preserve_midi = matches!(edit, TrackEdit::Move { .. });
-        self.commit_track_plan(tracks, sources, levels, pans, selected, preserve_midi, true, None);
+        self.commit_track_plan(
+            tracks,
+            sources,
+            levels,
+            pans,
+            selected,
+            preserve_midi,
+            true,
+            None,
+        );
     }
 
     pub(in crate::ui) fn track_accepts_clips(&self, index: usize) -> bool {

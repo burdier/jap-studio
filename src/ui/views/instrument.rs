@@ -8,7 +8,9 @@ use std::rc::Rc;
 
 impl DawApp {
     pub(in crate::ui) fn render_instrument(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        if self.vst_selected() { return self.render_vst(cx).into_any_element(); }
+        if self.vst_selected() {
+            return self.render_vst(cx).into_any_element();
+        }
         if self.sampler_selected() {
             return self.render_sampler(cx).into_any_element();
         }

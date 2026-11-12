@@ -56,7 +56,10 @@ fn split_trimmed_audio_and_midi_preserves_source_alignment_and_total_length() {
     assert_eq!(right.playback_pattern().notes()[0].duration, Tick(2 * PPQ));
     let left = &timeline.other_audio_clips[0];
     let right = timeline.clip.as_ref().unwrap();
-    assert_eq!(left.end_beat(elevate::musical::time::DEFAULT_BPM), right.start_beat);
+    assert_eq!(
+        left.end_beat(elevate::musical::time::DEFAULT_BPM),
+        right.start_beat
+    );
     assert_eq!(left.length_seconds() + right.length_seconds(), 3.0);
     assert!(Arc::ptr_eq(&left.file, &source));
     assert!(Arc::ptr_eq(&right.file, &source));

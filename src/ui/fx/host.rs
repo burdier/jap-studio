@@ -33,7 +33,7 @@ impl FxDock {
                 FxEvent::Selection(target) => {
                     this.fx.current = Some(*target);
                     this.workspace_focus.active = crate::ui::workspace_focus::Panel::Fx;
-                },
+                }
                 FxEvent::Instrument(track) => this.open_track_instrument(*track),
                 FxEvent::Add(target) => this.open_fx_palette(*target),
                 FxEvent::Action(target, command) => this.fx.pending = Some((*target, *command)),

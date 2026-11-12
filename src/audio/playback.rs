@@ -59,7 +59,10 @@ impl PreparedPlayback {
             rack: None,
         })
     }
-    pub fn with_rack(mut self, rack: Option<Arc<super::effects::Rack>>) -> Self { self.rack = rack; self }
+    pub fn with_rack(mut self, rack: Option<Arc<super::effects::Rack>>) -> Self {
+        self.rack = rack;
+        self
+    }
     pub fn start(
         self,
         start_beat: f64,
@@ -216,7 +219,9 @@ impl Player {
             .map_err(|error| error.to_string())
     }
 
-    pub fn set_fx_rack(&self, rack: Option<std::sync::Arc<crate::audio::effects::Rack>>) { self.state.fx.set_rack(rack, self.sample_rate); }
+    pub fn set_fx_rack(&self, rack: Option<std::sync::Arc<crate::audio::effects::Rack>>) {
+        self.state.fx.set_rack(rack, self.sample_rate);
+    }
     pub fn set_fx_gain(&self, gain: f32) {
         self.state.fx.set(gain);
     }

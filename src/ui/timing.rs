@@ -36,7 +36,10 @@ impl DawApp {
         let mut parts = cmd.split_whitespace();
         match parts.next().map(str::to_ascii_lowercase).as_deref() {
             Some("tempo" | "tempo.set") => {
-                match (parts.next().and_then(|v| v.replace(',', ".").parse().ok()), parts.next()) {
+                match (
+                    parts.next().and_then(|v| v.replace(',', ".").parse().ok()),
+                    parts.next(),
+                ) {
                     (Some(bpm), None) => self.set_tempo(bpm),
                     _ => self.status_message = "Uso: tempo 120".into(),
                 }
@@ -48,7 +51,9 @@ impl DawApp {
                     Some((n.to_owned(), d.to_owned()))
                 } else if let Some(n) = first {
                     parts.next().map(|d| (n.to_owned(), d.to_owned()))
-                } else { None };
+                } else {
+                    None
+                };
                 match (pair, parts.next()) {
                     (Some((n, d)), None) => match (n.parse(), d.parse()) {
                         (Ok(n), Ok(d)) => self.set_meter(n, d),

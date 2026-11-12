@@ -104,9 +104,15 @@ impl DawApp {
             }
             ToolbarAction::RollQuantize => self.apply_roll_action(RollAction::Quantize, window, cx),
             ToolbarAction::RollHumanize => self.apply_roll_action(RollAction::Humanize, window, cx),
-            ToolbarAction::RollSubdivide => self.apply_roll_action(RollAction::Subdivide, window, cx),
-            ToolbarAction::RollGridFiner => self.apply_roll_action(RollAction::GridFiner, window, cx),
-            ToolbarAction::RollGridCoarser => self.apply_roll_action(RollAction::GridCoarser, window, cx),
+            ToolbarAction::RollSubdivide => {
+                self.apply_roll_action(RollAction::Subdivide, window, cx)
+            }
+            ToolbarAction::RollGridFiner => {
+                self.apply_roll_action(RollAction::GridFiner, window, cx)
+            }
+            ToolbarAction::RollGridCoarser => {
+                self.apply_roll_action(RollAction::GridCoarser, window, cx)
+            }
             ToolbarAction::RollCut => self.apply_roll_action(RollAction::Cut, window, cx),
             ToolbarAction::RollCopy => self.apply_roll_action(RollAction::Copy, window, cx),
             ToolbarAction::RollPaste => self.apply_roll_action(RollAction::Paste, window, cx),

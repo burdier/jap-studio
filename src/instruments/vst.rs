@@ -21,9 +21,18 @@ pub(crate) struct VstInstrument {
     pub mouse: Option<u8>,
 }
 impl VstInstrument {
-    pub fn set_fx_rack(&mut self, rack: Option<std::sync::Arc<crate::audio::effects::Rack>>) { if let Some(player) = &self.player { player.set_fx_rack(rack.clone()); } self.fx_rack = rack; }
+    pub fn set_fx_rack(&mut self, rack: Option<std::sync::Arc<crate::audio::effects::Rack>>) {
+        if let Some(player) = &self.player {
+            player.set_fx_rack(rack.clone());
+        }
+        self.fx_rack = rack;
+    }
 
-    pub fn prepare(path: &Path, config: &AudioConfig, class: Option<String>) -> Result<(PreparedPiano, String), String> {
+    pub fn prepare(
+        path: &Path,
+        config: &AudioConfig,
+        class: Option<String>,
+    ) -> Result<(PreparedPiano, String), String> {
         PreparedPiano::load_vst(path, config, class)
     }
     pub fn install(

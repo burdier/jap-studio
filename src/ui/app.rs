@@ -27,8 +27,12 @@ use gpui::{
 use std::time::Instant;
 
 pub(crate) fn run() {
-    if let Err(error) = crate::audio::vst3::environment::configure() { eprintln!("Wine: {error}"); }
-    if crate::audio::vst3::scan::worker() { return; }
+    if let Err(error) = crate::audio::vst3::environment::configure() {
+        eprintln!("Wine: {error}");
+    }
+    if crate::audio::vst3::scan::worker() {
+        return;
+    }
     application()
         .with_assets(gpui::assets::Assets)
         .run(|cx: &mut App| {
@@ -142,7 +146,9 @@ impl DawApp {
     }
     pub(super) fn reload(&mut self) {
         self.vim_enabled = super::keyboard_preferences::load_vim();
-        if !self.vim_enabled { self.set_mode(VimMode::Normal); }
+        if !self.vim_enabled {
+            self.set_mode(VimMode::Normal);
+        }
         self.settings.export = super::export_preferences::ExportPreferences::load();
         let colors = std::mem::take(&mut self.ds.track_color_override);
         self.ds = DesignSystem::load();
@@ -152,7 +158,11 @@ impl DawApp {
     }
     pub(super) fn set_mode(&mut self, mode: VimMode) {
         self.track_delete_pending = false;
-        self.mode = if self.vim_enabled { mode } else { VimMode::Normal };
+        self.mode = if self.vim_enabled {
+            mode
+        } else {
+            VimMode::Normal
+        };
         if self.mode != VimMode::Command {
             self.command_buffer.clear();
             self.cmd_selected = None;
@@ -161,7 +171,9 @@ impl DawApp {
         }
     }
     pub(super) fn set_center_view(&mut self, view: CenterView) {
-        if view != self.center_view { self.workspace_focus = Default::default(); }
+        if view != self.center_view {
+            self.workspace_focus = Default::default();
+        }
         self.track_delete_pending = false;
         if self.center_view == CenterView::Session && view != CenterView::Session {
             self.stop_pattern();

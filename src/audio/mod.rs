@@ -3,18 +3,18 @@
 
 pub(crate) mod analyzer;
 mod assets;
+pub(crate) mod device;
+pub(crate) mod device_probe;
 pub(crate) mod drums;
 pub(crate) mod export;
 mod fx_gain;
 mod midi_in;
 mod output;
-pub(crate) mod device;
-pub(crate) mod device_probe;
 pub(crate) mod piano;
 mod playback;
 pub(crate) mod sampler;
-pub(crate) mod vst3;
 mod stereo_pan;
+pub(crate) mod vst3;
 
 pub(crate) use assets::{AudioClip, AudioFile, PEAK_FRAMES};
 pub(crate) use drums::DrumPlayer;

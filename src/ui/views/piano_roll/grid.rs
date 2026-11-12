@@ -36,7 +36,11 @@ impl DawApp {
         let hovered_resize_edge =
             self.piano_roll.hovered_resize_edge || self.piano_roll.tool == RollTool::Length;
         let drag_box = match &self.piano_roll.drag {
-            Some(RollDrag::Box { origin, current, erase }) => Some((*origin, *current, *erase)),
+            Some(RollDrag::Box {
+                origin,
+                current,
+                erase,
+            }) => Some((*origin, *current, *erase)),
             _ => None,
         };
         let motion = self.piano_roll.motion.clone();
@@ -100,7 +104,10 @@ impl DawApp {
                     }
                     cx.notify();
                 } else {
-                    if this.piano_roll.drag.is_some() || this.piano_roll.control_drag || this.piano_roll.paint_stroke.is_some() {
+                    if this.piano_roll.drag.is_some()
+                        || this.piano_roll.control_drag
+                        || this.piano_roll.paint_stroke.is_some()
+                    {
                         this.end_roll_drag();
                     }
                     if this.hover_roll_at(event.position) {
@@ -211,8 +218,22 @@ impl DawApp {
                                             1.0,
                                             (color << 8) | 0xc0,
                                         );
-                                        rectangle(window, left, top, 1.0, height, (color << 8) | 0xc0);
-                                        rectangle(window, left + px(width), top, 1.0, height, (color << 8) | 0xc0);
+                                        rectangle(
+                                            window,
+                                            left,
+                                            top,
+                                            1.0,
+                                            height,
+                                            (color << 8) | 0xc0,
+                                        );
+                                        rectangle(
+                                            window,
+                                            left + px(width),
+                                            top,
+                                            1.0,
+                                            height,
+                                            (color << 8) | 0xc0,
+                                        );
                                     }
                                 },
                             );
@@ -396,7 +417,8 @@ fn paint_notes(
                     let pitch = i32::from(note.pitch);
                     (min.min(pitch), max.max(pitch))
                 });
-            (-(f32::from(preview.offset.y) / grid.row_height).round() as i32).clamp(-min_pitch, 127 - max_pitch)
+            (-(f32::from(preview.offset.y) / grid.row_height).round() as i32)
+                .clamp(-min_pitch, 127 - max_pitch)
         }
         _ => 0,
     };
@@ -407,7 +429,8 @@ fn paint_notes(
         let mut resizing = false;
         if let Some(edges) = preview.and_then(|preview| preview.neighbors.get(&note.id)) {
             bounds.origin.x += edges.offset.x;
-            bounds.size.width = px(f32::from(bounds.size.width + edges.offset.y - edges.offset.x).max(2.0));
+            bounds.size.width =
+                px(f32::from(bounds.size.width + edges.offset.y - edges.offset.x).max(2.0));
         }
         if let Some(preview) = preview.filter(|preview| preview.notes.contains(&note.id)) {
             if preview.resize {
@@ -432,10 +455,19 @@ fn paint_notes(
             clip_accent
         };
         window.with_content_mask(Some(ContentMask { bounds: grid.notes }), |window| {
-            if bounds.right() >= grid.notes.left() && bounds.left() <= grid.notes.right()
-                && bounds.bottom() >= grid.notes.top() && bounds.top() <= grid.notes.bottom() {
-                super::note_frame::paint(bounds, color, hovered_note == Some(note.id) || resizing,
-                    (hovered_note == Some(note.id) && hovered_resize_edge) || resizing, ds, window);
+            if bounds.right() >= grid.notes.left()
+                && bounds.left() <= grid.notes.right()
+                && bounds.bottom() >= grid.notes.top()
+                && bounds.top() <= grid.notes.bottom()
+            {
+                super::note_frame::paint(
+                    bounds,
+                    color,
+                    hovered_note == Some(note.id) || resizing,
+                    (hovered_note == Some(note.id) && hovered_resize_edge) || resizing,
+                    ds,
+                    window,
+                );
             }
         });
         if show_note_names && width > 30.0 {

@@ -106,9 +106,24 @@ const LOCAL_ACTIONS: &[(ToolbarAction, ToolbarScope, &str, &str)] = &[
     (A::RollMute, R, "Piano Roll: silenciar nota", "Mute"),
     (A::RollQuantize, R, "Piano Roll: cuantizar notas (Q)", "Q"),
     (A::RollHumanize, R, "Piano Roll: humanizar notas (H)", "H"),
-    (A::RollSubdivide, R, "Piano Roll: subdividir notas según rejilla", "Subdividir"),
-    (A::RollGridFiner, R, "Piano Roll: rejilla más fina (Alt+1)", "Grid +"),
-    (A::RollGridCoarser, R, "Piano Roll: rejilla más gruesa (Alt+2)", "Grid −"),
+    (
+        A::RollSubdivide,
+        R,
+        "Piano Roll: subdividir notas según rejilla",
+        "Subdividir",
+    ),
+    (
+        A::RollGridFiner,
+        R,
+        "Piano Roll: rejilla más fina (Alt+1)",
+        "Grid +",
+    ),
+    (
+        A::RollGridCoarser,
+        R,
+        "Piano Roll: rejilla más gruesa (Alt+2)",
+        "Grid −",
+    ),
     (A::RollCut, R, "Piano Roll: cortar nota", "Cortar"),
     (A::RollCopy, R, "Piano Roll: copiar nota", "Copiar"),
     (A::RollPaste, R, "Piano Roll: pegar nota", "Pegar"),
@@ -329,7 +344,11 @@ impl ToolbarAction {
                     && (scope == ToolbarScope::Transport || entry.id.starts_with("action.midi."))
                     && matches!(entry.action, CatalogAction::Invoke(_))
                 {
-                    let action = if scope == ToolbarScope::PianoRoll { Self::from_roll_catalog(entry.id) } else { Self::from_catalog(entry.id) };
+                    let action = if scope == ToolbarScope::PianoRoll {
+                        Self::from_roll_catalog(entry.id)
+                    } else {
+                        Self::from_catalog(entry.id)
+                    };
                     if !actions.contains(&action) {
                         actions.push(action);
                     }

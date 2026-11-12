@@ -304,7 +304,9 @@ impl PianoPlayer {
     pub fn plan_frame(&self) -> u64 {
         self.state.plan_frame.load(Ordering::Relaxed)
     }
-    pub fn set_fx_rack(&self, rack: Option<std::sync::Arc<crate::audio::effects::Rack>>) { self.state.fx.set_rack(rack, self.sample_rate); }
+    pub fn set_fx_rack(&self, rack: Option<std::sync::Arc<crate::audio::effects::Rack>>) {
+        self.state.fx.set_rack(rack, self.sample_rate);
+    }
     pub fn set_fx_gain(&self, gain: f32) {
         self.state.fx.set(gain);
     }

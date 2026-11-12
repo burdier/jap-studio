@@ -19,11 +19,15 @@ impl DawApp {
             self.timeline.insert_midi_clip(clip);
             Some(DragKind::Midi)
         } else if self.timeline.clip.as_ref().is_some_and(|clip| {
-            clip.track == track && beat >= clip.start_beat && beat < clip.end_beat(self.timeline.tempo.bpm())
+            clip.track == track
+                && beat >= clip.start_beat
+                && beat < clip.end_beat(self.timeline.tempo.bpm())
         }) {
             Some(DragKind::Audio)
         } else if let Some(index) = self.timeline.other_audio_clips.iter().rposition(|clip| {
-            clip.track == track && beat >= clip.start_beat && beat < clip.end_beat(self.timeline.tempo.bpm())
+            clip.track == track
+                && beat >= clip.start_beat
+                && beat < clip.end_beat(self.timeline.tempo.bpm())
         }) {
             let clip = self.timeline.other_audio_clips.remove(index);
             self.timeline.insert_audio_clip(clip);

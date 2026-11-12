@@ -39,7 +39,11 @@ pub(super) fn order_id(order: &loro::LoroMovableList, index: usize) -> Option<Tr
         .map(TrackId)
 }
 pub(super) fn validate_tracks(tracks: &[ProjectTrack]) -> Result<(), String> {
-    validate_track_layout(tracks.iter().map(|track| (track.id, track.kind, track.parent)))
+    validate_track_layout(
+        tracks
+            .iter()
+            .map(|track| (track.id, track.kind, track.parent)),
+    )
 }
 pub(super) fn kind_code(kind: TrackKind) -> i64 {
     match kind {

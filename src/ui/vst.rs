@@ -1,7 +1,7 @@
 //! Inserción y control del instrumento externo; usa catálogo, pista y MIDI comunes.
 mod commands;
-mod view;
 pub(in crate::ui) mod effects;
+mod view;
 use super::DawApp;
 use crate::instruments::vst::{VST_ID, VstInstrument};
 use elevate::musical::{
@@ -22,7 +22,12 @@ impl DawApp {
             .iter()
             .position(|track| track.instrument == Some(VST_ID))
     }
-    pub(in crate::ui) fn load_vst(&mut self, bundle: PathBuf, target: Option<TrackId>, cx: &mut Context<Self>) {
+    pub(in crate::ui) fn load_vst(
+        &mut self,
+        bundle: PathBuf,
+        target: Option<TrackId>,
+        cx: &mut Context<Self>,
+    ) {
         self.load_vst_class(bundle, target, None, cx);
     }
     pub(in crate::ui) fn load_vst_class(
@@ -49,7 +54,8 @@ impl DawApp {
         let expected = config.clone();
         let path = bundle.clone();
         self.status_message = "Cargando instrumento VST3 mediante yabridge…".into();
-        let work = cx.background_spawn(async move { VstInstrument::prepare(&path, &config, class) });
+        let work =
+            cx.background_spawn(async move { VstInstrument::prepare(&path, &config, class) });
         self.vst_task = Some(cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update(cx, |this, cx| {

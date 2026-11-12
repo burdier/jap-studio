@@ -14,12 +14,18 @@ impl Tempo {
         }
         Ok(Self(bpm))
     }
-    pub fn bpm(self) -> f64 { self.0 }
-    pub fn beats_per_second(self) -> f64 { self.0 / 60.0 }
+    pub fn bpm(self) -> f64 {
+        self.0
+    }
+    pub fn beats_per_second(self) -> f64 {
+        self.0 / 60.0
+    }
 }
 
 impl Default for Tempo {
-    fn default() -> Self { Self(DEFAULT_BPM) }
+    fn default() -> Self {
+        Self(DEFAULT_BPM)
+    }
 }
 
 /// El denominador es una potencia de dos; las posiciones siguen en negras (PPQ).
@@ -34,24 +40,34 @@ impl Meter {
         if !(1..=32).contains(&numerator) || ![1, 2, 4, 8, 16].contains(&denominator) {
             return Err(TimeError::InvalidMeter);
         }
-        Ok(Self { numerator, denominator })
+        Ok(Self {
+            numerator,
+            denominator,
+        })
     }
-    pub fn numerator(self) -> u8 { self.numerator }
-    pub fn denominator(self) -> u8 { self.denominator }
+    pub fn numerator(self) -> u8 {
+        self.numerator
+    }
+    pub fn denominator(self) -> u8 {
+        self.denominator
+    }
     pub fn beats_per_bar(self) -> f64 {
         f64::from(self.numerator) * 4.0 / f64::from(self.denominator)
     }
     pub fn ticks_per_bar(self) -> i64 {
         i64::from(self.numerator) * PPQ * 4 / i64::from(self.denominator)
     }
-    pub fn ticks_per_beat(self) -> i64 { PPQ * 4 / i64::from(self.denominator) }
-    pub fn label(self) -> String { format!("{}/{}", self.numerator, self.denominator) }
+    pub fn ticks_per_beat(self) -> i64 {
+        PPQ * 4 / i64::from(self.denominator)
+    }
+    pub fn label(self) -> String {
+        format!("{}/{}", self.numerator, self.denominator)
+    }
     pub fn bar_at(self, quarter_beat: f64) -> u64 {
         (quarter_beat.max(0.0) / self.beats_per_bar()).floor() as u64 + 1
     }
     pub fn beat_at(self, quarter_beat: f64) -> f64 {
-        (quarter_beat.max(0.0) % self.beats_per_bar())
-            / (4.0 / f64::from(self.denominator)) + 1.0
+        (quarter_beat.max(0.0) % self.beats_per_bar()) / (4.0 / f64::from(self.denominator)) + 1.0
     }
     pub fn position_label(self, tick: Tick) -> String {
         let tick = tick.0.max(0);
@@ -65,7 +81,12 @@ impl Meter {
 }
 
 impl Default for Meter {
-    fn default() -> Self { Self { numerator: 4, denominator: 4 } }
+    fn default() -> Self {
+        Self {
+            numerator: 4,
+            denominator: 4,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
