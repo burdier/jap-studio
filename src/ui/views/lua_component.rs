@@ -11,10 +11,11 @@ use std::rc::Rc;
 impl DawApp {
     pub(super) fn selected_lua_component(&self) -> Option<FxTarget> {
         let target = self.fx.current?;
-        self.lua_components
-            .instances
-            .contains_key(&target.node?)
-            .then_some(target)
+        let selected_track = self.tracks.get(self.cursor_row)?.id;
+        (target.track == selected_track
+            && self.lua_components.instances.contains_key(&target.node?)
+            && self.fx_node(target).is_some())
+        .then_some(target)
     }
 
     pub(super) fn render_lua_component_controls(

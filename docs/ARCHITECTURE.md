@@ -140,6 +140,23 @@ una transacción distribuida ni sincronización de red. Las futuras importacione
 remotas deberán avanzar la revisión de sesión y añadir una frontera causal al
 snapshot antes de habilitar colaboración. [API y límites](LUA_TRACK_BATCHES.md).
 
+## Componentes de audio Lua (PR-03)
+
+`scripting/audio_components` evalúa descriptores en el sandbox existente y valida
+puertos estéreo, nodos Volume, aristas acíclicas, controles y límites. No lleva una
+VM Lua al callback. `devices/audio_component` prepara primitivas y buffers de 512
+frames fuera de RT; procesa el grafo en orden topológico y suma ramas paralelas.
+`audio/effects/component` mantiene una instancia por `FxId`, con valores atómicos
+para que el callback aplique la macro sin GPUI, locks ni reservas por bloque. El
+plan FX ya publicado incluye el componente junto a Utility y VST3.
+
+`ui/lua_components` carga la plantilla distribuida, recarga candidatos en un worker
+y conserva registro e instancias ante error. `[+]`, `fx.parameter` y el slider de
+Track FX usan `FxEdit::Parameter`; `FxId` separa dos instancias del mismo tipo.
+Loro conserva ID de tipo y parámetros numéricos, pero su documento sigue sin
+conexión persistente a la UI ni transporte de la fuente Lua. El render offline
+actual tampoco procesa este componente. [Contrato y prueba](LUA_AUDIO_COMPONENTS.md).
+
 ## Scripts Lua para edición MIDI
 
 `scripting/packages` implementa el registro headless del contrato v1. El host entrega

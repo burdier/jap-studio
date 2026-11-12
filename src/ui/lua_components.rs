@@ -2,6 +2,8 @@
 use super::{DawApp, fx::FxTarget};
 use crate::audio::effects::ComponentEffect;
 use elevate::{
+    ProcessSpec,
+    devices::audio_component::AudioComponentDevice,
     musical::{
         fx::{FxEdit, FxId, FxKind, FxNode},
         track::TrackDevice,
@@ -93,10 +95,11 @@ fn scan_roots(
             if !bundled && component.id.starts_with("hay.") {
                 return Err(format!("{}: hay.* reservado", path.display()));
             }
-            if registry
-                .insert(component.id.clone(), Arc::new(component))
-                .is_some()
-            {
+            let component = Arc::new(component);
+            let spec = ProcessSpec::new(48_000.0).map_err(|e| e.to_string())?;
+            AudioComponentDevice::new(component.clone(), spec)
+                .map_err(|e| format!("{}: preparación: {e}", path.display()))?;
+            if registry.insert(component.id.clone(), component).is_some() {
                 return Err(format!("{}: ID duplicado", path.display()));
             }
         }
@@ -204,6 +207,16 @@ mod tests {
                 .as_nanos()
         ));
         std::fs::create_dir(&root).unwrap();
+        let updated = include_str!("../../assets/scripts/components/audio/double_volume.lua")
+            .replace("Hay Double Volume", "Hay Double Volume v2");
+        std::fs::write(root.join("component.lua"), updated).unwrap();
+        let candidate = scan_roots(vec![(root.clone(), true)]).unwrap();
+        assert_eq!(
+            candidate["hay.fx.double_volume"].name,
+            "Hay Double Volume v2"
+        );
+        assert_eq!(effect.descriptor().name, "Hay Double Volume");
+        std::fs::remove_file(root.join("component.lua")).unwrap();
         std::fs::write(root.join("bad.lua"), "return { api_version = 1 }").unwrap();
         let result = scan_roots(vec![(root.clone(), false)]);
         std::fs::remove_dir_all(root).unwrap();

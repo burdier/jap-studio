@@ -1,8 +1,8 @@
 # Plan de PRs: kit Lua, multipista e Hilos
 
-Fecha: 2026-11-11. Estado: PR-01 en progreso (4 de 4 commits); los demás PRs están
-pendientes. Acentuar y Subdividir ya usan paquetes recargables; falta la comprobación
-interactiva de aceptación de PR-01.
+Fecha: 2026-11-11. Estado: PR-01 y PR-02 implementados; PR-03 tiene sus cinco
+incrementos implementados y pruebas headless, pendiente de audición manual.
+Acentuar y Subdividir usan paquetes recargables.
 Los números identifican entregas de este plan, no PRs abiertos en GitHub. El repositorio
 todavía no tiene remoto configurado.
 
@@ -249,7 +249,8 @@ no se anuncia como undo/redo global, que todavía no existe.
 **Título sugerido:** `feat(lua): componer dispositivos de audio con primitivas existentes`
 
 **Contrato inicial:** [descriptor, puertos, grafo, macro, límites y recarga](LUA_AUDIO_COMPONENTS.md).
-La implementación y la demostración audible siguen pendientes.
+Implementación headless y en Track FX disponible. La prueba de audio del rack y la
+recarga pasan; falta una audición manual de aceptación en la ventana.
 
 **Valor:** insertar desde `[+]` un componente Lua con dos etapas Volume y una macro de
 ganancia que realmente modifica el audio.
@@ -259,16 +260,16 @@ ganancia que realmente modifica el audio.
 
 **Tareas**
 
-- [ ] Extender el paquete con puertos, parámetros de ID estable, valores iniciales,
+- [x] Extender el paquete con puertos, parámetros de ID estable, valores iniciales,
   grafo y controles declarativos; componer primitivas existentes en serie/paralelo.
-- [ ] Validar tipos, ciclos, límites de tamaño y referencias antes de preparar instancias.
+- [x] Validar tipos, ciclos, límites de tamaño y referencias antes de preparar instancias.
   Mantener separadas descripción editable y memoria de procesamiento.
-- [ ] Introducir el contrato común de procesador con el mínimo necesario para este
+- [x] Introducir el contrato común de procesador con el mínimo necesario para este
   componente: preparación, bloques, parámetros, reset y latencia cero declarada.
   Extenderlo con consumidores reales en los siguientes PRs.
-- [ ] Generar controles con los componentes GPUI actuales y compartir el direccionamiento
+- [x] Generar controles con los componentes GPUI actuales y compartir el direccionamiento
   de parámetros con comandos. Aplicar suavizado donde corresponda.
-- [ ] Cargar dos instancias independientes. Preparar una recarga fuera del callback y
+- [x] Cargar dos instancias independientes. Preparar una recarga fuera del callback y
   conservar el componente anterior si falla.
 
 **Aceptación:** el componente suena, su macro altera ambas etapas y el bypass funciona.

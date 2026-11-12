@@ -104,6 +104,10 @@ Para automatizar pistas, usa `[+]` → **Lua · plantilla de dos pistas** o
 valida y aplica como un solo lote; se conservan clips y mapeos. Los cambios FX
 por lote admiten Hay Utility y contenedores serie/paralelo. [Contrato y ejemplo](docs/LUA_TRACK_BATCHES.md).
 
+Para efectos de audio, `[+]` ofrece **Hay Double Volume**. Su macro controla dos
+primitivos Volume nativos en Track FX; otros descriptores Lua se recargan con
+`:fx.components.reload`. [Uso y contrato](docs/LUA_AUDIO_COMPONENTS.md).
+
 Al escribir `:` aparecen sugerencias de comandos y acciones. Usa `↑/↓` para elegir,
 Tab o clic para completar, Enter para ejecutar y Esc para cancelar. El texto con
 argumentos se ejecuta tal como se escribió; los comandos sin argumentos que requieren
@@ -111,7 +115,7 @@ datos abren el formulario existente.
 
 1. **Plugins desde la base.** Un plugin aporta capacidades al DAW: primitivos, componentes,
    parámetros y acciones. Los plugins propios deben usar el mismo contrato que las extensiones.
-   El primer caso será registrar y utilizar el Volume existente mediante ese contrato.
+   El primer caso registra y utiliza el Volume existente mediante ese contrato.
    «Plugin» describe la extensión y su integración; el formato de carga se decidirá después.
 2. **Componer en lugar de duplicar.** `jeyeq` es un componente. En su interior conecta instancias
    de primitivos, por ejemplo un filtro y Volume. Cada instancia tiene identidad y parámetros

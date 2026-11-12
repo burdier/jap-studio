@@ -4,6 +4,14 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
 
 ## Disponible
 
+- **Componentes de audio Lua** (PR-03): `[+]` inserta Hay Double Volume en Track FX.
+  El grafo estéreo de primitivas Volume se valida fuera de audio y procesa en el
+  rack FX existente; macro, comando `fx.parameter`, bypass, duplicación y recarga
+  explícita conservan instancias independientes. Pruebas headless de sonido y
+  recarga; sin audición manual registrada. Auto puede negociar una frecuencia
+  distinta de los 48 kHz usados al preparar el suavizado. Export offline y
+  persistencia global de UI siguen pendientes. [Uso](LUA_AUDIO_COMPONENTS.md).
+
 - **Lotes Lua de pistas** (PR-02): `track.script 'archivo.lua'` y
   `track.template.two` desde comandos o `[+]` crean/configuran pistas en una
   confirmación local. Snapshot con revisión, handles, niveles, panorama y cadenas

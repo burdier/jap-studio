@@ -13,6 +13,12 @@ Para crear y configurar varias pistas desde Lua, usa `:track.template.two` o
 `:track.script '/ruta/script.lua'`. Su [contrato de lotes](LUA_TRACK_BATCHES.md)
 es independiente de las herramientas MIDI registradas.
 
+Para crear un efecto de audio con Lua, busca **Hay Double Volume** en `[+]` de
+una pista. Su macro aparece al seleccionar el nodo en Track FX; también responde
+a `:fx.parameter 0 0.5`. Instala otros descriptores en
+`~/.config/hay-daw/components/audio/` y ejecuta `:fx.components.reload`.
+[Formato, prueba y límites](LUA_AUDIO_COMPONENTS.md).
+
 ## Herramientas registradas
 
 Guarda un archivo `.lua` con el [formato de paquete](LUA_PACKAGES.md#formato-y-ejemplo)

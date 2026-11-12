@@ -1,9 +1,9 @@
 # Componentes de audio Lua · contrato inicial de PR-03
 
-Estado: **contrato inicial fijado; todavía no implementado**. Este documento define la
+Estado: **implementado en PR-03**. Este documento define la
 primera capacidad comprobable de PR-03: describir en Lua un efecto estéreo hecho
 con el primitivo `Volume`, insertarlo en una pista y controlar dos etapas con una
-macro. La implementación y su prueba de audio pertenecen a los commits siguientes.
+macro. El ejemplo distribuido está en `assets/scripts/components/audio/double_volume.lua`.
 [Plan del PR](PLAN_LUA_MULTITRACK_HILOS.md#pr-03--crear-un-componente-audible-desde-lua).
 
 ## Fronteras
@@ -161,3 +161,28 @@ la entrada sin duplicarla. Cambiar una de dos instancias deja intacta la otra.
 Un grafo cíclico o un valor fuera de rango se rechaza sin reemplazar la versión
 que estaba sonando. La comparación de audio se hace con dos `Volume` nativos
 equivalentes, no solo contando nodos ni comprobando la UI.
+
+## Uso y estado comprobado
+
+Reinicia Hay con `bash scripts/run.sh`. En una pista con clip de audio, busca
+**Hay Double Volume** desde `[+]` y pulsa Play. Selecciona el nodo nuevo en Track
+FX: el panel inferior muestra la macro **Ganancia**. Arrástrala a `0.50x` para
+obtener aproximadamente un cuarto del nivel original una vez terminado el
+suavizado; usa el bypass del árbol para comparar la señal seca. El comando
+`:fx.parameter 0 0.5` cambia el mismo control de la instancia seleccionada.
+Duplica el nodo y cambia solo uno para comprobar que sus valores no se comparten.
+
+Para instalar otro descriptor, copia un `.lua` en
+`~/.config/hay-daw/components/audio/` (o bajo `$XDG_CONFIG_HOME`), luego ejecuta
+`:fx.components.reload`. La recarga válida actualiza el buscador; las instancias
+abiertas conservan su definición anterior. Un error muestra el motivo y conserva
+el registro anterior. La recarga no escanea durante el render ni cambia por sí
+sola el procesador que está sonando.
+
+Las pruebas headless cubren descriptor, ciclos, serie, paralelo, dos instancias,
+bypass, ganancia en el rack y recarga válida/inválida. No se ha registrado una
+audición manual en la ventana. El efecto se prepara con la frecuencia solicitada
+en Audio, o 48 kHz si está en Auto; el ajuste del tiempo de suavizado podría
+diferir ligeramente si Auto negocia otra frecuencia. El proyecto completo aún
+no se guarda desde la UI ni comparte fuentes Lua entre colaboradores. Exportar
+esta cadena con el render offline actual sigue pendiente.
