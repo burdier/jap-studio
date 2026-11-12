@@ -166,10 +166,10 @@ equivalentes, no solo contando nodos ni comprobando la UI.
 
 Reinicia Hay con `bash scripts/run.sh`. En una pista con clip de audio, busca
 **Hay Double Volume** desde `[+]` y pulsa Play. Selecciona el nodo nuevo en Track
-FX: el panel inferior muestra la macro **Ganancia**. Arrástrala a `0.50x` para
-obtener aproximadamente un cuarto del nivel original una vez terminado el
-suavizado; usa el bypass del árbol para comparar la señal seca. El comando
-`:fx.parameter 0 0.5` cambia el mismo control de la instancia seleccionada.
+FX: el panel inferior muestra la macro **Ganancia**. Muévela cerca de `0.5x` o
+escribe `:fx.parameter 0 0.5` para fijar ese valor exacto; una vez terminado el
+suavizado, el nivel queda en un cuarto del original. Usa el bypass del árbol
+para comparar la señal seca. El comando cambia el mismo control de la instancia.
 Duplica el nodo y cambia solo uno para comprobar que sus valores no se comparten.
 
 Para instalar otro descriptor, copia un `.lua` en
