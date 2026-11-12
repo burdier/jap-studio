@@ -225,7 +225,7 @@ impl Render for DawApp {
             .p(px(5.0))
             .flex()
             .flex_col()
-            .bg(rgb(ds.bg))
+            .bg(rgb(ds.gutter_color()))
             .text_color(rgb(ds.text))
             .font_family("monospace")
             .on_mouse_down(

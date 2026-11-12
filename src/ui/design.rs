@@ -668,6 +668,16 @@ impl DesignSystem {
         self.selection_color(self.panel)
     }
 
+    /// Superficie entre paneles: más profunda que el fondo, sin añadir otro acento.
+    pub(in crate::ui) fn gutter_color(&self) -> u32 {
+        blend_color(self.bg, self.panel_dark, 85)
+    }
+
+    /// Contorno de panel, separado del borde tenue de los controles internos.
+    pub(in crate::ui) fn frame_border(&self) -> u32 {
+        blend_color(self.border, self.text, 15)
+    }
+
     /// Colores seleccionables para una pista (el mismo orden que el color automático).
     /// Orden estable de los índices de color almacenados en cada clip.
     pub(in crate::ui) fn clip_palette(&self) -> [u32; 7] {
@@ -735,6 +745,15 @@ impl DesignSystem {
         self.grid = pal.grid;
         self.playhead_particle_color = pal.success;
     }
+}
+
+pub(in crate::ui) fn blend_color(base: u32, tint: u32, tint_percent: u32) -> u32 {
+    let blend = |shift: u32| -> u32 {
+        let base = (base >> shift) & 0xff_u32;
+        let tint = (tint >> shift) & 0xff_u32;
+        (base * (100_u32 - tint_percent) + tint * tint_percent) / 100_u32
+    };
+    (blend(16) << 16) | (blend(8) << 8) | blend(0)
 }
 
 #[cfg(test)]

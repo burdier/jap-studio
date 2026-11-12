@@ -53,7 +53,7 @@ impl DawApp {
             .bg(rgb(ds.panel_dark))
             .rounded(px(ds.radius_lg))
             .border_1()
-            .border_color(rgb(ds.border))
+            .border_color(rgb(ds.frame_border()))
             .child(
                 div()
                     .flex()
@@ -130,7 +130,7 @@ impl DawApp {
             .bg(rgb(ds.panel_dark))
             .rounded(px(ds.radius_lg))
             .border_1()
-            .border_color(rgb(ds.border))
+            .border_color(rgb(ds.frame_border()))
             .child(
                 div()
                     .flex()

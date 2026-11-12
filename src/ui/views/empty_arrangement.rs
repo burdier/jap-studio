@@ -17,7 +17,7 @@ impl DawApp {
             .justify_center()
             .bg(rgb(ds.panel_dark))
             .border_1()
-            .border_color(rgb(ds.border))
+            .border_color(rgb(ds.frame_border()))
             .rounded(px(ds.radius_lg))
             .child(
                 div()

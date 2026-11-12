@@ -194,7 +194,7 @@ impl DawApp {
                             .overflow_hidden()
                             .rounded(px(self.ds.radius_lg))
                             .border_1()
-                            .border_color(rgb(self.ds.accent))
+                            .border_color(rgb(self.ds.frame_border()))
                             .when(instrument_open, |panel| {
                                 panel.child(
                                     div()

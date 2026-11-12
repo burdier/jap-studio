@@ -453,7 +453,8 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
   `TRACK_HEADER_LAYOUT`, `TRACK_HEADER_HIDE`, `KNOB_SIZE`). La cabecera agrupa visualmente
   identidad, mezcla, estado e instrumentos/FX; la configuración organiza los elementos con
   las mismas asociaciones. El color de pista se concentra en la franja lateral y los controles
-  inactivos tienen menos contraste.
+  inactivos tienen menos contraste. Los bordes exteriores usan un valor neutro más firme y
+  los espacios entre paneles y filas usan una superficie más oscura derivada del tema.
 - Los controles M/S/R de los headers son operativos: M silencia, S deja audible solo la pista
   seleccionada (combinable con M) y R inicia/detiene la captura MIDI dirigida a esa pista.
   El contrato de audibilidad vive en `musical::track`; el stream existente recibe la ganancia

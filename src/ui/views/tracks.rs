@@ -6,6 +6,7 @@ use super::super::{
         knob::{KnobSpec, rotary_knob},
         meter::horizontal_bar,
     },
+    design::blend_color,
 };
 use gpui::{
     AnyElement, Context, IntoElement, MouseButton, MouseDownEvent, Pixels, Point, div, prelude::*,
@@ -398,14 +399,14 @@ impl DawApp {
             } else {
                 ds.panel
             };
-            Some(mix_color(base, color, 10))
+            Some(blend_color(base, color, 10))
         } else {
             None
         };
         let stripe = if selected || drag_glow {
             color
         } else {
-            mix_color(ds.panel, color, 42)
+            blend_color(ds.panel, color, 42)
         };
         let mut track_box = div()
             .relative()
@@ -429,13 +430,22 @@ impl DawApp {
                 ds.panel
             })))
             .border_b_1()
-            .border_color(rgb(mix_color(ds.panel, ds.border, 55)))
+            .border_color(rgb(ds.frame_border()))
+            .child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .right_0()
+                    .bottom_0()
+                    .h(px(2.0))
+                    .bg(rgb(ds.gutter_color())),
+            )
             .child(
                 div()
                     .absolute()
                     .left_0()
                     .top_0()
-                    .bottom_0()
+                    .bottom(px(2.0))
                     .w(px(if selected { 3.0 } else { 2.0 }))
                     .bg(rgb(stripe)),
             )
@@ -544,7 +554,7 @@ impl DawApp {
                         .px(px(3.0))
                         .py(px(2.0))
                         .rounded(px(ds.radius_sm))
-                        .bg(rgb(mix_color(ds.panel, ds.panel_dark, 35)));
+                        .bg(rgb(blend_color(ds.panel, ds.panel_dark, 35)));
                 }
                 if !is_title_pair && end == active.len() && start > 0 && group == TcpGroup::Fx {
                     group_el = group_el.ml_auto();
@@ -628,7 +638,7 @@ impl DawApp {
                 let el = div()
                     .text_xs()
                     .text_color(rgb(if track.instrument.is_some() {
-                        mix_color(ds.muted, ds.accent, 45)
+                        blend_color(ds.muted, ds.accent, 45)
                     } else {
                         ds.muted
                     }))
@@ -827,13 +837,4 @@ impl DawApp {
             }
         }
     }
-}
-
-fn mix_color(base: u32, tint: u32, tint_percent: u32) -> u32 {
-    let blend = |shift: u32| -> u32 {
-        let base = (base >> shift) & 0xff_u32;
-        let tint = (tint >> shift) & 0xff_u32;
-        (base * (100_u32 - tint_percent) + tint * tint_percent) / 100_u32
-    };
-    (blend(16) << 16) | (blend(8) << 8) | blend(0)
 }

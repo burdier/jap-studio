@@ -43,7 +43,7 @@
 | Rango del teclado (C3–B5) | `src/instruments/piano.rs` | `musical/keyboard.rs` |
 | Geometría y etiquetas de octava | `src/musical/keyboard.rs` | `ui/components/keyboard.rs` |
 | Teclado MIDI reutilizable (UI) | `src/ui/components/keyboard.rs` | `views/instrument.rs` |
-| Colores/dimensiones | `src/ui/design.rs` | `~/.jaybu.profile`; 16 paletas Studio con acentos moderados, colores explícitos del perfil tienen prioridad |
+| Colores/dimensiones y contraste estructural | `src/ui/design.rs` | `~/.jaybu.profile`; 16 paletas Studio con acentos moderados, colores explícitos del perfil tienen prioridad; `gutter_color` y `frame_border` separan paneles sin un nuevo acento; revisar `views/{mod,arrangement,chrome,transport,workspace,tracks}.rs` y `components/splitter.rs` |
 | Preset Daynight Studio | `src/ui/design.rs` | `assets/themes/daynight-studio.profile`: variante oscura de Daylight, contraste entre superficies y acentos mates; Configuración → Apariencia |
 | Preset Ableton Live Dark | `src/ui/design.rs` | `assets/themes/ableton-live-dark.profile`: paleta y tamaños reconocidos por el perfil; se elige en Configuración → Apariencia |
 | Contraste de selección | `src/ui/design.rs::selection_color` | `SELECTION_CONTRAST`; `views/settings_appearance.rs`, `profile.rs`, cabeceras/carriles, clips y selectores compartidos |

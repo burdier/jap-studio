@@ -59,7 +59,7 @@ impl DawApp {
             .flex()
             .flex_col()
             .gap(px(4.0))
-            .bg(rgb(ds.bg))
+            .bg(rgb(ds.gutter_color()))
             .child(
                 div()
                     .h(px(ds.timeline_bar_height))
@@ -71,7 +71,7 @@ impl DawApp {
                     .bg(rgb(ds.panel))
                     .rounded(px(ds.radius_lg))
                     .border_1()
-                    .border_color(rgb(ds.border))
+                    .border_color(rgb(ds.frame_border()))
                     .child(div().text_xs().text_color(rgb(ds.accent)).child(label))
                     .child(
                         div()
@@ -91,7 +91,7 @@ impl DawApp {
                     .flex_col()
                     .rounded(px(ds.radius_lg))
                     .border_1()
-                    .border_color(rgb(ds.border))
+                    .border_color(rgb(ds.frame_border()))
                     .overflow_hidden()
                     .child(self.render_pattern(cx))
                     .into_any_element(),
@@ -102,7 +102,7 @@ impl DawApp {
                     .flex_col()
                     .rounded(px(ds.radius_lg))
                     .border_1()
-                    .border_color(rgb(ds.border))
+                    .border_color(rgb(ds.frame_border()))
                     .overflow_hidden()
                     .child(self.render_mixer())
                     .into_any_element(),

@@ -21,6 +21,7 @@ pub(in crate::ui) fn vertical_splitter(ds: &DesignSystem, active: bool) -> Div {
         .flex()
         .items_center()
         .justify_center()
+        .bg(rgb(ds.gutter_color()))
         .cursor(CursorStyle::ResizeLeftRight)
         .child(
             div()
@@ -41,6 +42,7 @@ pub(in crate::ui) fn horizontal_splitter(ds: &DesignSystem, active: bool) -> Div
         .flex()
         .items_center()
         .justify_center()
+        .bg(rgb(ds.gutter_color()))
         .cursor(CursorStyle::ResizeUpDown)
         .child(
             div()

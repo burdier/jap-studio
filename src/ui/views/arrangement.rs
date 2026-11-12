@@ -66,7 +66,7 @@ impl DawApp {
                             .bg(rgb(ds.panel))
                             .rounded_tl(px(ds.radius_lg))
                             .border_1()
-                            .border_color(rgb(ds.border))
+                            .border_color(rgb(ds.frame_border()))
                             .child(div().text_xs().text_color(rgb(ds.muted)).child("TRACK"))
                             .child(
                                 div()
@@ -75,7 +75,7 @@ impl DawApp {
                                     .child(format!("{:.0}px", ds.track_header_width)),
                             ),
                     )
-                    .child(div().w(px(7.0)).h_full().flex_shrink_0())
+                    .child(div().w(px(7.0)).h_full().flex_shrink_0().bg(rgb(ds.gutter_color())))
                     .child(
                         div()
                             .flex_1()
@@ -84,7 +84,7 @@ impl DawApp {
                             .bg(rgb(ds.panel))
                             .rounded_tr(px(ds.radius_lg))
                             .border_1()
-                            .border_color(rgb(ds.border))
+                            .border_color(rgb(ds.frame_border()))
                             .overflow_hidden()
                             .child(self.render_timeline_area(
                                 TimelineArea::Ruler,
@@ -117,7 +117,7 @@ impl DawApp {
                                     .rounded_bl(px(ds.radius_lg))
                                     .border_x_1()
                                     .border_b_1()
-                                    .border_color(rgb(ds.border))
+                                    .border_color(rgb(ds.frame_border()))
                                     .overflow_hidden()
                                     .children(layout.rows.iter().map(|row| {
                                         if track_visual.as_ref().is_some_and(|visual| {
@@ -213,7 +213,7 @@ impl DawApp {
                                     .rounded_br(px(ds.radius_lg))
                                     .border_x_1()
                                     .border_b_1()
-                                    .border_color(rgb(ds.border))
+                                    .border_color(rgb(ds.frame_border()))
                                     .overflow_hidden()
                                     .child(self.render_timeline_area(
                                         TimelineArea::Lanes,
@@ -239,7 +239,7 @@ impl DawApp {
                             .px_3()
                             .bg(rgb(ds.panel_dark))
                             .border_1()
-                            .border_color(rgb(ds.border))
+                            .border_color(rgb(ds.frame_border()))
                             .rounded_bl(px(ds.radius_lg))
                             .child(
                                 div()
@@ -248,7 +248,7 @@ impl DawApp {
                                     .child("MIN:SEG"),
                             ),
                     )
-                    .child(div().w(px(7.0)).h_full().flex_shrink_0())
+                    .child(div().w(px(7.0)).h_full().flex_shrink_0().bg(rgb(ds.gutter_color())))
                     .child(
                         div()
                             .flex_1()
@@ -256,7 +256,7 @@ impl DawApp {
                             .h_full()
                             .border_x_1()
                             .border_b_1()
-                            .border_color(rgb(ds.border))
+                            .border_color(rgb(ds.frame_border()))
                             .rounded_br(px(ds.radius_lg))
                             .overflow_hidden()
                             .child(self.render_timeline_area(

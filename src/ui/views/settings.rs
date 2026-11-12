@@ -35,7 +35,7 @@ impl DawApp {
                 .overflow_hidden()
                 .bg(rgb(ds.panel_dark))
                 .border_1()
-                .border_color(rgb(ds.border))
+                .border_color(rgb(ds.frame_border()))
                 .rounded(px(ds.radius_lg))
                 .child(
                     div()
@@ -46,7 +46,7 @@ impl DawApp {
                         .px_5()
                         .py_3()
                         .border_b_1()
-                        .border_color(rgb(ds.border))
+                        .border_color(rgb(ds.frame_border()))
                         .child(
                             div()
                                 .text_lg()
@@ -78,7 +78,7 @@ impl DawApp {
                                 .flex_col()
                                 .gap_1()
                                 .border_r_1()
-                                .border_color(rgb(ds.border))
+                                .border_color(rgb(ds.frame_border()))
                                 .bg(rgb(ds.panel))
                                 .children(SettingsCategory::ALL.into_iter().map(|item| {
                                     div()
