@@ -366,23 +366,23 @@
               </ol>
             </details>
           </article>
-          <article data-pr="PR-02" data-status="progress">
-            <div class="pr-head"><span class="pr-number">PR-02</span><span class="status">En progreso</span></div>
+          <article data-pr="PR-02" data-status="done">
+            <div class="pr-head"><span class="pr-number">PR-02</span><span class="status">Completado</span></div>
             <h3>Automatizar pistas desde Lua</h3>
             <p>Crear y configurar varias pistas mediante lotes validados.</p>
             <div class="depends">Depende de PR-01</div>
             <details class="commit-plan">
-              <summary>1 de 9 commits completados · contrato → lectura → validación → escritura → Lua</summary>
+              <summary>9 de 9 commits completados · suite completa correcta · prueba interactiva no registrada</summary>
               <ol>
                 <li data-status="done" data-commit="622a174"><strong>docs(plan): concretar el contrato de lotes de pistas</strong><a href="docs/LUA_TRACK_BATCHES.md">Contrato</a> de snapshot, operaciones, revisión, handles, errores y límites; incluye Loro y la colaboración futura, sin undo/redo.<br><small>622a174 · Solo documentación; la API de lotes aún no está implementada.</small></li>
-                <li><strong>feat(musical): exponer snapshot estable de pistas, mezcla y FX</strong>Añadir lectura headless con IDs estables; no añadir mutaciones ni UI.</li>
-                <li><strong>refactor(track): compartir la validación existente</strong>Extraer la validación de teclado y ratón sin cambiar comportamiento; cubrir no regresión.</li>
-                <li><strong>feat(musical): aplicar lotes tipados de forma atómica</strong>Comprobar revisión, validar todo y aplicar todo o nada con operaciones ya existentes. Probar el ejecutor desde Rust.</li>
-                <li><strong>feat(lua): construir y enviar lotes de pistas</strong>Lua produce operaciones; Rust las aplica por el ejecutor anterior. Incluir el caso mínimo de dos pistas.</li>
-                <li><strong>feat(lua): resolver handles temporales</strong>Asignar IDs al confirmar y rechazar referencias inválidas o ciclos; cubrir la resolución.</li>
-                <li><strong>feat(lua): añadir la plantilla de dos pistas</strong>Crear, nombrar y configurar niveles o cadenas soportadas; dar errores por operación y preservar estado ajeno.</li>
-                <li><strong>test(project): cubrir preservación e incompatibilidad</strong>Probar clips, selección, mapeos, destino inexistente y cambios concurrentes. Este es el commit de aceptación e integración.</li>
-                <li><strong>docs: actualizar mapa, estado y límites</strong>Actualizar arquitectura, prototipo, guía y checklist; declarar que todavía no hay undo/redo global.</li>
+                <li data-status="done" data-commit="2a5b5c9"><strong>feat(musical): exponer snapshot estable de pistas y mezcla</strong>Lectura headless con IDs, FX, fader, panorama y revisión.<br><small>2a5b5c9 · Compilación de la biblioteca correcta.</small></li>
+                <li data-status="done" data-commit="77ba635"><strong>refactor(track): compartir validación de estructura con Loro</strong>Una regla de jerarquía para ediciones normales, lotes e importación CRDT.<br><small>77ba635 · Pruebas de biblioteca correctas.</small></li>
+                <li data-status="done" data-commit="5f42f9c"><strong>feat(musical): aplicar lotes tipados de pistas en copia</strong>Revisión, límites, FX, error por operación y publicación todo o nada; pruebas del ejecutor.<br><small>5f42f9c · Pruebas headless correctas.</small></li>
+                <li data-status="done" data-commit="010dfbe"><strong>feat(lua): ejecutar lotes tipados de pistas desde archivos</strong>Sandbox, formulario, worker, proyección candidata Loro y commit de sesión compartido.<br><small>010dfbe · Compilación UI y pruebas de lotes correctas.</small></li>
+                <li data-status="done" data-commit="82cc0d2"><strong>test(lua): verificar handles temporales y proyección Loro</strong>Handles nuevos en un grupo, referencias adelantadas y duplicadas, IDs estables al restaurar.<br><small>82cc0d2 · 2 pruebas correctas.</small></li>
+                <li data-status="done" data-commit="0468c1d"><strong>feat(lua): incluir plantilla de dos pistas configuradas</strong>Comando y catálogo para dos pistas con nivel, panorama y Hay Utility; prueba de la plantilla.<br><small>0468c1d · 4 pruebas de lotes correctas.</small></li>
+                <li data-status="done" data-commit="87af1b3"><strong>test(project): cubrir preservación y rechazos de lotes</strong>Clips, selección, MIDI Learn, destino inexistente, revisión obsoleta y merge Loro fallido.<br><small>87af1b3 · Pruebas headless y de remapeo correctas.</small></li>
+                <li data-status="done" data-commit="9b14d43"><strong>docs: cerrar uso, arquitectura y límites de PR-02</strong>README, guía, arquitectura, prototipo, contrato y checklist actualizados.<br><small>9b14d43 · 12 nov 2026. scripts/check.sh completo pasó tras corregir el fallo previo de perfiles (61c51bc) y normalizar formato (ce31c81). Sin prueba interactiva registrada.</small></li>
               </ol>
             </details>
           </article>
