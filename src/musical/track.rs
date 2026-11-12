@@ -8,6 +8,8 @@ use std::{
 mod management;
 mod snapshot;
 mod validation;
+mod batch;
+pub use batch::{TrackBatch, TrackBatchEdit, TrackBatchError, TrackBatchResult, TrackRef, apply_track_batch};
 pub use management::{TrackEdit, edit_tracks};
 pub use snapshot::{TrackMix, TrackSnapshot, TrackSnapshotEntry};
 pub use validation::{validate_track_layout, validate_track_structure};
