@@ -489,28 +489,6 @@ impl ThemeLayout {
         radius_md: 2.0,
         radius_lg: 3.0,
     };
-
-    fn apply(self, design: &mut DesignSystem) {
-        design.selection_contrast = self.selection_contrast;
-        design.track_header_width = self.track_header_width;
-        design.track_header_height = self.track_header_height;
-        design.timeline_bar_height = self.timeline_bar_height;
-        design.timeline_pixels_per_beat = self.timeline_pixels_per_beat;
-        design.title_bar_height = self.title_bar_height;
-        design.transport_height = self.transport_height;
-        design.status_bar_height = self.status_bar_height;
-        design.pan_bar_width = self.pan_bar_width;
-        design.vol_bar_width = self.vol_bar_width;
-        design.control_bar_height = self.control_bar_height;
-        design.transport_btn_size = self.transport_btn_size;
-        design.font_size_xs = self.font_size_xs;
-        design.padding_xs = self.padding_xs;
-        design.padding_sm = self.padding_sm;
-        design.padding_lg = self.padding_lg;
-        design.radius_sm = self.radius_sm;
-        design.radius_md = self.radius_md;
-        design.radius_lg = self.radius_lg;
-    }
 }
 
 impl ThemePreset {
@@ -738,9 +716,6 @@ impl DesignSystem {
 
     pub(in crate::ui) fn apply_theme(&mut self, theme: ThemePreset) {
         let pal = theme.palette();
-        if theme == ThemePreset::AbletonLiveDark {
-            theme.layout_defaults().apply(self);
-        }
         self.theme = theme;
         self.bg = pal.bg;
         self.panel = pal.panel;
