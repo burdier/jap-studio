@@ -212,11 +212,7 @@ impl DawApp {
                     .and_then(|c| self.effect_rack(c.track)),
             );
         }
-        let piano_rack = self
-            .tracks
-            .iter()
-            .position(|t| t.instrument == Some(self.instrument.id()))
-            .and_then(|i| self.effect_rack(i));
+        let piano_rack = self.piano_output_track().and_then(|i| self.effect_rack(i));
         let sampler_rack = self.sampler_track().and_then(|i| self.effect_rack(i));
         let vst_rack = self.vst_track().and_then(|i| self.effect_rack(i));
         self.instrument.set_fx_rack(piano_rack);

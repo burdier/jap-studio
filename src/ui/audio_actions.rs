@@ -590,6 +590,9 @@ impl DawApp {
                     .clamp(0.0, 2.0);
                 self.instrument
                     .set_fx_gain(self.track_fx_gain(midi_clip.track));
+                // Fijar la ruta antes de arrancar también cubre la carga diferida.
+                self.instrument
+                    .set_fx_rack(self.effect_rack(midi_clip.track));
                 match self.instrument.play_clip(
                     &midi_clip,
                     start,

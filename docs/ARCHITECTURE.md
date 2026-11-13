@@ -149,6 +149,10 @@ frames fuera de RT; procesa el grafo en orden topológico y suma ramas paralelas
 `audio/effects/component` mantiene una instancia por `FxId`, con valores atómicos
 para que el callback aplique la macro sin GPUI, locks ni reservas por bloque. El
 plan FX ya publicado incluye el componente junto a Utility y VST3.
+El piano compartido toma la ruta FX de la pista del clip mientras lo reproduce
+(o prepara), y la ruta de la pista asignada al tocar en vivo. `ui/fx/audio`
+comparte esa selección entre ganancia y rack; al arrancar un clip se fija su
+ruta antes de abrir el reproductor.
 
 `primitives/filter` implementa el SVF reutilizable sin GPUI. Lua v2 expone parámetros
 por `(nodo, ParameterId)`, controles choice/log y una respuesta opcional del filtro;
