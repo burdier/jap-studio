@@ -300,10 +300,18 @@ compartido se podrá añadir el LFO sincronizado; este incremento no lo implemen
 
 ## PR-04 — Mezclar clips de audio bajo un único transporte
 
-**Avance:** 1 de 4 commits (`3592aa4`). Fuente de clip sin stream integrada en
+**Avance:** 2 de 4 commits (`3592aa4`, `549688e`). Fuente de clip sin stream integrada en
 el reproductor actual; conserva preparación, remuestreo, cancelación y FX.
 `scripts/check.sh` completo pasó, incluidas pruebas de la fuente sin dispositivo
 para recortes, particiones, seek y muestras remuestreadas. Audición manual pendiente.
+
+Segundo incremento: Play en contexto de audio toma todos los clips de Arrangement,
+prepara fuentes por pista y suma en un stream. FX por pista antes del master;
+controles existentes redirigidos por TrackId como integración mínima. El commit 3
+completará la validación de mute/solo/nivel/pan y sus interacciones. Pruebas de suma
+con margen, protección única, offsets/bloques y filtro aislado pasan. Suite completa
+correcta (72 pruebas del binario); audición manual pendiente. MIDI, Session,
+loop/seek en caliente y preparación FX a frecuencia real siguen pendientes.
 
 **Título sugerido:** `feat(audio): reproducir varias pistas de audio en un motor compartido`
 
@@ -317,7 +325,7 @@ y paneo independientes.
 
 - [x] Extraer una fuente de clip que procese bloques sin poseer su propio stream CPAL.
   Reutilizar decodificación, remuestreo y cancelación de preparación actuales.
-- [ ] Crear el motor con un stream, posición por frames y suma en flotante con margen
+- [x] Crear el motor con un stream, posición por frames y suma en flotante con margen
   interno; aplicar protección de salida una sola vez en el master.
 - [ ] Preparar fuera del callback fuentes, buffers, rutas y plan de ejecución. Reutilizar
   la publicación existente cuando encaje y retirar recursos fuera del audio.
