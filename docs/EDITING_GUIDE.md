@@ -23,6 +23,7 @@
 | Sampler: sfizz y recursos | `src/audio/sampler/` | ABI C, WAV temporal compartido, SFZ; preparación fuera de RT; `scripts/build-sfizz.sh` |
 | Sampler: ejecución y MIDI | `src/instruments/sampler.rs` | `ui/sampler/audio.rs`, `audio/piano/{backend,render}.rs`: reproductor y scheduler compartidos |
 | Voz de instrumento separada del stream (PR-05, commit 1) | `src/audio/piano/voice.rs` | `audio/piano/plan.rs` procesa eventos por frame también en export offline; `render.rs` conserva CPAL. La voz posee sintetizador, canal y patrón, sin GPUI ni dispositivo. Todavía se instancia dentro de un stream exclusivo |
+| Conjunto de voces por ID (PR-05, commit 2) | `src/audio/piano/voice.rs` | `PreparedVoices` registra motores ya preparados, enruta comandos y suma bloques; `audio/piano/render.rs` usa el conjunto con una voz local. Prueba con dos RustySynth y SoundFont compartido; aún sin asignación multipista en UI |
 | Sampler: panel y carga | `src/ui/sampler/` | Catálogo `[+]`, perillas/teclado existentes, carga en background, waveform de 1024 picos |
 | Insertar pista sampler (`:sa`) | `src/ui/sampler/input.rs` | Acción `track.insert_sampler` del catálogo, menú de pistas y barra; reutiliza `edit_track_structure`, abre la pista existente si ya tiene la instancia |
 | Sampler: exportación | `src/audio/export/sources.rs` | Snapshot por tipo de instrumento; `docs/SAMPLER.md` |

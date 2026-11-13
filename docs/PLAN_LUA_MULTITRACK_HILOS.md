@@ -342,6 +342,11 @@ La UI refleja frames del motor y el callback no decodifica ni prepara recursos.
 del adaptador CPAL en `audio/piano/voice.rs`. Conserva la audición existente; aún
 faltan identidad de instancia por pista y conexión al mixer común.
 
+Segundo incremento: `PreparedVoices` indexa voces preparadas por `InstrumentId`,
+dirige comandos y suma sus muestras. La audición actual pasa por ese conjunto con
+una voz; la prueba de dos sintetizadores valida que sus notas y liberaciones son
+independientes. La UI y el stream compartido aún no aceptan dos instrumentos.
+
 **Título sugerido:** `feat(audio): reproducir instrumentos independientes por pista`
 
 **Valor:** dos pistas con el mismo tipo de instrumento interpretan clips distintos a

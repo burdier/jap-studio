@@ -1,7 +1,8 @@
 //! Reproductor común para SoundFont y sfizz; tiempos musicales compartidos.
 //! Recursos preparados antes de abrir el stream; cola `rtrb` sin bloqueos.
-use super::{InstrumentState, NoteCommand, SynthBackend, voice::InstrumentVoice};
+use super::{InstrumentState, NoteCommand, SynthBackend, voice::PreparedVoices};
 use cpal::{FromSample, SizedSample, traits::DeviceTrait};
+use elevate::musical::model::InstrumentId;
 use elevate::{Primitive, ProcessSpec, primitives::amplitude::Volume};
 use rtrb::Consumer;
 use std::sync::{Arc, atomic::Ordering};
@@ -30,10 +31,13 @@ pub(super) fn build_stream<T: SizedSample + FromSample<f32>>(
         .map_err(|e| e.to_string())?;
     let mut fx = state.fx.prepare();
     let mut filter = super::filter::StereoFilter::new(config.sample_rate, Default::default());
-    let mut left = vec![0.0_f32; RENDER_CHUNK];
-    let mut right = vec![0.0_f32; RENDER_CHUNK];
     let mut block = [[0.0_f32; 2]; RENDER_CHUNK];
-    let mut voice = InstrumentVoice::new(synthesizer);
+    let mut voices = PreparedVoices::new();
+    // ID local de la ruta exclusiva actual; PR-05 conectará los IDs reales de las pistas.
+    let preview_id = InstrumentId(0);
+    voices
+        .insert(preview_id, synthesizer, state.clone())
+        .map_err(|_| "Instancia duplicada")?;
     let error_state = state.clone();
     device
         .build_output_stream(
@@ -46,7 +50,7 @@ pub(super) fn build_stream<T: SizedSample + FromSample<f32>>(
                     if let NoteCommand::Filter(settings) = command {
                         filter.set(settings);
                     } else {
-                        voice.command(command);
+                        voices.command(preview_id, command);
                     }
                 }
                 let gain = f32::from_bits(state.gain.load(Ordering::Relaxed));
@@ -55,16 +59,7 @@ pub(super) fn build_stream<T: SizedSample + FromSample<f32>>(
                 }
                 for output_block in output.chunks_mut(RENDER_CHUNK * channels) {
                     let frames = output_block.len() / channels;
-                    voice.render(&mut left[..frames], &mut right[..frames], &state);
-                    if voice.failed() {
-                        state.failed.store(true, Ordering::Relaxed);
-                    }
-                    for (frame, (&left, &right)) in block[..frames]
-                        .iter_mut()
-                        .zip(left.iter().zip(right.iter()))
-                    {
-                        *frame = [left, right];
-                    }
+                    voices.render(&mut block[..frames]);
                     filter.process(&mut block[..frames]);
                     fx.process(&state.fx, &mut block[..frames]);
                     volume.process(&mut block[..frames]);

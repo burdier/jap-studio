@@ -90,6 +90,27 @@ struct InstrumentState {
     spectrum_enabled: AtomicBool,
 }
 
+impl InstrumentState {
+    fn new(
+        gain: f32,
+        utility: elevate::devices::utility_slot::UtilitySlot,
+        pan: f32,
+        fx_gain: f32,
+    ) -> Self {
+        Self {
+            gain: AtomicU32::new(gain.clamp(0.0, 2.0).to_bits()),
+            pan: StereoPan::new(pan),
+            fx: super::fx_gain::FxGain::new(fx_gain),
+            utility,
+            failed: AtomicBool::new(false),
+            plan_frame: AtomicU64::new(0),
+            plan_playing: AtomicBool::new(false),
+            plan_finished: AtomicBool::new(false),
+            spectrum_enabled: AtomicBool::new(false),
+        }
+    }
+}
+
 pub(crate) struct PianoPlayer {
     _stream: cpal::Stream,
     commands: Mutex<Producer<NoteCommand>>,
@@ -130,17 +151,7 @@ impl PianoPlayer {
         fx_gain: f32,
     ) -> Result<Self, String> {
         let sample_rate = setup.config.sample_rate;
-        let state = Arc::new(InstrumentState {
-            gain: AtomicU32::new(gain.clamp(0.0, 2.0).to_bits()),
-            pan: StereoPan::new(pan),
-            fx: super::fx_gain::FxGain::new(fx_gain),
-            utility,
-            failed: AtomicBool::new(false),
-            plan_frame: AtomicU64::new(0),
-            plan_playing: AtomicBool::new(false),
-            plan_finished: AtomicBool::new(false),
-            spectrum_enabled: AtomicBool::new(false),
-        });
+        let state = Arc::new(InstrumentState::new(gain, utility, pan, fx_gain));
         let (producer, consumer) = RingBuffer::new(COMMAND_QUEUE_CAP);
         let (spectrum_tx, spectrum_rx) = RingBuffer::new(8192);
         let stream = match setup.format {

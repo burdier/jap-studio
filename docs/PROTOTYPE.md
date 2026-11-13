@@ -4,6 +4,12 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
 
 ## Disponible
 
+- **PR-05, segundo incremento:** conjunto de voces preparadas por `InstrumentId`,
+  con despacho de comandos y suma de audio en bloques; el adaptador de audición
+  usa ese conjunto con una voz. Prueba sin dispositivo de dos sintetizadores
+  independientes. La UI conserva una instancia de piano y una de sampler;
+  MIDI + WAV aún requieren conectar el conjunto a la salida de PR-04.
+
 - **PR-05, primer incremento:** `audio/piano/voice.rs` separa el estado de síntesis,
   canal y patrón del adaptador CPAL existente. El audio y el comportamiento de la
   audición permanecen iguales. La conexión de varias voces al stream de PR-04 y

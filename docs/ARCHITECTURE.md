@@ -10,6 +10,12 @@ La preparación de SoundFont/sfizz continúa fuera del callback. En este increme
 el reproductor sigue abriendo un stream exclusivo por instrumento; el motor común
 de PR-04 todavía no mezcla MIDI con WAV ni hay instancias independientes por pista.
 
+`audio/piano/voice::PreparedVoices` recibe sintetizadores preparados fuera del callback,
+los identifica por `InstrumentId`, despacha comandos a su destinatario y suma sus
+bloques en flotante. El adaptador de audición actual utiliza el mismo conjunto con
+una instancia local; la preparación de varias voces y la prueba de su aislamiento
+no asignan todavía instrumentos adicionales a pistas ni comparten salida con clips WAV.
+
 ## Foco visual y navegación opcional
 
 `ui/workspace_focus` guarda solo el panel activo y el panel ampliado; la vista usa
