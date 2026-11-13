@@ -408,10 +408,11 @@
             <p>Hay Filter: SVF FunDSP LP/HP/BP, frecuencia logarítmica, Q y curva de respuesta. Estilo actual; sin nuevas dependencias.</p>
             <div class="depends">Depende de PR-03 · prepara el caso FX por pista de PR-04</div>
             <details class="commit-plan">
-              <summary>2 de 2 commits integrados · scripts/check.sh correcto · audición pendiente</summary>
+              <summary>3 de 3 commits integrados · scripts/check.sh correcto · audición pendiente</summary>
               <ol>
                 <li data-status="done" data-commit="dcdfc0e"><strong>feat(lua): exponer filtro FunDSP mediante componentes v2</strong>Primitiva reutilizable, targets por nodo/parámetro, choice/log y pruebas de audio.</li>
                 <li data-status="done" data-commit="04080be"><strong>feat(ui): mostrar Hay Filter y controles Lua v2 en Track FX</strong>Catálogo, selector, curva FunDSP y controles por la acción FX compartida.</li>
+                <li data-status="done" data-commit="d3941aa"><strong>fix(audio): aplicar FX de la pista del clip MIDI al piano compartido</strong>Ruta fijada antes de arrancar, conservada durante carga/reproducción y recuperada para notas en vivo. Prueba con audio real por Routing; suite completa correcta (67 pruebas del binario).</li>
               </ol>
               <p><a href="docs/LUA_AUDIO_COMPONENTS.md#incremento-pr-03b-hay-filter-y-kit-v2">Uso y límites</a>. Audición interactiva pendiente. Para probar, Audio a 48 kHz; la preparación con frecuencia real en Auto queda para PR-04. LFO sincronizado posterior al transporte compartido.</p>
             </details>

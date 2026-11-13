@@ -289,6 +289,11 @@ Implementado: `dcdfc0e` (núcleo/contrato/pruebas) y `04080be` (integración UI/
 binario y compilación. Las cuatro pruebas específicas verifican sonido, curva,
 aislamiento y validación. La audición interactiva queda pendiente. [Uso y límites](LUA_AUDIO_COMPONENTS.md#incremento-pr-03b-hay-filter-y-kit-v2).
 
+Corrección posterior `d3941aa`: el piano compartido aplica el rack de la pista
+del clip MIDI durante carga/reproducción; vuelve al de su pista asignada para
+notas en vivo. Regresión comprobada con audio por Routing y cambios de corte.
+`scripts/check.sh` completo pasó, incluidas 67 pruebas del binario.
+
 En PR-04 comprobar dos pistas con el filtro solo en una, respetando mute/solo/bypass,
 y preparar los FX con la frecuencia **real** del dispositivo. Con el transporte
 compartido se podrá añadir el LFO sincronizado; este incremento no lo implementa.
