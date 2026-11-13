@@ -414,7 +414,7 @@
                 <li data-status="done" data-commit="04080be"><strong>feat(ui): mostrar Hay Filter y controles Lua v2 en Track FX</strong>Catálogo, selector, curva FunDSP y controles por la acción FX compartida.</li>
                 <li data-status="done" data-commit="d3941aa"><strong>fix(audio): aplicar FX de la pista del clip MIDI al piano compartido</strong>Ruta fijada antes de arrancar, conservada durante carga/reproducción y recuperada para notas en vivo. Prueba con audio real por Routing; suite completa correcta (67 pruebas del binario).</li>
               </ol>
-              <p><a href="docs/LUA_AUDIO_COMPONENTS.md#incremento-pr-03b-hay-filter-y-kit-v2">Uso y límites</a>. Audición interactiva pendiente. Para probar, Audio a 48 kHz; la preparación con frecuencia real en Auto queda para PR-04. LFO sincronizado posterior al transporte compartido.</p>
+              <p><a href="docs/LUA_AUDIO_COMPONENTS.md#incremento-pr-03b-hay-filter-y-kit-v2">Uso y límites</a>. Audición interactiva pendiente. La preparación a frecuencia real, incluida Auto, está implementada en PR-04. LFO sincronizado posterior al transporte compartido.</p>
             </details>
           </article>
         </div>
@@ -424,18 +424,18 @@
         <h2>2 · Motor multipista</h2>
         <p class="phase-note">Un stream, un transporte y múltiples fuentes.</p>
         <div class="grid">
-          <article data-pr="PR-04" data-status="in-progress">
-            <div class="pr-head"><span class="pr-number">PR-04</span><span class="status">En curso</span></div>
+          <article data-pr="PR-04" data-status="done">
+            <div class="pr-head"><span class="pr-number">PR-04</span><span class="status">Completado</span></div>
             <h3>Clips multipista</h3>
             <p>Escuchar varias pistas de audio con mezcla independiente.</p>
             <div class="depends">Depende de PR-03</div>
             <details class="commit-plan">
-              <summary>3 de 4 commits completados · mezcla por pista verificada</summary>
+              <summary>4 de 4 commits completados · mezcla y transporte verificados</summary>
               <ol>
                 <li data-status="done" data-commit="3592aa4"><strong>refactor(audio): separar fuente de clip y salida CPAL</strong>Fuente inmutable por frames, integrada en el reproductor actual. Misma preparación y FX; scripts/check.sh correcto. Audición manual pendiente.</li>
-                <li data-status="done" data-commit="549688e"><strong>feat(audio): mezclar dos fuentes en una salida</strong>Play mezcla clips de audio por pista en un stream. Preparación en worker, FX antes del master, pruebas de suma/bloques/filtro y salida física. scripts/check.sh correcto (72 pruebas del binario); escucha manual pendiente.</li>
+                <li data-status="done" data-commit="549688e"><strong>feat(audio): mezclar dos fuentes en una salida</strong>Play mezcla clips de audio por pista en un stream. Preparación en worker, FX antes del master, pruebas de suma/bloques/filtro y salida física. scripts/check.sh correcto (72 pruebas del binario); Dos WAV simultáneos confirmados por el usuario.</li>
                 <li data-status="done" data-commit="cfba72d"><strong>feat(audio): aplicar mute, solo, nivel y pan por pista</strong>Resolución headless común, controles por TrackId y prueba de audio de las cuatro operaciones, solos múltiples y reordenación. Suite completa correcta.</li>
-                <li><strong>feat(transport): ejecutar clips en frames compartidos</strong>Sincronizar Play, Stop, seek y loop; cubrir offsets, solapamientos y límites de bloque junto a su controlador.</li>
+                <li data-status="done" data-commit="824c6b1"><strong>feat(transport): ejecutar clips con seek y loop en frames compartidos</strong>Play/Stop/seek/loop comparten reloj; FX Lua preparados a frecuencia real. Suite completa correcta (79 pruebas del binario). Audición del nuevo seek/loop pendiente. MIDI + WAV corresponde a PR-05.</li>
               </ol>
             </details>
           </article>

@@ -300,19 +300,16 @@ compartido se podrá añadir el LFO sincronizado; este incremento no lo implemen
 
 ## PR-04 — Mezclar clips de audio bajo un único transporte
 
-**Avance:** 3 de 4 commits (`3592aa4`, `549688e`, `cfba72d`). Fuente de clip sin stream integrada en
-el reproductor actual; conserva preparación, remuestreo, cancelación y FX.
-`scripts/check.sh` completo pasó, incluidas pruebas de la fuente sin dispositivo
-para recortes, particiones, seek y muestras remuestreadas. Audición manual pendiente.
+**Avance:** 4 de 4 commits (`3592aa4`, `549688e`, `cfba72d`, `824c6b1`).
+Fuentes preparadas fuera del callback, mezcla en un stream, controles por TrackId
+y transporte por frames con seek y loop. Los componentes Lua se preparan a la
+frecuencia real de salida; republicar controles conserva el estado DSP.
 
-Segundo incremento: Play en contexto de audio toma todos los clips de Arrangement,
-prepara fuentes por pista y suma en un stream. FX por pista antes del master;
-controles existentes redirigidos por TrackId como integración mínima. El commit 3
-comparte la resolución de mute/solo/nivel/pan con la UI y verifica sus cambios
-con audio, solos múltiples y reordenación por TrackId. Suite completa correcta. Pruebas de suma
-con margen, protección única, offsets/bloques y filtro aislado pasan. Suite completa
-correcta (72 pruebas del binario); audición manual pendiente. MIDI, Session,
-loop/seek en caliente y preparación FX a frecuencia real siguen pendientes.
+`scripts/check.sh` completo pasó (79 pruebas del binario, más suites headless).
+Las pruebas cubren suma, offsets, solapamientos, silencio, particiones de bloque,
+mute/solo/nivel/pan, aislamiento FX, seek, loops y preparación a distintas frecuencias.
+El usuario confirmó dos WAV simultáneos. La audición manual del nuevo seek/loop
+queda pendiente; MIDI + WAV y Session compartida corresponden a PR-05.
 
 **Título sugerido:** `feat(audio): reproducir varias pistas de audio en un motor compartido`
 
@@ -328,11 +325,11 @@ y paneo independientes.
   Reutilizar decodificación, remuestreo y cancelación de preparación actuales.
 - [x] Crear el motor con un stream, posición por frames y suma en flotante con margen
   interno; aplicar protección de salida una sola vez en el master.
-- [ ] Preparar fuera del callback fuentes, buffers, rutas y plan de ejecución. Reutilizar
+- [x] Preparar fuera del callback fuentes, buffers, rutas y plan de ejecución. Reutilizar
   la publicación existente cuando encaje y retirar recursos fuera del audio.
-- [ ] Procesar todos los clips del intervalo, incluidos solapamientos, offsets, recortes
+- [x] Procesar todos los clips del intervalo, incluidos solapamientos, offsets, recortes
   y silencios. Insertar los FX existentes en su pista correcta.
-- [ ] Conectar Play, Stop, seek y loop al mismo transporte. Durante la transición,
+- [x] Conectar Play, Stop, seek y loop al mismo transporte. Durante la transición,
   las audiciones antiguas se detienen antes de iniciar este motor y viceversa.
 
 **Aceptación:** dos clips simultáneos se mezclan con la suma esperada; mute/solo no
