@@ -3,7 +3,7 @@ use std::sync::{
     Mutex,
     atomic::{AtomicPtr, AtomicUsize, Ordering::SeqCst},
 };
-pub(super) struct Publication<T> {
+pub(crate) struct Publication<T> {
     current: AtomicPtr<T>,
     readers: AtomicUsize,
     retired: Mutex<Vec<Box<T>>>,

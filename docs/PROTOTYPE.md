@@ -4,6 +4,18 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
 
 ## Disponible
 
+- **PR-04, cuarto incremento:** reloj `musical::time::Transport` compartido por
+  todos los clips de audio. `transport.seek <negras>` salta durante Play;
+  Home y ⏮ comparten la operación de volver a cero. `transport.loop <inicio> <fin>`
+  define el rango, `transport.loop off` lo desactiva y el botón **↻ Audio** alterna
+  el loop de todo el arreglo. Stop conserva el frame observado como cursor de edición.
+  Pedidos publicados fuera de RT; la UI espera su confirmación antes de dar por finalizado
+  un stream. Loop se divide en segmentos exactos, incluidos loops de un frame.
+  Los FX Lua se preparan por frecuencia real y una preparación cancelada no altera
+  la variante activa. VST3 con frecuencia incompatible rechaza el arranque de la mezcla.
+  Fuentes inmutables durante Play; cambios de clips requieren detener/reproducir.
+  Loop global de audio, sin mezclar aún MIDI/Session; no cambia el loop individual de clips.
+
 - **PR-04, tercer incremento:** resolución común headless de mute/solo/nivel/pan.
   Prueba de audio cubre mute, múltiples solos, mute sobre solo, nivel, balance y
   reordenación sin cambiar los destinatarios por TrackId. La UI usa esa resolución.
@@ -14,8 +26,8 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
   Ganancia de clip antes de FX; nivel/pan/rack direccionados por TrackId.
   Prueba manual: dos WAV en pistas distintas desde el mismo beat, seleccionar audio,
   colocar cursor al inicio y Play. Deben oírse ambos; el filtro de una pista deja
-  intacta la otra. Para el filtro fijar Audio a 48 kHz por la limitación ya documentada.
-  Sin mezcla con MIDI/Session ni loop/seek en caliente. Audición manual pendiente.
+  intacta la otra. El usuario confirmó reproducción de dos WAV. MIDI/Session siguen
+  separados; loop/seek se añaden en el cuarto incremento.
 
 - **PR-04, primer incremento:** fuente de clip extraída de CPAL y usada por el
   reproductor actual. Render por frames absolutos, recortes y buffers ya remuestreados;
@@ -25,17 +37,16 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
   logarítmica, Q, selector y curva de respuesta en Track FX. Controles, bypass y
   duplicación por instancia; sin LFO/Drive/Mix. Los clips MIDI aplican los FX
   de su propia pista durante reproducción/carga; al volver a notas en vivo, el
-  piano compartido recupera la ruta de su pista asignada. Prueba interactiva pendiente. Para
-  probar, fijar Audio a 48 kHz: Auto puede negociar una frecuencia distinta a la
-  usada al preparar el FX. [Contrato y uso](LUA_AUDIO_COMPONENTS.md#incremento-pr-03b-hay-filter-y-kit-v2).
+  piano compartido recupera la ruta de su pista asignada. Prueba interactiva pendiente.
+  PR-04 prepara el FX a la frecuencia real del stream, incluida Auto. [Contrato y uso](LUA_AUDIO_COMPONENTS.md#incremento-pr-03b-hay-filter-y-kit-v2).
 
 - **Componentes de audio Lua** (PR-03): `[+]` inserta Hay Double Volume en Track FX.
   El grafo estéreo de primitivas Volume se valida fuera de audio y procesa en el
   rack FX existente; macro, comando `fx.parameter`, bypass, duplicación y recarga
   explícita conservan instancias independientes. Pruebas headless de sonido y
   recarga; el usuario confirmó funcionamiento y estilo en la aplicación, sin
-  registrar pasos ni mediciones de audición. Auto puede negociar una frecuencia
-  distinta de los 48 kHz usados al preparar el suavizado. Export offline y
+  registrar pasos ni mediciones de audición. El rack prepara el suavizado a la
+  frecuencia real de salida desde PR-04. Export offline y
   persistencia global de UI siguen pendientes. [Uso](LUA_AUDIO_COMPONENTS.md).
 
 - **Lotes Lua de pistas** (PR-02): `track.script 'archivo.lua'` y
@@ -514,7 +525,7 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
 - Los parámetros del instrumento no se guardan al cerrar la app; el tema y el cursor sí.
 
 - El plan activo es inmutable. Editar notas mientras suena no cambia el audio hasta
-  detener y volver a pulsar Play. El Loop y los cambios de plan en caliente siguen pendientes.
+  detener y volver a pulsar Play. Los cambios de plan en caliente siguen pendientes; el loop global de audio está disponible en PR-04.
 - Los cuatro instrumentos son síntesis provisional; todavía no cargan samples del usuario.
 - Clip, piano y percusión abren streams excluyentes. Al iniciar uno se detiene el anterior;
   la audición del patrón se detiene al salir de su vista.
@@ -533,10 +544,10 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
 - Un stream persistente común: el piano, el clip y la percusión aún son excluyentes.
 - Cola RT acotada y snapshots coherentes; el piano conserva su canal mpsc provisional;
   la percusión aún no recibe actualizaciones de plan durante la reproducción.
-- Loop configurable, tempo map, tempo editable en UI, chase de notas y cambios de plan en caliente.
-- Guardado `.dawproj`, IDs de proyecto, undo/redo, remuestreo y mezcla multipista.
+- Tempo map, tempo editable en UI, chase de notas y cambios de plan en caliente; loop global de audio disponible.
+- Guardado global `.dawproj`, undo/redo e integración multipista de instrumentos; remuestreo y mezcla de clips de audio disponibles.
 - Edición MIDI avanzada del piano roll, launcher, automatización, MIDI físico y hosting CLAP/VST3.
-- Mixer y paneo por pista siguen siendo mock; Volume y M/S/R aplicados a las fuentes conectadas sí funcionan.
+- Mezcla por pista de audio con mute/solo/nivel/balance; buses generales y mezcla con instrumentos pendientes.
 
 ## Orden recomendado
 

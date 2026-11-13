@@ -174,3 +174,51 @@ fn live_mute_solo_level_and_pan_use_shared_resolution_without_muting_other_track
     pans.swap(0, 1);
     close(hear(&tracks, &levels, &pans), [0.16, 0.]);
 }
+
+#[test]
+fn shared_transport_loops_and_seeks_all_sources_at_the_same_frame() {
+    use crate::audio::playback::transport::{Cursor, Request};
+    let input = || {
+        vec![
+            track(1, vec![clip([0.25, 0.], 0., 20000)]),
+            track(2, vec![clip([0., 0.5], 0.125, 20000)]),
+        ]
+    };
+    let mut a = Mix::prepare(input(), 48000, 120.).unwrap();
+    let mut b = Mix::prepare(input(), 48000, 120.).unwrap();
+    let mut ca = Cursor::new(0, a.end);
+    let mut cb = Cursor::new(0, b.end);
+    let mut request = Request {
+        loop_range: Some((2000, 4000)),
+        ..Default::default()
+    };
+    let mut whole = vec![[0.; 2]; 12000];
+    let mut pieces = whole.clone();
+    ca.render(request, &mut whole, |at, out| a.render(at, out));
+    for part in pieces.chunks_mut(137) {
+        cb.render(request, part, |at, out| b.render(at, out));
+    }
+    assert_eq!(whole, pieces);
+    assert_eq!(ca.frame(), cb.frame());
+    assert!(whole[3500][1] > 0.49);
+    assert_eq!(whole[4500][1], 0.);
+    request.generation = 1;
+    request.seek = 1000;
+    request.loop_range = None;
+    let mut seek = [[0.; 2]; 1];
+    ca.render(request, &mut seek, |at, out| a.render(at, out));
+    assert!(seek[0][0] > 0.24);
+    assert_eq!(seek[0][1], 0.);
+}
+
+#[test]
+fn mismatched_vst_rate_rejects_preparation_before_opening_a_stream() {
+    let mut input = track(1, vec![clip([0.1, 0.], 0., 100)]);
+    input.rack = Some(Rack::new(Plan::Gain(1.), 44100));
+    assert!(
+        Mix::prepare(vec![input], 48000, 120.)
+            .err()
+            .unwrap()
+            .contains("VST3")
+    );
+}

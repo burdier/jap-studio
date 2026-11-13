@@ -92,6 +92,7 @@ enum CenterView {
 struct DawApp {
     player: Option<Player>,
     file_playback: Option<file_playback::PendingPlayback>,
+    audio_loop: Option<(f64, f64)>,
     pattern_player: Option<DrumPlayer>,
     instrument: Piano,
     sampler: crate::instruments::sampler::Sampler,

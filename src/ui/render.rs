@@ -64,7 +64,7 @@ impl Render for DawApp {
                 self.status_message = if player.failed() {
                     "La salida de audio falló; consulta la consola"
                 } else {
-                    "Fin del clip"
+                    "Fin de la mezcla de audio"
                 }
                 .into();
                 self.stop_audio();

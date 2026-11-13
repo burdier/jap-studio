@@ -40,6 +40,16 @@ impl Mix {
         let mut tracks = Vec::with_capacity(inputs.len());
         let mut end = 0;
         for input in inputs {
+            if input
+                .rack
+                .as_ref()
+                .is_some_and(|rack| rack.rate != 0 && rack.rate != rate)
+            {
+                return Err(
+                    "La salida cambió de frecuencia; recarga los efectos VST3 antes de reproducir"
+                        .into(),
+                );
+            }
             let control = Arc::new(TrackControl {
                 id: input.id,
                 gain: AtomicU32::new(input.gain.to_bits()),

@@ -183,9 +183,8 @@ sola el procesador que está sonando.
 Las pruebas headless cubren descriptor, ciclos, serie, paralelo, dos instancias,
 bypass, ganancia en el rack y recarga válida/inválida. El usuario confirmó que
 funciona en la aplicación y aprobó su estilo; no se registraron pasos ni mediciones
-de la audición. El efecto se prepara con la frecuencia solicitada
-en Audio, o 48 kHz si está en Auto; el ajuste del tiempo de suavizado podría
-diferir ligeramente si Auto negocia otra frecuencia. El proyecto completo aún
+de la audición. Desde PR-04 el rack prepara fuera del callback una variante
+del procesador para la frecuencia real de salida, también en Auto. El proyecto completo aún
 no se guarda desde la UI ni comparte fuentes Lua entre colaboradores. Exportar
 esta cadena con el render offline actual sigue pendiente.
 
@@ -226,19 +225,21 @@ a ese nodo, no al grafo completo; no representa un espectro medido. La vista usa
 los colores, bordes y controles actuales. Esto es una primera capacidad de
 presentación declarativa, no un editor de layouts arbitrarios.
 
-Prueba manual: reiniciar con `bash scripts/run.sh`, fijar Audio a **48000 Hz**,
+Prueba manual: reiniciar con `bash scripts/run.sh`, elegir la salida en Audio,
 insertar Hay Filter en una pista con audio y pulsar Play. Seleccionar el efecto;
 mover Frecuencia/Resonancia y alternar LP/HP/BP. Para valores exactos usar
 `:fx.parameter 0 300`, `:fx.parameter 1 1` y `:fx.parameter 2 1` (HP).
 El bypass permite comparar con el audio original. Duplicar y cambiar una sola
 instancia comprueba su independencia. `:fx.parameter 2 0.5` debe rechazarse.
 
-El adaptador actual prepara el FX con la frecuencia solicitada en Audio, o 48 kHz
-en Auto. Si el dispositivo negocia otra frecuencia, el corte audible puede diferir
-de la curva y del valor mostrado. La preparación con la frecuencia real del motor
-compartido debe resolverse en PR-04. Exportación de esta cadena, guardado global
-y colaboración completa siguen pendientes; Loro conserva tipo y parámetros
-numéricos, no estado DSP ni fuente Lua.
+PR-04 prepara variantes del FX a la frecuencia real del stream, fuera del callback.
+Los valores de control se comparten dentro de la misma instancia; el DSP permanece
+separado por frecuencia. Una preparación cancelada no sustituye el procesador que
+está sonando. La curva usa la frecuencia publicada por el procesamiento activo.
+Una recarga de plan conserva las variantes y sus estados; insertar un nuevo FX lo
+prepara para las salidas registradas antes de publicar. Exportación de esta cadena,
+guardado global y colaboración completa siguen pendientes; Loro conserva tipo y
+parámetros numéricos, no estado DSP ni fuente Lua.
 
 Pruebas automáticas: equivalencia de audio Lua/nativo, respuesta frente a señal
 senoidal medida a 44.1/96 kHz, aislamiento estéreo y de instancias, bypass,

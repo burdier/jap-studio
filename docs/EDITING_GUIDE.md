@@ -51,6 +51,8 @@
 | Contraste de selección | `src/ui/design.rs::selection_color` | `SELECTION_CONTRAST`; `views/settings_appearance.rs`, `profile.rs`, cabeceras/carriles, clips y selectores compartidos |
 | Guardado automático de tema/cursor | `src/ui/profile.rs` | `settings.rs`, `profile_tests.rs`; conserva el resto del perfil y reemplaza el archivo de forma atómica |
 | Ciclo de render | `src/ui/render.rs` | Nunca avanzar aquí el transporte musical |
+| Seek y loop de mezcla de audio | `src/audio/playback/transport.rs` | `ui/transport/audio.rs`, `input.rs`, `views/transport.rs`, `toolbar/dispatch.rs`; reloj musical existente, comandos/GUI comunes, publicación RCU de pedidos y confirmación de revisión |
+| Preparación FX Lua a frecuencia real | `src/audio/effects/component.rs` | `effects/{mod,plan}.rs`, `audio/publication.rs`; variantes por frecuencia, valores comunes, preparación antes de conectar/publicar, retiro fuera del callback |
 | Play/Stop | `src/ui/audio_actions.rs` | `src/audio/` |
 | Espacio para Play/Stop desde cualquier panel | `src/ui/transport.rs` | `input.rs`, `views/piano_roll/mod.rs`, `detached.rs`; el explorador deja propagar Espacio; excluye texto/modales y repetición de tecla |
 | Importación común a drop, explorador y comandos | `src/ui/file_import.rs` | Audio/MIDI preparados en background; destino por TrackId y beat capturados |
@@ -67,7 +69,7 @@
 | Catálogo de instrumentos/acciones | `src/catalog.rs`, `src/catalog/{entry,tools}.rs` | `tests/catalog.rs`, `tests/lua_tools.rs`; entradas nativas estáticas y metadatos Lua propios, sin VM |
 | Plugins VST3 instalados en el buscador | `src/catalog/plugins.rs` | `ui/palette/plugins.rs`, `ui/palette.rs`; enumera bundles; `audio/vst3/scan.rs` consulta fábricas en proceso separado y clasifica sus clases |
 | Host VST3 de instrumento | `src/audio/vst3/{mod,lifecycle,module,buffers,events,parameters,process,host}.rs` | `instruments/vst.rs`, `ui/vst{,/commands,/view}.rs`, `audio/piano/{backend,prepare}.rs`; lifecycle COM, MIDI y audio estéreo; límites en `docs/VST3.md` |
-| Efectos VST3 en pistas | `src/audio/effects/{mod,plan,publication}.rs`, `src/ui/vst/effects.rs` | Plan de audio publicado por RCU; FX Tree, catálogo y comandos `fx.vst3.load/editor`; alcance en `docs/VST3.md` |
+| Efectos VST3 en pistas | `src/audio/effects/{mod,plan}.rs`, `src/audio/publication.rs`, `src/ui/vst/effects.rs` | Plan de audio publicado por RCU; FX Tree, catálogo y comandos `fx.vst3.load/editor`; alcance en `docs/VST3.md` |
 | Editor original VST3 | `src/audio/vst3/editor/{session,window,x11,frame,handler,stream}.rs` | `ui/fx/host.rs`, `ui/vst/commands.rs`; IPlugView/IRunLoop, cola de parámetros, ventana externa; diagnóstico `vst3_probe --editor` |
 | Wine del host desde distrobox | `scripts/wine-host.sh` | `scripts/run.sh`, `audio/vst3/environment.rs`, `ui/app.rs`; WINELOADER, prefijo compartido, diagnóstico `examples/vst3_probe.rs` |
 | Contrato/registro de parámetros de acciones | `src/actions.rs` | `CatalogAction::parameters()`, `export/action.rs`; texto, cantidades con unidad y booleanos |

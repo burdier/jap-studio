@@ -1,11 +1,11 @@
 //! Plan FX inmutable publicado fuera de RT; instancias independientes por FxId.
 mod component;
 mod plan;
-mod publication;
+
+use super::publication::Publication;
 use super::vst3::{EditorHandle, VstEngine};
 pub(crate) use component::ComponentEffect;
 pub(crate) use plan::{Plan, compile, contains_component, contains_vst, needs_rack};
-use publication::Publication;
 use std::{
     cell::UnsafeCell,
     sync::{
@@ -66,18 +66,29 @@ impl Effect {
     }
 }
 pub(crate) struct Rack {
+    stream_rates: std::sync::Mutex<std::collections::BTreeSet<u32>>,
     plan: Publication<Plan>,
     pub rate: u32,
 }
 impl Rack {
     pub fn new(plan: Plan, rate: u32) -> Arc<Self> {
         Arc::new(Self {
+            stream_rates: std::sync::Mutex::new(Default::default()),
             plan: Publication::new(plan),
             rate,
         })
     }
     pub fn publish(&self, plan: Plan) {
+        let rates = self.stream_rates.lock().unwrap();
+        for &rate in rates.iter() {
+            plan.prepare_rate(rate);
+        }
         self.plan.publish(plan);
+    }
+    fn prepare_rate(&self, rate: u32) {
+        let mut rates = self.stream_rates.lock().unwrap();
+        rates.insert(rate);
+        self.plan.read(|plan| plan.prepare_rate(rate));
     }
     fn process(&self, frames: &mut [[f32; 2]], rate: u32) {
         self.plan.read(|plan| plan.process(frames, rate));
@@ -99,6 +110,9 @@ impl Routing {
                 }
         });
         if !same {
+            if let Some(rack) = &rack {
+                rack.prepare_rate(rate);
+            }
             self.0.publish((rack, rate));
         }
     }

@@ -99,6 +99,7 @@ impl DawApp {
             track_reorder_drag: None,
             player: None,
             file_playback: None,
+            audio_loop: None,
             pattern_player: None,
             instrument,
             controller: ComputerKeyboard::default(),

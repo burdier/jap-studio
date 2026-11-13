@@ -1,4 +1,5 @@
 //! Atajo compartido de transporte; reutiliza los controladores de Play y Stop existentes.
+mod audio;
 use super::{DawApp, VimMode};
 use gpui::KeyDownEvent;
 

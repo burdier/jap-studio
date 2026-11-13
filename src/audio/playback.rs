@@ -1,5 +1,7 @@
 //! Mezclador de clips: un stream y posición compartida en frames.
 mod mix;
+mod transport;
+use super::publication::Publication;
 use super::{
     AudioClip, clip_source::ClipSource, output::choose_output_config, stereo_pan::StereoPan,
 };
@@ -17,8 +19,11 @@ use std::sync::{
     Arc,
     atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
 };
+use transport::{Cursor, Request, beat_frame, loop_frames};
 
 struct PlaybackState {
+    request: Publication<Request>,
+    applied_request: AtomicU64,
     tracks: Vec<Arc<TrackControl>>,
     utility: UtilitySlot,
     position: AtomicU64,
@@ -31,6 +36,7 @@ pub(crate) struct Player {
     state: Arc<PlaybackState>,
     pub sample_rate: u32,
     beats_per_second: f64,
+    request: Request,
 }
 
 pub(crate) struct PreparedPlayback {
@@ -50,18 +56,29 @@ impl PreparedPlayback {
         let mix = Mix::prepare(inputs, setup.config.sample_rate, bpm)?;
         Ok(Self { device, setup, mix })
     }
-    pub fn start(self, start_beat: f64, bpm: f64, utility: UtilitySlot) -> Result<Player, String> {
+    pub fn start(
+        self,
+        start_beat: f64,
+        bpm: f64,
+        utility: UtilitySlot,
+        loop_range: Option<(f64, f64)>,
+    ) -> Result<Player, String> {
         let Self { device, setup, mix } = self;
         let beats_per_second = Tempo::new(bpm)
             .map_err(|error| error.to_string())?
             .beats_per_second();
         let rate = setup.config.sample_rate;
+        let request = Request {
+            loop_range: loop_frames(loop_range, rate, beats_per_second)?,
+            ..Default::default()
+        };
+        let start = beat_frame(start_beat, rate, beats_per_second)?;
         let state = Arc::new(PlaybackState {
+            request: Publication::new(request),
+            applied_request: AtomicU64::new(0),
             tracks: mix.tracks.iter().map(|t| t.control.clone()).collect(),
             utility,
-            position: AtomicU64::new(
-                (start_beat / beats_per_second * f64::from(rate)).round() as u64
-            ),
+            position: AtomicU64::new(start),
             finished: AtomicBool::new(false),
             failed: AtomicBool::new(false),
         });
@@ -102,6 +119,7 @@ impl PreparedPlayback {
             state,
             sample_rate: rate,
             beats_per_second,
+            request,
         })
     }
 }
@@ -121,24 +139,27 @@ impl Player {
             .prepare(ProcessSpec::new(f64::from(config.sample_rate)).map_err(|e| e.to_string())?)
             .map_err(|e| e.to_string())?;
         let clip_end = mix.end;
-        let mut position = state.position.load(Ordering::Relaxed);
+        let mut cursor = Cursor::new(state.position.load(Ordering::Relaxed), clip_end);
         let error_state = state.clone();
         device
             .build_output_stream(
                 config,
                 move |output: &mut [T], _: &cpal::OutputCallbackInfo| {
+                    let request = state.request.read(|r| *r);
                     let mut block = [[0.0_f32; 2]; 256];
                     for output_block in output.chunks_mut(256 * channels) {
                         let count = output_block.len() / channels;
-                        mix.render(position, &mut block[..count]);
-                        position = position.saturating_add(count as u64).min(clip_end);
+                        cursor.render(request, &mut block[..count], |at, frames| {
+                            mix.render(at, frames)
+                        });
                         utility.process(&mut block[..count]);
                         super::output::write_stereo(output_block, &block[..count], channels, first);
                     }
-                    state.position.store(position, Ordering::Relaxed);
-                    if position >= clip_end {
-                        state.finished.store(true, Ordering::Relaxed);
-                    }
+                    state.position.store(cursor.frame(), Ordering::Relaxed);
+                    state.finished.store(cursor.finished(), Ordering::Relaxed);
+                    state
+                        .applied_request
+                        .store(request.revision, Ordering::Release);
                 },
                 move |error| {
                     eprintln!("Error de salida de audio: {error}");
@@ -149,6 +170,20 @@ impl Player {
             .map_err(|error| error.to_string())
     }
 
+    pub fn seek(&mut self, beat: f64) -> Result<(), String> {
+        self.request.seek = beat_frame(beat, self.sample_rate, self.beats_per_second)?;
+        self.request.generation = self.request.generation.wrapping_add(1);
+        self.state.finished.store(false, Ordering::Relaxed);
+        self.request.revision = self.request.revision.wrapping_add(1);
+        self.state.request.publish(self.request);
+        Ok(())
+    }
+    pub fn set_loop(&mut self, range: Option<(f64, f64)>) -> Result<(), String> {
+        self.request.loop_range = loop_frames(range, self.sample_rate, self.beats_per_second)?;
+        self.request.revision = self.request.revision.wrapping_add(1);
+        self.state.request.publish(self.request);
+        Ok(())
+    }
     pub fn set_fx_rack(&self, track: TrackId, rack: Option<Arc<super::effects::Rack>>) {
         if let Some(t) = self.state.tracks.iter().find(|t| t.id == track) {
             t.fx.set_rack(rack, self.sample_rate);
@@ -175,7 +210,8 @@ impl Player {
             * self.beats_per_second
     }
     pub fn finished(&self) -> bool {
-        self.state.finished.load(Ordering::Relaxed)
+        self.state.applied_request.load(Ordering::Acquire) == self.request.revision
+            && self.state.finished.load(Ordering::Relaxed)
     }
     pub fn failed(&self) -> bool {
         self.state.failed.load(Ordering::Relaxed)

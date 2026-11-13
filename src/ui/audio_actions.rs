@@ -535,9 +535,13 @@ impl DawApp {
         }
     }
     pub(super) fn stop_all(&mut self) {
+        let stopped_at = self.player.as_ref().map(|player| player.beat());
         self.stop_audio();
         self.stop_pattern();
         self.stop_instrument();
+        if let Some(beat) = stopped_at {
+            self.timeline.set_edit_beat(beat);
+        }
     }
     pub(super) fn play_audio(&mut self) {
         self.publish_track_fx();

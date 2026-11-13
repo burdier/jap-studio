@@ -168,8 +168,9 @@ impl DawApp {
                 self.timeline.move_cursor(1.0)
             }
             "home" if self.center_view == CenterView::Arrangement => {
-                self.stop_audio();
-                self.timeline.go_to_start();
+                if let Err(error) = self.seek_audio(0.) {
+                    self.status_message = error;
+                }
             }
             "+" | "=" if self.center_view == CenterView::Arrangement => {
                 self.timeline.zoom_at_cursor(2.0)
@@ -331,6 +332,9 @@ impl DawApp {
         let cmd = cmd.trim();
         if matches!(cmd, "vim.toggle" | "vim toggle") {
             self.toggle_vim();
+            return;
+        }
+        if self.audio_transport_command(cmd) {
             return;
         }
         if self.execute_roll_grid_command(cmd) {

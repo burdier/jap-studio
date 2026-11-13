@@ -27,7 +27,7 @@ impl DawApp {
         for (index, track) in self.tracks.iter().enumerate() {
             let sources: Vec<_> = clips
                 .iter()
-                .filter(|c| c.track == index && !c.props.muted && c.end_beat(bpm) > beat)
+                .filter(|c| c.track == index && !c.props.muted)
                 .cloned()
                 .collect();
             if sources.is_empty() {
@@ -43,7 +43,7 @@ impl DawApp {
             });
         }
         if inputs.is_empty() {
-            self.status_message = "No hay clips de audio después del cursor".into();
+            self.status_message = "No hay clips de audio para reproducir".into();
             return;
         }
         let (tx, rx) = mpsc::sync_channel(1);
@@ -82,9 +82,14 @@ impl DawApp {
                 "Preparación cancelada: cambió la mezcla o la salida; pulsa Play de nuevo".into();
             return;
         }
-        match result
-            .and_then(|prepared| prepared.start(pending.beat, pending.bpm, self.utility.clone()))
-        {
+        match result.and_then(|prepared| {
+            prepared.start(
+                pending.beat,
+                pending.bpm,
+                self.utility.clone(),
+                self.audio_loop,
+            )
+        }) {
             Ok(player) => {
                 self.player = Some(player);
                 self.status_message =

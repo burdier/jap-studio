@@ -785,7 +785,7 @@ al renderizar. Permite reutilizar la misma fuente con distintos tamaños de bloq
 `audio/playback` prepara esa fuente antes de construir el stream y conserva posición,
 FX, nivel, pan, Utility y publicación visual. La preparación/remuestreo en worker y
 su cancelación siguen en la ruta existente. El segundo incremento usa esta fuente
-para mezclar clips; seek/loop y frecuencia real de preparación de los FX siguen pendientes.
+para mezclar clips; el cuarto incremento añade seek/loop y preparación FX a la frecuencia real.
 
 ## Mezcla de clips de audio (PR-04, commit 2)
 
@@ -804,8 +804,8 @@ publican por TrackId para evitar aplicar los de la pista seleccionada al master.
 El tercer incremento verifica y completa las operaciones de mezcla por pista.
 
 Un único contador de frames alimenta todas las fuentes y finaliza en el último clip.
-Los desplazamientos están contemplados; loop, seek en caliente, actualización de
-fuentes durante Play y preparación FX a la frecuencia real siguen pendientes.
+Los desplazamientos, loop y seek en caliente están conectados al reloj compartido.
+La actualización de fuentes durante Play sigue pendiente: el plan de fuentes es inmutable.
 El modo MIDI conserva su prioridad actual; no se mezcla todavía con estos clips.
 Loro no recibe buffers ni procesadores; guardado global/collaboración siguen pendientes.
 
@@ -815,3 +815,31 @@ prevalece sobre solo, varios solos permanecen audibles y se conserva la herencia
 actual del grupo padre. Los atómicos de cada pista se direccionan por TrackId,
 independientemente de selección u orden visual. La prueba de mezcla verifica
 cambios durante render con audio y reordenación de pistas.
+
+## Transporte de audio y preparación por frecuencia (PR-04, commit 4)
+
+`audio/playback/transport::Cursor` adapta el `musical::time::Transport` existente;
+no crea un segundo reloj. Divide cada bloque por los límites del loop y llama al
+mismo mezclador con posiciones absolutas. El callback publica frames y fin de
+reproducción; los comandos de seek/loop se publican por `audio/publication` (RCU
+extraído del rack). Una revisión confirmada evita que un fin de reproducción
+anterior cierre el stream antes de atender un seek o un nuevo loop. No hay
+asignaciones ni locks en render; la publicación y retiro ocurren en el escritor.
+
+`ui/transport/audio` concentra comandos y botones. Home y ⏮ hacen seek a cero,
+`:transport.seek 8` salta a la negra 8, `:transport.loop 0 8` repite dos compases
+4/4 y `:transport.loop off` desactiva el loop. Las posiciones parten de cero.
+Stop cierra el stream y conserva su último frame observado en el cursor de edición.
+La carga prepara todos los clips, incluidos los anteriores al cursor, para poder
+volver a ellos mediante seek. Stop cancela pendientes; las otras audiciones se
+siguen deteniendo al pasar a la mezcla de audio y viceversa.
+
+Antes de activar una ruta, `Rack` registra la frecuencia real y prepara sus
+componentes Lua. Cada instancia mantiene variantes de DSP por frecuencia mediante
+RCU y controles atómicos comunes. El callback elige la variante ya preparada; la
+UI dibuja la curva con la frecuencia activa. Un worker cancelado no invalida otra
+variante. Al publicar un nuevo plan, se preparan todas las frecuencias registradas,
+incluidos los FX nuevos, antes de sustituir el plan activo. VST3 no se reprepara de
+este modo: una frecuencia incompatible se rechaza antes del arranque y requiere
+recargar el plugin. Datos Loro, UI y procesadores siguen separados; loop de sesión
+no implica persistencia global ni colaboración de proyectos.

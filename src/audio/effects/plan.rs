@@ -16,6 +16,19 @@ pub(crate) enum Plan {
     Parallel(Vec<Plan>),
 }
 impl Plan {
+    /// Preparación y retiro exclusivamente en el publicador, nunca en process.
+    pub fn prepare_rate(&self, rate: u32) {
+        match self {
+            Self::Component(effect) => effect.prepare_rate(rate),
+            Self::Observe(plan) => plan.prepare_rate(rate),
+            Self::Serial(nodes) | Self::Parallel(nodes) => {
+                for node in nodes {
+                    node.prepare_rate(rate);
+                }
+            }
+            _ => {}
+        }
+    }
     pub fn process(&self, frames: &mut [[f32; 2]], rate: u32) {
         match self {
             Self::Gain(gain) => {
@@ -25,7 +38,7 @@ impl Plan {
                 }
             }
             Self::Effect(effect) => effect.process(frames),
-            Self::Component(effect) => effect.process(frames),
+            Self::Component(effect) => effect.process(frames, rate),
             Self::Analyzer(tap) => tap.capture(frames, rate),
             // Las cadenas Utility conservan su salida escalar y su rampa existentes.
             // Evaluar sus puntos de análisis sobre una copia evita aplicar la ganancia

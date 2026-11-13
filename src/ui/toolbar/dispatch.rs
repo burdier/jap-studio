@@ -22,8 +22,9 @@ impl DawApp {
             }
             ToolbarAction::Record => self.toggle_midi_record(),
             ToolbarAction::GoToStart => {
-                self.stop_all();
-                self.timeline.go_to_start();
+                if let Err(error) = self.seek_audio(0.) {
+                    self.status_message = error;
+                }
             }
             ToolbarAction::ToggleController => self.toggle_controller(),
             ToolbarAction::OpenPalette => self.open_palette(),

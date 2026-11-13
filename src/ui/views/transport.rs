@@ -28,11 +28,22 @@ impl DawApp {
                     .child(icon_button(ds, "⏮", ds.muted).on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|this, _, _, cx| {
-                            this.stop_all();
-                            this.timeline.go_to_start();
+                            if let Err(error) = this.seek_audio(0.) {
+                                this.status_message = error;
+                            }
                             cx.notify();
                         }),
                     ))
+                    .child(
+                        pill_button(ds, "↻ Audio", self.audio_loop.is_some(), ds.accent)
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _, _, cx| {
+                                    this.toggle_audio_loop();
+                                    cx.notify();
+                                }),
+                            ),
+                    )
                     .child(icon_button(ds, "▶", ds.success).on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|this, _, _, cx| {

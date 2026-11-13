@@ -989,6 +989,22 @@ pub const CATALOG: &[CatalogEntry] = &[
         action: CatalogAction::Invoke("play"),
     },
     CatalogEntry {
+        id: "action.transport.seek",
+        kind: EntryKind::Action,
+        name: "Transporte · ir al cursor",
+        summary: "Seek de audio a la posición del cursor; transport.seek <negras> permite una posición exacta",
+        keywords: &["seek", "cursor", "transporte", "audio"],
+        action: CatalogAction::Invoke("transport.seek"),
+    },
+    CatalogEntry {
+        id: "action.transport.loop",
+        kind: EntryKind::Action,
+        name: "Transporte · loop de audio",
+        summary: "Alterna loop del arreglo de audio; transport.loop <inicio> <fin> define un rango en negras",
+        keywords: &["loop", "bucle", "transporte", "audio"],
+        action: CatalogAction::Invoke("transport.loop"),
+    },
+    CatalogEntry {
         id: "action.stop",
         kind: EntryKind::Action,
         name: "Detener",

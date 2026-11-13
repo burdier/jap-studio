@@ -50,6 +50,8 @@ const KNOWN: &[(&str, &str)] = &[
     ("pat", "Vista Pattern"),
     ("pattern", "Vista Pattern"),
     ("piano", "Abrir editor de piano"),
+    ("transport.seek", "Ir a una posición en negras"),
+    ("transport.loop", "Loop de audio: inicio fin / off"),
     ("play", "Iniciar reproducción"),
     ("rec", "Activar grabación MIDI"),
     ("record", "Activar grabación MIDI"),
