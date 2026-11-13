@@ -424,15 +424,15 @@
         <h2>2 · Motor multipista</h2>
         <p class="phase-note">Un stream, un transporte y múltiples fuentes.</p>
         <div class="grid">
-          <article data-pr="PR-04" data-status="pending">
-            <div class="pr-head"><span class="pr-number">PR-04</span><span class="status">Pendiente</span></div>
+          <article data-pr="PR-04" data-status="in-progress">
+            <div class="pr-head"><span class="pr-number">PR-04</span><span class="status">En curso</span></div>
             <h3>Clips multipista</h3>
             <p>Escuchar varias pistas de audio con mezcla independiente.</p>
             <div class="depends">Depende de PR-03</div>
             <details class="commit-plan">
-              <summary>4 commits · 6–10 días · una salida y un transporte</summary>
+              <summary>1 de 4 commits completados · fuente separada · suite correcta</summary>
               <ol>
-                <li><strong>refactor(audio): separar fuente de clip y salida CPAL</strong>Conservar un reproductor de un clip con la misma ruta de preparación.</li>
+                <li data-status="done" data-commit="3592aa4"><strong>refactor(audio): separar fuente de clip y salida CPAL</strong>Fuente inmutable por frames, integrada en el reproductor actual. Misma preparación y FX; scripts/check.sh correcto. Audición manual pendiente.</li>
                 <li><strong>feat(audio): mezclar dos fuentes en una salida</strong>Construir stream compartido, preparar buffers y probar la suma. La prueba del stream acompaña a su primer consumidor.</li>
                 <li><strong>feat(audio): aplicar mute, solo, nivel y pan por pista</strong>Conectar controles al plan y probar cada una de las cuatro operaciones. No abre el trabajo de transporte.</li>
                 <li><strong>feat(transport): ejecutar clips en frames compartidos</strong>Sincronizar Play, Stop, seek y loop; cubrir offsets, solapamientos y límites de bloque junto a su controlador.</li>

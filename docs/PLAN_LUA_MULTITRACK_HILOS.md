@@ -300,6 +300,11 @@ compartido se podrá añadir el LFO sincronizado; este incremento no lo implemen
 
 ## PR-04 — Mezclar clips de audio bajo un único transporte
 
+**Avance:** 1 de 4 commits (`3592aa4`). Fuente de clip sin stream integrada en
+el reproductor actual; conserva preparación, remuestreo, cancelación y FX.
+`scripts/check.sh` completo pasó, incluidas pruebas de la fuente sin dispositivo
+para recortes, particiones, seek y muestras remuestreadas. Audición manual pendiente.
+
 **Título sugerido:** `feat(audio): reproducir varias pistas de audio en un motor compartido`
 
 **Valor:** pulsar Play y escuchar dos clips en pistas distintas, con mute, solo, volumen
@@ -310,7 +315,7 @@ y paneo independientes.
 
 **Tareas**
 
-- [ ] Extraer una fuente de clip que procese bloques sin poseer su propio stream CPAL.
+- [x] Extraer una fuente de clip que procese bloques sin poseer su propio stream CPAL.
   Reutilizar decodificación, remuestreo y cancelación de preparación actuales.
 - [ ] Crear el motor con un stream, posición por frames y suma en flotante con margen
   interno; aplicar protección de salida una sola vez en el master.
