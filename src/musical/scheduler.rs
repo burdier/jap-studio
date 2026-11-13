@@ -107,6 +107,11 @@ impl PreparedPattern {
         self.events.len()
     }
 
+    /// Iteración durante la preparación, antes de publicar el plan al audio.
+    pub fn all_events(&self) -> impl Iterator<Item = (u64, ScheduledEvent)> + '_ {
+        self.events.iter().map(|item| (item.frame, item.event))
+    }
+
     /// Consulta O(log N + eventos del bloque), sin mutar el plan ni reservar memoria.
     /// Seek no reconstruye notas sostenidas; el host debe liberar voces antes de saltar.
     pub fn events_in(&self, window: FrameWindow) -> impl Iterator<Item = ScheduledEvent> + '_ {

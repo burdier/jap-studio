@@ -4,6 +4,12 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
 
 ## Disponible
 
+- **PR-05, tercer incremento:** plan MIDI de varios clips/pistas con eventos absolutos,
+  offsets por bloque y destino por instancia. Las voces preparadas los renderizan
+  en el frame correspondiente, también con particiones distintas. Seek libera notas
+  activas sin reconstruir las sostenidas. Play de la UI aún no prepara ni conecta
+  esas voces al mezclador WAV; MIDI + WAV sigue pendiente.
+
 - **PR-05, segundo incremento:** conjunto de voces preparadas por `InstrumentId`,
   con despacho de comandos y suma de audio en bloques; el adaptador de audición
   usa ese conjunto con una voz. Prueba sin dispositivo de dos sintetizadores

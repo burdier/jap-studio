@@ -2,6 +2,11 @@
 use super::{InstrumentState, NoteCommand, SynthBackend, plan::render_plan_block};
 use elevate::musical::model::InstrumentId;
 use elevate::musical::scheduler::PreparedPattern;
+use elevate::musical::{
+    arrangement_midi::PreparedMidiArrangement,
+    scheduler::{EventKind, ScheduledEvent},
+    time::FrameWindow,
+};
 use std::sync::{Arc, atomic::Ordering};
 
 pub(super) struct InstrumentVoice {
@@ -89,17 +94,42 @@ impl InstrumentVoice {
     pub fn failed(&self) -> bool {
         self.synth.failed()
     }
+
+    fn scheduled(&mut self, channel: u8, event: ScheduledEvent) {
+        match event.kind {
+            EventKind::NoteOn { velocity } if event.expression.plays(event.note, 0) => {
+                self.synth
+                    .note_on_expression(channel, event.pitch, velocity, event.expression);
+            }
+            EventKind::NoteOff if event.expression.plays(event.note, 0) => {
+                self.synth.midi(
+                    0x80 | channel,
+                    event.pitch,
+                    event.expression.release_velocity,
+                );
+            }
+            EventKind::Control { lane, value } => {
+                let (command, a, b) = lane.midi(value);
+                self.synth.midi(command | channel, a, b);
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Voces preparadas fuera del callback, identificadas por instancia.
 /// No abre dispositivos; el motor común podrá renderizarlas en su propio bloque.
 pub(super) struct PreparedVoices {
     voices: Vec<(InstrumentId, InstrumentVoice, Arc<InstrumentState>)>,
+    last_end: Option<u64>,
 }
 
 impl PreparedVoices {
     pub fn new() -> Self {
-        Self { voices: Vec::new() }
+        Self {
+            voices: Vec::new(),
+            last_end: None,
+        }
     }
 
     /// Transferencia de un backend ya preparado. Rechaza IDs duplicados sin alterar el conjunto.
@@ -109,7 +139,7 @@ impl PreparedVoices {
         synth: SynthBackend,
         state: Arc<InstrumentState>,
     ) -> Result<(), SynthBackend> {
-        if self.voices.iter().any(|(existing, _, _)| *existing == id) {
+        if self.voices.len() >= 256 || self.voices.iter().any(|(existing, _, _)| *existing == id) {
             return Err(synth);
         }
         self.voices.push((id, InstrumentVoice::new(synth), state));
@@ -142,11 +172,58 @@ impl PreparedVoices {
             }
         }
     }
+
+    /// Renderiza eventos absolutos de todos los clips. Los segmentos entre eventos
+    /// comparten el frame del transporte; ningún evento se desplaza con el tamaño de bloque.
+    pub fn render_arrangement(
+        &mut self,
+        plan: &PreparedMidiArrangement,
+        position: u64,
+        output: &mut [[f32; 2]],
+    ) {
+        if self.last_end.is_some_and(|end| end != position) {
+            for (_, voice, _) in &mut self.voices {
+                voice.command(NoteCommand::AllOff);
+            }
+        }
+        for (index, block) in output.chunks_mut(512).enumerate() {
+            let at = position.saturating_add(index as u64 * 512);
+            let Ok(window) = FrameWindow::new(at, block.len() as u32) else {
+                block.fill([0.0; 2]);
+                break;
+            };
+            let mut written = 0;
+            for routed in plan.events_in(window) {
+                let offset = routed.event.sample_offset as usize;
+                if offset > written {
+                    self.render(&mut block[written..offset]);
+                    written = offset;
+                }
+                if let Some((_, voice, _)) = self
+                    .voices
+                    .iter_mut()
+                    .find(|(id, _, _)| *id == routed.instrument)
+                {
+                    voice.scheduled(routed.channel, routed.event);
+                }
+            }
+            if written < block.len() {
+                self.render(&mut block[written..]);
+            }
+        }
+        self.last_end = position.checked_add(output.len() as u64);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use elevate::musical::{
+        clip::MidiClip,
+        model::Pattern,
+        time::{PPQ, Tick},
+        track::DEMO_TRACKS,
+    };
     use rustysynth::{Synthesizer, SynthesizerSettings};
 
     fn synth(font: &Arc<rustysynth::SoundFont>) -> SynthBackend {
@@ -224,6 +301,48 @@ mod tests {
                 assert!((both[0] - a[0] - b[0]).abs() < 0.00001);
                 assert!((both[1] - a[1] - b[1]).abs() < 0.00001);
             }
+        }
+    }
+
+    #[test]
+    fn arrangement_events_drive_two_voices_independently_of_block_size() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("assets/soundfonts/UprightPianoKW-20220221.sf2");
+        let font = super::super::load_soundfont(&path).unwrap();
+        let mut tracks = DEMO_TRACKS;
+        tracks[0].instrument = Some(InstrumentId(41));
+        tracks[1].instrument = Some(InstrumentId(42));
+        let mut first = Pattern::new(Tick(PPQ)).unwrap();
+        first
+            .add_note(InstrumentId(41), Tick(0), Tick(4), 60, 100)
+            .unwrap();
+        let mut second = Pattern::new(Tick(PPQ)).unwrap();
+        second
+            .add_note(InstrumentId(42), Tick(1), Tick(4), 67, 90)
+            .unwrap();
+        let clips = [
+            MidiClip::new("A", 0, 0.0, first),
+            MidiClip::new("B", 1, 0.0, second),
+        ];
+        let plan = PreparedMidiArrangement::compile(&clips, &tracks, 48_000, 120.0).unwrap();
+        let make = || {
+            let mut set = PreparedVoices::new();
+            add(&mut set, InstrumentId(41), &font);
+            add(&mut set, InstrumentId(42), &font);
+            set
+        };
+        let mut whole = make();
+        let mut split = make();
+        let mut a = [[0.0; 2]; 256];
+        let mut b = a;
+        whole.render_arrangement(&plan, 0, &mut a);
+        for (index, block) in b.chunks_mut(13).enumerate() {
+            split.render_arrangement(&plan, (index * 13) as u64, block);
+        }
+        assert!(a.iter().any(|frame| frame[0].abs() > 0.00001));
+        for (x, y) in a.iter().zip(b) {
+            assert!((x[0] - y[0]).abs() < 0.0001);
+            assert!((x[1] - y[1]).abs() < 0.0001);
         }
     }
 }

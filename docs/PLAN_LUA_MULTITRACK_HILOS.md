@@ -347,6 +347,11 @@ dirige comandos y suma sus muestras. La audición actual pasa por ese conjunto c
 una voz; la prueba de dos sintetizadores valida que sus notas y liberaciones son
 independientes. La UI y el stream compartido aún no aceptan dos instrumentos.
 
+Tercer incremento: plan de Arrangement MIDI por frames absolutos para varias pistas,
+con `TrackId`, destino `InstrumentId`, canal y offsets dentro del bloque. El conjunto
+de voces lo consume sin reservas por bloque y divide el render en los frames de
+eventos. La UI aún no entrega ese plan a Play ni lo suma con los WAV.
+
 **Título sugerido:** `feat(audio): reproducir instrumentos independientes por pista`
 
 **Valor:** dos pistas con el mismo tipo de instrumento interpretan clips distintos a

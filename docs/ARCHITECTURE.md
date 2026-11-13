@@ -16,6 +16,15 @@ bloques en flotante. El adaptador de audición actual utiliza el mismo conjunto 
 una instancia local; la preparación de varias voces y la prueba de su aislamiento
 no asignan todavía instrumentos adicionales a pistas ni comparten salida con clips WAV.
 
+`musical/arrangement_midi` compila todos los clips MIDI activos a eventos absolutos
+por `TrackId` e `InstrumentId`; cada consulta devuelve offsets relativos a un bloque
+del transporte. `audio/piano/voice` consume esos eventos y divide el render justo en
+sus frames, sin asignar memoria en el callback. Un salto discontinuo libera las voces;
+no reconstruye notas sostenidas antes del destino. La ruta Play de la UI todavía no
+prepara esas voces ni las añade al `Mix` de clips de audio.
+El plan toma una vuelta visible por clip; la repetición de clips MIDI queda para
+la integración del transporte, con una política explícita de fin y colas.
+
 ## Foco visual y navegación opcional
 
 `ui/workspace_focus` guarda solo el panel activo y el panel ampliado; la vista usa
