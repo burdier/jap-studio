@@ -616,25 +616,7 @@ impl DawApp {
             }
         }
         self.stop_instrument();
-        let Some(clip) = self.timeline.clip.as_ref() else {
-            self.status_message =
-                "Arrastra un archivo de audio o graba/recupera un clip MIDI".into();
-            return;
-        };
-        if !self.track_is_audible(clip.track) {
-            self.status_message = format!("Pista {} silenciada por Mute/Solo", clip.track + 1);
-            return;
-        }
-        if clip.props.muted {
-            self.status_message =
-                format!("Clip de audio «{}» está silenciado (Mute)", clip.file.name);
-            return;
-        }
-        if edit_beat >= clip.end_beat(self.timeline.tempo.bpm()) {
-            self.status_message = "Coloca el cursor antes del final del clip".into();
-            return;
-        }
-        self.request_file_playback(clip.clone(), edit_beat);
+        self.request_file_playback(edit_beat);
     }
 
     pub(super) fn stop_audio(&mut self) {
@@ -709,10 +691,11 @@ impl DawApp {
                 self.track_fx_gain(track),
             );
         }
-        if let (Some(player), Some(clip)) = (&self.player, &self.timeline.clip) {
-            let gain = self.track_gain(clip.track) * clip.props.gain_linear();
-            player.set_gain(gain.clamp(0.0, 2.0));
-            player.set_pan(self.track_pan(clip.track));
+        if let Some(player) = &self.player {
+            for (index, track) in self.tracks.iter().enumerate() {
+                player.set_gain(track.id, self.track_gain(index));
+                player.set_pan(track.id, self.track_pan(index));
+            }
         }
         if let Some(player) = &self.pattern_player {
             player.set_gain(self.drum_gain());

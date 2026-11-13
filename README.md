@@ -535,3 +535,12 @@ frecuencias de muestreo, errores y direccionamiento de eventos.
 
 El mock GPUI sigue siendo una aplicación separada de esta biblioteca. `cargo watch -x run`
 recompila y reinicia la aplicación; ese ciclo no conserva su estado como un hot-patch.
+
+### Mezcla de clips de audio (PR-04 en curso)
+
+Play en contexto de audio reproduce los clips de Arrangement en una salida compartida.
+Cada pista suma sus clips antes de su cadena FX; el master conserva margen flotante
+hasta la salida física. Para probar, coloca dos WAV en pistas distintas al mismo beat,
+selecciona un clip de audio y reproduce desde el inicio. MIDI y el patrón Session aún
+usan sus rutas separadas. Seek/loop del motor común y preparación FX a la frecuencia
+real del dispositivo quedan pendientes. Detalles en `docs/PROTOTYPE.md`.

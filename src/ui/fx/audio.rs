@@ -60,8 +60,10 @@ impl DawApp {
                 self.track_fx_gain(track),
             );
         }
-        if let (Some(player), Some(clip)) = (&self.player, &self.timeline.clip) {
-            player.set_fx_gain(self.track_fx_gain(clip.track));
+        if let Some(player) = &self.player {
+            for (index, track) in self.tracks.iter().enumerate() {
+                player.set_fx_gain(track.id, self.track_fx_gain(index));
+            }
         }
         let track = self.piano_output_track();
         let gain = track.map_or(1.0, |index| self.track_fx_gain(index));

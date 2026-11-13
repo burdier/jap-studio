@@ -205,12 +205,9 @@ impl DawApp {
             .racks
             .retain(|id, _| self.tracks.iter().any(|t| t.id == *id));
         if let Some(player) = &self.player {
-            player.set_fx_rack(
-                self.timeline
-                    .clip
-                    .as_ref()
-                    .and_then(|c| self.effect_rack(c.track)),
-            );
+            for (index, track) in self.tracks.iter().enumerate() {
+                player.set_fx_rack(track.id, self.effect_rack(index));
+            }
         }
         let piano_rack = self.piano_output_track().and_then(|i| self.effect_rack(i));
         let sampler_rack = self.sampler_track().and_then(|i| self.effect_rack(i));

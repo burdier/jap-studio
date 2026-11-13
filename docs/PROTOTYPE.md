@@ -4,9 +4,18 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
 
 ## Disponible
 
+- **PR-04, segundo incremento:** Play en contexto de audio mezcla los clips de
+  Arrangement en un stream. Suma por pista antes de FX y protección única en master.
+  Recursos preparados en worker; Stop o cambios durante preparación cancelan el arranque.
+  Ganancia de clip antes de FX; nivel/pan/rack direccionados por TrackId.
+  Prueba manual: dos WAV en pistas distintas desde el mismo beat, seleccionar audio,
+  colocar cursor al inicio y Play. Deben oírse ambos; el filtro de una pista deja
+  intacta la otra. Para el filtro fijar Audio a 48 kHz por la limitación ya documentada.
+  Sin mezcla con MIDI/Session ni loop/seek en caliente. Audición manual pendiente.
+
 - **PR-04, primer incremento:** fuente de clip extraída de CPAL y usada por el
   reproductor actual. Render por frames absolutos, recortes y buffers ya remuestreados;
-  pruebas sin dispositivo. Todavía un clip por reproducción, sin mezcla multipista.
+  pruebas sin dispositivo. El segundo incremento conecta estas fuentes a una salida compartida.
 
 - **Hay Filter (PR-03B):** paquete Lua v2 con SVF FunDSP nativo LP/HP/BP, frecuencia
   logarítmica, Q, selector y curva de respuesta en Track FX. Controles, bypass y

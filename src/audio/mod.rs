@@ -20,6 +20,6 @@ pub(crate) mod vst3;
 pub(crate) use assets::{AudioClip, AudioFile, PEAK_FRAMES};
 pub(crate) use drums::DrumPlayer;
 pub(crate) use midi_in::MidiHardwareIn;
-pub(crate) use playback::{Player, PreparedPlayback};
+pub(crate) use playback::{Player, PreparedPlayback, TrackInput};
 
 pub(crate) mod effects;

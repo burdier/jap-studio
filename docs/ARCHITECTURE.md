@@ -689,7 +689,7 @@ abre CPAL en la primera nota. La exclusividad con clip y percusión sigue coordi
 El Arrangement admite solapamientos sin sobrescribir clips. El recorte de bordes cambia la
 ventana visible (`trim_start`/`trim_len`) y conserva el archivo o patrón fuente. El clip activo
 se dibuja encima de los anteriores de su tipo; los MIDI se dibujan sobre audio. Esta política
-de edición/presentación no implica mezcla: el adaptador de audio reproduce un clip a la vez.
+de edición/presentación se conecta ahora a la mezcla de clips de audio de PR-04: cada pista suma sus clips antes de los FX. Los instrumentos MIDI aún usan adaptadores separados.
 
 `ui/clip_menu` posee el contexto y las acciones del menú de Arrangement, separado de
 `PianoRoll`. Su lista de opciones sirve tanto al teclado como al ratón; solo MIDI ofrece
@@ -784,5 +784,27 @@ al renderizar. Permite reutilizar la misma fuente con distintos tamaños de bloq
 
 `audio/playback` prepara esa fuente antes de construir el stream y conserva posición,
 FX, nivel, pan, Utility y publicación visual. La preparación/remuestreo en worker y
-su cancelación siguen en la ruta existente. Todavía reproduce un solo clip; mezcla,
-transporte compartido y frecuencia real de preparación de los FX siguen pendientes.
+su cancelación siguen en la ruta existente. El segundo incremento usa esta fuente
+para mezclar clips; seek/loop y frecuencia real de preparación de los FX siguen pendientes.
+
+## Mezcla de clips de audio (PR-04, commit 2)
+
+`PreparedPlayback` selecciona una salida y prepara `playback/mix::Mix` en el worker.
+El plan tiene hasta 256 pistas y 4096 clips. Cada pista conserva su `TrackId`, fuentes
+recortadas/remuestreadas, nivel, balance y ruta FX. Renderizar suma los clips con su
+ganancia individual en un bus de pista, procesa FX una sola vez, aplica nivel/pan
+y suma al master flotante. Utility procesa el master y `output::write_stereo` limita
+una sola vez en la salida física. Buffers de 256 frames en pila; sin E/S ni reservas
+por bloque. El callback posee el plan preparado; CPAL se destruye antes del estado.
+
+La UI toma un snapshot de todos los clips de audio, incluidos los no seleccionados.
+Stop descarta el trabajo pendiente; cambios de fuentes, revisión de pistas, tempo o
+salida antes de completarlo cancelan el arranque. Los controles y rutas existentes se
+publican por TrackId para evitar aplicar los de la pista seleccionada al master.
+El tercer incremento verifica y completa las operaciones de mezcla por pista.
+
+Un único contador de frames alimenta todas las fuentes y finaliza en el último clip.
+Los desplazamientos están contemplados; loop, seek en caliente, actualización de
+fuentes durante Play y preparación FX a la frecuencia real siguen pendientes.
+El modo MIDI conserva su prioridad actual; no se mezcla todavía con estos clips.
+Loro no recibe buffers ni procesadores; guardado global/collaboración siguen pendientes.
