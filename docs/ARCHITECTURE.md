@@ -1,5 +1,15 @@
 # Arquitectura del prototipo
 
+## PR-05: primera separación de voz y dispositivo
+
+`audio/piano/voice.rs` posee el sintetizador preparado, canal MIDI y patrón activo.
+Recibe comandos y renderiza bloques sin poseer CPAL. `audio/piano/render.rs` conserva
+la salida física, el filtro, FX, nivel y medidor y llama a esa voz desde el callback.
+`audio/piano/plan.rs` aplica eventos por frame y se comparte con la exportación offline.
+La preparación de SoundFont/sfizz continúa fuera del callback. En este incremento
+el reproductor sigue abriendo un stream exclusivo por instrumento; el motor común
+de PR-04 todavía no mezcla MIDI con WAV ni hay instancias independientes por pista.
+
 ## Foco visual y navegación opcional
 
 `ui/workspace_focus` guarda solo el panel activo y el panel ampliado; la vista usa

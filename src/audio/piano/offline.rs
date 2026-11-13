@@ -1,5 +1,5 @@
 //! Snapshot de configuración y consumidor offline del mismo scheduler/motor que la audición.
-use super::{PianoSettings, SynthBackend, load_soundfont, render::render_plan_segment};
+use super::{PianoSettings, SynthBackend, load_soundfont, plan::render_plan_segment};
 use elevate::{
     StereoFrame,
     musical::{model::Pattern, scheduler::PreparedPattern, time::TimeBase},

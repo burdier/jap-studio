@@ -22,6 +22,7 @@
 | Plan Spectro, LFO y host CLAP/VST3 | `docs/VISUAL_MODULATION.md` | Puertos tipados, rutas estables, eventos por frame y adaptación de plugins; requiere ampliar el motor |
 | Sampler: sfizz y recursos | `src/audio/sampler/` | ABI C, WAV temporal compartido, SFZ; preparación fuera de RT; `scripts/build-sfizz.sh` |
 | Sampler: ejecución y MIDI | `src/instruments/sampler.rs` | `ui/sampler/audio.rs`, `audio/piano/{backend,render}.rs`: reproductor y scheduler compartidos |
+| Voz de instrumento separada del stream (PR-05, commit 1) | `src/audio/piano/voice.rs` | `audio/piano/plan.rs` procesa eventos por frame también en export offline; `render.rs` conserva CPAL. La voz posee sintetizador, canal y patrón, sin GPUI ni dispositivo. Todavía se instancia dentro de un stream exclusivo |
 | Sampler: panel y carga | `src/ui/sampler/` | Catálogo `[+]`, perillas/teclado existentes, carga en background, waveform de 1024 picos |
 | Insertar pista sampler (`:sa`) | `src/ui/sampler/input.rs` | Acción `track.insert_sampler` del catálogo, menú de pistas y barra; reutiliza `edit_track_structure`, abre la pista existente si ya tiene la instancia |
 | Sampler: exportación | `src/audio/export/sources.rs` | Snapshot por tipo de instrumento; `docs/SAMPLER.md` |

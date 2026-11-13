@@ -338,6 +338,10 @@ La UI refleja frames del motor y el callback no decodifica ni prepara recursos.
 
 ## PR-05 — Instancias internas y MIDI por pista
 
+**Avance:** primer incremento: la voz de piano/sampler y su patrón se extrajeron
+del adaptador CPAL en `audio/piano/voice.rs`. Conserva la audición existente; aún
+faltan identidad de instancia por pista y conexión al mixer común.
+
 **Título sugerido:** `feat(audio): reproducir instrumentos independientes por pista`
 
 **Valor:** dos pistas con el mismo tipo de instrumento interpretan clips distintos a

@@ -4,6 +4,12 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
 
 ## Disponible
 
+- **PR-05, primer incremento:** `audio/piano/voice.rs` separa el estado de síntesis,
+  canal y patrón del adaptador CPAL existente. El audio y el comportamiento de la
+  audición permanecen iguales. La conexión de varias voces al stream de PR-04 y
+  las instancias por pista son los siguientes incrementos; MIDI + WAV no suenan
+  juntos todavía.
+
 - **PR-04, cuarto incremento:** reloj `musical::time::Transport` compartido por
   todos los clips de audio. `transport.seek <negras>` salta durante Play;
   Home y ⏮ comparten la operación de volver a cero. `transport.loop <inicio> <fin>`

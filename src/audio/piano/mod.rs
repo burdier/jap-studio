@@ -3,9 +3,11 @@ mod backend;
 mod filter;
 mod fluidsynth;
 mod offline;
+mod plan;
 mod prepare;
 mod render;
 mod soundfont;
+mod voice;
 
 use super::output::choose_output_config;
 use super::stereo_pan::StereoPan;
