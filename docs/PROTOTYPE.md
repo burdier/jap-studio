@@ -4,6 +4,10 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
 
 ## Disponible
 
+- **PR-04, primer incremento:** fuente de clip extraída de CPAL y usada por el
+  reproductor actual. Render por frames absolutos, recortes y buffers ya remuestreados;
+  pruebas sin dispositivo. Todavía un clip por reproducción, sin mezcla multipista.
+
 - **Hay Filter (PR-03B):** paquete Lua v2 con SVF FunDSP nativo LP/HP/BP, frecuencia
   logarítmica, Q, selector y curva de respuesta en Track FX. Controles, bypass y
   duplicación por instancia; sin LFO/Drive/Mix. Los clips MIDI aplican los FX

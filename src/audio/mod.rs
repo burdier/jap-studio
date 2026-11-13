@@ -3,6 +3,7 @@
 
 pub(crate) mod analyzer;
 mod assets;
+mod clip_source;
 pub(crate) mod device;
 pub(crate) mod device_probe;
 pub(crate) mod drums;

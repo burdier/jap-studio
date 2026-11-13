@@ -773,3 +773,16 @@ externas al callback. La topología musical conserva exclusivamente IDs y parám
 sin importar audio ni GPUI. `FxGain` mantiene su rampa escalar para cadenas Utility y
 recibe además una ruta de efectos para los streams de audio/MIDI. El guardado binario,
 la duplicación de instancias, los buses de grupo y el export VST3 quedan pendientes.
+
+## Fuente de clip extraída (PR-04, commit 1)
+
+`audio/clip_source` posee referencias a las muestras originales o remuestreadas y
+los límites del clip en frames de salida. Su render recibe una posición absoluta
+y un bloque prestado; sobrescribe las muestras, con silencio fuera del intervalo.
+No abre CPAL, no avanza un reloj propio, no reserva memoria ni prepara recursos
+al renderizar. Permite reutilizar la misma fuente con distintos tamaños de bloque.
+
+`audio/playback` prepara esa fuente antes de construir el stream y conserva posición,
+FX, nivel, pan, Utility y publicación visual. La preparación/remuestreo en worker y
+su cancelación siguen en la ruta existente. Todavía reproduce un solo clip; mezcla,
+transporte compartido y frecuencia real de preparación de los FX siguen pendientes.

@@ -1,5 +1,7 @@
 //! Reproductor de UN clip. Adaptador provisional: no es el motor multipista.
-use super::{AudioClip, output::choose_output_config, stereo_pan::StereoPan};
+use super::{
+    AudioClip, clip_source::ClipSource, output::choose_output_config, stereo_pan::StereoPan,
+};
 use cpal::{
     FromSample, SampleFormat, SizedSample,
     traits::{DeviceTrait, StreamTrait},
@@ -83,6 +85,7 @@ impl PreparedPlayback {
             .map_err(|error| error.to_string())?
             .beats_per_second();
         let rate = setup.config.sample_rate;
+        let source = ClipSource::new(&clip, converted, rate, beats_per_second);
         let state = Arc::new(PlaybackState {
             gain: AtomicU32::new(gain.to_bits()),
             pan: StereoPan::new(pan),
@@ -100,37 +103,29 @@ impl PreparedPlayback {
                 &device,
                 setup.config,
                 setup.first_channel,
-                &clip,
-                converted,
+                source,
                 state.clone(),
-                beats_per_second,
             ),
             SampleFormat::I16 => Player::stream::<i16>(
                 &device,
                 setup.config,
                 setup.first_channel,
-                &clip,
-                converted,
+                source,
                 state.clone(),
-                beats_per_second,
             ),
             SampleFormat::I32 => Player::stream::<i32>(
                 &device,
                 setup.config,
                 setup.first_channel,
-                &clip,
-                converted,
+                source,
                 state.clone(),
-                beats_per_second,
             ),
             SampleFormat::U16 => Player::stream::<u16>(
                 &device,
                 setup.config,
                 setup.first_channel,
-                &clip,
-                converted,
+                source,
                 state.clone(),
-                beats_per_second,
             ),
             _ => return Err("Formato de salida no compatible".into()),
         }?;
@@ -149,14 +144,11 @@ impl Player {
         device: &cpal::Device,
         config: cpal::StreamConfig,
         first_channel: u16,
-        clip: &AudioClip,
-        converted: Option<Arc<Vec<[f32; 2]>>>,
+        source: ClipSource,
         state: Arc<PlaybackState>,
-        beats_per_second: f64,
     ) -> Result<cpal::Stream, String> {
         let channels = usize::from(config.channels);
         let first = usize::from(first_channel);
-        let rate = f64::from(config.sample_rate);
         let mut volume = Volume::with_gain(
             ProcessSpec::new(f64::from(config.sample_rate)).map_err(|error| error.to_string())?,
             f32::from_bits(state.gain.load(Ordering::Relaxed)),
@@ -167,11 +159,7 @@ impl Player {
             .prepare(ProcessSpec::new(f64::from(config.sample_rate)).map_err(|e| e.to_string())?)
             .map_err(|e| e.to_string())?;
         let mut fx = state.fx.prepare();
-        let file = clip.file.clone();
-        let clip_start = (clip.start_beat / beats_per_second * rate).round() as u64;
-        let source_offset = (clip.trim_start * rate).round() as u64;
-        let visible = (clip.length_seconds() * rate).round() as u64;
-        let clip_end = clip_start.saturating_add(visible);
+        let clip_end = source.end_frame();
         let mut position = state.position.load(Ordering::Relaxed);
         let error_state = state.clone();
         device
@@ -185,20 +173,8 @@ impl Player {
                     let mut block = [[0.0_f32; 2]; 256];
                     for output_block in output.chunks_mut(256 * channels) {
                         let count = output_block.len() / channels;
-                        for frame in block.iter_mut().take(count) {
-                            *frame = position
-                                .checked_sub(clip_start)
-                                .filter(|index| *index < visible)
-                                .and_then(|index| {
-                                    converted
-                                        .as_deref()
-                                        .unwrap_or(&file.frames)
-                                        .get((index + source_offset) as usize)
-                                })
-                                .copied()
-                                .unwrap_or([0.0; 2]);
-                            position = position.saturating_add(1).min(clip_end);
-                        }
+                        source.render(position, &mut block[..count]);
+                        position = position.saturating_add(count as u64).min(clip_end);
                         fx.process(&state.fx, &mut block[..count]);
                         volume.process(&mut block[..count]);
                         state.pan.apply(&mut block[..count]);
