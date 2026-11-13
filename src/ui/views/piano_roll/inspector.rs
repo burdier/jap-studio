@@ -222,12 +222,6 @@ impl DawApp {
                                     cx,
                                 ))
                                 .child(self.roll_button(
-                                    format!("Grid: 1/{}", self.piano_roll.resolution.denominator()),
-                                    false,
-                                    RollAction::Form("midi.grid"),
-                                    cx,
-                                ))
-                                .child(self.roll_button(
                                     "Ajustar vista",
                                     false,
                                     RollAction::ResetView,
