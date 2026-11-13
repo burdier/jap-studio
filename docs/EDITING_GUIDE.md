@@ -111,7 +111,7 @@
 | Dibujar pasos | `src/ui/views/pattern.rs` | Controlador anterior |
 | Layout Arrangement | `src/ui/views/arrangement.rs` | `views/tracks.rs` |
 | Track Headers configurables (TCP estilo REAPER) | `src/ui/views/tracks.rs` | `components/button.rs`, `views/settings_tracks.rs`, `design.rs`; identidad, mezcla, estado e instrumentos/FX comparten agrupación visual y opciones |
-| Estado M/S/R y audibilidad de pistas | `src/ui/audio_actions.rs` | `src/musical/track.rs`, `views/tracks.rs` |
+| Estado M/S/R y audibilidad de pistas | `src/musical/track/mix.rs`, `src/ui/audio_actions.rs` | `src/musical/track.rs`, `views/tracks.rs` |
 | Workspace Arrangement + piano roll acoplado/separado | `src/ui/views/workspace.rs` | `src/ui/piano_roll/window.rs`, `views/piano_roll/` |
 | Pointer, selección y borrado de notas/regiones | `src/ui/piano_roll/{pointer,selection,edit,drag}.rs` | `keyboard`, `commands`, `actions` y `views/piano_roll/{toolbar,grid}`; catálogo compartido, Delete/Backspace, Ctrl+A y doble clic |
 | Suavizado visual de notas y snap | `src/ui/piano_roll/motion.rs` | `drag.rs`, `views/piano_roll/grid.rs`; interpolación por frame solo visual, independiente del motor |

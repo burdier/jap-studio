@@ -7,6 +7,8 @@ use std::{
 };
 mod batch;
 mod management;
+mod mix;
+pub use mix::{EffectiveMix, UNITY_LEVEL, effective_mix};
 mod snapshot;
 mod validation;
 pub use batch::{

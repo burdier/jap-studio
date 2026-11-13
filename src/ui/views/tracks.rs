@@ -14,7 +14,7 @@ use gpui::{
 };
 
 /// Nivel de fader (0–100) que equivale a ganancia 1.0x.
-pub(in crate::ui) const TRACK_UNITY_LEVEL: i32 = 75;
+pub(in crate::ui) const TRACK_UNITY_LEVEL: i32 = elevate::musical::track::UNITY_LEVEL;
 pub(in crate::ui) const DEMO_LEVELS: [i32; 8] = [78, 65, 52, 48, 70, 58, 42, 55];
 pub(in crate::ui) const DEMO_PANS: [i32; 8] = [50, 50, 30, 50, 50, 70, 50, 50];
 const MAX_ROWS: usize = 3;

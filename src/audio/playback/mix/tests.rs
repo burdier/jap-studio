@@ -103,3 +103,74 @@ fn filter_changes_only_its_track_and_shared_track_clips_enter_one_bus() {
     assert!(last[0].abs() < 0.0001);
     assert!((last[1] - 0.4).abs() < 0.001);
 }
+
+#[test]
+fn live_mute_solo_level_and_pan_use_shared_resolution_without_muting_other_tracks() {
+    use elevate::musical::track::{Track, TrackKind, effective_mix};
+    let mut tracks = vec![
+        Track::new("A", TrackKind::Audio),
+        Track::new("B", TrackKind::Audio),
+    ];
+    let mut inputs = vec![
+        track(0, vec![clip([0.4, 0.], 0., 100000)]),
+        track(0, vec![clip([0., 0.6], 0., 100000)]),
+    ];
+    for (input, t) in inputs.iter_mut().zip(&tracks) {
+        input.id = t.id;
+    }
+    let mut mix = Mix::prepare(inputs, 48000, 120.).unwrap();
+    let mut levels = vec![75, 75];
+    let mut pans = vec![50, 50];
+    let mut position = 0;
+    let mut hear = |tracks: &[Track], levels: &[i32], pans: &[i32]| {
+        // The same resolver used by DawApp publishes to the same controls read by render.
+        for (i, t) in tracks.iter().enumerate() {
+            let effective = effective_mix(tracks, levels, pans, i);
+            let control = &mix
+                .tracks
+                .iter()
+                .find(|p| p.control.id == t.id)
+                .unwrap()
+                .control;
+            control
+                .gain
+                .store(effective.gain.to_bits(), Ordering::Relaxed);
+            control.pan.set(effective.pan);
+        }
+        let mut output = vec![[0.; 2]; 8192];
+        mix.render(position, &mut output);
+        position += 8192;
+        *output.last().unwrap()
+    };
+    let close = |actual: [f32; 2], expected: [f32; 2]| {
+        assert!(
+            (actual[0] - expected[0]).abs() < 0.001 && (actual[1] - expected[1]).abs() < 0.001,
+            "{actual:?} != {expected:?}"
+        );
+    };
+    close(hear(&tracks, &levels, &pans), [0.4, 0.6]);
+    tracks[0].muted = true;
+    close(hear(&tracks, &levels, &pans), [0., 0.6]);
+    tracks[0].muted = false;
+    tracks[0].solo = true;
+    close(hear(&tracks, &levels, &pans), [0.4, 0.]);
+    tracks[1].solo = true;
+    close(hear(&tracks, &levels, &pans), [0.4, 0.6]);
+    tracks[0].muted = true;
+    close(hear(&tracks, &levels, &pans), [0., 0.6]);
+    tracks[0].muted = false;
+    tracks[0].solo = false;
+    tracks[1].solo = false;
+    levels[0] = 30;
+    close(hear(&tracks, &levels, &pans), [0.16, 0.6]);
+    pans[0] = 100;
+    close(hear(&tracks, &levels, &pans), [0., 0.6]);
+    pans[0] = 50;
+    pans[1] = 0;
+    close(hear(&tracks, &levels, &pans), [0.16, 0.]);
+    // Reordering UI tracks keeps updates addressed to their identities.
+    tracks.swap(0, 1);
+    levels.swap(0, 1);
+    pans.swap(0, 1);
+    close(hear(&tracks, &levels, &pans), [0.16, 0.]);
+}

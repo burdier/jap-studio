@@ -1,5 +1,5 @@
 //! Coordinación UI → adaptadores de audio; decodificación en background.
-use super::{CenterView, DawApp, pattern_editor::PatternAction, views::tracks::TRACK_UNITY_LEVEL};
+use super::{CenterView, DawApp, pattern_editor::PatternAction};
 use crate::audio::DrumPlayer;
 use crate::instruments::piano_params::{self, Applies, ParamId, SPECS};
 use elevate::musical::{
@@ -7,7 +7,7 @@ use elevate::musical::{
     midi::{MidiMessage, MidiTarget, RoutedMidi},
     midi_map::{MappedEffect, MidiAction, MidiBindTarget},
     pitch::note_name,
-    track::{TrackKind, assign_instrument, has_solo},
+    track::{TrackKind, assign_instrument, effective_mix},
 };
 
 impl DawApp {
@@ -633,35 +633,10 @@ impl DawApp {
     }
     /// Fader de pista (`TRACK_UNITY_LEVEL` = 1.0x). Utility es una etapa posterior independiente.
     pub(super) fn track_gain(&self, track: usize) -> f32 {
-        if !self.track_is_audible(track) {
-            return 0.0;
-        }
-        let level = self
-            .track_levels
-            .get(track)
-            .copied()
-            .unwrap_or(TRACK_UNITY_LEVEL);
-        let parent_level = self
-            .tracks
-            .get(track)
-            .and_then(|t| t.parent)
-            .and_then(|id| self.tracks.iter().position(|t| t.id == id))
-            .map_or(1.0, |i| {
-                self.track_levels[i] as f32 / TRACK_UNITY_LEVEL as f32
-            });
-        (level as f32 / TRACK_UNITY_LEVEL as f32 * parent_level).clamp(0.0, 2.0)
+        effective_mix(&self.tracks, &self.track_levels, &self.track_pans, track).gain
     }
-
     pub(super) fn track_is_audible(&self, track: usize) -> bool {
-        let Some(track_state) = self.tracks.get(track) else {
-            return false;
-        };
-        let parent = track_state
-            .parent
-            .and_then(|id| self.tracks.iter().find(|t| t.id == id));
-        !track_state.muted
-            && parent.is_none_or(|p| !p.muted)
-            && (!has_solo(&self.tracks) || track_state.solo || parent.is_some_and(|p| p.solo))
+        effective_mix(&self.tracks, &self.track_levels, &self.track_pans, track).audible
     }
     fn piano_gain(&self) -> f32 {
         let id = self.instrument.id();
@@ -706,16 +681,7 @@ impl DawApp {
     }
 
     pub(in crate::ui) fn track_pan(&self, index: usize) -> f32 {
-        let own = self
-            .track_pans
-            .get(index)
-            .map_or(0.0, |pan| (*pan - 50) as f32 / 50.0);
-        let parent = self
-            .tracks
-            .get(index)
-            .and_then(|t| t.parent)
-            .and_then(|id| self.tracks.iter().position(|t| t.id == id));
-        (own + parent.map_or(0.0, |i| (self.track_pans[i] - 50) as f32 / 50.0)).clamp(-1.0, 1.0)
+        effective_mix(&self.tracks, &self.track_levels, &self.track_pans, index).pan
     }
     fn piano_pan(&self) -> f32 {
         let Some(track) = self.instrument_track() else {

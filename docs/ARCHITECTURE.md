@@ -808,3 +808,10 @@ Los desplazamientos están contemplados; loop, seek en caliente, actualización 
 fuentes durante Play y preparación FX a la frecuencia real siguen pendientes.
 El modo MIDI conserva su prioridad actual; no se mezcla todavía con estos clips.
 Loro no recibe buffers ni procesadores; guardado global/collaboración siguen pendientes.
+
+La resolución de mute/solo/nivel/balance vive en `musical/track/mix` y se comparte
+entre preparación y controles de UI. `UNITY_LEVEL` define el fader unitario; mute
+prevalece sobre solo, varios solos permanecen audibles y se conserva la herencia
+actual del grupo padre. Los atómicos de cada pista se direccionan por TrackId,
+independientemente de selección u orden visual. La prueba de mezcla verifica
+cambios durante render con audio y reordenación de pistas.

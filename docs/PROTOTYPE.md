@@ -4,6 +4,10 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
 
 ## Disponible
 
+- **PR-04, tercer incremento:** resolución común headless de mute/solo/nivel/pan.
+  Prueba de audio cubre mute, múltiples solos, mute sobre solo, nivel, balance y
+  reordenación sin cambiar los destinatarios por TrackId. La UI usa esa resolución.
+
 - **PR-04, segundo incremento:** Play en contexto de audio mezcla los clips de
   Arrangement en un stream. Suma por pista antes de FX y protección única en master.
   Recursos preparados en worker; Stop o cambios durante preparación cancelan el arranque.
