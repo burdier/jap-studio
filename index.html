@@ -430,11 +430,11 @@
             <p>Escuchar varias pistas de audio con mezcla independiente.</p>
             <div class="depends">Depende de PR-03</div>
             <details class="commit-plan">
-              <summary>2 de 4 commits completados · mezcla de audio · suite correcta</summary>
+              <summary>3 de 4 commits completados · mezcla por pista verificada</summary>
               <ol>
                 <li data-status="done" data-commit="3592aa4"><strong>refactor(audio): separar fuente de clip y salida CPAL</strong>Fuente inmutable por frames, integrada en el reproductor actual. Misma preparación y FX; scripts/check.sh correcto. Audición manual pendiente.</li>
                 <li data-status="done" data-commit="549688e"><strong>feat(audio): mezclar dos fuentes en una salida</strong>Play mezcla clips de audio por pista en un stream. Preparación en worker, FX antes del master, pruebas de suma/bloques/filtro y salida física. scripts/check.sh correcto (72 pruebas del binario); escucha manual pendiente.</li>
-                <li><strong>feat(audio): aplicar mute, solo, nivel y pan por pista</strong>Conectar controles al plan y probar cada una de las cuatro operaciones. No abre el trabajo de transporte.</li>
+                <li data-status="done" data-commit="cfba72d"><strong>feat(audio): aplicar mute, solo, nivel y pan por pista</strong>Resolución headless común, controles por TrackId y prueba de audio de las cuatro operaciones, solos múltiples y reordenación. Suite completa correcta.</li>
                 <li><strong>feat(transport): ejecutar clips en frames compartidos</strong>Sincronizar Play, Stop, seek y loop; cubrir offsets, solapamientos y límites de bloque junto a su controlador.</li>
               </ol>
             </details>

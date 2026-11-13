@@ -300,7 +300,7 @@ compartido se podrá añadir el LFO sincronizado; este incremento no lo implemen
 
 ## PR-04 — Mezclar clips de audio bajo un único transporte
 
-**Avance:** 2 de 4 commits (`3592aa4`, `549688e`). Fuente de clip sin stream integrada en
+**Avance:** 3 de 4 commits (`3592aa4`, `549688e`, `cfba72d`). Fuente de clip sin stream integrada en
 el reproductor actual; conserva preparación, remuestreo, cancelación y FX.
 `scripts/check.sh` completo pasó, incluidas pruebas de la fuente sin dispositivo
 para recortes, particiones, seek y muestras remuestreadas. Audición manual pendiente.
@@ -308,7 +308,8 @@ para recortes, particiones, seek y muestras remuestreadas. Audición manual pend
 Segundo incremento: Play en contexto de audio toma todos los clips de Arrangement,
 prepara fuentes por pista y suma en un stream. FX por pista antes del master;
 controles existentes redirigidos por TrackId como integración mínima. El commit 3
-completará la validación de mute/solo/nivel/pan y sus interacciones. Pruebas de suma
+comparte la resolución de mute/solo/nivel/pan con la UI y verifica sus cambios
+con audio, solos múltiples y reordenación por TrackId. Suite completa correcta. Pruebas de suma
 con margen, protección única, offsets/bloques y filtro aislado pasan. Suite completa
 correcta (72 pruebas del binario); audición manual pendiente. MIDI, Session,
 loop/seek en caliente y preparación FX a frecuencia real siguen pendientes.
