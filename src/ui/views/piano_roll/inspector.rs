@@ -1,4 +1,4 @@
-//! Inspector visual del clip: usa las mismas etiquetas y barras que las cabeceras.
+//! Inspector del piano roll con la jerarquía de superficies de Track FX.
 use crate::ui::{DawApp, DesignSystem, components::button::badge_tag, piano_roll::RollAction};
 use gpui::{Context, Div, IntoElement, MouseButton, div, prelude::*, px, rgb};
 
@@ -7,13 +7,13 @@ impl DawApp {
         let ds = &self.ds;
         let clip = self.timeline.midi_clip.as_ref().expect("clip visible");
         div()
-            .w(px(176.0))
+            .w(px(218.0))
             .flex_shrink_0()
             .h_full()
             .min_h_0()
             .flex()
             .flex_col()
-            .bg(rgb(ds.panel))
+            .bg(rgb(ds.panel_dark))
             .border_r_1()
             .border_color(rgb(ds.border))
             .child(
@@ -23,9 +23,12 @@ impl DawApp {
                     .flex()
                     .items_center()
                     .gap_1()
-                    .px_1()
+                    .px_2()
+                    .bg(rgb(ds.panel))
+                    .border_b_1()
+                    .border_color(rgb(ds.border))
                     .children(
-                        ["Clip", "Notes", "Scale", "View"]
+                        ["Clip", "Notas", "Escala", "Vista"]
                             .into_iter()
                             .enumerate()
                             .map(|(index, label)| {
@@ -46,49 +49,53 @@ impl DawApp {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .px(px(5.0))
+                    .p_2()
                     .child(div().when(self.piano_roll.inspector_tab == 0, |container| {
                         container.child(
-                            section(ds, "Clip Properties")
-                                .child(self.roll_button(
-                                    clip.name.clone(),
-                                    false,
-                                    RollAction::Form("midi.clip.rename"),
-                                    cx,
-                                ))
-                                .child(
-                                    div()
-                                        .flex()
-                                        .items_center()
-                                        .h(px(16.0))
-                                        .child(
-                                            div()
-                                                .w(px(64.0))
-                                                .text_color(rgb(ds.muted))
-                                                .text_size(px(10.5))
-                                                .child("Color"),
-                                        )
-                                        .child(self.roll_button(
-                                            "Cambiar",
-                                            false,
-                                            RollAction::ChooseClipColor,
-                                            cx,
-                                        )),
-                                )
-                                .child(self.roll_button(
-                                    format!("Channel: {}", clip.channel),
-                                    false,
-                                    RollAction::Form("midi.clip.channel"),
-                                    cx,
-                                ))
-                                .child(self.roll_button(
-                                    format!(
-                                        "Length: {:.2} bars",
-                                        clip.pattern_beats() / self.timeline.meter.beats_per_bar()
+                            section(ds, "PROPIEDADES DEL CLIP")
+                                .child(property_action(
+                                    ds,
+                                    "Nombre",
+                                    self.roll_button(
+                                        clip.name.clone(),
+                                        false,
+                                        RollAction::Form("midi.clip.rename"),
+                                        cx,
                                     ),
-                                    false,
-                                    RollAction::Form("midi.clip.length"),
-                                    cx,
+                                ))
+                                .child(property_action(
+                                    ds,
+                                    "Color",
+                                    self.roll_button(
+                                        "Cambiar",
+                                        false,
+                                        RollAction::ChooseClipColor,
+                                        cx,
+                                    ),
+                                ))
+                                .child(property_action(
+                                    ds,
+                                    "Canal",
+                                    self.roll_button(
+                                        format!("{}", clip.channel),
+                                        false,
+                                        RollAction::Form("midi.clip.channel"),
+                                        cx,
+                                    ),
+                                ))
+                                .child(property_action(
+                                    ds,
+                                    "Duración",
+                                    self.roll_button(
+                                        format!(
+                                            "{:.2} compases",
+                                            clip.pattern_beats()
+                                                / self.timeline.meter.beats_per_bar()
+                                        ),
+                                        false,
+                                        RollAction::Form("midi.clip.length"),
+                                        cx,
+                                    ),
                                 ))
                                 .child(property(
                                     ds,
@@ -112,6 +119,7 @@ impl DawApp {
                                         ),
                                     ),
                                 ))
+                                .child(div().h(px(1.0)).my_1().bg(rgb(ds.border)))
                                 .child(self.roll_checkbox(
                                     "Loop",
                                     clip.props.looped,
@@ -365,30 +373,53 @@ fn section(ds: &DesignSystem, label: &'static str) -> Div {
     div()
         .flex()
         .flex_col()
-        .pb(px(5.0))
-        .mb(px(3.0))
-        .border_b_1()
-        .border_color(rgb(ds.grid))
+        .gap(px(5.0))
+        .p_2()
+        .mb(px(8.0))
+        .rounded(px(ds.radius_sm))
+        .border_1()
+        .border_color(rgb(ds.border))
+        .bg(rgb(ds.panel))
         .child(
             div()
-                .h(px(23.0))
+                .h(px(25.0))
+                .mb(px(3.0))
                 .flex()
                 .items_center()
-                .text_size(px(12.0))
-                .text_color(rgb(ds.accent))
-                .child(format!("▾ {label}")),
+                .border_b_1()
+                .border_color(rgb(ds.border))
+                .text_size(px(10.5))
+                .text_color(rgb(ds.muted))
+                .child(label),
         )
+}
+
+fn property_action(ds: &DesignSystem, label: &'static str, control: Div) -> Div {
+    div()
+        .h(px(27.0))
+        .flex()
+        .items_center()
+        .gap_1()
+        .child(
+            div()
+                .w(px(62.0))
+                .flex_shrink_0()
+                .text_size(px(10.5))
+                .text_color(rgb(ds.muted))
+                .child(label),
+        )
+        .child(control.flex_1().min_w_0().overflow_hidden())
 }
 
 fn property(ds: &DesignSystem, label: &'static str, value: impl Into<gpui::SharedString>) -> Div {
     div()
-        .h(px(16.0))
+        .h(px(24.0))
         .flex()
         .items_center()
         .text_size(px(10.5))
         .child(
             div()
-                .w(px(64.0))
+                .w(px(66.0))
                 .flex_shrink_0()
                 .text_color(rgb(ds.muted))
                 .child(label),
