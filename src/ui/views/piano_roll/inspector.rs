@@ -6,6 +6,7 @@ impl DawApp {
     pub(super) fn render_roll_inspector(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let ds = &self.ds;
         let clip = self.timeline.midi_clip.as_ref().expect("clip visible");
+        let clip_color = ds.clip_color(clip.track, clip.props);
         div()
             .w(px(218.0))
             .flex_shrink_0()
@@ -53,6 +54,13 @@ impl DawApp {
                     .child(div().when(self.piano_roll.inspector_tab == 0, |container| {
                         container.child(
                             section(ds, "PROPIEDADES DEL CLIP")
+                                .child(
+                                    div()
+                                        .h(px(5.0))
+                                        .mb(px(4.0))
+                                        .rounded(px(2.0))
+                                        .bg(rgb(clip_color)),
+                                )
                                 .child(property_action(
                                     ds,
                                     "Nombre",
@@ -66,12 +74,25 @@ impl DawApp {
                                 .child(property_action(
                                     ds,
                                     "Color",
-                                    self.roll_button(
-                                        "Cambiar",
-                                        false,
-                                        RollAction::ChooseClipColor,
-                                        cx,
-                                    ),
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap_1()
+                                        .child(
+                                            div()
+                                                .size(px(21.0))
+                                                .flex_shrink_0()
+                                                .rounded(px(3.0))
+                                                .border_1()
+                                                .border_color(rgb(ds.frame_border()))
+                                                .bg(rgb(clip_color)),
+                                        )
+                                        .child(self.roll_button(
+                                            "Cambiar",
+                                            false,
+                                            RollAction::ChooseClipColor,
+                                            cx,
+                                        )),
                                 ))
                                 .child(property_action(
                                     ds,
