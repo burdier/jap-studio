@@ -144,6 +144,7 @@
 | Renombrar, duplicar, silenciar y mover clips | `src/ui/clip_actions.rs` | `audio/assets.rs` conserva el nombre de cada instancia de audio |
 | Dividir y restaurar recorte de clips | `src/ui/timeline/clip_edit.rs` | `clip_edit_tests.rs`; fuentes intactas, respeta bloqueo y origen temporal |
 | Regla/cursor/carriles | `src/ui/timeline/paint.rs` | `waveform.rs` |
+| Marcas y números adaptativos del Arrangement | `src/ui/timeline/musical_grid.rs` | `paint.rs`, `components/bar_grid.rs`: secuencia de ticks entera, jerarquía compás/pulso/subdivisión y etiquetas según zoom; no cambia snap. Verificar con `cargo test --bin daw-gpui ui::timeline --locked` en gpui-dev |
 | Tempo y compás editables | `src/musical/time.rs`, `src/ui/timing.rs` | `src/ui/timeline/mod.rs`, `views/transport.rs`, `actions.rs`, `catalog.rs`, captura/importación MIDI, reproducción/exportación |
 | Regla inferior de minutos/segundos | `src/ui/timeline/time_ruler.rs` | `views/arrangement.rs`; mismo viewport, picking y gestos que la regla musical |
 | Partículas | `src/ui/timeline/particles.rs` | `paint.rs`, tokens en `design.rs` |

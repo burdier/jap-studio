@@ -9,6 +9,7 @@ mod import_preview;
 mod interaction;
 mod materialize;
 mod midi_clips;
+mod musical_grid;
 mod paint;
 mod particles;
 mod rows;

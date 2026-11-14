@@ -1,4 +1,5 @@
 //! Regla, carriles, rejilla y cursores. La waveform se dibuja en waveform.rs.
+use super::musical_grid::{self, MarkKind};
 use super::{DesignSystem, DragKind, Timeline, TimelineArea, waveform};
 use crate::ui::track_drag::TrackReorderVisual;
 use gpui::{
@@ -21,7 +22,7 @@ impl Timeline {
         let bounds_handle = self.bounds(area).clone();
         let viewport = self.viewport;
         let beats_per_bar = self.meter.beats_per_bar();
-        let beat_length = 4.0 / f64::from(self.meter.denominator());
+        let meter = self.meter;
         let bpm = self.tempo.bpm();
         let original_layout = self.layout.clone().unwrap_or_else(|| {
             crate::ui::track_layout::TrackLayout::uniform(track_count, design.track_header_height)
@@ -69,40 +70,52 @@ impl Timeline {
         canvas(
             move |bounds, window, _| {
                 bounds_handle.set(bounds);
+                let width = f64::from(f32::from(bounds.size.width));
+                let marks = musical_grid::marks(
+                    viewport.grid(),
+                    meter,
+                    width,
+                    f64::from(design.font_size_xs),
+                );
                 let mut labels = Vec::new();
                 if area == TimelineArea::Ruler {
-                    let width = f64::from(f32::from(bounds.size.width));
                     let mut previous_end = bounds.left();
-                    for bar in viewport.grid().visible_bars(width, beats_per_bar) {
-                        let x =
-                            bounds.left() + px(viewport.x_at(bar as f64 * beats_per_bar) as f32);
-                        let origin =
-                            point(x.max(bounds.left()) + px(design.padding_xs), bounds.top());
+                    for mark in &marks {
+                        let Some(text) = &mark.label else { continue };
+                        let x = bounds.left() + px(viewport.x_at(mark.beat).round() as f32);
+                        let origin = point(x + px(design.padding_xs), bounds.top());
                         if origin.x < previous_end {
                             continue;
                         }
-                        let text = (bar + 1).to_string();
                         let run = TextRun {
                             len: text.len(),
                             font: window.text_style().font(),
-                            color: rgb(design.text).into(),
+                            color: rgb(if mark.kind == MarkKind::Bar {
+                                design.text
+                            } else {
+                                design.muted
+                            })
+                            .into(),
                             background_color: None,
                             underline: None,
                             strikethrough: None,
                         };
                         let line = window.text_system().shape_line(
-                            text.into(),
+                            text.clone().into(),
                             px(design.font_size_xs),
                             &[run],
                             None,
                         );
+                        if origin.x + line.width > bounds.right() {
+                            continue;
+                        }
                         previous_end = origin.x + line.width + px(design.padding_sm);
                         labels.push((origin, line));
                     }
                 }
-                labels
+                (marks, labels)
             },
-            move |bounds, labels, window, cx| {
+            move |bounds, (marks, labels), window, cx| {
                 window.with_content_mask(Some(ContentMask { bounds }), |window| {
                     window.paint_quad(fill(
                         bounds,
@@ -160,36 +173,35 @@ impl Timeline {
                             ));
                         }
                     }
-                    crate::ui::components::bar_grid::paint(
-                        bounds,
-                        viewport.grid(),
-                        beats_per_bar,
-                        &design,
-                        window,
-                    );
+                    // Evitar una textura de rayas en compases muy cortos al alejar.
+                    if beats_per_bar * viewport.pixels_per_beat >= 8.0 {
+                        crate::ui::components::bar_grid::paint_bands(
+                            bounds,
+                            viewport.grid(),
+                            beats_per_bar,
+                            &design,
+                            window,
+                        );
+                    }
                     let width = f64::from(f32::from(bounds.size.width));
-                    let step = viewport.grid_step().min(beat_length);
-                    let first_tick = (viewport.first_beat / step).ceil() as u64;
-                    let last_tick = (viewport.beat_at(width) / step).floor() as u64;
-                    for tick in first_tick..=last_tick.min(first_tick.saturating_add(4096)) {
-                        let beat = tick as f64 * step;
-                        let is_bar = (beat / beats_per_bar - (beat / beats_per_bar).round()).abs()
-                            < 0.000_001;
-                        if is_bar {
-                            continue;
-                        } // Ya dibujado por el componente de compases.
-                        let is_beat =
-                            (beat / beat_length - (beat / beat_length).round()).abs() < 0.000_001;
-                        let x = bounds.left() + px(viewport.x_at(beat) as f32);
+                    for mark in marks {
+                        let (thickness, tick_height, color) = match mark.kind {
+                            MarkKind::Bar => (1.5, 11.0, (design.muted << 8) | 0xa0),
+                            MarkKind::Beat => (1.0, 7.0, (design.text << 8) | 0x40),
+                            MarkKind::Subdivision => (1.0, 3.0, (design.text << 8) | 0x1c),
+                        };
+                        let x = bounds.left() + px(viewport.x_at(mark.beat).round() as f32);
                         let height = if area == TimelineArea::Lanes {
                             bounds.size.height
                         } else {
-                            px(4.0)
+                            px(tick_height)
                         };
-                        let color = if is_beat { design.border } else { design.panel };
                         window.paint_quad(fill(
-                            Bounds::new(point(x, bounds.bottom() - height), size(px(1.0), height)),
-                            rgb(color),
+                            Bounds::new(
+                                point(x, bounds.bottom() - height),
+                                size(px(thickness), height),
+                            ),
+                            rgba(color),
                         ));
                     }
                     if area == TimelineArea::Lanes {

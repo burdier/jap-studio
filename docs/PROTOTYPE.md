@@ -166,6 +166,11 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
 - Arrangement y piano roll alternan un fondo tenue por compás, con divisiones y
   números más claros. Componente compartido, adaptado al tema y la firma de compás;
   mantiene la alternancia al desplazar y hacer zoom, sin cambiar notas ni snap.
+- La regla musical del Arrangement añade números al acercar: compás (`2`), pulso
+  (`2.3`) y ticks dentro del pulso (`2.3.480`, media negra en 4/4). Las líneas tienen
+  jerarquía de contraste y longitud, separación mínima y las mismas posiciones en
+  regla/carriles; el scroll conserva su numeración absoluta. No modifica el snap.
+  Verificación completa con `scripts/check.sh` correcta; revisión visual/interactiva pendiente.
 
 - Daynight Studio: variante oscura de Daylight Studio, con paneles diferenciados,
   texto claro y acentos mates. Disponible en Apariencia y mediante `THEME=daynight`;

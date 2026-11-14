@@ -9,6 +9,30 @@ pub(in crate::ui) fn paint(
     design: &DesignSystem,
     window: &mut Window,
 ) {
+    paint_bands(bounds, axis, beats_per_bar, design, window);
+    let width = f64::from(f32::from(bounds.size.width));
+    for bar in axis.visible_bars(width, beats_per_bar) {
+        let start = axis.x_at(bar as f64 * beats_per_bar);
+        if start >= 0.0 && start < width {
+            window.paint_quad(fill(
+                Bounds::new(
+                    point(bounds.left() + px(start as f32), bounds.top()),
+                    size(px(1.5_f32.min((width - start) as f32)), bounds.size.height),
+                ),
+                rgba((design.muted << 8) | 0xa0),
+            ));
+        }
+    }
+}
+
+/// Solo el fondo; permite que el Arrangement dibuje todas sus marcas en una pasada.
+pub(in crate::ui) fn paint_bands(
+    bounds: Bounds<Pixels>,
+    axis: TimeGrid,
+    beats_per_bar: f64,
+    design: &DesignSystem,
+    window: &mut Window,
+) {
     let width = f64::from(f32::from(bounds.size.width));
     for bar in axis.visible_bars(width, beats_per_bar) {
         let start = axis.x_at(bar as f64 * beats_per_bar);
@@ -24,15 +48,6 @@ pub(in crate::ui) fn paint(
                     size(px((right - left) as f32), bounds.size.height),
                 ),
                 rgba((design.text << 8) | 0x18),
-            ));
-        }
-        if start >= 0.0 && start < width {
-            window.paint_quad(fill(
-                Bounds::new(
-                    point(bounds.left() + px(start as f32), bounds.top()),
-                    size(px(1.5_f32.min((width - start) as f32)), bounds.size.height),
-                ),
-                rgba((design.muted << 8) | 0xa0),
             ));
         }
     }
