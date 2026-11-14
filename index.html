@@ -445,12 +445,12 @@
             <p>Ejecutar instancias internas independientes y MIDI simultáneo.</p>
             <div class="depends">Depende de PR-04</div>
             <details class="commit-plan">
-              <summary>3 de 5 commits · eventos MIDI multipista por frames</summary>
+              <summary>4 de 5 commits · entrada MIDI dirigida por instancia</summary>
               <ol>
                 <li data-status="done"><strong>refactor(instrument): separar síntesis de su stream</strong>Voz y scheduler por frames extraídos del adaptador CPAL; misma audición actual. La conexión al motor común sigue pendiente.</li>
                 <li data-status="done"><strong>feat(audio): crear instancias internas por ID</strong>Conjunto preparado con ID, comandos y suma independientes; dos sintetizadores probados sin dispositivo. UI multipista pendiente.</li>
                 <li data-status="done"><strong>feat(midi): programar clips de varias pistas</strong>Plan absoluto por TrackId/InstrumentId y render de voces en el frame del evento, probado con particiones distintas. Conexión a Play y WAV pendiente.</li>
-                <li><strong>feat(ui): enrutar teclado y MIDI por instancia</strong>Preservar destinos de NoteOff al cambiar foco o detener; probar liberaciones.</li>
+                <li data-status="done"><strong>feat(ui): enrutar teclado y MIDI por instancia</strong>Despacho por ID, NoteOff al dueño original y limpieza al cambiar foco/Stop; interfaz aún con una instancia global por tipo.</li>
                 <li><strong>feat(audio): compartir salida con la percusión de audición</strong>Integrar el plan de percusión existente y conservar explícita su limitación inmutable.</li>
               </ol>
             </details>

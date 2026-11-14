@@ -201,8 +201,8 @@ impl DawApp {
         for RoutedMidi { target, message } in routed {
             match target {
                 MidiTarget::Instrument(id) if id == self.instrument.id() => match message {
-                    MidiMessage::NoteOn { note, velocity } => self.note_on_velocity(note, velocity),
-                    MidiMessage::NoteOff { note } => self.note_off(note),
+                    MidiMessage::NoteOn { note, velocity } => self.piano_note_on(note, velocity),
+                    MidiMessage::NoteOff { note } => self.piano_note_off(note),
                     MidiMessage::ControlChange { .. } => {}
                     MidiMessage::PitchBend { bend } => {
                         let norm = (f32::from(bend) / 8192.0).clamp(-1.0, 1.0);
@@ -274,6 +274,9 @@ impl DawApp {
             return;
         }
         self.sampler.silence();
+        self.piano_note_on(note, velocity);
+    }
+    fn piano_note_on(&mut self, note: u8, velocity: u8) {
         self.publish_track_fx();
         if note > 127 || self.instrument.held(note) {
             return;
@@ -322,6 +325,9 @@ impl DawApp {
             );
             return;
         }
+        self.piano_note_off(note);
+    }
+    fn piano_note_off(&mut self, note: u8) {
         if !self.instrument.note_off(note) {
             return;
         }
@@ -342,10 +348,10 @@ impl DawApp {
             self.vst_midi(MidiMessage::NoteOff { note });
         }
         if let Some(note) = self.sampler.mouse.take() {
-            self.note_off(note);
+            self.sampler.note_off(note);
         }
         if let Some(note) = self.instrument.take_mouse_note() {
-            self.note_off(note);
+            self.piano_note_off(note);
         }
     }
     pub(super) fn all_notes_off(&mut self) {
@@ -536,6 +542,8 @@ impl DawApp {
     }
     pub(super) fn stop_all(&mut self) {
         let stopped_at = self.player.as_ref().map(|player| player.beat());
+        self.controller.release_all();
+        self.midi_server.release_all();
         self.stop_audio();
         self.stop_pattern();
         self.stop_instrument();

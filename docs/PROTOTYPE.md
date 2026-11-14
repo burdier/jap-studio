@@ -4,6 +4,11 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
 
 ## Disponible
 
+- **PR-05, cuarto incremento:** entrada de teclado y MIDI físico despachada por
+  el ID del destino, con NoteOff dirigido al instrumento original. Cambio de foco
+  y Stop descartan liberaciones tardías; el ratón libera la instancia que pulsó.
+  Siguen una instancia global de piano y sampler en la UI y streams separados.
+
 - **PR-05, tercer incremento:** plan MIDI de varios clips/pistas con eventos absolutos,
   offsets por bloque y destino por instancia. Las voces preparadas los renderizan
   en el frame correspondiente, también con particiones distintas. Seek libera notas

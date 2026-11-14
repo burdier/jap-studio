@@ -92,6 +92,8 @@ pub struct RoutedMidi {
 pub struct MidiServer {
     active_target: Option<MidiTarget>,
     held: HashSet<(MidiTarget, u8)>,
+    /// NoteOff físico pendiente después de liberar una nota al cambiar de foco.
+    released_on_focus: HashSet<u8>,
 }
 
 impl MidiServer {
@@ -99,6 +101,7 @@ impl MidiServer {
         Self {
             active_target: initial,
             held: HashSet::new(),
+            released_on_focus: HashSet::new(),
         }
     }
 
@@ -116,6 +119,14 @@ impl MidiServer {
             Some(previous) => self.release_target(previous),
             None => Vec::new(),
         };
+        self.released_on_focus
+            .extend(released.iter().filter_map(|event| {
+                if let MidiMessage::NoteOff { note } = event.message {
+                    Some(note)
+                } else {
+                    None
+                }
+            }));
         self.active_target = target;
         released
     }
@@ -131,6 +142,7 @@ impl MidiServer {
             match message {
                 MidiMessage::NoteOn { note, velocity } => {
                     if let Some(target) = self.active_target {
+                        self.released_on_focus.remove(&note);
                         self.held.insert((target, note));
                         routed.push(RoutedMidi {
                             target,
@@ -145,6 +157,9 @@ impl MidiServer {
                         .filter_map(|&(target, held_note)| (held_note == note).then_some(target))
                         .collect();
                     if owners.is_empty() {
+                        if self.released_on_focus.remove(&note) {
+                            continue;
+                        }
                         if let Some(target) = self.active_target {
                             routed.push(RoutedMidi {
                                 target,
@@ -217,6 +232,8 @@ impl MidiServer {
     pub fn release_all(&mut self) -> Vec<RoutedMidi> {
         let mut entries: Vec<(MidiTarget, u8)> = self.held.drain().collect();
         entries.sort_by_key(|&(_, note)| note);
+        self.released_on_focus
+            .extend(entries.iter().map(|(_, note)| *note));
         entries
             .into_iter()
             .map(|(target, note)| RoutedMidi {
@@ -261,6 +278,67 @@ mod tests {
             }]
         );
         assert_eq!(server.active_target(), Some(seq));
+        assert!(
+            server
+                .publish([MidiMessage::NoteOff { note: 60 }])
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn retrigger_after_focus_change_keeps_the_new_owner() {
+        let piano = MidiTarget::Instrument(InstrumentId(1));
+        let sampler = MidiTarget::Instrument(InstrumentId(2));
+        let mut server = MidiServer::new(Some(piano));
+        server.publish([MidiMessage::NoteOn {
+            note: 60,
+            velocity: 100,
+        }]);
+        assert_eq!(server.focus(Some(sampler))[0].target, piano);
+        assert_eq!(
+            server.publish([MidiMessage::NoteOn {
+                note: 60,
+                velocity: 80
+            }])[0]
+                .target,
+            sampler
+        );
+        assert_eq!(
+            server.publish([MidiMessage::NoteOff { note: 60 }]),
+            vec![RoutedMidi {
+                target: sampler,
+                message: MidiMessage::NoteOff { note: 60 },
+            }]
+        );
+        assert!(server.release_all().is_empty());
+    }
+
+    #[test]
+    fn stop_discards_the_late_physical_note_off() {
+        let target = MidiTarget::Instrument(InstrumentId(2));
+        let mut server = MidiServer::new(Some(target));
+        server.publish([MidiMessage::NoteOn {
+            note: 64,
+            velocity: 90,
+        }]);
+        assert_eq!(server.release_all().len(), 1);
+        assert!(
+            server
+                .publish([MidiMessage::NoteOff { note: 64 }])
+                .is_empty()
+        );
+        assert_eq!(
+            server.publish([MidiMessage::NoteOn {
+                note: 64,
+                velocity: 90
+            }])[0]
+                .target,
+            target
+        );
+        assert_eq!(
+            server.publish([MidiMessage::NoteOff { note: 64 }])[0].target,
+            target
+        );
     }
 
     #[test]

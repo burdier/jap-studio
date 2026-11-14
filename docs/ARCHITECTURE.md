@@ -25,6 +25,13 @@ prepara esas voces ni las añade al `Mix` de clips de audio.
 El plan toma una vuelta visible por clip; la repetición de clips MIDI queda para
 la integración del transporte, con una política explícita de fin y colas.
 
+En la entrada live, `musical/midi::MidiServer` registra notas por destino y libera
+el anterior al cambiar de foco. Una liberación física tardía tras ese cambio o Stop
+se descarta hasta un nuevo NoteOn del mismo tono. `ui/audio_actions` despacha piano,
+sampler y VST3 por el ID enrutado, sin volver a elegir instrumento por cursor; la
+liberación del ratón usa el instrumento que recibió su NoteOn. La UI sigue teniendo
+una instancia global por tipo, así que esto aún no habilita dos samplers en pistas.
+
 ## Foco visual y navegación opcional
 
 `ui/workspace_focus` guarda solo el panel activo y el panel ampliado; la vista usa

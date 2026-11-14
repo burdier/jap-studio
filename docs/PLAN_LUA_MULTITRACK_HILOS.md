@@ -352,6 +352,11 @@ con `TrackId`, destino `InstrumentId`, canal y offsets dentro del bloque. El con
 de voces lo consume sin reservas por bloque y divide el render en los frames de
 eventos. La UI aún no entrega ese plan a Play ni lo suma con los WAV.
 
+Cuarto incremento: el despacho live respeta el destino de `MidiServer` para piano,
+sampler y VST3, libera al cambiar foco y descarta NoteOff tardíos tras foco/Stop.
+Las notas del ratón se sueltan en su instrumento original. La UI aún mantiene una
+instancia global por tipo y no conecta el plan multipista al stream de audio.
+
 **Título sugerido:** `feat(audio): reproducir instrumentos independientes por pista`
 
 **Valor:** dos pistas con el mismo tipo de instrumento interpretan clips distintos a
