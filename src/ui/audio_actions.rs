@@ -538,7 +538,11 @@ impl DawApp {
         self.request_file_playback(0.0);
     }
     pub(super) fn stop_pattern(&mut self) {
-        self.pattern_loop_beats = None;
+        if self.pattern_loop_beats.take().is_some() {
+            self.file_playback = None;
+            self.player = None;
+            self.timeline.playhead = None;
+        }
     }
     pub(super) fn play_context(&mut self) {
         if self.center_view == CenterView::Session {
