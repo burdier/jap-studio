@@ -42,6 +42,7 @@ fn shared_mix_sums_tracks_with_headroom_and_clamps_only_at_output() {
         None,
         48000,
         120.,
+        elevate::musical::time::Meter::default(),
     )
     .unwrap();
     let mut frames = vec![[0.; 2]; 8192];
@@ -64,8 +65,22 @@ fn offsets_overlap_and_end_are_independent_of_callback_size() {
             track(2, vec![clip([0., 0.4], 0.25, 6000)]),
         ]
     };
-    let mut whole = Mix::prepare(input(), None, 48000, 120.).unwrap();
-    let mut divided = Mix::prepare(input(), None, 48000, 120.).unwrap();
+    let mut whole = Mix::prepare(
+        input(),
+        None,
+        48000,
+        120.,
+        elevate::musical::time::Meter::default(),
+    )
+    .unwrap();
+    let mut divided = Mix::prepare(
+        input(),
+        None,
+        48000,
+        120.,
+        elevate::musical::time::Meter::default(),
+    )
+    .unwrap();
     assert_eq!(whole.end, 12000);
     let mut a = vec![[0.; 2]; 13000];
     let mut b = a.clone();
@@ -98,6 +113,7 @@ fn filter_changes_only_its_track_and_shared_track_clips_enter_one_bus() {
         None,
         48000,
         120.,
+        elevate::musical::time::Meter::default(),
     )
     .unwrap();
     let mut output = vec![[0.; 2]; 8192];
@@ -121,7 +137,14 @@ fn live_mute_solo_level_and_pan_use_shared_resolution_without_muting_other_track
     for (input, t) in inputs.iter_mut().zip(&tracks) {
         input.id = t.id;
     }
-    let mut mix = Mix::prepare(inputs, None, 48000, 120.).unwrap();
+    let mut mix = Mix::prepare(
+        inputs,
+        None,
+        48000,
+        120.,
+        elevate::musical::time::Meter::default(),
+    )
+    .unwrap();
     let mut levels = vec![75, 75];
     let mut pans = vec![50, 50];
     let mut position = 0;
@@ -187,8 +210,22 @@ fn shared_transport_loops_and_seeks_all_sources_at_the_same_frame() {
             track(2, vec![clip([0., 0.5], 0.125, 20000)]),
         ]
     };
-    let mut a = Mix::prepare(input(), None, 48000, 120.).unwrap();
-    let mut b = Mix::prepare(input(), None, 48000, 120.).unwrap();
+    let mut a = Mix::prepare(
+        input(),
+        None,
+        48000,
+        120.,
+        elevate::musical::time::Meter::default(),
+    )
+    .unwrap();
+    let mut b = Mix::prepare(
+        input(),
+        None,
+        48000,
+        120.,
+        elevate::musical::time::Meter::default(),
+    )
+    .unwrap();
     let mut ca = Cursor::new(0, a.end);
     let mut cb = Cursor::new(0, b.end);
     let mut request = Request {
@@ -219,10 +256,16 @@ fn mismatched_vst_rate_rejects_preparation_before_opening_a_stream() {
     let mut input = track(1, vec![clip([0.1, 0.], 0., 100)]);
     input.rack = Some(Rack::new(Plan::Gain(1.), 44100));
     assert!(
-        Mix::prepare(vec![input], None, 48000, 120.)
-            .err()
-            .unwrap()
-            .contains("VST3")
+        Mix::prepare(
+            vec![input],
+            None,
+            48000,
+            120.,
+            elevate::musical::time::Meter::default()
+        )
+        .err()
+        .unwrap()
+        .contains("VST3")
     );
 }
 
@@ -258,7 +301,14 @@ fn wav_and_midi_on_one_track_reach_the_same_bus() {
         clips: vec![midi],
         source,
     });
-    let mut mix = Mix::prepare(vec![input], None, 48_000, 120.0).unwrap();
+    let mut mix = Mix::prepare(
+        vec![input],
+        None,
+        48_000,
+        120.0,
+        elevate::musical::time::Meter::default(),
+    )
+    .unwrap();
     let mut frames = [[0.0; 2]; 512];
     mix.render(0, &mut frames);
     assert!(frames.iter().any(|frame| (frame[0] - 0.1).abs() > 0.0001));
@@ -349,6 +399,7 @@ fn two_sampler_instances_with_different_samples_mix_with_wav() {
         None,
         48_000,
         120.0,
+        elevate::musical::time::Meter::default(),
     )
     .unwrap();
     let mut frames = vec![[0.0; 2]; 2_048];
@@ -373,6 +424,7 @@ fn drums_and_wav_use_the_same_frame_clock() {
         Some(DrumInput { pattern, gain: 1.0 }),
         48_000,
         120.0,
+        elevate::musical::time::Meter::default(),
     )
     .unwrap();
     assert_eq!(mix.end, u64::MAX);

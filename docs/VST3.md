@@ -44,6 +44,10 @@ ante uso concurrente accidental (silencia y marca fallo). El editor conserva su 
 propietario y publica parámetros por la cola SPSC existente. La entrada y salida
 principal de efectos son estéreo f32; buffers auxiliares desactivados. Los streams de
 archivos, piano, sampler y VST reciben la ruta antes de volumen/pan/Utility master.
+En Play compartido, los FX VST3 reciben posición absoluta en samples y negras, BPM,
+compás y loop mediante `ProcessContext`; seek y loop se reflejan por bloque. Solo se
+marcan los campos disponibles. La audición live todavía no entrega tiempo musical.
+Contrato de flags: [Steinberg ProcessContext](https://steinbergmedia.github.io/vst3_doc/vstinterfaces/structSteinberg_1_1Vst_1_1ProcessContext.html).
 
 Límites de este incremento: no buses VST3 de grupo ni FX en la audición del patrón de
 percusión provisional, compensación de latencia, sidechains, automatización/Lua de

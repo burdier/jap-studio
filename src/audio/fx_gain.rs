@@ -36,13 +36,25 @@ pub(crate) struct PreparedFxGain {
 }
 impl PreparedFxGain {
     pub fn process(&mut self, state: &FxGain, frames: &mut [[f32; 2]]) {
+        self.process_timed(state, frames, None);
+    }
+    pub fn process_timed(
+        &mut self,
+        state: &FxGain,
+        frames: &mut [[f32; 2]],
+        time: Option<super::vst3::TransportContext>,
+    ) {
         let target = state.get();
         if self.target != target {
             self.target = target;
             self.remaining = 256;
             self.step = (target - self.current) / 256.0;
         }
-        state.1.process(frames);
+        if time.is_some() {
+            state.1.process_timed(frames, time);
+        } else {
+            state.1.process(frames);
+        }
         for frame in frames {
             if self.remaining > 0 {
                 self.current += self.step;

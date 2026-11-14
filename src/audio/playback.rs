@@ -11,7 +11,7 @@ use cpal::{
     traits::{DeviceTrait, StreamTrait},
 };
 use elevate::devices::utility_slot::UtilitySlot;
-use elevate::musical::time::Tempo;
+use elevate::musical::time::{Meter, Tempo};
 use elevate::musical::track::TrackId;
 use elevate::{Primitive, ProcessSpec, primitives::amplitude::Volume};
 pub(crate) use mix::{MidiTrackInput, TrackInput};
@@ -52,11 +52,12 @@ impl PreparedPlayback {
         inputs: Vec<TrackInput>,
         drums: Option<DrumInput>,
         bpm: f64,
+        meter: Meter,
         audio: super::device::AudioConfig,
     ) -> Result<Self, String> {
         let device = audio.device(false)?;
         let setup = choose_output_config(&device, &audio)?;
-        let mix = Mix::prepare(inputs, drums, setup.config.sample_rate, bpm)?;
+        let mix = Mix::prepare(inputs, drums, setup.config.sample_rate, bpm, meter)?;
         Ok(Self { device, setup, mix })
     }
     pub fn start(
@@ -159,7 +160,7 @@ impl Player {
                     for output_block in output.chunks_mut(256 * channels) {
                         let count = output_block.len() / channels;
                         cursor.render(request, &mut block[..count], |at, frames| {
-                            mix.render(at, frames)
+                            mix.render_timed(at, frames, request.loop_range)
                         });
                         utility.process(&mut block[..count]);
                         super::output::write_stereo(output_block, &block[..count], channels, first);

@@ -1,6 +1,7 @@
 //! Suma por pista y master: recursos preparados y trabajo acotado por bloque.
 use super::super::drums::{DrumInput, PreparedDrums};
 use super::super::piano::{PreparedArrangementVoice, VoiceSource};
+use super::super::vst3::TransportContext;
 use super::*;
 use elevate::{
     StereoFrame,
@@ -8,6 +9,7 @@ use elevate::{
         arrangement_midi::PreparedMidiArrangement,
         clip::MidiClip,
         model::InstrumentId,
+        time::Meter,
         track::{Track, TrackId},
     },
 };
@@ -44,6 +46,7 @@ pub(super) struct Mix {
     pub tracks: Vec<PreparedTrack>,
     drums: Option<PreparedDrums>,
     pub end: u64,
+    timing: TransportContext,
 }
 impl Mix {
     pub fn drum_control(&self) -> Option<Arc<AtomicU32>> {
@@ -54,6 +57,7 @@ impl Mix {
         drums: Option<DrumInput>,
         rate: u32,
         bpm: f64,
+        meter: Meter,
     ) -> Result<Self, String> {
         if (inputs.is_empty() && drums.is_none())
             || inputs.len() > 256
@@ -61,9 +65,8 @@ impl Mix {
         {
             return Err("Mezcla requiere una fuente, hasta 256 pistas y 4096 clips".into());
         }
-        let beats = Tempo::new(bpm)
-            .map_err(|e| e.to_string())?
-            .beats_per_second();
+        let timing = TransportContext::new(0, rate, bpm, meter, None)?;
+        let beats = timing.bpm / 60.;
         let spec = ProcessSpec::new(rate as f64).map_err(|e| e.to_string())?;
         let mut tracks = Vec::with_capacity(inputs.len());
         let mut end = 0;
@@ -135,10 +138,24 @@ impl Mix {
         if drums.is_some() {
             end = u64::MAX;
         }
-        Ok(Self { tracks, drums, end })
+        Ok(Self {
+            tracks,
+            drums,
+            end,
+            timing,
+        })
     }
     /// Sobrescribe sin limitar amplitud; protección solo al escribir el master físico.
+    #[cfg(test)]
     pub fn render(&mut self, position: u64, output: &mut [StereoFrame]) {
+        self.render_timed(position, output, None);
+    }
+    pub fn render_timed(
+        &mut self,
+        position: u64,
+        output: &mut [StereoFrame],
+        loop_range: Option<(u64, u64)>,
+    ) {
         for (index, block) in output.chunks_mut(256).enumerate() {
             block.fill([0.; 2]);
             let at = position.saturating_add(index as u64 * 256);
@@ -164,7 +181,12 @@ impl Mix {
                     let _ = track.volume.set_gain(gain);
                 }
                 let bus = &mut bus[..block.len()];
-                track.fx.process(&track.control.fx, bus);
+                let time = TransportContext {
+                    frame: at,
+                    loop_range,
+                    ..self.timing
+                };
+                track.fx.process_timed(&track.control.fx, bus, Some(time));
                 track.volume.process(bus);
                 track.control.pan.apply(bus);
                 for (sum, frame) in block.iter_mut().zip(bus) {

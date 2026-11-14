@@ -3,7 +3,7 @@ mod component;
 mod plan;
 
 use super::publication::Publication;
-use super::vst3::{EditorHandle, VstEngine};
+use super::vst3::{EditorHandle, TransportContext, VstEngine};
 pub(crate) use component::ComponentEffect;
 pub(crate) use plan::{Plan, compile, contains_component, contains_vst, needs_rack};
 use std::{
@@ -48,6 +48,9 @@ impl Effect {
         }))
     }
     pub fn process(&self, frames: &mut [[f32; 2]]) {
+        self.process_timed(frames, None);
+    }
+    pub fn process_timed(&self, frames: &mut [[f32; 2]], time: Option<TransportContext>) {
         if self
             .busy
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
@@ -58,7 +61,11 @@ impl Effect {
             return;
         }
         let engine = unsafe { &mut *self.engine.get() };
-        engine.process_effect(frames);
+        if time.is_some() {
+            engine.process_effect_timed(frames, time);
+        } else {
+            engine.process_effect(frames);
+        }
         if engine.failed {
             self.failed.store(true, Ordering::Relaxed);
         }
@@ -91,7 +98,16 @@ impl Rack {
         self.plan.read(|plan| plan.prepare_rate(rate));
     }
     fn process(&self, frames: &mut [[f32; 2]], rate: u32) {
-        self.plan.read(|plan| plan.process(frames, rate));
+        self.process_timed(frames, rate, None);
+    }
+    fn process_timed(&self, frames: &mut [[f32; 2]], rate: u32, time: Option<TransportContext>) {
+        self.plan.read(|plan| {
+            if time.is_some() {
+                plan.process_timed(frames, rate, time);
+            } else {
+                plan.process(frames, rate);
+            }
+        });
     }
 }
 /// Cada fuente recibe su ruta; nunca libera planes ni plugins durante process.
@@ -117,11 +133,18 @@ impl Routing {
         }
     }
     pub fn process(&self, frames: &mut [[f32; 2]]) {
+        self.process_timed(frames, None);
+    }
+    pub fn process_timed(&self, frames: &mut [[f32; 2]], time: Option<TransportContext>) {
         self.0.read(|(rack, rate)| {
             if let Some(rack) = rack {
                 // Cero = sin VST3: el analizador recibe la frecuencia real del stream.
                 if rack.rate == 0 || rack.rate == *rate {
-                    rack.process(frames, *rate);
+                    if time.is_some() {
+                        rack.process_timed(frames, *rate, time);
+                    } else {
+                        rack.process(frames, *rate);
+                    }
                 } else {
                     frames.fill([0.; 2]);
                 }

@@ -1,5 +1,16 @@
 # Arquitectura del prototipo
 
+## PR-06: contexto temporal para FX VST3
+
+`audio/vst3/context.rs` convierte la posición en frames del transporte de Play a
+`ProcessContext`. `audio/playback/mix.rs` lo entrega a los efectos VST3 de cada pista
+por el plan FX existente; serie, paralelo y subbloques preservan el offset absoluto.
+Se marcan como válidos BPM, compás, posición musical, inicio del compás y ciclo
+cuando existe loop. No se anuncian reloj de sistema, grabación ni muestras continuas
+sin una fuente real. La audición live conserva su contexto local sin esos flags.
+Este incremento no crea todavía instancias VST3 por pista ni conecta los instrumentos
+VST3 al bus de MIDI del Arrangement.
+
 ## PR-05: instrumentos internos y mezcla por pista
 
 `audio/piano/voice.rs` separa la síntesis del stream CPAL. `PreparedVoices` identifica

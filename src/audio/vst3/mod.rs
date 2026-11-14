@@ -2,6 +2,8 @@
 //! El dueño es exclusivo: preparación fuera de RT, process en el callback, cierre
 //! después de parar el stream. Los objetos COM se liberan antes del módulo.
 mod buffers;
+mod context;
+pub(crate) use context::TransportContext;
 mod editor;
 mod events;
 pub(crate) use editor::EditorHandle;

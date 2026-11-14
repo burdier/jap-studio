@@ -4,6 +4,10 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
 
 ## Disponible
 
+- **PR-06, primer incremento:** los FX VST3 en Play reciben posición absoluta,
+  BPM, compás y ciclo del transporte común. Seek y loop actualizan el contexto por
+  bloque. Aún falta mover los instrumentos VST3 a ese motor y crear varias instancias.
+
 - **PR-05 completo en Arrangement/Session:** Play mezcla clips WAV y MIDI en los
   buses de pista antes de FX, nivel y pan; Session suma la percusión provisional
   en la misma salida y transporte. `:sa` inserta samplers independientes con muestra

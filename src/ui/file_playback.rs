@@ -9,6 +9,7 @@ pub(super) struct PendingPlayback {
     result: Receiver<Result<PreparedPlayback, String>>,
     beat: f64,
     bpm: f64,
+    meter: elevate::musical::time::Meter,
     clips: Vec<AudioClip>,
     midi_clips: Vec<MidiClip>,
     pattern: Option<elevate::musical::model::Pattern>,
@@ -37,6 +38,7 @@ impl DawApp {
         let clips = self.audio_snapshot();
         let midi_clips = self.midi_snapshot();
         let bpm = self.timeline.tempo.bpm();
+        let meter = self.timeline.meter;
         let pattern = self
             .pattern_loop_beats
             .map(|_| self.pattern_editor.pattern.clone());
@@ -104,6 +106,7 @@ impl DawApp {
             result: rx,
             beat,
             bpm,
+            meter,
             clips,
             midi_clips,
             pattern: pattern.clone(),
@@ -116,7 +119,7 @@ impl DawApp {
                 pattern,
                 gain: drum_gain,
             });
-            let _ = tx.send(PreparedPlayback::load(inputs, drums, bpm, audio));
+            let _ = tx.send(PreparedPlayback::load(inputs, drums, bpm, meter, audio));
         });
     }
     pub(super) fn poll_file_playback(&mut self) {
@@ -134,6 +137,7 @@ impl DawApp {
         if pending.revision != self.track_revision
             || pending.audio != self.settings.audio.saved
             || pending.bpm != self.timeline.tempo.bpm()
+            || pending.meter != self.timeline.meter
             || !same_sources(&pending.clips, &self.audio_snapshot())
             || !same_midi_sources(&pending.midi_clips, &self.midi_snapshot())
             || pending.pattern.as_ref()

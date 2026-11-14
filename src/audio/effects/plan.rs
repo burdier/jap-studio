@@ -1,6 +1,7 @@
 use super::ComponentEffect;
 use super::Effect;
 use crate::audio::analyzer::tap::Tap;
+use crate::audio::vst3::TransportContext;
 use elevate::musical::{
     fx::{FxChain, FxId, FxKind, FxNode},
     track::TrackDevice,
@@ -30,6 +31,14 @@ impl Plan {
         }
     }
     pub fn process(&self, frames: &mut [[f32; 2]], rate: u32) {
+        self.process_timed(frames, rate, None);
+    }
+    pub fn process_timed(
+        &self,
+        frames: &mut [[f32; 2]],
+        rate: u32,
+        time: Option<TransportContext>,
+    ) {
         match self {
             Self::Gain(gain) => {
                 for f in frames {
@@ -37,33 +46,47 @@ impl Plan {
                     f[1] *= gain;
                 }
             }
-            Self::Effect(effect) => effect.process(frames),
+            Self::Effect(effect) => {
+                if time.is_some() {
+                    effect.process_timed(frames, time);
+                } else {
+                    effect.process(frames);
+                }
+            }
             Self::Component(effect) => effect.process(frames, rate),
             Self::Analyzer(tap) => tap.capture(frames, rate),
             // Las cadenas Utility conservan su salida escalar y su rampa existentes.
             // Evaluar sus puntos de análisis sobre una copia evita aplicar la ganancia
             // dos veces, incluso en el bloque donde la UI inserta/retira un Spectrum.
             Self::Observe(plan) => {
-                for block in frames.chunks(512) {
+                for (index, block) in frames.chunks(512).enumerate() {
                     let mut copy = [[0.; 2]; 512];
                     copy[..block.len()].copy_from_slice(block);
-                    plan.process(&mut copy[..block.len()], rate);
+                    plan.process_timed(
+                        &mut copy[..block.len()],
+                        rate,
+                        time.map(|time| time.offset(index * 512)),
+                    );
                 }
             }
             Self::Serial(nodes) => {
                 for node in nodes {
-                    node.process(frames, rate);
+                    node.process_timed(frames, rate, time);
                 }
             }
             Self::Parallel(nodes) if nodes.is_empty() => {}
             Self::Parallel(nodes) => {
-                for block in frames.chunks_mut(512) {
+                for (index, block) in frames.chunks_mut(512).enumerate() {
                     let mut input = [[0.; 2]; 512];
                     input[..block.len()].copy_from_slice(block);
                     block.fill([0.; 2]);
                     for node in nodes {
                         let mut branch = input;
-                        node.process(&mut branch[..block.len()], rate);
+                        node.process_timed(
+                            &mut branch[..block.len()],
+                            rate,
+                            time.map(|time| time.offset(index * 512)),
+                        );
                         for (out, value) in block.iter_mut().zip(branch) {
                             out[0] += value[0];
                             out[1] += value[1];

@@ -1,5 +1,5 @@
 //! Traducción MIDI y render por segmentos del scheduler existente.
-use super::{VstEngine, events};
+use super::{TransportContext, VstEngine, events};
 use std::ptr;
 use vst3::Steinberg::{Vst::*, kResultOk};
 impl VstEngine {
@@ -40,16 +40,35 @@ impl VstEngine {
         }
     }
     pub fn process_effect(&mut self, frames: &mut [[f32; 2]]) {
-        for block in frames.chunks_mut(512) {
+        self.process_effect_timed(frames, None);
+    }
+    pub fn process_effect_timed(
+        &mut self,
+        frames: &mut [[f32; 2]],
+        time: Option<TransportContext>,
+    ) {
+        for (index, block) in frames.chunks_mut(512).enumerate() {
             self.buffers.input(block);
             let (mut left, mut right) = ([0.; 512], [0.; 512]);
-            self.render(&mut left[..block.len()], &mut right[..block.len()]);
+            self.render_timed(
+                &mut left[..block.len()],
+                &mut right[..block.len()],
+                time.map(|time| time.offset(index * 512)),
+            );
             for (i, frame) in block.iter_mut().enumerate() {
                 *frame = [left[i], right[i]];
             }
         }
     }
     pub fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
+        self.render_timed(left, right, None);
+    }
+    pub fn render_timed(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        time: Option<TransportContext>,
+    ) {
         left.fill(0.);
         right.fill(0.);
         if self.failed || left.len() != right.len() || left.len() > 512 {
@@ -62,9 +81,15 @@ impl VstEngine {
             self.changes.set(id, value);
         }
         self.buffers.clear();
-        let mut context: ProcessContext = unsafe { std::mem::zeroed() };
-        context.sampleRate = self.rate;
-        context.projectTimeSamples = self.frame;
+        let mut context = if let Some(time) = time {
+            time.vst()
+        } else {
+            let mut context: ProcessContext = unsafe { std::mem::zeroed() };
+            context.sampleRate = self.rate;
+            context.projectTimeSamples = self.frame;
+            context
+        };
+        let frame = context.projectTimeSamples;
         let mut data = ProcessData {
             processMode: 0,
             symbolicSampleSize: 0,
@@ -97,6 +122,6 @@ impl VstEngine {
         }
         self.events.clear();
         self.changes.clear();
-        self.frame += left.len() as i64;
+        self.frame = frame.saturating_add(left.len() as i64);
     }
 }
