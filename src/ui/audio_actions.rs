@@ -588,40 +588,6 @@ impl DawApp {
         self.stop_pattern();
         self.stop_audio();
         let edit_beat = self.timeline.edit_beat();
-        let selected_has_midi = self
-            .timeline
-            .midi_clip
-            .as_ref()
-            .is_some_and(|clip| clip.track == self.cursor_row && edit_beat < clip.end_beat());
-        if (selected_has_midi
-            || (self.timeline.clip.is_none()
-                && self
-                    .timeline
-                    .midi_clip
-                    .as_ref()
-                    .is_some_and(|clip| edit_beat < clip.end_beat())))
-            && self.timeline.midi_clip.as_ref().is_some_and(|clip| {
-                self.tracks
-                    .get(clip.track)
-                    .and_then(|track| track.instrument)
-                    .is_some_and(|id| self.is_vst_id(id))
-            })
-        {
-            if let Some(midi_clip) = self.timeline.midi_clip.clone() {
-                if !self.track_is_audible(midi_clip.track) {
-                    self.status_message =
-                        format!("Pista {} silenciada por Mute/Solo", midi_clip.track + 1);
-                    return;
-                }
-                if midi_clip.props.muted {
-                    self.status_message =
-                        format!("Clip MIDI «{}» está silenciado (Mute)", midi_clip.name);
-                    return;
-                }
-                self.play_vst_clip(&midi_clip, edit_beat.max(midi_clip.start_beat));
-                return;
-            }
-        }
         self.stop_instrument();
         self.request_file_playback(edit_beat);
     }
@@ -645,9 +611,6 @@ impl DawApp {
     /// Fader de pista (`TRACK_UNITY_LEVEL` = 1.0x). Utility es una etapa posterior independiente.
     pub(super) fn track_gain(&self, track: usize) -> f32 {
         effective_mix(&self.tracks, &self.track_levels, &self.track_pans, track).gain
-    }
-    pub(super) fn track_is_audible(&self, track: usize) -> bool {
-        effective_mix(&self.tracks, &self.track_levels, &self.track_pans, track).audible
     }
     fn piano_gain(&self) -> f32 {
         let id = self.instrument.id();

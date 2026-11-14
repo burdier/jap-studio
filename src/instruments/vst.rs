@@ -5,7 +5,7 @@ use crate::audio::{
 };
 use elevate::{
     devices::utility_slot::UtilitySlot,
-    musical::{clip::MidiClip, midi::MidiMessage, model::InstrumentId},
+    musical::{midi::MidiMessage, model::InstrumentId},
 };
 use std::path::{Path, PathBuf};
 pub(crate) const VST_ID: InstrumentId = InstrumentId(3);
@@ -16,6 +16,7 @@ pub(crate) struct VstInstrument {
     pub bundle: Option<PathBuf>,
     pub class: Option<String>,
     player: Option<PianoPlayer>,
+    shared: Option<std::sync::Arc<crate::audio::vst3::SharedInstrument>>,
     fx_rack: Option<std::sync::Arc<crate::audio::effects::Rack>>,
     editor: Option<crate::audio::vst3::EditorHandle>,
     pub held: std::collections::HashSet<u8>,
@@ -34,6 +35,7 @@ impl VstInstrument {
             bundle: None,
             class: None,
             player: None,
+            shared: None,
             fx_rack: None,
             editor: None,
             held: Default::default(),
@@ -67,10 +69,12 @@ impl VstInstrument {
     ) -> Result<(), String> {
         // Arranque transaccional: conservar la instancia anterior si abrir audio falla.
         let editor = prepared.vst_editor();
+        let shared = prepared.vst_shared();
         let player = prepared.start(gain, utility, pan, fx)?;
         player.set_fx_rack(self.fx_rack.clone());
         self.player = Some(player);
         self.editor = editor;
+        self.shared = shared;
         self.name = name;
         self.bundle = Some(bundle);
         self.class = class;
@@ -82,9 +86,20 @@ impl VstInstrument {
     pub fn sample_rate(&self) -> Option<u32> {
         self.player.as_ref().map(|player| player.sample_rate)
     }
+    pub fn shared(&self) -> Result<std::sync::Arc<crate::audio::vst3::SharedInstrument>, String> {
+        self.shared
+            .clone()
+            .ok_or_else(|| format!("{}: vuelve a cargar el VST3", self.name))
+    }
     pub fn midi(&mut self, status: u8, a: u8, b: u8) {
         if let Some(p) = &self.player {
-            p.midi(status, a, b);
+            if let Some(shared) = &self.shared
+                && shared.in_arrangement()
+            {
+                shared.queue_live_midi(status, a, b);
+            } else {
+                p.midi(status, a, b);
+            }
             if status & 0xf0 == 0x90 && b > 0 {
                 self.held.insert(a);
             } else if status & 0xf0 == 0x80 || status & 0xf0 == 0x90 {
@@ -109,7 +124,13 @@ impl VstInstrument {
         self.held.clear();
         self.mouse = None;
         if let Some(p) = &self.player {
-            p.all_notes_off();
+            if let Some(shared) = &self.shared
+                && shared.in_arrangement()
+            {
+                shared.queue_live_midi(0xb0, 123, 0);
+            } else {
+                p.all_notes_off();
+            }
         }
     }
     pub fn silence(&mut self) {
@@ -119,6 +140,7 @@ impl VstInstrument {
     pub fn unload(&mut self) {
         self.silence();
         self.player = None;
+        self.shared = None;
         // El propietario del plugin termina y libera COM en su propio hilo.
         // Wine puede tardar en cerrar un diálogo: nunca esperarlo desde GPUI.
         self.editor = None;
@@ -135,19 +157,6 @@ impl VstInstrument {
     }
     pub fn editor_message(&self) -> Option<String> {
         self.editor.as_ref()?.take_message()
-    }
-    pub fn play_clip(&self, clip: &MidiClip, beat: f64, bpm: f64) -> Result<(), String> {
-        let player = self
-            .player
-            .as_ref()
-            .ok_or("Carga el instrumento VST3 desde [+]")?;
-        player.set_channel(clip.channel.saturating_sub(1).min(15));
-        player.play_pattern(
-            &clip.playback_pattern(),
-            (beat - clip.start_beat).max(0.),
-            bpm,
-            clip.props.looped,
-        )
     }
     pub fn clip_playing(&self) -> bool {
         self.player.as_ref().is_some_and(PianoPlayer::plan_playing)

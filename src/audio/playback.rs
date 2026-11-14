@@ -34,7 +34,8 @@ struct PlaybackState {
 }
 
 pub(crate) struct Player {
-    _stream: cpal::Stream,
+    stream: Option<cpal::Stream>,
+    vsts: Vec<Arc<super::vst3::SharedInstrument>>,
     state: Arc<PlaybackState>,
     pub sample_rate: u32,
     beats_per_second: f64,
@@ -54,10 +55,19 @@ impl PreparedPlayback {
         bpm: f64,
         meter: Meter,
         audio: super::device::AudioConfig,
+        vsts: Vec<Arc<super::vst3::SharedInstrument>>,
     ) -> Result<Self, String> {
         let device = audio.device(false)?;
         let setup = choose_output_config(&device, &audio)?;
-        let mix = Mix::prepare(inputs, drums, setup.config.sample_rate, bpm, meter)?;
+        let mut mix = Mix::prepare(inputs, drums, setup.config.sample_rate, bpm, meter)?;
+        for vst in vsts {
+            if vst.rate != setup.config.sample_rate {
+                return Err("La salida cambió de frecuencia; recarga el instrumento VST3".into());
+            }
+            if !mix.vsts.iter().any(|existing| Arc::ptr_eq(existing, &vst)) {
+                mix.vsts.push(vst);
+            }
+        }
         Ok(Self { device, setup, mix })
     }
     pub fn start(
@@ -68,6 +78,7 @@ impl PreparedPlayback {
         loop_range: Option<(f64, f64)>,
     ) -> Result<Player, String> {
         let Self { device, setup, mix } = self;
+        let vsts = mix.vsts.clone();
         let beats_per_second = Tempo::new(bpm)
             .map_err(|error| error.to_string())?
             .beats_per_second();
@@ -118,14 +129,39 @@ impl PreparedPlayback {
             ),
             _ => return Err("Formato de salida no compatible".into()),
         }?;
-        stream.play().map_err(|error| error.to_string())?;
+        for (index, vst) in vsts.iter().enumerate() {
+            if let Err(error) = vst.enter_arrangement() {
+                for entered in &vsts[..index] {
+                    entered.leave_arrangement();
+                }
+                return Err(error);
+            }
+        }
+        if let Err(error) = stream.play() {
+            drop(stream);
+            for vst in &vsts {
+                vst.leave_arrangement();
+            }
+            return Err(error.to_string());
+        }
         Ok(Player {
-            _stream: stream,
+            stream: Some(stream),
+            vsts,
             state,
             sample_rate: rate,
             beats_per_second,
             request,
         })
+    }
+}
+
+impl Drop for Player {
+    fn drop(&mut self) {
+        // Cerrar el callback común antes de devolver el procesador a la audición.
+        drop(self.stream.take());
+        for vst in &self.vsts {
+            vst.leave_arrangement();
+        }
     }
 }
 
@@ -224,6 +260,6 @@ impl Player {
             && self.state.finished.load(Ordering::Relaxed)
     }
     pub fn failed(&self) -> bool {
-        self.state.failed.load(Ordering::Relaxed)
+        self.state.failed.load(Ordering::Relaxed) || self.vsts.iter().any(|vst| vst.failed())
     }
 }

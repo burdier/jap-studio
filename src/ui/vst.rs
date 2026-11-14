@@ -223,29 +223,6 @@ impl DawApp {
             self.timeline.tempo.bpm(),
         );
     }
-    pub(in crate::ui) fn play_vst_clip(
-        &mut self,
-        clip: &elevate::musical::clip::MidiClip,
-        start: f64,
-    ) {
-        if let Some(id) = self.tracks.get(clip.track).and_then(|t| t.instrument) {
-            self.activate_vst(id);
-        }
-        self.instrument.stop();
-        self.sampler.silence();
-        self.vst.mix(
-            self.track_gain(clip.track) * clip.props.gain_linear(),
-            self.track_pan(clip.track),
-            self.track_fx_gain(clip.track),
-        );
-        match self.vst.play_clip(clip, start, self.timeline.tempo.bpm()) {
-            Ok(()) => {
-                self.timeline.playhead = Some(start);
-                self.status_message = format!("▶ {} → {}", clip.name, self.vst.name);
-            }
-            Err(error) => self.status_message = error,
-        }
-    }
     pub(in crate::ui) fn mix_vst(&mut self) {
         for track in 0..self.tracks.len() {
             let Some(id) = self.tracks[track].instrument else {
@@ -280,6 +257,7 @@ impl DawApp {
         }
     }
     pub(in crate::ui) fn remove_vst(&mut self) {
+        self.stop_all();
         if let Some(id) = self.tracks.get(self.cursor_row).and_then(|t| t.instrument) {
             self.activate_vst(id);
         }

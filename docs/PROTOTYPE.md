@@ -4,14 +4,20 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
 
 ## Disponible
 
+- **PR-06, tercer incremento:** los VST3 cargados en varias pistas participan en
+  Play con un solo transporte y salida, junto a WAV, MIDI interno y FX. Se usa el
+  mismo procesador editado en vivo: el stream de audición se silencia durante Play
+  y vuelve en Stop. MIDI en vivo entra por una cola acotada. Seek y loop liberan
+  notas, y la cola final se acota; PDC, exportación y estado persistido siguen pendientes.
+
 - **PR-06, primer incremento:** los FX VST3 en Play reciben posición absoluta,
   BPM, compás y ciclo del transporte común. Seek y loop actualizan el contexto por
-  bloque. Aún falta mover los instrumentos VST3 a ese motor.
+  bloque.
 
 - **PR-06, segundo incremento:** cada pista MIDI puede conservar su propio VST3,
   editor y cadena FX. El foco MIDI y NoteOff usan su ID; al borrar una pista se
   retira la instancia y un cambio de salida recarga las restantes en serie.
-  La audición todavía usa streams individuales; Play común de varios VST3 queda pendiente.
+  La audición todavía usa streams individuales.
 
 - **PR-05 completo en Arrangement/Session:** Play mezcla clips WAV y MIDI en los
   buses de pista antes de FX, nivel y pan; Session suma la percusión provisional

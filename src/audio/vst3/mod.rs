@@ -14,7 +14,9 @@ mod module;
 mod parameters;
 mod process;
 pub(crate) mod scan;
+mod shared;
 use lifecycle::check;
+pub(crate) use shared::{InstrumentVoice, SharedInstrument};
 
 use events::Events;
 use parameters::Changes;

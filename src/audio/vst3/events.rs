@@ -16,6 +16,13 @@ impl Events {
             (&mut *self.0.get()).clear();
         }
     }
+    pub fn retain_note_offs(&self) {
+        // Panic puede repetirse antes de process: conservar los Off ya en cola
+        // evita perder la liberación al borrar un On posterior.
+        unsafe {
+            (&mut *self.0.get()).retain(|event| event.r#type == 1);
+        }
+    }
     pub fn push(&self, event: Event) -> bool {
         let events = unsafe { &mut *self.0.get() };
         if events.len() == events.capacity() {
@@ -85,5 +92,23 @@ pub(super) fn note(channel: u8, pitch: u8, velocity: u8, on: bool) -> Event {
                 },
             }
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repeated_panic_keeps_pending_note_off_and_cancels_new_on() {
+        let events = Events::new();
+        events.push(note(0, 60, 100, true));
+        events.push(note(0, 60, 0, false));
+        events.retain_note_offs();
+        events.push(note(0, 64, 100, true));
+        events.retain_note_offs();
+        let pending = unsafe { &*events.0.get() };
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].r#type, 1);
     }
 }

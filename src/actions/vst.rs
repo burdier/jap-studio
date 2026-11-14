@@ -1,7 +1,7 @@
 use super::{ActionParameter, ActionSpec, Argument, ParameterKind};
 pub(super) static LOAD: ActionSpec = ActionSpec {
     command: "instrument.vst3.load",
-    description: "Carga un instrumento VST3 en la pista seleccionada (una instancia por sesión).",
+    description: "Carga una instancia VST3 en la pista seleccionada.",
     parameters: &[ActionParameter {
         key: "bundle",
         label: "Bundle VST3",

@@ -375,8 +375,9 @@ y el cambio de foco conserva el destino correcto de cada liberación.
 **Avance:** los FX de Arrangement reciben `ProcessContext` del transporte
 compartido, con campos válidos y offsets por subbloque. El segundo incremento
 asigna IDs VST3 por pista y conserva instancias, editores, FX y destino MIDI al
-cambiar de foco. El audio de instrumento sigue en streams individuales; falta
-conectarlo al bus compartido y completar las operaciones Lua.
+cambiar de foco. El tercero conecta esos mismos procesadores al bus compartido
+durante Play, con contexto de transporte y cola MIDI en vivo. Quedan PDC,
+exportación, buses auxiliares y las operaciones Lua.
 
 **Título sugerido:** `feat(vst3): integrar instancias independientes en el motor multipista`
 
@@ -388,13 +389,13 @@ y transporte sincronizados.
 
 **Tareas**
 
-- [ ] Adaptar el host existente al contrato común y a IDs de instancia. Conservar su
+- [x] Adaptar el host existente al contrato común y a IDs de instancia. Conservar su
   escaneo y el ciclo de vida de editores; no escribir un segundo host.
 - [x] Pasar posición absoluta, tempo, compás, estado de reproducción y loop desde el
   motor, indicando solamente los campos válidos del contexto VST3.
 - [ ] Traducir notas y cambios de parámetros con offsets correctos. Representar buses,
   latencia y cola de sonido en el adaptador aunque inicialmente se use el bus principal.
-- [ ] Preparar y destruir fuera del callback. Una instancia se procesa una sola vez
+- [x] Preparar y destruir fuera del callback. Una instancia se procesa una sola vez
   por bloque y nunca se comparte simultáneamente entre rutas de ejecución.
 - [ ] Hacer accesibles desde Lua las operaciones de creación/conexión/configuración
   soportadas, mediante el controlador de carga y handles, sin exponer interfaces COM.

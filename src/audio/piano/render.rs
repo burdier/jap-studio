@@ -32,6 +32,11 @@ pub(super) fn build_stream<T: SizedSample + FromSample<f32>>(
     let mut fx = state.fx.prepare();
     let mut filter = super::filter::StereoFilter::new(config.sample_rate, Default::default());
     let mut block = [[0.0_f32; 2]; RENDER_CHUNK];
+    let preview_vst = if let SynthBackend::Vst(voice) = &synthesizer {
+        Some(voice.shared.clone())
+    } else {
+        None
+    };
     let mut voices = PreparedVoices::new();
     // ID local de la ruta exclusiva actual; PR-05 conectará los IDs reales de las pistas.
     let preview_id = InstrumentId(0);
@@ -52,6 +57,12 @@ pub(super) fn build_stream<T: SizedSample + FromSample<f32>>(
                     } else {
                         voices.command(preview_id, command);
                     }
+                }
+                if preview_vst.as_ref().is_some_and(|vst| vst.in_arrangement()) {
+                    // Consumir StopPlan/AllOff para limpiar el estado de audición,
+                    // sin procesar el VST3 ni la cadena FX desde este stream.
+                    output.fill(T::from_sample(0.0));
+                    return;
                 }
                 let gain = f32::from_bits(state.gain.load(Ordering::Relaxed));
                 if volume.gain() != gain && volume.set_gain(gain).is_err() {

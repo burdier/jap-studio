@@ -1,5 +1,6 @@
 //! Voz de instrumento preparada: estado MIDI y patrón sin poseer un stream CPAL.
 use super::{InstrumentState, NoteCommand, SynthBackend, plan::render_plan_block};
+use crate::audio::vst3::{SharedInstrument, TransportContext};
 use elevate::musical::model::InstrumentId;
 use elevate::musical::scheduler::PreparedPattern;
 use elevate::musical::{
@@ -68,7 +69,13 @@ impl InstrumentVoice {
         }
     }
 
-    pub fn render(&mut self, left: &mut [f32], right: &mut [f32], state: &InstrumentState) {
+    pub fn render(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        state: &InstrumentState,
+        time: Option<TransportContext>,
+    ) {
         if let Some((plan, position, looped, cycle)) = self.plan.as_mut() {
             let finished = render_plan_block(
                 &mut self.synth,
@@ -87,7 +94,7 @@ impl InstrumentVoice {
                 state.plan_finished.store(true, Ordering::Relaxed);
             }
         } else {
-            self.synth.render(left, right);
+            self.synth.render_timed(left, right, time);
         }
     }
 
@@ -128,6 +135,7 @@ pub(super) struct PreparedVoices {
 pub(crate) enum VoiceSource {
     Piano(super::PianoSnapshot),
     Sampler(crate::audio::sampler::SamplerSnapshot),
+    Vst(Arc<SharedInstrument>),
 }
 
 /// Una instancia por pista, preparada por el worker antes de publicar el Mix.
@@ -153,6 +161,17 @@ impl PreparedArrangementVoice {
                 SynthBackend::Sampler(crate::audio::sampler::SfizzEngine::prepare(snapshot, rate)?),
                 None,
             ),
+            VoiceSource::Vst(shared) => {
+                if shared.rate != rate {
+                    return Err(
+                        "La salida cambió de frecuencia; recarga el instrumento VST3".into(),
+                    );
+                }
+                (
+                    SynthBackend::Vst(crate::audio::vst3::InstrumentVoice::arrangement(shared)),
+                    None,
+                )
+            }
         };
         let mut voices = PreparedVoices::new();
         voices
@@ -165,8 +184,14 @@ impl PreparedArrangementVoice {
         Ok(Self { voices, filter })
     }
 
-    pub fn render(&mut self, plan: &PreparedMidiArrangement, at: u64, output: &mut [[f32; 2]]) {
-        self.voices.render_arrangement(plan, at, output);
+    pub fn render_timed(
+        &mut self,
+        plan: &PreparedMidiArrangement,
+        at: u64,
+        output: &mut [[f32; 2]],
+        time: Option<TransportContext>,
+    ) {
+        self.voices.render_arrangement_timed(plan, at, output, time);
         if let Some(filter) = &mut self.filter {
             filter.process(output);
         }
@@ -205,12 +230,20 @@ impl PreparedVoices {
 
     /// Suma en flotante; los scratch se crean en el stack, nunca por bloque en el heap.
     pub fn render(&mut self, output: &mut [[f32; 2]]) {
-        for chunk in output.chunks_mut(512) {
+        self.render_timed(output, None);
+    }
+    fn render_timed(&mut self, output: &mut [[f32; 2]], time: Option<TransportContext>) {
+        for (index, chunk) in output.chunks_mut(512).enumerate() {
             chunk.fill([0.0; 2]);
             for (_, voice, state) in &mut self.voices {
                 let mut left = [0.0; 512];
                 let mut right = [0.0; 512];
-                voice.render(&mut left[..chunk.len()], &mut right[..chunk.len()], state);
+                voice.render(
+                    &mut left[..chunk.len()],
+                    &mut right[..chunk.len()],
+                    state,
+                    time.map(|time| time.offset(index * 512)),
+                );
                 if voice.failed() {
                     state.failed.store(true, Ordering::Relaxed);
                 }
@@ -224,11 +257,21 @@ impl PreparedVoices {
 
     /// Renderiza eventos absolutos de todos los clips. Los segmentos entre eventos
     /// comparten el frame del transporte; ningún evento se desplaza con el tamaño de bloque.
+    #[cfg(test)]
     pub fn render_arrangement(
         &mut self,
         plan: &PreparedMidiArrangement,
         position: u64,
         output: &mut [[f32; 2]],
+    ) {
+        self.render_arrangement_timed(plan, position, output, None);
+    }
+    pub fn render_arrangement_timed(
+        &mut self,
+        plan: &PreparedMidiArrangement,
+        position: u64,
+        output: &mut [[f32; 2]],
+        time: Option<TransportContext>,
     ) {
         if self.last_end.is_some_and(|end| end != position) {
             for (_, voice, _) in &mut self.voices {
@@ -245,7 +288,10 @@ impl PreparedVoices {
             for routed in plan.events_in(window) {
                 let offset = routed.event.sample_offset as usize;
                 if offset > written {
-                    self.render(&mut block[written..offset]);
+                    self.render_timed(
+                        &mut block[written..offset],
+                        time.map(|time| time.offset(index * 512 + written)),
+                    );
                     written = offset;
                 }
                 if let Some((_, voice, _)) = self
@@ -257,7 +303,10 @@ impl PreparedVoices {
                 }
             }
             if written < block.len() {
-                self.render(&mut block[written..]);
+                self.render_timed(
+                    &mut block[written..],
+                    time.map(|time| time.offset(index * 512 + written)),
+                );
             }
         }
         self.last_end = position.checked_add(output.len() as u64);

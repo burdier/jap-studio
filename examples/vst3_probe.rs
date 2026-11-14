@@ -18,6 +18,63 @@ fn main() -> Result<(), String> {
         vst3_host::VstEngine::load(std::path::Path::new(&path), 48000)?
     };
     println!("Cargado: {}", engine.name);
+    if args.iter().any(|arg| arg == "--shared") {
+        if effect.is_some() {
+            return Err("--shared requiere un instrumento VST3".into());
+        }
+        let editor = engine.editor.clone();
+        let shared = vst3_host::SharedInstrument::new(engine, 48_000);
+        let preview = vst3_host::InstrumentVoice::preview(shared.clone());
+        let arrangement = vst3_host::InstrumentVoice::arrangement(shared.clone());
+        let meter = elevate::musical::time::Meter::new(4, 4).unwrap();
+        let mut peaks = [0.0_f32; 3];
+        let (mut left, mut right) = ([0.; 512], [0.; 512]);
+        preview.midi(0x90, 60, 100);
+        for block in 0..192 {
+            if block == 64 {
+                shared.enter_arrangement()?;
+                arrangement.midi(0x90, 64, 100);
+                preview.render(&mut left, &mut right, None);
+                if left.iter().chain(&right).any(|sample| *sample != 0.) {
+                    return Err("La audición procesó el VST3 durante Play".into());
+                }
+            } else if block == 96 {
+                if !shared.queue_live_midi(0x90, 72, 100) {
+                    return Err("Cola MIDI en vivo saturada".into());
+                }
+            } else if block == 128 {
+                arrangement.midi(0x80, 64, 64);
+                shared.leave_arrangement();
+                arrangement.render(&mut left, &mut right, None);
+                if left.iter().chain(&right).any(|sample| *sample != 0.) {
+                    return Err("Play procesó el VST3 después de Stop".into());
+                }
+                preview.midi(0x90, 67, 100);
+            }
+            if block < 64 || block >= 128 {
+                preview.render(&mut left, &mut right, None);
+            } else {
+                let time =
+                    vst3_host::TransportContext::new(block * 512, 48_000, 120., meter, None)?;
+                arrangement.render(&mut left, &mut right, Some(time));
+            }
+            for value in left.iter().chain(&right) {
+                if !value.is_finite() {
+                    return Err("Salida no finita".into());
+                }
+                peaks[block as usize / 64] = peaks[block as usize / 64].max(value.abs());
+            }
+        }
+        println!("Picos audición/Play/audición: {peaks:?}");
+        if shared.failed() || peaks.iter().any(|peak| *peak == 0.) {
+            return Err("El cambio de ruta VST3 no produjo audio en sus tres etapas".into());
+        }
+        drop(preview);
+        drop(arrangement);
+        drop(shared);
+        editor.wait_for_shutdown();
+        return Ok(());
+    }
     engine.midi(0x90, 60, 100);
     let (mut left, mut right) = ([0.; 512], [0.; 512]);
     let mut peak = 0_f32;

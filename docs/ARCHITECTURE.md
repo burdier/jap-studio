@@ -11,9 +11,14 @@ sin una fuente real. La audición live conserva su contexto local sin esos flags
 `ui/vst` asigna un `InstrumentId` a cada instancia VST3 cargada en una pista. El
 foco cambia la instancia activa y conserva las demás por ID; NoteOff vuelve a su
 dueño original. Cada instancia mantiene editor, mezcla y cadena FX propios. Tras
-cambiar la salida, la UI las recarga en serie con la nueva frecuencia. La audición
-de instrumentos VST3 todavía usa streams CPAL individuales; falta conectarlos al
-bus MIDI del Arrangement para reproducir varios con el transporte común.
+cambiar la salida, la UI las recarga en serie con la nueva frecuencia. En Play,
+`audio/playback/mix` toma esos mismos procesadores, enruta eventos MIDI absolutos
+por ID y los suma con WAV antes de FX, nivel y pan. Los streams de audición quedan
+silenciosos y vuelven a sonar al detener; una cola acotada entrega el MIDI en vivo
+al procesador durante Play. Un CAS sin espera impide ejecutar un VST3 desde dos
+callbacks a la vez. Stop/seek/loop liberan notas; el contexto del transporte llega
+también al instrumento. La cola de salida se acota entre 2 y 10 segundos tras el
+último evento MIDI; aún no hay compensación de latencia ni exportación VST3.
 
 ## PR-05: instrumentos internos y mezcla por pista
 

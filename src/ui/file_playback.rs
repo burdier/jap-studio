@@ -55,7 +55,14 @@ impl DawApp {
                 .filter(|clip| clip.track == index && !clip.props.muted)
                 .cloned()
                 .collect();
-            let midi = if notes.is_empty() {
+            let live_vst = track.instrument.is_some_and(|id| {
+                if id == self.vst.id {
+                    self.vst.ready()
+                } else {
+                    self.vst_instances.get(&id).is_some_and(|vst| vst.ready())
+                }
+            });
+            let midi = if notes.is_empty() && !live_vst {
                 None
             } else {
                 let source = if track.instrument == Some(self.instrument.id()) {
@@ -65,6 +72,13 @@ impl DawApp {
                         self.sampler_snapshot(track.instrument.unwrap())
                             .map(VoiceSource::Sampler),
                     )
+                } else if let Some(id) = track.instrument.filter(|id| self.is_vst_id(*id)) {
+                    let vst = if id == self.vst.id {
+                        &self.vst
+                    } else {
+                        &self.vst_instances[&id]
+                    };
+                    Some(vst.shared().map(VoiceSource::Vst))
                 } else {
                     None
                 };
@@ -96,12 +110,19 @@ impl DawApp {
                 midi,
             });
         }
-        if inputs.is_empty() && pattern.is_none() {
+        if inputs.iter().all(|input| {
+            input.clips.is_empty() && input.midi.as_ref().is_none_or(|midi| midi.clips.is_empty())
+        }) && pattern.is_none()
+        {
             self.status_message = "No hay clips de audio o MIDI para reproducir".into();
             return;
         }
         let (tx, rx) = mpsc::sync_channel(1);
         let audio = self.settings.audio.saved.clone();
+        let vsts = std::iter::once(&self.vst)
+            .chain(self.vst_instances.values())
+            .filter_map(|vst| vst.shared().ok())
+            .collect();
         self.file_playback = Some(PendingPlayback {
             result: rx,
             beat,
@@ -119,7 +140,9 @@ impl DawApp {
                 pattern,
                 gain: drum_gain,
             });
-            let _ = tx.send(PreparedPlayback::load(inputs, drums, bpm, meter, audio));
+            let _ = tx.send(PreparedPlayback::load(
+                inputs, drums, bpm, meter, audio, vsts,
+            ));
         });
     }
     pub(super) fn poll_file_playback(&mut self) {

@@ -3,6 +3,20 @@ use super::{TransportContext, VstEngine, events};
 use std::ptr;
 use vst3::Steinberg::{Vst::*, kResultOk};
 impl VstEngine {
+    /// El host acota colas infinitas y garantiza tiempo para releases de instrumentos.
+    pub fn tail_frames(&self, rate: u32) -> u64 {
+        let reported = self
+            .processor
+            .as_ref()
+            .map_or(0, |processor| unsafe { processor.getTailSamples() });
+        let minimum = u64::from(rate).saturating_mul(2);
+        let maximum = u64::from(rate).saturating_mul(10);
+        if reported == vst3::Steinberg::Vst::kInfiniteTail {
+            u64::from(rate).saturating_mul(5)
+        } else {
+            u64::from(reported).max(minimum).min(maximum)
+        }
+    }
     pub fn midi(&mut self, status: u8, a: u8, b: u8) {
         let channel = (status & 15) as usize;
         let on = status & 0xf0 == 0x90 && b != 0;
@@ -27,13 +41,18 @@ impl VstEngine {
         }
     }
     pub fn panic(&mut self) {
-        self.events.clear();
+        self.events.retain_note_offs();
         for channel in 0..16 {
             self.cc(channel, 64, 0.);
             for pitch in 0..128 {
                 if self.held[channel][pitch] {
-                    self.events
-                        .push(events::note(channel as u8, pitch as u8, 0, false));
+                    if !self
+                        .events
+                        .push(events::note(channel as u8, pitch as u8, 0, false))
+                    {
+                        self.failed = true;
+                        return;
+                    }
                     self.held[channel][pitch] = false;
                 }
             }
@@ -60,6 +79,7 @@ impl VstEngine {
             }
         }
     }
+    #[allow(dead_code)] // El diagnóstico vst3_probe usa la ruta local sin transporte.
     pub fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
         self.render_timed(left, right, None);
     }

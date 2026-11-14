@@ -44,6 +44,7 @@ pub(super) struct PreparedTrack {
 }
 pub(super) struct Mix {
     pub tracks: Vec<PreparedTrack>,
+    pub vsts: Vec<Arc<super::super::vst3::SharedInstrument>>,
     drums: Option<PreparedDrums>,
     pub end: u64,
     timing: TransportContext,
@@ -69,8 +70,17 @@ impl Mix {
         let beats = timing.bpm / 60.;
         let spec = ProcessSpec::new(rate as f64).map_err(|e| e.to_string())?;
         let mut tracks = Vec::with_capacity(inputs.len());
+        let mut vsts = Vec::new();
         let mut end = 0;
         for input in inputs {
+            if let Some(source) = &input.midi
+                && let VoiceSource::Vst(shared) = &source.source
+            {
+                if vsts.iter().any(|other| Arc::ptr_eq(other, shared)) {
+                    return Err("Una instancia VST3 no puede alimentar dos pistas a la vez".into());
+                }
+                vsts.push(shared.clone());
+            }
             if input
                 .rack
                 .as_ref()
@@ -109,6 +119,10 @@ impl Mix {
             let midi = input
                 .midi
                 .map(|source| {
+                    let tail = match &source.source {
+                        VoiceSource::Vst(shared) => shared.tail_frames,
+                        _ => 0,
+                    };
                     let plan = PreparedMidiArrangement::compile_track(
                         &source.clips,
                         &source.track,
@@ -118,7 +132,9 @@ impl Mix {
                     )?;
                     let voice =
                         PreparedArrangementVoice::prepare(source.instrument, source.source, rate)?;
-                    end = end.max(plan.end_frame());
+                    if !source.clips.is_empty() {
+                        end = end.max(plan.end_frame().saturating_add(tail));
+                    }
                     Ok::<_, String>((plan, voice))
                 })
                 .transpose()?;
@@ -140,6 +156,7 @@ impl Mix {
         }
         Ok(Self {
             tracks,
+            vsts,
             drums,
             end,
             timing,
@@ -169,8 +186,13 @@ impl Mix {
                         sum[1] += frame[1] * gain;
                     }
                 }
+                let time = TransportContext {
+                    frame: at,
+                    loop_range,
+                    ..self.timing
+                };
                 if let Some((plan, voice)) = &mut track.midi {
-                    voice.render(plan, at, &mut scratch[..block.len()]);
+                    voice.render_timed(plan, at, &mut scratch[..block.len()], Some(time));
                     for (sum, frame) in bus.iter_mut().zip(&scratch).take(block.len()) {
                         sum[0] += frame[0];
                         sum[1] += frame[1];
@@ -181,11 +203,6 @@ impl Mix {
                     let _ = track.volume.set_gain(gain);
                 }
                 let bus = &mut bus[..block.len()];
-                let time = TransportContext {
-                    frame: at,
-                    loop_range,
-                    ..self.timing
-                };
                 track.fx.process_timed(&track.control.fx, bus, Some(time));
                 track.volume.process(bus);
                 track.control.pan.apply(bus);

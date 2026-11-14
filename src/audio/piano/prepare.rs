@@ -12,8 +12,15 @@ pub(crate) struct PreparedPiano {
 
 impl PreparedPiano {
     pub fn vst_editor(&self) -> Option<crate::audio::vst3::EditorHandle> {
-        if let SynthBackend::Vst(engine) = &self.backend {
-            Some(engine.editor.clone())
+        if let SynthBackend::Vst(voice) = &self.backend {
+            Some(voice.shared.editor.clone())
+        } else {
+            None
+        }
+    }
+    pub fn vst_shared(&self) -> Option<std::sync::Arc<crate::audio::vst3::SharedInstrument>> {
+        if let SynthBackend::Vst(voice) = &self.backend {
+            Some(voice.shared.clone())
         } else {
             None
         }
@@ -31,11 +38,12 @@ impl PreparedPiano {
             class,
         )?;
         let name = engine.name.clone();
+        let shared = crate::audio::vst3::SharedInstrument::new(engine, setup.config.sample_rate);
         Ok((
             Self {
                 device,
                 setup,
-                backend: SynthBackend::Vst(engine),
+                backend: SynthBackend::Vst(crate::audio::vst3::InstrumentVoice::preview(shared)),
             },
             name,
         ))

@@ -270,6 +270,77 @@ fn mismatched_vst_rate_rejects_preparation_before_opening_a_stream() {
 }
 
 #[test]
+#[ignore = "requiere HAY_VST3_TEST_BUNDLE y un VST3 instalado"]
+fn two_real_vst_instruments_share_one_mix_with_wav() {
+    use crate::audio::{
+        piano::VoiceSource,
+        vst3::{SharedInstrument, VstEngine},
+    };
+    use elevate::musical::{
+        clip::MidiClip,
+        model::{InstrumentId, Pattern},
+        time::{Meter, PPQ, Tick},
+        track::{Track, TrackKind},
+    };
+    let bundle = std::env::var_os("HAY_VST3_TEST_BUNDLE")
+        .expect("HAY_VST3_TEST_BUNDLE debe apuntar al instrumento .vst3");
+    crate::audio::vst3::environment::configure().unwrap();
+    let bundle = std::path::Path::new(&bundle);
+    let mut inputs = Vec::new();
+    let mut shared = Vec::new();
+    for (index, pitch, pan) in [(0, 60, -1.), (1, 64, 1.)] {
+        let id = InstrumentId(700 + index as u32);
+        let engine = VstEngine::load_instrument_class(bundle, 48_000, None).unwrap();
+        let vst = SharedInstrument::new(engine, 48_000);
+        let mut track_state = Track::new(format!("VST {index}"), TrackKind::Synth);
+        track_state.instrument = Some(id);
+        let mut pattern = Pattern::new(Tick(PPQ)).unwrap();
+        pattern
+            .add_note(id, Tick(0), Tick(PPQ / 2), pitch, 100)
+            .unwrap();
+        let midi = MidiClip::new("nota", index, 0., pattern);
+        let mut input = track(track_state.id.0, vec![]);
+        input.pan = pan;
+        input.midi = Some(MidiTrackInput {
+            index,
+            track: track_state,
+            instrument: id,
+            clips: vec![midi],
+            source: VoiceSource::Vst(vst.clone()),
+        });
+        inputs.push(input);
+        shared.push(vst);
+    }
+    let mut wav = track(900, vec![clip([0.02, 0.02], 0., 48_000)]);
+    wav.clips[0].track = 2;
+    inputs.push(wav);
+    let mut mix = Mix::prepare(inputs, None, 48_000, 120., Meter::default()).unwrap();
+    for vst in &shared {
+        vst.enter_arrangement().unwrap();
+    }
+    let mut peaks = [0_f32; 2];
+    for index in 0..96 {
+        let mut frames = [[0.; 2]; 256];
+        mix.render_timed(index * 256, &mut frames, None);
+        for frame in frames {
+            assert!(frame.iter().all(|sample| sample.is_finite()));
+            peaks[0] = peaks[0].max((frame[0] - 0.02).abs());
+            peaks[1] = peaks[1].max((frame[1] - 0.02).abs());
+        }
+    }
+    assert!(peaks[0] > 0.01 && peaks[1] > 0.01, "picos VST3: {peaks:?}");
+    drop(mix);
+    let editors: Vec<_> = shared.iter().map(|vst| vst.editor.clone()).collect();
+    for vst in &shared {
+        vst.leave_arrangement();
+    }
+    drop(shared);
+    for editor in editors {
+        editor.wait_for_shutdown();
+    }
+}
+
+#[test]
 fn wav_and_midi_on_one_track_reach_the_same_bus() {
     use crate::audio::piano::{PianoSettings, PianoSnapshot, VoiceSource};
     use elevate::musical::{

@@ -4,7 +4,7 @@ use rustysynth::{SoundFont, Synthesizer, SynthesizerSettings};
 use std::{path::Path, sync::Arc};
 
 pub(crate) enum SynthBackend {
-    Vst(crate::audio::vst3::VstEngine),
+    Vst(crate::audio::vst3::InstrumentVoice),
     Sampler(crate::audio::sampler::SfizzEngine),
     Fluid(FluidEngine),
     Rusty(Synthesizer),
@@ -133,8 +133,16 @@ impl SynthBackend {
         }
     }
     pub fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
+        self.render_timed(left, right, None);
+    }
+    pub fn render_timed(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        time: Option<crate::audio::vst3::TransportContext>,
+    ) {
         match self {
-            Self::Vst(v) => v.render(left, right),
+            Self::Vst(v) => v.render(left, right, time),
             Self::Sampler(s) => s.render(left, right),
             Self::Fluid(f) => f.render(left, right),
             Self::Rusty(r) => r.render(left, right),
@@ -142,6 +150,6 @@ impl SynthBackend {
     }
 
     pub fn failed(&self) -> bool {
-        matches!(self, Self::Vst(v) if v.failed)
+        matches!(self, Self::Vst(v) if v.failed())
     }
 }

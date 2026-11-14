@@ -13,13 +13,24 @@ usan la mezcla y el scheduler existentes.
 Acciones: `instrument.vst3.load 'ruta/Plugin.vst3'` (formulario de ruta desde catálogo),
 `instrument.vst3.remove`, `instrument.vst3.editor` y `instrument.vst3.editor.close`. Cada pista MIDI
 puede conservar un VST3 distinto. Seleccionar una pista cambia el editor y el destino
-MIDI; retirar el instrumento de una pista conserva las demás instancias.
+MIDI; retirar el instrumento de una pista conserva las demás instancias. Play
+procesa los VST3 cargados en el mismo transporte y salida que WAV y los demás
+instrumentos MIDI, con el sonido ya editado en cada ventana. Stop devuelve cada
+VST3 a su audición en vivo.
 
 Para comprobar la separación, carga el mismo instrumento en dos pistas MIDI,
 selecciona cada una y modifica un parámetro distinto en su editor. Toca una nota
 en la primera, cambia de pista antes de soltarla y verifica que la liberación
 llega a la primera. Quita la segunda instancia y comprueba que la primera aún
 suena. Esta comprobación requiere plugins y una salida de audio reales.
+
+Para comprobar Play común, coloca clips MIDI en ambas pistas VST3 y un WAV en una
+tercera. Pulsa Play, cambia un control en cada editor y prueba mute/solo, seek y
+loop; todo debe seguir el mismo cursor. El probe sin salida física ejercita el
+cambio de ruta del procesador con `cargo run --example vst3_probe --
+"$HOME/.vst3/yabridge/VST3/Pianoteq 9.vst3" --shared` desde `gpui-dev`.
+La prueba opcional `two_real_vst_instruments_share_one_mix_with_wav` requiere
+`HAY_VST3_TEST_BUNDLE` y procesa dos instancias reales más un WAV sin abrir CPAL.
 
 ## Efectos VST3 y Cathar Restore
 
@@ -109,8 +120,9 @@ No se guardan la ruta del bundle ni el estado del instrumento en el proyecto: ha
 volver a cargarlo en cada sesión. La exportación que incluye MIDI de la pista VST3 se
 rechaza explícitamente, para evitar sustituirlo por SoundFont. Cambiar la interfaz de
 audio recarga las instancias en serie con la nueva frecuencia (se pierde su estado no persistido).
-La audición VST3 todavía usa un stream por instancia y Play no mezcla varios
-instrumentos VST3 en el transporte común.
+La audición VST3 usa un stream por instancia; Play silencia esos streams y usa el
+motor común. El tail se acota entre 2 y 10 segundos; todavía no hay compensación
+de latencia ni buses auxiliares.
 Los plugins nativos se ejecutan dentro del proceso; este host no aísla crashes nativos.
 El teclado de ordenador y Espacio con foco en la ventana externa dependen del editor;
 no se ha implementado el retorno de teclas sin consumir a Hay.
