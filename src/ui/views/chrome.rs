@@ -35,7 +35,7 @@ impl DawApp {
             } else {
                 "● AUDIO"
             }
-        } else if self.vst.ready() {
+        } else if self.vst_any_ready() {
             "● VST3"
         } else if self.instrument.is_running() {
             "● INSTRUMENT"

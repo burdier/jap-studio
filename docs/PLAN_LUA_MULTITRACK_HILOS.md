@@ -372,10 +372,11 @@ y el cambio de foco conserva el destino correcto de cada liberación.
 
 ## PR-06 — VST3 como procesador del motor común
 
-**Avance:** primer incremento: el host existente recibe `ProcessContext` del
-transporte compartido en los FX de Arrangement, con campos válidos y offsets por
-subbloque. Las instancias de instrumento, su carga y su editor siguen en la ruta
-anterior; los siguientes commits conectarán identidad, MIDI y audio por pista.
+**Avance:** los FX de Arrangement reciben `ProcessContext` del transporte
+compartido, con campos válidos y offsets por subbloque. El segundo incremento
+asigna IDs VST3 por pista y conserva instancias, editores, FX y destino MIDI al
+cambiar de foco. El audio de instrumento sigue en streams individuales; falta
+conectarlo al bus compartido y completar las operaciones Lua.
 
 **Título sugerido:** `feat(vst3): integrar instancias independientes en el motor multipista`
 
@@ -389,7 +390,7 @@ y transporte sincronizados.
 
 - [ ] Adaptar el host existente al contrato común y a IDs de instancia. Conservar su
   escaneo y el ciclo de vida de editores; no escribir un segundo host.
-- [ ] Pasar posición absoluta, tempo, compás, estado de reproducción y loop desde el
+- [x] Pasar posición absoluta, tempo, compás, estado de reproducción y loop desde el
   motor, indicando solamente los campos válidos del contexto VST3.
 - [ ] Traducir notas y cambios de parámetros con offsets correctos. Representar buses,
   latencia y cola de sonido en el adaptador aunque inicialmente se use el bus principal.

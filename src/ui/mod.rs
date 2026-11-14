@@ -102,6 +102,9 @@ struct DawApp {
         HashMap<elevate::musical::model::InstrumentId, crate::instruments::sampler::Sampler>,
     sampler_ui: sampler::SamplerUi,
     vst: crate::instruments::vst::VstInstrument,
+    vst_instances:
+        HashMap<elevate::musical::model::InstrumentId, crate::instruments::vst::VstInstrument>,
+    vst_reloads: std::collections::VecDeque<(TrackId, std::path::PathBuf, Option<String>)>,
     vst_effects: vst::effects::VstEffects,
     vst_task: Option<gpui::Task<()>>,
     controller: ComputerKeyboard,

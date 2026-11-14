@@ -158,13 +158,24 @@ impl DawApp {
                         this.stop_all();
                         this.instrument.configure_audio(config.clone());
                         this.sampler.configure_audio(config.clone());
+                        this.vst_reloads = this
+                            .tracks
+                            .iter()
+                            .filter_map(|track| {
+                                let id = track.instrument?;
+                                let vst = if id == this.vst.id {
+                                    Some(&this.vst)
+                                } else {
+                                    this.vst_instances.get(&id)
+                                }?;
+                                Some((track.id, vst.bundle.clone()?, vst.class.clone()))
+                            })
+                            .collect();
                         this.vst.unload();
-                        this.settings.audio.saved = config.clone();
-                        if let Some(target) = this.vst_track().map(|i| this.tracks[i].id) {
-                            if let Some(bundle) = this.vst.bundle.clone() {
-                                this.load_vst(bundle, Some(target), cx);
-                            }
+                        for vst in this.vst_instances.values_mut() {
+                            vst.unload();
                         }
+                        this.settings.audio.saved = config.clone();
                         this.prepare_sampler(cx);
                         match profile::save(&config) {
                             Ok(()) => this.audio_message(

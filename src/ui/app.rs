@@ -128,6 +128,8 @@ impl DawApp {
             sampler_instances: Default::default(),
             sampler_ui: Default::default(),
             vst: Default::default(),
+            vst_instances: Default::default(),
+            vst_reloads: Default::default(),
             vst_task: None,
             vst_effects: Default::default(),
             export_job: None,

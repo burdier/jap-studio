@@ -38,9 +38,15 @@ impl DawApp {
                 self.remove_vst()
             }
             Ok([name]) if name == "instrument.vst3.editor" && self.vst_selected() => {
+                if let Some(id) = self.tracks.get(self.cursor_row).and_then(|t| t.instrument) {
+                    self.activate_vst(id);
+                }
                 self.vst.open_editor()
             }
             Ok([name]) if name == "instrument.vst3.editor.close" && self.vst_selected() => {
+                if let Some(id) = self.tracks.get(self.cursor_row).and_then(|t| t.instrument) {
+                    self.activate_vst(id);
+                }
                 self.vst.close_editor()
             }
             Ok([name]) if name == "instrument.vst3.remove" => {

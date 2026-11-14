@@ -87,13 +87,17 @@ impl DawApp {
     /// Si el foco cambia desde otro instrumento/secuenciador, el servidor libera
     /// automáticamente las notas que tenía el cliente anterior.
     pub(super) fn sync_midi_focus(&mut self) {
+        self.prune_vst_instances();
         if let Some(id) = self
             .tracks
             .get(self.cursor_row)
             .and_then(|track| track.instrument)
-            && self.is_sampler_id(id)
         {
-            self.activate_sampler(id);
+            if self.is_sampler_id(id) {
+                self.activate_sampler(id);
+            } else if self.is_vst_id(id) {
+                self.activate_vst(id);
+            }
         }
         let target = match self.center_view {
             CenterView::Session => Some(MidiTarget::Sequencer),
@@ -234,8 +238,8 @@ impl DawApp {
                         }
                     }
                 }
-                MidiTarget::Instrument(id) if id == crate::instruments::vst::VST_ID => {
-                    self.vst_midi(message)
+                MidiTarget::Instrument(id) if self.is_vst_id(id) => {
+                    self.vst_midi_to(id, message);
                 }
                 MidiTarget::Instrument(_) => {}
                 MidiTarget::Sequencer => {
@@ -329,8 +333,14 @@ impl DawApp {
     }
     pub(super) fn note_off(&mut self, note: u8) {
         if self.vst.held.contains(&note) {
-            self.vst_midi(MidiMessage::NoteOff { note });
+            self.vst_midi_to(self.vst.id, MidiMessage::NoteOff { note });
             return;
+        }
+        for vst in self.vst_instances.values_mut() {
+            if vst.held.contains(&note) {
+                vst.midi(0x80, note, 64);
+                return;
+            }
         }
         if self.sampler.held(note) {
             self.sampler.note_off(note);
@@ -361,7 +371,12 @@ impl DawApp {
     }
     pub(super) fn release_mouse_note(&mut self) {
         if let Some(note) = self.vst.mouse.take() {
-            self.vst_midi(MidiMessage::NoteOff { note });
+            self.vst_midi_to(self.vst.id, MidiMessage::NoteOff { note });
+        }
+        for vst in self.vst_instances.values_mut() {
+            if let Some(note) = vst.mouse.take() {
+                vst.midi(0x80, note, 64);
+            }
         }
         if let Some(note) = self.sampler.mouse.take() {
             self.sampler.note_off(note);
@@ -372,6 +387,9 @@ impl DawApp {
     }
     pub(super) fn all_notes_off(&mut self) {
         self.vst.all_off();
+        for vst in self.vst_instances.values_mut() {
+            vst.all_off();
+        }
         self.sampler.all_off();
         let controller_off = self.controller.release_all();
         self.apply_midi(controller_off);
@@ -523,6 +541,9 @@ impl DawApp {
     }
     pub(super) fn stop_instrument(&mut self) {
         self.vst.silence();
+        for vst in self.vst_instances.values_mut() {
+            vst.silence();
+        }
         self.sampler.silence();
         for sampler in self.sampler_instances.values_mut() {
             sampler.silence();
@@ -583,7 +604,7 @@ impl DawApp {
                 self.tracks
                     .get(clip.track)
                     .and_then(|track| track.instrument)
-                    == Some(crate::instruments::vst::VST_ID)
+                    .is_some_and(|id| self.is_vst_id(id))
             })
         {
             if let Some(midi_clip) = self.timeline.midi_clip.clone() {
@@ -607,6 +628,9 @@ impl DawApp {
 
     pub(super) fn stop_audio(&mut self) {
         self.vst.stop_clip();
+        for vst in self.vst_instances.values() {
+            vst.stop_clip();
+        }
         self.file_playback = None;
         self.player = None;
         self.instrument.stop_clip();

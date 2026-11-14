@@ -95,6 +95,7 @@ impl DawApp {
                 self.active_sampler_id = crate::instruments::sampler::SAMPLER_ID;
             }
         }
+        self.prune_vst_instances();
         self.selected_tracks = if new_ids.is_empty() || !select_new {
             selected
                 .into_iter()

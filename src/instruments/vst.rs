@@ -5,22 +5,41 @@ use crate::audio::{
 };
 use elevate::{
     devices::utility_slot::UtilitySlot,
-    musical::{clip::MidiClip, model::InstrumentId},
+    musical::{clip::MidiClip, midi::MidiMessage, model::InstrumentId},
 };
 use std::path::{Path, PathBuf};
 pub(crate) const VST_ID: InstrumentId = InstrumentId(3);
 
-#[derive(Default)]
 pub(crate) struct VstInstrument {
+    pub id: InstrumentId,
     pub name: String,
     pub bundle: Option<PathBuf>,
+    pub class: Option<String>,
     player: Option<PianoPlayer>,
     fx_rack: Option<std::sync::Arc<crate::audio::effects::Rack>>,
     editor: Option<crate::audio::vst3::EditorHandle>,
     pub held: std::collections::HashSet<u8>,
     pub mouse: Option<u8>,
 }
+impl Default for VstInstrument {
+    fn default() -> Self {
+        Self::new(VST_ID)
+    }
+}
 impl VstInstrument {
+    pub fn new(id: InstrumentId) -> Self {
+        Self {
+            id,
+            name: String::new(),
+            bundle: None,
+            class: None,
+            player: None,
+            fx_rack: None,
+            editor: None,
+            held: Default::default(),
+            mouse: None,
+        }
+    }
     pub fn set_fx_rack(&mut self, rack: Option<std::sync::Arc<crate::audio::effects::Rack>>) {
         if let Some(player) = &self.player {
             player.set_fx_rack(rack.clone());
@@ -40,6 +59,7 @@ impl VstInstrument {
         prepared: PreparedPiano,
         name: String,
         bundle: PathBuf,
+        class: Option<String>,
         gain: f32,
         pan: f32,
         fx: f32,
@@ -53,6 +73,7 @@ impl VstInstrument {
         self.editor = editor;
         self.name = name;
         self.bundle = Some(bundle);
+        self.class = class;
         Ok(())
     }
     pub fn ready(&self) -> bool {
@@ -69,6 +90,19 @@ impl VstInstrument {
             } else if status & 0xf0 == 0x80 || status & 0xf0 == 0x90 {
                 self.held.remove(&a);
             }
+        }
+    }
+    pub fn send_midi(&mut self, message: MidiMessage) {
+        match message {
+            MidiMessage::NoteOn { note, velocity } => self.midi(0x90, note, velocity),
+            MidiMessage::NoteOff { note } => self.midi(0x80, note, 64),
+            MidiMessage::ControlChange { cc, value } => self.midi(0xb0, cc, value),
+            MidiMessage::PitchBend { bend } => {
+                let value = (bend as i32 + 8192).clamp(0, 16383) as u16;
+                self.midi(0xe0, (value & 127) as u8, (value >> 7) as u8);
+            }
+            MidiMessage::AllNotesOff => self.all_off(),
+            MidiMessage::ProgramChange { .. } => {}
         }
     }
     pub fn all_off(&mut self) {

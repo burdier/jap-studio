@@ -624,8 +624,8 @@ impl DawApp {
                 )
                 .into_any_element(),
             TcpWidget::Type => {
-                let label = if track.instrument == Some(crate::instruments::vst::VST_ID) {
-                    self.vst.name.clone()
+                let label = if track.instrument.is_some_and(|id| self.is_vst_id(id)) {
+                    self.vst_name(track.instrument.unwrap()).to_string()
                 } else if track.instrument.is_some_and(|id| self.is_sampler_id(id)) {
                     let id = track.instrument.unwrap();
                     let name = if id == self.active_sampler_id {

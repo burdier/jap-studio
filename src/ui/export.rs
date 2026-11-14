@@ -72,7 +72,9 @@ impl DawApp {
                 options.includes_track(clip.track)
                     && !clip.props.muted
                     && self.track_gain(clip.track) > 0.
-                    && self.tracks[clip.track].instrument == Some(crate::instruments::vst::VST_ID)
+                    && self.tracks[clip.track]
+                        .instrument
+                        .is_some_and(|id| self.is_vst_id(id))
             }) {
                 return Err("La exportación de instrumentos VST3 todavía no está disponible; excluye esa pista del rango de exportación".into());
             }

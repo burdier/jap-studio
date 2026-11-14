@@ -211,10 +211,23 @@ impl DawApp {
         }
         let piano_rack = self.piano_output_track().and_then(|i| self.effect_rack(i));
         let sampler_rack = self.sampler_track().and_then(|i| self.effect_rack(i));
-        let vst_rack = self.vst_track().and_then(|i| self.effect_rack(i));
         self.instrument.set_fx_rack(piano_rack);
         self.sampler.set_fx_rack(sampler_rack);
+        let vst_rack = self.vst_track().and_then(|i| self.effect_rack(i));
         self.vst.set_fx_rack(vst_rack);
+        let racks: Vec<_> = self
+            .tracks
+            .iter()
+            .enumerate()
+            .filter_map(|(i, track)| track.instrument.map(|id| (id, i)))
+            .filter(|(id, _)| self.vst_instances.contains_key(id))
+            .map(|(id, i)| (id, self.effect_rack(i)))
+            .collect();
+        for (id, rack) in racks {
+            if let Some(vst) = self.vst_instances.get_mut(&id) {
+                vst.set_fx_rack(rack);
+            }
+        }
         // Las rutas publicadas mantienen las instancias vivas hasta terminar el bloque activo.
         self.vst_effects
             .instances

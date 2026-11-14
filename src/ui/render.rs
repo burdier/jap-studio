@@ -21,8 +21,35 @@ impl Render for DawApp {
             self.timeline.import_preview = None;
         }
         self.poll_live_midi();
+        if self.vst_task.is_none()
+            && let Some((track, bundle, class)) = self.vst_reloads.pop_front()
+        {
+            let pending = self
+                .tracks
+                .iter()
+                .find(|item| item.id == track)
+                .and_then(|item| item.instrument)
+                .and_then(|id| {
+                    if id == self.vst.id {
+                        Some(&self.vst)
+                    } else {
+                        self.vst_instances.get(&id)
+                    }
+                })
+                .is_some_and(|vst| {
+                    !vst.ready() && vst.bundle.as_ref() == Some(&bundle) && vst.class == class
+                });
+            if pending {
+                self.load_vst_class(bundle, Some(track), class, cx);
+            }
+        }
         if let Some(message) = self.vst.editor_message() {
             self.status_message = message;
+        }
+        for vst in self.vst_instances.values() {
+            if let Some(message) = vst.editor_message() {
+                self.status_message = message;
+            }
         }
         self.poll_export();
         self.poll_audio_probe();
@@ -70,11 +97,21 @@ impl Render for DawApp {
                 self.stop_audio();
             }
         } else if let Some(midi_clip) = &self.timeline.midi_clip {
-            if self.vst.clip_playing() {
-                self.timeline.playhead = self
-                    .vst
-                    .beat(midi_clip.start_beat, self.timeline.tempo.bpm());
-            } else if self.vst.clip_finished() {
+            let vst = self
+                .tracks
+                .get(midi_clip.track)
+                .and_then(|track| track.instrument)
+                .and_then(|id| {
+                    if id == self.vst.id {
+                        Some(&self.vst)
+                    } else {
+                        self.vst_instances.get(&id)
+                    }
+                });
+            if vst.is_some_and(|vst| vst.clip_playing()) {
+                self.timeline.playhead =
+                    vst.and_then(|vst| vst.beat(midi_clip.start_beat, self.timeline.tempo.bpm()));
+            } else if vst.is_some_and(|vst| vst.clip_finished()) {
                 self.status_message = "Fin del clip MIDI · VST3".into();
                 self.stop_audio();
             } else if self.sampler.clip_playing() {
@@ -99,6 +136,15 @@ impl Render for DawApp {
             self.status_message =
                 "El instrumento VST3 o su salida falló; vuelve a cargarlo desde [+]".into();
         }
+        for vst in self.vst_instances.values_mut() {
+            if vst.failed() {
+                vst.unload();
+                self.status_message = format!(
+                    "{}: salida VST3 fallida; vuelve a cargarlo desde [+]",
+                    vst.name
+                );
+            }
+        }
         self.follow_roll_playhead();
         if self.sampler.failed() {
             self.sampler.stop();
@@ -118,8 +164,10 @@ impl Render for DawApp {
         if self.player.is_some()
             || self.instrument.clip_playing()
             || self.sampler.clip_playing()
-            || self.vst.clip_playing()
-            || self.vst.ready()
+            || self.vst_any_clip_playing()
+            || self.vst_any_ready()
+            || self.vst_task.is_some()
+            || !self.vst_reloads.is_empty()
             || !self.vst_effects.instances.is_empty()
             || (self.fx.width > 0. && !self.fx.analyzers.views.is_empty())
             || self.file_playback.is_some()

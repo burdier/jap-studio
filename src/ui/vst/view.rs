@@ -12,7 +12,13 @@ impl DawApp {
             .p_3()
             .bg(rgb(ds.bg))
             .text_color(rgb(ds.text))
-            .child(self.vst.name.clone())
+            .child(
+                self.tracks
+                    .get(self.cursor_row)
+                    .and_then(|track| track.instrument)
+                    .map_or("VST3", |id| self.vst_name(id))
+                    .to_string(),
+            )
             .child("Usa la ventana original del plugin para editar su sonido.")
             .child(
                 div()

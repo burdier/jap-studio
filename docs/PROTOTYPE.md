@@ -6,7 +6,12 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
 
 - **PR-06, primer incremento:** los FX VST3 en Play reciben posición absoluta,
   BPM, compás y ciclo del transporte común. Seek y loop actualizan el contexto por
-  bloque. Aún falta mover los instrumentos VST3 a ese motor y crear varias instancias.
+  bloque. Aún falta mover los instrumentos VST3 a ese motor.
+
+- **PR-06, segundo incremento:** cada pista MIDI puede conservar su propio VST3,
+  editor y cadena FX. El foco MIDI y NoteOff usan su ID; al borrar una pista se
+  retira la instancia y un cambio de salida recarga las restantes en serie.
+  La audición todavía usa streams individuales; Play común de varios VST3 queda pendiente.
 
 - **PR-05 completo en Arrangement/Session:** Play mezcla clips WAV y MIDI en los
   buses de pista antes de FX, nivel y pan; Session suma la percusión provisional
@@ -163,7 +168,7 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
   colores personalizados conservan prioridad; volver a elegir el tema aplica la paleta.
 
 - `[+]` → Instrumentos carga Pianoteq VST3 mediante yabridge en background. Una instancia
-  por sesión, fila en Track FX, MIDI en vivo y clips con scheduler existente, mezcla de
+  por pista MIDI, fila en Track FX, MIDI en vivo y clips con scheduler existente, mezcla de
   pista y salida principal estéreo. Comandos `instrument.vst3.load/remove`. El acceso
   del escritorio usa el Wine del host desde gpui-dev. Carga/síntesis real comprobadas;
   editor original VST3 abierto desde Track FX. Bitstream Vera instalada para corregir

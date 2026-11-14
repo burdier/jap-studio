@@ -1,6 +1,6 @@
 # Arquitectura del prototipo
 
-## PR-06: contexto temporal para FX VST3
+## PR-06: contexto temporal y propiedad de instrumentos VST3
 
 `audio/vst3/context.rs` convierte la posición en frames del transporte de Play a
 `ProcessContext`. `audio/playback/mix.rs` lo entrega a los efectos VST3 de cada pista
@@ -8,8 +8,12 @@ por el plan FX existente; serie, paralelo y subbloques preservan el offset absol
 Se marcan como válidos BPM, compás, posición musical, inicio del compás y ciclo
 cuando existe loop. No se anuncian reloj de sistema, grabación ni muestras continuas
 sin una fuente real. La audición live conserva su contexto local sin esos flags.
-Este incremento no crea todavía instancias VST3 por pista ni conecta los instrumentos
-VST3 al bus de MIDI del Arrangement.
+`ui/vst` asigna un `InstrumentId` a cada instancia VST3 cargada en una pista. El
+foco cambia la instancia activa y conserva las demás por ID; NoteOff vuelve a su
+dueño original. Cada instancia mantiene editor, mezcla y cadena FX propios. Tras
+cambiar la salida, la UI las recarga en serie con la nueva frecuencia. La audición
+de instrumentos VST3 todavía usa streams CPAL individuales; falta conectarlos al
+bus MIDI del Arrangement para reproducir varios con el transporte común.
 
 ## PR-05: instrumentos internos y mezcla por pista
 
@@ -601,8 +605,8 @@ del catálogo estático. La exploración corre en background al abrir Add; la ac
 conserva filtro y selección. La selección de un instalado delega a `ui/vst`, que prepara
 el instrumento fuera de UI/RT y asigna la pista tras abrir la salida correctamente.
 `audio/vst3` usa el binding vst3 0.3.0 (MIT/Apache); `instruments/vst` posee la ejecución
-y comparte PianoPlayer, cola MIDI y scheduler con piano/sampler. Una instancia VST3 por
-sesión, sin persistencia de estado. `audio/vst3/editor` conserva componente/controlador
+y comparte PianoPlayer, cola MIDI y scheduler con piano/sampler. Cada pista MIDI puede
+poseer una instancia VST3, sin persistencia de estado. `audio/vst3/editor` conserva componente/controlador
 y ventana X11 en un hilo propietario, separado del procesador transferido al stream.
 `IPlugView` dibuja el editor original y `IComponentHandler` comunica sus cambios por
 una cola SPSC acotada. No hay panel de parámetros específico por plugin; el mapeo Lua

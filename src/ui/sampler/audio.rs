@@ -31,7 +31,9 @@ impl DawApp {
     }
     pub(in crate::ui) fn active_instrument_id(&self) -> InstrumentId {
         if self.vst_selected() {
-            return crate::instruments::vst::VST_ID;
+            return self.tracks[self.cursor_row]
+                .instrument
+                .unwrap_or(self.vst.id);
         }
         if self.sampler_selected() {
             self.tracks[self.cursor_row]
@@ -43,7 +45,11 @@ impl DawApp {
     }
     pub(in crate::ui) fn active_instrument_name(&self) -> &str {
         if self.vst_selected() {
-            return &self.vst.name;
+            return self.vst_name(
+                self.tracks[self.cursor_row]
+                    .instrument
+                    .unwrap_or(self.vst.id),
+            );
         }
         if self.sampler_selected() {
             self.sampler.name()
