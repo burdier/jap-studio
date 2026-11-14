@@ -123,7 +123,7 @@ impl DawApp {
             ),
             Err(error) => error.to_string(),
         };
-        if self.pattern_player.is_some() {
+        if self.pattern_loop_beats.is_some() {
             status.push_str(" · Space: reiniciar audición");
         }
         self.status_message = status;
@@ -131,8 +131,9 @@ impl DawApp {
 
     /// Paso que suena ahora. Es solo presentación: lo calcula el frame del motor.
     pub(super) fn pattern_play_step(&self) -> Option<usize> {
-        let player = self.pattern_player.as_ref()?;
-        let local = player.beat().rem_euclid(self.pattern_editor.length_beats());
+        let player = self.player.as_ref()?;
+        let loop_beats = self.pattern_loop_beats?;
+        let local = player.beat().rem_euclid(loop_beats);
         Some((local / self.pattern_editor.beats_per_step()).floor() as usize)
     }
 }

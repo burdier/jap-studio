@@ -1,12 +1,42 @@
 use crate::{instruments::sampler::SAMPLER_ID, ui::DawApp};
 use elevate::musical::{midi::MidiMessage, model::InstrumentId};
 impl DawApp {
+    pub(in crate::ui) fn is_sampler_id(&self, id: InstrumentId) -> bool {
+        id == self.active_sampler_id || self.sampler_instances.contains_key(&id)
+    }
+    pub(in crate::ui) fn activate_sampler(&mut self, id: InstrumentId) {
+        if id == self.active_sampler_id {
+            return;
+        }
+        let Some(next) = self.sampler_instances.remove(&id) else {
+            return;
+        };
+        let previous = std::mem::replace(&mut self.sampler, next);
+        self.sampler_instances
+            .insert(self.active_sampler_id, previous);
+        self.active_sampler_id = id;
+    }
+    pub(in crate::ui) fn sampler_snapshot(
+        &self,
+        id: InstrumentId,
+    ) -> Result<crate::audio::sampler::SamplerSnapshot, String> {
+        if id == self.active_sampler_id {
+            self.sampler.snapshot()
+        } else {
+            self.sampler_instances
+                .get(&id)
+                .ok_or("Sampler sin instancia")?
+                .snapshot()
+        }
+    }
     pub(in crate::ui) fn active_instrument_id(&self) -> InstrumentId {
         if self.vst_selected() {
             return crate::instruments::vst::VST_ID;
         }
         if self.sampler_selected() {
-            SAMPLER_ID
+            self.tracks[self.cursor_row]
+                .instrument
+                .unwrap_or(SAMPLER_ID)
         } else {
             self.instrument.id()
         }
@@ -24,7 +54,7 @@ impl DawApp {
     pub(in crate::ui) fn sampler_track(&self) -> Option<usize> {
         self.tracks
             .iter()
-            .position(|t| t.instrument == Some(SAMPLER_ID))
+            .position(|t| t.instrument == Some(self.active_sampler_id))
     }
     pub(in crate::ui) fn sampler_gain(&self, track: usize) -> f32 {
         let clip = if self.sampler.clip_playing() {

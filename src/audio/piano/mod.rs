@@ -29,6 +29,7 @@ use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
 };
+pub(crate) use voice::{PreparedArrangementVoice, VoiceSource};
 
 const COMMAND_QUEUE_CAP: usize = 512;
 

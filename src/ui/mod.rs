@@ -52,7 +52,7 @@ mod views;
 mod vst;
 mod workspace_focus;
 
-use crate::audio::{DrumPlayer, MidiHardwareIn, Player};
+use crate::audio::{MidiHardwareIn, Player};
 use crate::instruments::Piano;
 use components::splitter::SplitDrag;
 use cursor_fx::CursorFx;
@@ -69,6 +69,7 @@ use palette::Palette;
 use pattern_editor::PatternEditor;
 use piano_roll::PianoRoll;
 use settings::SettingsUi;
+use std::collections::HashMap;
 use std::time::Instant;
 use timeline::Timeline;
 
@@ -93,9 +94,12 @@ struct DawApp {
     player: Option<Player>,
     file_playback: Option<file_playback::PendingPlayback>,
     audio_loop: Option<(f64, f64)>,
-    pattern_player: Option<DrumPlayer>,
+    pattern_loop_beats: Option<f64>,
     instrument: Piano,
     sampler: crate::instruments::sampler::Sampler,
+    active_sampler_id: elevate::musical::model::InstrumentId,
+    sampler_instances:
+        HashMap<elevate::musical::model::InstrumentId, crate::instruments::sampler::Sampler>,
     sampler_ui: sampler::SamplerUi,
     vst: crate::instruments::vst::VstInstrument,
     vst_effects: vst::effects::VstEffects,

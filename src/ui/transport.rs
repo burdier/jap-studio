@@ -72,7 +72,6 @@ impl DawApp {
             || self.instrument.clip_playing()
             || self.sampler.clip_playing()
             || self.vst.clip_playing()
-            || self.pattern_player.is_some()
         {
             self.stop_all();
             self.status_message = "Detenido".into();

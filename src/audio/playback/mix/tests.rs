@@ -29,6 +29,7 @@ fn track(id: u32, clips: Vec<AudioClip>) -> TrackInput {
         pan: 0.,
         fx_gain: 1.,
         rack: None,
+        midi: None,
     }
 }
 #[test]
@@ -38,6 +39,7 @@ fn shared_mix_sums_tracks_with_headroom_and_clamps_only_at_output() {
             track(1, vec![clip([0.8, -0.8], 0., 12000)]),
             track(2, vec![clip([0.7, -0.7], 0., 12000)]),
         ],
+        None,
         48000,
         120.,
     )
@@ -62,8 +64,8 @@ fn offsets_overlap_and_end_are_independent_of_callback_size() {
             track(2, vec![clip([0., 0.4], 0.25, 6000)]),
         ]
     };
-    let mut whole = Mix::prepare(input(), 48000, 120.).unwrap();
-    let mut divided = Mix::prepare(input(), 48000, 120.).unwrap();
+    let mut whole = Mix::prepare(input(), None, 48000, 120.).unwrap();
+    let mut divided = Mix::prepare(input(), None, 48000, 120.).unwrap();
     assert_eq!(whole.end, 12000);
     let mut a = vec![[0.; 2]; 13000];
     let mut b = a.clone();
@@ -93,6 +95,7 @@ fn filter_changes_only_its_track_and_shared_track_clips_enter_one_bus() {
     filtered.rack = Some(Rack::new(Plan::Component(filter), 0));
     let mut mix = Mix::prepare(
         vec![filtered, track(2, vec![clip([0., 0.4], 0., 12000)])],
+        None,
         48000,
         120.,
     )
@@ -118,7 +121,7 @@ fn live_mute_solo_level_and_pan_use_shared_resolution_without_muting_other_track
     for (input, t) in inputs.iter_mut().zip(&tracks) {
         input.id = t.id;
     }
-    let mut mix = Mix::prepare(inputs, 48000, 120.).unwrap();
+    let mut mix = Mix::prepare(inputs, None, 48000, 120.).unwrap();
     let mut levels = vec![75, 75];
     let mut pans = vec![50, 50];
     let mut position = 0;
@@ -184,8 +187,8 @@ fn shared_transport_loops_and_seeks_all_sources_at_the_same_frame() {
             track(2, vec![clip([0., 0.5], 0.125, 20000)]),
         ]
     };
-    let mut a = Mix::prepare(input(), 48000, 120.).unwrap();
-    let mut b = Mix::prepare(input(), 48000, 120.).unwrap();
+    let mut a = Mix::prepare(input(), None, 48000, 120.).unwrap();
+    let mut b = Mix::prepare(input(), None, 48000, 120.).unwrap();
     let mut ca = Cursor::new(0, a.end);
     let mut cb = Cursor::new(0, b.end);
     let mut request = Request {
@@ -216,9 +219,164 @@ fn mismatched_vst_rate_rejects_preparation_before_opening_a_stream() {
     let mut input = track(1, vec![clip([0.1, 0.], 0., 100)]);
     input.rack = Some(Rack::new(Plan::Gain(1.), 44100));
     assert!(
-        Mix::prepare(vec![input], 48000, 120.)
+        Mix::prepare(vec![input], None, 48000, 120.)
             .err()
             .unwrap()
             .contains("VST3")
     );
+}
+
+#[test]
+fn wav_and_midi_on_one_track_reach_the_same_bus() {
+    use crate::audio::piano::{PianoSettings, PianoSnapshot, VoiceSource};
+    use elevate::musical::{
+        clip::MidiClip,
+        model::{InstrumentId, Pattern},
+        time::{PPQ, Tick},
+        track::{Track, TrackKind},
+    };
+    let mut musical_track = Track::new("Keys", TrackKind::Synth);
+    musical_track.instrument = Some(InstrumentId(41));
+    let mut pattern = Pattern::new(Tick(PPQ)).unwrap();
+    pattern
+        .add_note(InstrumentId(41), Tick(0), Tick(10), 60, 100)
+        .unwrap();
+    let midi = MidiClip::new("nota", 0, 0.0, pattern);
+    let source = VoiceSource::Piano(PianoSnapshot {
+        path: std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("assets/soundfonts/UprightPianoKW-20220221.sf2"),
+        settings: PianoSettings::default(),
+        midi: vec![],
+        master_volume: 0.7,
+        filter: Default::default(),
+    });
+    let mut input = track(musical_track.id.0, vec![clip([0.1, 0.1], 0.0, 1024)]);
+    input.midi = Some(MidiTrackInput {
+        index: 0,
+        track: musical_track,
+        instrument: InstrumentId(41),
+        clips: vec![midi],
+        source,
+    });
+    let mut mix = Mix::prepare(vec![input], None, 48_000, 120.0).unwrap();
+    let mut frames = [[0.0; 2]; 512];
+    mix.render(0, &mut frames);
+    assert!(frames.iter().any(|frame| (frame[0] - 0.1).abs() > 0.0001));
+    assert!(
+        frames
+            .iter()
+            .all(|frame| frame[0].is_finite() && frame[1].is_finite())
+    );
+}
+
+#[test]
+fn two_sampler_instances_with_different_samples_mix_with_wav() {
+    use crate::audio::{
+        piano::VoiceSource,
+        sampler::{SampleAsset, SamplerSnapshot},
+    };
+    use elevate::{
+        devices::sampler::SamplerParams,
+        musical::{
+            clip::MidiClip,
+            model::{InstrumentId, Pattern},
+            time::{PPQ, Tick},
+            track::{Track, TrackKind},
+        },
+    };
+    fn sample(hz: f32) -> Arc<SampleAsset> {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let path = std::env::temp_dir().join(format!(
+            "hay-mix-test-{}-{}.wav",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        let frames = 12_000u32;
+        let bytes = frames * 4;
+        let mut wav = Vec::with_capacity(44 + bytes as usize);
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&(36 + bytes).to_le_bytes());
+        wav.extend_from_slice(b"WAVEfmt ");
+        wav.extend_from_slice(&16u32.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&2u16.to_le_bytes());
+        wav.extend_from_slice(&48_000u32.to_le_bytes());
+        wav.extend_from_slice(&192_000u32.to_le_bytes());
+        wav.extend_from_slice(&4u16.to_le_bytes());
+        wav.extend_from_slice(&16u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&bytes.to_le_bytes());
+        for frame in 0..frames {
+            let value =
+                ((frame as f32 * hz * std::f32::consts::TAU / 48_000.0).sin() * 16_000.0) as i16;
+            wav.extend_from_slice(&value.to_le_bytes());
+            wav.extend_from_slice(&value.to_le_bytes());
+        }
+        std::fs::write(&path, wav).unwrap();
+        let asset = SampleAsset::load(&path).unwrap();
+        std::fs::remove_file(path).unwrap();
+        asset
+    }
+    let build = |index: usize, id: u32, pan: f32, hz| {
+        let instrument = InstrumentId(id);
+        let mut musical_track = Track::new("Sampler", TrackKind::Synth);
+        musical_track.instrument = Some(instrument);
+        let mut pattern = Pattern::new(Tick(PPQ)).unwrap();
+        pattern
+            .add_note(instrument, Tick(0), Tick(PPQ / 2), 60, 100)
+            .unwrap();
+        let mut input = track(musical_track.id.0, vec![]);
+        input.pan = pan;
+        input.midi = Some(MidiTrackInput {
+            index,
+            track: musical_track,
+            instrument,
+            clips: vec![MidiClip::new("nota", index, 0.0, pattern)],
+            source: VoiceSource::Sampler(SamplerSnapshot {
+                asset: sample(hz),
+                params: SamplerParams::default(),
+            }),
+        });
+        input
+    };
+    let mut mix = Mix::prepare(
+        vec![
+            build(0, 101, -1.0, 220.0),
+            build(1, 102, 1.0, 440.0),
+            track(103, vec![clip([0.1, 0.1], 0.0, 4_096)]),
+        ],
+        None,
+        48_000,
+        120.0,
+    )
+    .unwrap();
+    let mut frames = vec![[0.0; 2]; 2_048];
+    mix.render(0, &mut frames);
+    assert!(frames[512..].iter().any(|f| (f[0] - 0.1).abs() > 0.0001));
+    assert!(frames[512..].iter().any(|f| (f[1] - 0.1).abs() > 0.0001));
+    assert!(frames[512..].iter().any(|f| (f[0] - f[1]).abs() > 0.001));
+}
+
+#[test]
+fn drums_and_wav_use_the_same_frame_clock() {
+    use elevate::musical::{
+        model::{InstrumentId, Pattern},
+        time::{PPQ, Tick},
+    };
+    let mut pattern = Pattern::new(Tick(PPQ)).unwrap();
+    pattern
+        .add_note(InstrumentId(1), Tick(0), Tick(PPQ / 2), 60, 100)
+        .unwrap();
+    let mut mix = Mix::prepare(
+        vec![track(1, vec![clip([0.1, 0.1], 0.0, 48_000)])],
+        Some(DrumInput { pattern, gain: 1.0 }),
+        48_000,
+        120.0,
+    )
+    .unwrap();
+    assert_eq!(mix.end, u64::MAX);
+    let mut frames = vec![[0.0; 2]; 1024];
+    mix.render(0, &mut frames);
+    assert!(frames.iter().any(|f| (f[0] - 0.1).abs() > 0.001));
 }

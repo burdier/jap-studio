@@ -183,7 +183,7 @@ impl DawApp {
             if let Some(track) = track {
                 let instrument_name = match track.instrument {
                     Some(id) if id == crate::instruments::vst::VST_ID => self.vst.name.as_str(),
-                    Some(id) if id == crate::instruments::sampler::SAMPLER_ID => "Hay Sampler",
+                    Some(id) if self.is_sampler_id(id) => "Hay Sampler",
                     _ => "Piano SoundFont",
                 };
                 tree.sync(

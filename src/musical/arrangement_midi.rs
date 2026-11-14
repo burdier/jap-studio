@@ -29,6 +29,26 @@ pub struct PreparedMidiArrangement {
 }
 
 impl PreparedMidiArrangement {
+    /// Prepara una pista conservando su TrackId, aunque el Arrangement la sitúe
+    /// en cualquier índice. La copia y el remapeo ocurren fuera del callback.
+    pub fn compile_track(
+        clips: &[MidiClip],
+        track: &Track,
+        index: usize,
+        rate: u32,
+        bpm: f64,
+    ) -> Result<Self, String> {
+        let local: Vec<_> = clips
+            .iter()
+            .filter(|clip| clip.track == index)
+            .map(|clip| {
+                let mut copy = clip.clone();
+                copy.track = 0;
+                copy
+            })
+            .collect();
+        Self::compile(&local, std::slice::from_ref(track), rate, bpm)
+    }
     pub fn compile(
         clips: &[MidiClip],
         tracks: &[Track],

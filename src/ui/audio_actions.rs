@@ -1,6 +1,5 @@
 //! Coordinación UI → adaptadores de audio; decodificación en background.
 use super::{CenterView, DawApp, pattern_editor::PatternAction};
-use crate::audio::DrumPlayer;
 use crate::instruments::piano_params::{self, Applies, ParamId, SPECS};
 use elevate::musical::{
     controller::DEFAULT_VELOCITY,
@@ -88,6 +87,14 @@ impl DawApp {
     /// Si el foco cambia desde otro instrumento/secuenciador, el servidor libera
     /// automáticamente las notas que tenía el cliente anterior.
     pub(super) fn sync_midi_focus(&mut self) {
+        if let Some(id) = self
+            .tracks
+            .get(self.cursor_row)
+            .and_then(|track| track.instrument)
+            && self.is_sampler_id(id)
+        {
+            self.activate_sampler(id);
+        }
         let target = match self.center_view {
             CenterView::Session => Some(MidiTarget::Sequencer),
             CenterView::Arrangement | CenterView::Mixer => self
@@ -210,13 +217,22 @@ impl DawApp {
                     }
                     MidiMessage::ProgramChange { program } => {
                         self.instrument.select_preset(usize::from(program));
+                        self.track_revision = self.track_revision.wrapping_add(1);
                     }
                     MidiMessage::AllNotesOff => {
                         self.instrument.all_notes_off();
                     }
                 },
-                MidiTarget::Instrument(id) if id == crate::instruments::sampler::SAMPLER_ID => {
-                    self.sampler_midi(message)
+                MidiTarget::Instrument(id) if self.is_sampler_id(id) => {
+                    if id == self.active_sampler_id {
+                        self.sampler_midi(message);
+                    } else if let Some(sampler) = self.sampler_instances.get_mut(&id) {
+                        match message {
+                            MidiMessage::NoteOff { note } => sampler.note_off(note),
+                            MidiMessage::AllNotesOff => sampler.all_off(),
+                            _ => {}
+                        }
+                    }
                 }
                 MidiTarget::Instrument(id) if id == crate::instruments::vst::VST_ID => {
                     self.vst_midi(message)
@@ -433,6 +449,7 @@ impl DawApp {
     }
     pub(super) fn set_piano_param(&mut self, id: ParamId, value: f32) {
         let restart = self.instrument.set_param(id, value);
+        self.track_revision = self.track_revision.wrapping_add(1);
         let spec = piano_params::spec_of(id);
         self.status_message = format!(
             "{} = {}{}",
@@ -451,6 +468,7 @@ impl DawApp {
         self.all_notes_off();
         match self.instrument.step_bank(delta) {
             Ok(()) => {
+                self.track_revision = self.track_revision.wrapping_add(1);
                 self.status_message = format!(
                     "Banco: {} ({}/{}) · {}",
                     self.instrument.active_name(),
@@ -475,6 +493,7 @@ impl DawApp {
         self.all_notes_off();
         match self.instrument.select_bank(index) {
             Ok(()) => {
+                self.track_revision = self.track_revision.wrapping_add(1);
                 self.status_message = format!(
                     "Banco: {} · {}",
                     self.instrument.active_name(),
@@ -486,6 +505,7 @@ impl DawApp {
     }
     pub(super) fn step_soundfont_preset(&mut self, delta: isize) {
         self.instrument.step_preset(delta);
+        self.track_revision = self.track_revision.wrapping_add(1);
         if let Some(preset) = self
             .instrument
             .presets()
@@ -504,6 +524,9 @@ impl DawApp {
     pub(super) fn stop_instrument(&mut self) {
         self.vst.silence();
         self.sampler.silence();
+        for sampler in self.sampler_instances.values_mut() {
+            sampler.silence();
+        }
         self.instrument.stop();
     }
     /// Audición en loop del patrón. El plan se compila al pulsar Play.
@@ -511,27 +534,11 @@ impl DawApp {
         self.stop_audio();
         self.stop_instrument();
         self.stop_pattern();
-        match DrumPlayer::start(
-            &self.pattern_editor.pattern,
-            self.timeline.tempo.bpm(),
-            self.drum_gain(),
-            self.utility.clone(),
-            &self.settings.audio.saved,
-        ) {
-            Ok(player) => {
-                let events = player.event_count();
-                let rate = player.sample_rate;
-                let loop_beats = player.loop_beats();
-                self.pattern_player = Some(player);
-                self.status_message = format!(
-                    "Patrón en loop ({loop_beats:.2} negras) · {events} eventos · {rate} Hz · percusión sintetizada"
-                );
-            }
-            Err(error) => self.status_message = format!("Salida de percusión: {error}"),
-        }
+        self.pattern_loop_beats = Some(self.pattern_editor.length_beats());
+        self.request_file_playback(0.0);
     }
     pub(super) fn stop_pattern(&mut self) {
-        self.pattern_player = None;
+        self.pattern_loop_beats = None;
     }
     pub(super) fn play_context(&mut self) {
         if self.center_view == CenterView::Session {
@@ -561,13 +568,19 @@ impl DawApp {
             .midi_clip
             .as_ref()
             .is_some_and(|clip| clip.track == self.cursor_row && edit_beat < clip.end_beat());
-        if selected_has_midi
+        if (selected_has_midi
             || (self.timeline.clip.is_none()
                 && self
                     .timeline
                     .midi_clip
                     .as_ref()
-                    .is_some_and(|clip| edit_beat < clip.end_beat()))
+                    .is_some_and(|clip| edit_beat < clip.end_beat())))
+            && self.timeline.midi_clip.as_ref().is_some_and(|clip| {
+                self.tracks
+                    .get(clip.track)
+                    .and_then(|track| track.instrument)
+                    == Some(crate::instruments::vst::VST_ID)
+            })
         {
             if let Some(midi_clip) = self.timeline.midi_clip.clone() {
                 if !self.track_is_audible(midi_clip.track) {
@@ -580,50 +593,7 @@ impl DawApp {
                         format!("Clip MIDI «{}» está silenciado (Mute)", midi_clip.name);
                     return;
                 }
-                let start = edit_beat.max(midi_clip.start_beat);
-                if self
-                    .tracks
-                    .get(midi_clip.track)
-                    .is_some_and(|t| t.instrument == Some(crate::instruments::vst::VST_ID))
-                {
-                    self.play_vst_clip(&midi_clip, start);
-                    return;
-                }
-                if self
-                    .tracks
-                    .get(midi_clip.track)
-                    .is_some_and(|t| t.instrument == Some(crate::instruments::sampler::SAMPLER_ID))
-                {
-                    self.play_sampler_clip(&midi_clip, start);
-                    return;
-                }
-                self.sampler.silence();
-                let clip_gain = (self.track_gain(midi_clip.track) * midi_clip.props.gain_linear())
-                    .clamp(0.0, 2.0);
-                self.instrument
-                    .set_fx_gain(self.track_fx_gain(midi_clip.track));
-                // Fijar la ruta antes de arrancar también cubre la carga diferida.
-                self.instrument
-                    .set_fx_rack(self.effect_rack(midi_clip.track));
-                match self.instrument.play_clip(
-                    &midi_clip,
-                    start,
-                    self.timeline.tempo.bpm(),
-                    clip_gain,
-                    self.utility.clone(),
-                ) {
-                    Ok(()) => {
-                        self.timeline.playhead = Some(start);
-                        self.status_message = format!(
-                            "▶ Reproduciendo clip MIDI «{}» ({} notas, {:+.1} dB) → {}",
-                            midi_clip.name,
-                            midi_clip.notes().len(),
-                            midi_clip.props.gain_db,
-                            self.instrument.active_name()
-                        );
-                    }
-                    Err(error) => self.status_message = format!("Clip MIDI: {error}"),
-                }
+                self.play_vst_clip(&midi_clip, edit_beat.max(midi_clip.start_beat));
                 return;
             }
         }
@@ -638,6 +608,7 @@ impl DawApp {
         self.instrument.stop_clip();
         self.sampler.stop_clip();
         self.timeline.playhead = None;
+        self.pattern_loop_beats = None;
     }
     pub(super) fn change_gain(&mut self, delta: f32) {
         let gain = (self.utility.state().gain + delta).clamp(0.0, 2.0);
@@ -660,7 +631,7 @@ impl DawApp {
         track.map_or(1.0, |t| self.track_gain(t))
     }
     /// El plan de percusión es único: usa la media de los faders de pistas Drum.
-    fn drum_gain(&self) -> f32 {
+    pub(super) fn drum_gain(&self) -> f32 {
         let drums: Vec<usize> = (0..self.tracks.len())
             .filter(|&i| self.tracks[i].kind == TrackKind::Drum)
             .collect();
@@ -684,8 +655,8 @@ impl DawApp {
                 player.set_pan(track.id, self.track_pan(index));
             }
         }
-        if let Some(player) = &self.pattern_player {
-            player.set_gain(self.drum_gain());
+        if let Some(player) = &self.player {
+            player.set_drum_gain(self.drum_gain());
         }
         self.instrument.set_gain(self.piano_gain());
         self.instrument.set_pan(self.piano_pan());

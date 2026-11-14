@@ -18,9 +18,7 @@ impl DawApp {
             CenterView::Session => "PATTERN",
             CenterView::Mixer => "MIXER",
         };
-        let audio_label = if let Some(player) = &self.pattern_player {
-            format!("Patrón {} Hz", player.sample_rate)
-        } else if let Some(player) = &self.player {
+        let audio_label = if let Some(player) = &self.player {
             format!("{} Hz", player.sample_rate)
         } else if let Some(rate) = self.vst.sample_rate() {
             format!("{} · {rate} Hz", self.vst.name)
@@ -31,10 +29,12 @@ impl DawApp {
         } else {
             "Sin audio".into()
         };
-        let engine_label = if self.pattern_player.is_some() {
-            "● DRUMS"
-        } else if self.player.is_some() {
-            "● AUDIO"
+        let engine_label = if self.player.is_some() {
+            if self.pattern_loop_beats.is_some() {
+                "● MIX + DRUMS"
+            } else {
+                "● AUDIO"
+            }
         } else if self.vst.ready() {
             "● VST3"
         } else if self.instrument.is_running() {

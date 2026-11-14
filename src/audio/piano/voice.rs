@@ -124,6 +124,55 @@ pub(super) struct PreparedVoices {
     last_end: Option<u64>,
 }
 
+#[derive(Clone)]
+pub(crate) enum VoiceSource {
+    Piano(super::PianoSnapshot),
+    Sampler(crate::audio::sampler::SamplerSnapshot),
+}
+
+/// Una instancia por pista, preparada por el worker antes de publicar el Mix.
+pub(crate) struct PreparedArrangementVoice {
+    voices: PreparedVoices,
+    filter: Option<super::filter::StereoFilter>,
+}
+
+impl PreparedArrangementVoice {
+    pub fn prepare(id: InstrumentId, source: VoiceSource, rate: u32) -> Result<Self, String> {
+        let (backend, filter) = match source {
+            VoiceSource::Piano(snapshot) => {
+                let filter = super::filter::StereoFilter::new(rate, snapshot.filter);
+                let font = super::load_soundfont(&snapshot.path)?;
+                let mut synth = SynthBackend::new(&snapshot.path, &font, rate, snapshot.settings)?;
+                synth.set_master_volume(snapshot.master_volume);
+                for (command, a, b) in snapshot.midi {
+                    synth.midi(command, a, b);
+                }
+                (synth, Some(filter))
+            }
+            VoiceSource::Sampler(snapshot) => (
+                SynthBackend::Sampler(crate::audio::sampler::SfizzEngine::prepare(snapshot, rate)?),
+                None,
+            ),
+        };
+        let mut voices = PreparedVoices::new();
+        voices
+            .insert(
+                id,
+                backend,
+                Arc::new(InstrumentState::new(1.0, Default::default(), 0.0, 1.0)),
+            )
+            .map_err(|_| "ID de instrumento duplicado")?;
+        Ok(Self { voices, filter })
+    }
+
+    pub fn render(&mut self, plan: &PreparedMidiArrangement, at: u64, output: &mut [[f32; 2]]) {
+        self.voices.render_arrangement(plan, at, output);
+        if let Some(filter) = &mut self.filter {
+            filter.process(output);
+        }
+    }
+}
+
 impl PreparedVoices {
     pub fn new() -> Self {
         Self {

@@ -111,14 +111,6 @@ impl Render for DawApp {
             );
             self.stop_instrument();
         }
-        if self
-            .pattern_player
-            .as_ref()
-            .is_some_and(|player| player.failed())
-        {
-            self.status_message = "La salida de percusión falló; consulta la consola".into();
-            self.stop_pattern();
-        }
         let particles_alive = self
             .timeline
             .advance_particles(&self.ds, self.center_view == CenterView::Arrangement);
@@ -130,7 +122,6 @@ impl Render for DawApp {
             || self.vst.ready()
             || !self.vst_effects.instances.is_empty()
             || (self.fx.width > 0. && !self.fx.analyzers.views.is_empty())
-            || self.pattern_player.is_some()
             || self.file_playback.is_some()
             || self.midi_hw.has_ports()
             || cursor_animating

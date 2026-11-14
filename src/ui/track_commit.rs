@@ -75,6 +75,26 @@ impl DawApp {
             })
             .collect();
         self.tracks = tracks;
+        // El borrado de una pista retira su instancia; los NoteOff pendientes ya
+        // fueron liberados por stop_all antes de publicar el nuevo plan.
+        let live_samplers: std::collections::HashSet<_> = self
+            .tracks
+            .iter()
+            .filter_map(|track| track.instrument)
+            .filter(|id| self.is_sampler_id(*id))
+            .collect();
+        self.sampler_instances
+            .retain(|id, _| live_samplers.contains(id));
+        if !live_samplers.contains(&self.active_sampler_id) {
+            if let Some(next) = live_samplers.iter().next().copied() {
+                let removed = self.active_sampler_id;
+                self.activate_sampler(next);
+                self.sampler_instances.remove(&removed);
+            } else {
+                self.sampler = Default::default();
+                self.active_sampler_id = crate::instruments::sampler::SAMPLER_ID;
+            }
+        }
         self.selected_tracks = if new_ids.is_empty() || !select_new {
             selected
                 .into_iter()

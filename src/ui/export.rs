@@ -64,8 +64,9 @@ impl DawApp {
                 options.includes_track(c.track)
                     && !c.props.muted
                     && self.track_gain(c.track) > 0.0
-                    && self.tracks[c.track].instrument
-                        != Some(crate::instruments::sampler::SAMPLER_ID)
+                    && !self.tracks[c.track]
+                        .instrument
+                        .is_some_and(|id| self.is_sampler_id(id))
             });
             if midi.iter().any(|clip| {
                 options.includes_track(clip.track)
@@ -84,7 +85,7 @@ impl DawApp {
                 .tracks
                 .iter()
                 .enumerate()
-                .filter(|(_, t)| t.instrument == Some(crate::instruments::sampler::SAMPLER_ID))
+                .filter(|(_, t)| t.instrument.is_some_and(|id| self.is_sampler_id(id)))
                 .map(|(i, _)| i)
                 .collect();
             let needs_sampler = midi.iter().any(|c| {
@@ -94,7 +95,13 @@ impl DawApp {
                     && self.track_gain(c.track) > 0.
             });
             let sampler = if needs_sampler {
-                Some((sampler_tracks, self.sampler.snapshot()?))
+                if sampler_tracks.len() > 1 {
+                    return Err(
+                        "Exportar varias instancias de sampler aún no está disponible".into(),
+                    );
+                }
+                let id = self.tracks[sampler_tracks[0]].instrument.unwrap();
+                Some((sampler_tracks, self.sampler_snapshot(id)?))
             } else {
                 None
             };

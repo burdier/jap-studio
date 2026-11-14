@@ -1,6 +1,7 @@
 //! Mezclador de clips: un stream y posición compartida en frames.
 mod mix;
 mod transport;
+use super::drums::DrumInput;
 use super::publication::Publication;
 use super::{
     AudioClip, clip_source::ClipSource, output::choose_output_config, stereo_pan::StereoPan,
@@ -13,7 +14,7 @@ use elevate::devices::utility_slot::UtilitySlot;
 use elevate::musical::time::Tempo;
 use elevate::musical::track::TrackId;
 use elevate::{Primitive, ProcessSpec, primitives::amplitude::Volume};
-pub(crate) use mix::TrackInput;
+pub(crate) use mix::{MidiTrackInput, TrackInput};
 use mix::{Mix, TrackControl};
 use std::sync::{
     Arc,
@@ -25,6 +26,7 @@ struct PlaybackState {
     request: Publication<Request>,
     applied_request: AtomicU64,
     tracks: Vec<Arc<TrackControl>>,
+    drums: Option<Arc<AtomicU32>>,
     utility: UtilitySlot,
     position: AtomicU64,
     finished: AtomicBool,
@@ -48,12 +50,13 @@ impl PreparedPlayback {
     /// Consulta y remuestreo costoso fuera de la UI y del callback.
     pub fn load(
         inputs: Vec<TrackInput>,
+        drums: Option<DrumInput>,
         bpm: f64,
         audio: super::device::AudioConfig,
     ) -> Result<Self, String> {
         let device = audio.device(false)?;
         let setup = choose_output_config(&device, &audio)?;
-        let mix = Mix::prepare(inputs, setup.config.sample_rate, bpm)?;
+        let mix = Mix::prepare(inputs, drums, setup.config.sample_rate, bpm)?;
         Ok(Self { device, setup, mix })
     }
     pub fn start(
@@ -77,6 +80,7 @@ impl PreparedPlayback {
             request: Publication::new(request),
             applied_request: AtomicU64::new(0),
             tracks: mix.tracks.iter().map(|t| t.control.clone()).collect(),
+            drums: mix.drum_control(),
             utility,
             position: AtomicU64::new(start),
             finished: AtomicBool::new(false),
@@ -125,6 +129,11 @@ impl PreparedPlayback {
 }
 
 impl Player {
+    pub fn set_drum_gain(&self, gain: f32) {
+        if let Some(control) = &self.state.drums {
+            control.store(gain.clamp(0., 2.).to_bits(), Ordering::Relaxed);
+        }
+    }
     fn stream<T: SizedSample + FromSample<f32>>(
         device: &cpal::Device,
         config: cpal::StreamConfig,

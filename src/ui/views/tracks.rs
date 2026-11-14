@@ -626,8 +626,16 @@ impl DawApp {
             TcpWidget::Type => {
                 let label = if track.instrument == Some(crate::instruments::vst::VST_ID) {
                     self.vst.name.clone()
-                } else if track.instrument == Some(crate::instruments::sampler::SAMPLER_ID) {
-                    format!("Sampler · {}", self.sampler.name())
+                } else if track.instrument.is_some_and(|id| self.is_sampler_id(id)) {
+                    let id = track.instrument.unwrap();
+                    let name = if id == self.active_sampler_id {
+                        self.sampler.name()
+                    } else {
+                        self.sampler_instances
+                            .get(&id)
+                            .map_or("Hay Sampler", |s| s.name())
+                    };
+                    format!("Sampler · {name}")
                 } else if track.instrument == Some(self.instrument.id()) {
                     self.instrument.active_name().to_string()
                 } else if has_audio {

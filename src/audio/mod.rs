@@ -1,5 +1,5 @@
 //! Adaptadores de audio del prototipo. No importar GPUI desde este módulo.
-//! Los reproductores de clip, piano y percusión son excluyentes; ver docs/PROTOTYPE.md.
+//! Arrangement y Session comparten mezcla y reloj; la audición live conserva adaptadores propios.
 
 pub(crate) mod analyzer;
 mod assets;
@@ -19,8 +19,7 @@ mod stereo_pan;
 pub(crate) mod vst3;
 
 pub(crate) use assets::{AudioClip, AudioFile, PEAK_FRAMES};
-pub(crate) use drums::DrumPlayer;
 pub(crate) use midi_in::MidiHardwareIn;
-pub(crate) use playback::{Player, PreparedPlayback, TrackInput};
+pub(crate) use playback::{MidiTrackInput, Player, PreparedPlayback, TrackInput};
 
 pub(crate) mod effects;

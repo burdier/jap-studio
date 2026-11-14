@@ -2,9 +2,21 @@
 use super::time::Tick;
 use std::collections::HashSet;
 use std::fmt;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct InstrumentId(pub u32);
+static NEXT_INSTRUMENT_ID: AtomicU32 = AtomicU32::new(1000);
+
+impl InstrumentId {
+    pub fn fresh() -> Self {
+        Self(
+            NEXT_INSTRUMENT_ID
+                .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+                .expect("IDs de instrumento agotados"),
+        )
+    }
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NoteId(pub u64);
 

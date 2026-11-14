@@ -41,7 +41,7 @@ impl DawApp {
                 (0..self.pattern_editor.lanes.len())
                     .map(|lane| self.render_pattern_lane(lane, playing_step, cx)),
             );
-        let playback = if self.pattern_player.is_some() {
+        let playback = if self.pattern_loop_beats.is_some() && self.player.is_some() {
             "Reproduciendo en loop"
         } else {
             "Detenido"
