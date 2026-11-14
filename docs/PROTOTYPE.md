@@ -4,28 +4,32 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
 
 ## Disponible
 
+- **PR-05 completo en Arrangement/Session:** Play mezcla clips WAV y MIDI en los
+  buses de pista antes de FX, nivel y pan; Session suma la percusión provisional
+  en la misma salida y transporte. `:sa` inserta samplers independientes con muestra
+  y parámetros propios. La prueba de mezcla usa dos muestras distintas y un WAV.
+  La audición live conserva su adaptador individual y el piano aún tiene una instancia.
+
 - **PR-05, cuarto incremento:** entrada de teclado y MIDI físico despachada por
   el ID del destino, con NoteOff dirigido al instrumento original. Cambio de foco
   y Stop descartan liberaciones tardías; el ratón libera la instancia que pulsó.
-  Siguen una instancia global de piano y sampler en la UI y streams separados.
 
 - **PR-05, tercer incremento:** plan MIDI de varios clips/pistas con eventos absolutos,
   offsets por bloque y destino por instancia. Las voces preparadas los renderizan
   en el frame correspondiente, también con particiones distintas. Seek libera notas
-  activas sin reconstruir las sostenidas. Play de la UI aún no prepara ni conecta
-  esas voces al mezclador WAV; MIDI + WAV sigue pendiente.
+  activas sin reconstruir las sostenidas. Play de la UI ya prepara esas voces en
+  el worker y las conecta al mezclador WAV.
 
 - **PR-05, segundo incremento:** conjunto de voces preparadas por `InstrumentId`,
   con despacho de comandos y suma de audio en bloques; el adaptador de audición
   usa ese conjunto con una voz. Prueba sin dispositivo de dos sintetizadores
-  independientes. La UI conserva una instancia de piano y una de sampler;
-  MIDI + WAV aún requieren conectar el conjunto a la salida de PR-04.
+  independientes. La UI conserva una instancia de piano; los samplers ya son
+  independientes por pista.
 
 - **PR-05, primer incremento:** `audio/piano/voice.rs` separa el estado de síntesis,
   canal y patrón del adaptador CPAL existente. El audio y el comportamiento de la
-  audición permanecen iguales. La conexión de varias voces al stream de PR-04 y
-  las instancias por pista son los siguientes incrementos; MIDI + WAV no suenan
-  juntos todavía.
+  audición permanecen iguales. La conexión con el stream de PR-04 se completó
+  en el quinto incremento.
 
 - **PR-04, cuarto incremento:** reloj `musical::time::Transport` compartido por
   todos los clips de audio. `transport.seek <negras>` salta durante Play;
@@ -265,7 +269,7 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
   no forma parte de la navegación.
 
 - Acción **Insertar sampler** en `[+]`, menú de pistas y `:sa`: crea una pista con
-  Hay Sampler asignado o abre la existente (una instancia por sesión). Asignable a la barra.
+  una instancia nueva de Hay Sampler. Asignable a la barra.
 
 - Hay Sampler basado en sfizz, accesible desde el [+] actual y `:sampler`. Panel compacto
   inspirado en Simpler con waveform, región/loop, Classic/1-Shot, nota raíz/afinación,
@@ -274,7 +278,7 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
   Parámetros continuos por CC de alta resolución; cambios estructurales reemplazan el motor
   al terminar y cortan notas. Piano roll, controlador MIDI y exportación usan sfizz en la
   pista asignada. Scheduler y reproductor compartidos con el piano; no se añade otro reloj.
-  Una instancia por sesión, sin Warp/Slice/LFO/MPE, persistencia ni mezcla multipista live.
+  Varias instancias en Arrangement, sin Warp/Slice/LFO/MPE ni persistencia.
   sfizz 1.2.3 compilado localmente; no se ejecutaron tests ni una sesión gráfica/auditiva.
   [Uso, arquitectura y construcción](SAMPLER.md).
 
@@ -550,8 +554,8 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
 - El plan activo es inmutable. Editar notas mientras suena no cambia el audio hasta
   detener y volver a pulsar Play. Los cambios de plan en caliente siguen pendientes; el loop global de audio está disponible en PR-04.
 - Los cuatro instrumentos son síntesis provisional; todavía no cargan samples del usuario.
-- Clip, piano y percusión abren streams excluyentes. Al iniciar uno se detiene el anterior;
-  la audición del patrón se detiene al salir de su vista.
+- Play de Arrangement y Session comparte stream para clips, MIDI y percusión.
+  La audición live del instrumento conserva un adaptador aparte e interrumpe Play.
 - Solo existe una instancia de piano. El buscador la asigna a una pista y la mueve al
   reasignarla; todavía no crea instancias nuevas. `Volume` y `Componente serial` son metadatos.
 - Las acciones del catálogo usan comandos string provisionales; no son todavía el
@@ -564,11 +568,12 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
   generalizar `DetachedPanel` a cualquier componente con salida de audio y recordar posición.
 
 - Sustituir la percusión sintetizada por un sampler de cuatro samples con pool de voces.
-- Un stream persistente común: el piano, el clip y la percusión aún son excluyentes.
+- Integrar la audición live en el stream común y mantenerlo persistente entre Play y Stop.
 - Cola RT acotada y snapshots coherentes; el piano conserva su canal mpsc provisional;
   la percusión aún no recibe actualizaciones de plan durante la reproducción.
 - Tempo map, tempo editable en UI, chase de notas y cambios de plan en caliente; loop global de audio disponible.
-- Guardado global `.dawproj`, undo/redo e integración multipista de instrumentos; remuestreo y mezcla de clips de audio disponibles.
+- Guardado global `.dawproj`, undo/redo e instancias independientes del piano;
+  remuestreo y mezcla de clips de audio disponibles.
 - Edición MIDI avanzada del piano roll, launcher, automatización, MIDI físico y hosting CLAP/VST3.
 - Mezcla por pista de audio con mute/solo/nivel/balance; buses generales y mezcla con instrumentos pendientes.
 

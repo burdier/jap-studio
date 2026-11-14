@@ -309,7 +309,7 @@ frecuencia real de salida; republicar controles conserva el estado DSP.
 Las pruebas cubren suma, offsets, solapamientos, silencio, particiones de bloque,
 mute/solo/nivel/pan, aislamiento FX, seek, loops y preparación a distintas frecuencias.
 El usuario confirmó dos WAV simultáneos. La audición manual del nuevo seek/loop
-queda pendiente; MIDI + WAV y Session compartida corresponden a PR-05.
+queda pendiente; MIDI + WAV y Session compartida se integraron en PR-05.
 
 **Título sugerido:** `feat(audio): reproducir varias pistas de audio en un motor compartido`
 
@@ -338,24 +338,11 @@ La UI refleja frames del motor y el callback no decodifica ni prepara recursos.
 
 ## PR-05 — Instancias internas y MIDI por pista
 
-**Avance:** primer incremento: la voz de piano/sampler y su patrón se extrajeron
-del adaptador CPAL en `audio/piano/voice.rs`. Conserva la audición existente; aún
-faltan identidad de instancia por pista y conexión al mixer común.
-
-Segundo incremento: `PreparedVoices` indexa voces preparadas por `InstrumentId`,
-dirige comandos y suma sus muestras. La audición actual pasa por ese conjunto con
-una voz; la prueba de dos sintetizadores valida que sus notas y liberaciones son
-independientes. La UI y el stream compartido aún no aceptan dos instrumentos.
-
-Tercer incremento: plan de Arrangement MIDI por frames absolutos para varias pistas,
-con `TrackId`, destino `InstrumentId`, canal y offsets dentro del bloque. El conjunto
-de voces lo consume sin reservas por bloque y divide el render en los frames de
-eventos. La UI aún no entrega ese plan a Play ni lo suma con los WAV.
-
-Cuarto incremento: el despacho live respeta el destino de `MidiServer` para piano,
-sampler y VST3, libera al cambiar foco y descarta NoteOff tardíos tras foco/Stop.
-Las notas del ratón se sueltan en su instrumento original. La UI aún mantiene una
-instancia global por tipo y no conecta el plan multipista al stream de audio.
+**Avance:** voz separada de CPAL, conjunto de voces por `InstrumentId`, plan MIDI
+absoluto por TrackId y liberaciones live por destino ya están implementados. El quinto
+incremento conecta MIDI y WAV en el bus de cada pista, crea samplers independientes
+con `:sa` y suma la percusión de Session en el mismo reloj y stream. La audición live
+del piano y sampler conserva su adaptador individual; el piano sigue con una instancia.
 
 **Título sugerido:** `feat(audio): reproducir instrumentos independientes por pista`
 
@@ -368,15 +355,15 @@ la vez, junto a pistas de audio.
 
 **Tareas**
 
-- [ ] Sustituir la asignación global por instancias con ID y estado de ejecución propios.
+- [x] Crear instancias sampler con ID y estado de ejecución propios por pista.
   Extraer la síntesis del reproductor que actualmente posee el stream.
-- [ ] Integrar piano y sampler en el motor por bloques; compartir recursos inmutables
+- [x] Integrar piano y sampler de Arrangement en el motor por bloques; compartir recursos inmutables
   cuando sea seguro, conservando voces y controles independientes.
-- [ ] Añadir eventos con offset de frame y contexto del transporte. Programar todos
+- [x] Añadir eventos con offset de frame y contexto del transporte. Programar todos
   los clips MIDI activos, manteniendo el scheduler musical existente.
-- [ ] Enrutar teclado y MIDI físico por ID de instancia. Resolver liberaciones al
+- [x] Enrutar teclado y MIDI físico por ID de instancia. Resolver liberaciones al
   cambiar foco, detener, buscar otra posición o eliminar una instancia.
-- [ ] Integrar la audición provisional de percusión en la misma salida/reloj, preservando
+- [x] Integrar la audición provisional de percusión en la misma salida/reloj, preservando
   su condición de síntesis de audición y su plan inmutable hasta un cambio explícito.
 
 **Aceptación:** dos samplers con muestras diferentes y un clip de audio suenan juntos;

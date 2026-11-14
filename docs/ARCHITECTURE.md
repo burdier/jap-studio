@@ -1,36 +1,25 @@
 # Arquitectura del prototipo
 
-## PR-05: primera separación de voz y dispositivo
+## PR-05: instrumentos internos y mezcla por pista
 
-`audio/piano/voice.rs` posee el sintetizador preparado, canal MIDI y patrón activo.
-Recibe comandos y renderiza bloques sin poseer CPAL. `audio/piano/render.rs` conserva
-la salida física, el filtro, FX, nivel y medidor y llama a esa voz desde el callback.
-`audio/piano/plan.rs` aplica eventos por frame y se comparte con la exportación offline.
-La preparación de SoundFont/sfizz continúa fuera del callback. En este incremento
-el reproductor sigue abriendo un stream exclusivo por instrumento; el motor común
-de PR-04 todavía no mezcla MIDI con WAV ni hay instancias independientes por pista.
+`audio/piano/voice.rs` separa la síntesis del stream CPAL. `PreparedVoices` identifica
+los motores por `InstrumentId`; `musical/arrangement_midi` compila clips a eventos
+absolutos con TrackId, canal y offset de frame. `audio/playback/mix.rs` prepara una voz
+por pista con MIDI y suma su salida con los WAV de esa pista antes de FX, nivel y pan.
+La preparación de SoundFont, sfizz, recursos y plan ocurre en el worker, fuera del
+callback. Session añade `audio/drums/mix.rs` al mismo reloj y salida. El plan de
+percusión activo sigue inmutable hasta detener y volver a pulsar Play.
 
-`audio/piano/voice::PreparedVoices` recibe sintetizadores preparados fuera del callback,
-los identifica por `InstrumentId`, despacha comandos a su destinatario y suma sus
-bloques en flotante. El adaptador de audición actual utiliza el mismo conjunto con
-una instancia local; la preparación de varias voces y la prueba de su aislamiento
-no asignan todavía instrumentos adicionales a pistas ni comparten salida con clips WAV.
+`:sa` crea un `InstrumentId` y un `Sampler` nuevos por pista. El editor mantiene una
+instancia activa y guarda las otras por ID; cambiar de foco no comparte parámetros ni
+muestras. Al eliminar una pista se retira su instancia después de liberar notas.
+`MidiServer` conserva el destino de cada NoteOn para enviar NoteOff a la misma voz,
+incluso si el foco cambió. Una liberación tardía tras Stop se descarta. El piano
+conserva una instancia y la audición live aún usa su adaptador individual.
 
-`musical/arrangement_midi` compila todos los clips MIDI activos a eventos absolutos
-por `TrackId` e `InstrumentId`; cada consulta devuelve offsets relativos a un bloque
-del transporte. `audio/piano/voice` consume esos eventos y divide el render justo en
-sus frames, sin asignar memoria en el callback. Un salto discontinuo libera las voces;
-no reconstruye notas sostenidas antes del destino. La ruta Play de la UI todavía no
-prepara esas voces ni las añade al `Mix` de clips de audio.
-El plan toma una vuelta visible por clip; la repetición de clips MIDI queda para
-la integración del transporte, con una política explícita de fin y colas.
-
-En la entrada live, `musical/midi::MidiServer` registra notas por destino y libera
-el anterior al cambiar de foco. Una liberación física tardía tras ese cambio o Stop
-se descarta hasta un nuevo NoteOn del mismo tono. `ui/audio_actions` despacha piano,
-sampler y VST3 por el ID enrutado, sin volver a elegir instrumento por cursor; la
-liberación del ratón usa el instrumento que recibió su NoteOn. La UI sigue teniendo
-una instancia global por tipo, así que esto aún no habilita dos samplers en pistas.
+Seek/loop liberan notas en una discontinuidad; no reconstruyen notas sostenidas.
+El plan toma una vuelta visible por clip MIDI; el loop individual del clip y el
+render offline de varias instancias sampler no forman parte de esta integración.
 
 ## Foco visual y navegación opcional
 
@@ -366,18 +355,18 @@ el espectro muestra señal medida, no la respuesta teórica del filtro.
 `devices/sampler` describe parámetros sin GPUI ni audio. `audio/sampler` posee el ABI C,
 SFZ generado y recursos preparados. `instruments/sampler` posee teclas, motor preparado
 y reproductor; `ui/sampler` solo carga, coordina y presenta controles existentes.
-La instancia de sampler usa InstrumentId(2), el piano conserva InstrumentId(1).
-El [+] asigna cada instancia mediante `musical::track::assign_instrument`.
+La primera instancia de sampler usa InstrumentId(2) y las siguientes reciben ID
+propio; el piano conserva InstrumentId(1). El [+] asigna cada instancia a una pista.
 Track FX proyecta el instrumento asignado como fila virtual antes de los efectos;
 no lo duplica en `FxChain` ni cambia la topología DSP. Su editor se muestra bajo el
 Arrangement, sin una vista central Instrument independiente.
 La acción `track.insert_sampler` (`:sa`) reutiliza `ui/track_actions` para insertar
 una pista de instrumento (tipo Synth, presentada como Sampler por su asignación).
-Si la instancia ya está asignada, selecciona y abre su pista sin cambiar la topología.
+Cada inserción crea una pista y una instancia nueva.
 
 `audio/piano/backend` acepta ahora SoundFont o sfizz. El constructor del stream recibe
 un backend preparado y reutiliza el scheduler, cola acotada, fader, paneo y Utility.
-No hay otro transporte ni mezcla multipista nueva. Los parámetros continuos del sampler
+La reproducción del Arrangement usa la mezcla multipista común. Los parámetros continuos del sampler
 viajan como CC de alta resolución; cambios estructurales reemplazan el motor preparado
 fuera del callback y cortan las notas anteriores. `SamplerSnapshot` retiene el WAV
 compartido durante exportación; las instancias offline conservan colas de release.
@@ -540,7 +529,7 @@ main.rs → ui::run
           │                         └→ audio_actions.rs
           ├── design.rs                          │
           └── timeline/*                         ├→ instruments::Piano → audio/piano
-                                                 └→ audio/{playback,drums} → CPAL
+                                                 └→ audio/playback → CPAL
 
 Biblioteca headless:
 musical/model.rs → scheduler::compile(TimeBase) → PreparedPattern
@@ -549,13 +538,13 @@ Transport::advance(frames) → FrameWindow → events_in()
                                                    ↓
                                      ScheduledEvent { sample_offset, ... }
                                                    │
-                                   audio/drums/stream.rs → DrumKit
+                                   audio/drums/mix.rs → DrumKit
                                                    ↓
                                          Volume → CPAL
 ```
 
-La ruta del patrón ya está conectada al callback de percusión. Clip y piano conservan
-sus adaptadores separados; unificarlos es el siguiente incremento. `examples/sequencer.rs`
+Session y Arrangement comparten el Mix de audio, MIDI y percusión provisional.
+La audición live del piano conserva un adaptador separado. `examples/sequencer.rs`
 sigue mostrando el plan sin abrir audio. La vista del piano no conoce RustySynth ni CPAL:
 pide notas a `instruments::Piano`, que posee el reproductor y las notas sostenidas.
 El descriptor que pinta la vista procede de `elevate::catalog`.
@@ -627,9 +616,9 @@ guarda y restaura asignaciones de ambos ámbitos en el perfil atómico, incluido
 personalizados. `views/icon_picker{,_browser}.rs` presenta búsquedas independientes y
 listas desplazables.
 
-Al elegir un instrumento, `ui/palette.rs` llama a `musical/track.rs::assign_instrument`,
-que asigna su identidad a la pista destino y la retira de cualquier otra. La cabecera y la
-fila de instrumento en Track FX muestran esa asignación. Piano y sampler tienen una instancia cada uno: moverlo de pista lo reasigna. `Volume` y `Componente serial` aparecen como
+Al elegir el piano, `ui/palette.rs` llama a `musical/track.rs::assign_instrument`,
+que mueve esa identidad a la pista destino. `:sa` crea una instancia sampler nueva
+por pista. La cabecera y Track FX muestran la asignación. `Volume` y `Componente serial` aparecen como
 metadatos: el buscador aún no crea primitivos, componentes ni instancias nuevas. Ese paso
 pertenece al futuro host de plugins y al sistema de acciones, no a esta paleta.
 
@@ -732,17 +721,12 @@ Dividir conserva la alineación de las dos ventanas; restaurar recupera el inici
 hasta el límite del beat cero. Silenciar, cambiar ganancia y editar ventanas detienen
 la reproducción actual; no representan edición de planes en caliente.
 
-`drums/mod.rs` compila el plan y abre el stream. `drums/stream.rs` avanza `Transport`
-por frames, segmenta en el loop y entrega offsets exactos a `DrumKit`; `Volume` procesa
-el bloque antes de CPAL. La síntesis es deliberadamente provisional (sin samples) y el
-plan se recompila solo al iniciar la reproducción.
-
-La siguiente integración extraerá procesadores del clip, piano y percusión, abrirá un solo
-stream y consumirá eventos entre subbloques. El transporte vivirá ahí. GPUI recibirá
-snapshots; editará comandos y planes preparados. `rtrb` sigue pendiente de aprobación.
-También se debe definir dónde se liberan planes/samples retirados: nunca delegar
-esa destrucción costosa al callback por accidente. Para percusión, el siguiente paso
-es un sampler con cuatro samples y reemplazo de plan en caliente.
+`drums/mix.rs` compila el plan fuera del callback, segmenta el loop por frames y
+entrega offsets exactos a `DrumKit`; `audio/playback` suma el bloque con MIDI/WAV
+antes de Utility master y CPAL. La síntesis es provisional (sin samples) y el
+plan se recompila solo al iniciar Play. La audición live y el reemplazo de plan en
+caliente siguen pendientes. Los planes y samples retirados deben destruirse fuera
+del callback.
 
 ## Extensibilidad
 

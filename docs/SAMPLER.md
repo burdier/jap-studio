@@ -3,8 +3,7 @@
 **Insertar sampler** está disponible en `[+]`, el menú contextual de pistas y como
 `:sa` (`:track.insert_sampler`). Crea y selecciona una pista llamada Hay Sampler con
 el instrumento asignado y abre su panel. Respeta la inserción dentro de grupos.
-Como el host conserva una sola instancia, repetir la acción selecciona y abre su
-pista existente, desplegando el grupo si estaba plegado; no mueve el instrumento.
+Repetir la acción crea otra pista y otra instancia con parámetros y sample propios.
 La acción del catálogo también se puede vincular a un icono de la barra.
 
 En el [+] existente, busca **Hay Sampler**. También acepta `:sampler`. Se asigna a la
@@ -30,24 +29,34 @@ región/afinación/voces debajo y filtro/ADSR/salida en una segunda fila.
   en background. Al terminar se cortan las notas anteriores. En arrastres se prepara al
   soltar; las solicitudes durante una preparación se agrupan y se aplica la más reciente.
 - **M** activa el teclado MIDI existente. También funcionan teclado clicable y entrada
-  MIDI. Los clips MIDI de la pista asignada usan sfizz al pulsar Play. No hay segundo reloj:
-  se comparte `PreparedPattern`, temporización por frames y reproductor del piano.
+  MIDI. Los clips MIDI de la pista asignada usan sfizz al pulsar Play junto a las pistas
+  WAV y los demás samplers en el mismo reloj y salida.
 - Exportar captura el sample y sus parámetros. Crea instancias independientes de sfizz
   para los clips exportados y utiliza el mismo consumidor de eventos que la audición.
 
 ## Límites de este incremento
 
-Una instancia de sampler en la sesión, movible entre pistas como el piano existente.
-No incluye Warp, Slice, LFO ni MPE, guardado de proyecto, ni mezcla multipista en vivo.
-El sampler conserva su stream silencioso tras Stop para permitir volver a tocar sin
-cargar otra vez. Iniciar otra fuente silencia el sampler; los reproductores siguen
-excluyéndose musicalmente. El estado y el sample cargado duran la sesión.
+Varias instancias sampler pueden sonar juntas en el Arrangement. No incluye Warp,
+Slice, LFO ni MPE ni guardado de proyecto. La audición live conserva un adaptador
+individual y al tocar interrumpe Play.
+El sampler conserva su stream de audición silencioso tras Stop para permitir volver
+a tocar sin cargar otra vez. El estado y el sample cargado duran la sesión. La
+exportación offline de más de un sampler se rechaza explícitamente por ahora.
 
 La carga decodifica el archivo completo con Symphonia y prepara un WAV float temporal
 para sfizz. Así comparte los formatos de importación de Hay sin depender de los codecs
 con los que se compiló sfizz. El recurso tiene propiedad compartida entre reproducción,
 preparación y exportación; se elimina al soltar su última referencia. Los picos visuales
 se reducen a un máximo de 1024 fuera de la UI. Las notas no hacen E/S en nuestro adaptador.
+
+## Prueba rápida de PR-05
+
+Inserta dos pistas con `:sa`, carga un WAV distinto en cada panel y crea un clip
+MIDI con notas en cada pista. Importa otro WAV en una tercera pista y pulsa Play
+desde Arrangement: deben oírse los tres a la vez. Mute/Solo debe afectar solo a
+su pista; al cambiar el sample o un parámetro de un sampler y volver a pulsar Play,
+el otro conserva su sonido. Stop corta las voces. Desde Session, Space suma el
+patrón provisional al arreglo en la misma salida y mantiene el patrón en loop.
 
 ## Biblioteca nativa y compilación
 

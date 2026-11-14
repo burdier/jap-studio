@@ -7,9 +7,9 @@
 | Ampliar panel / preferencia Vim | `src/ui/{workspace_focus,keyboard_preferences}.rs` | `views/{workspace_focus,workspace,piano_roll/mod,settings_shortcuts}.rs`, `input.rs`, `render.rs`, `detached.rs`; acciones `view.maximize` y `vim.toggle`, perfil `VIM_ENABLED`, conserva geometría y foco |
 | Spectrum insertable y vistas de análisis | `src/audio/analyzer{,/tap}.rs` | `audio/effects/plan.rs`, `devices/spectrum.rs`, `ui/fx/analyzers.rs`, `ui/spectrum.rs`, `ui/components/spectrum{,/plot}.rs`, `ui/views/fx_analyzers.rs`; mismo componente en piano y Track FX, captura acotada, sin FFT en RT |
 | Interfaz y preferencias de audio | `src/audio/{device,output,device_probe}.rs` | `audio/device/{inventory,aliases}.rs`, `ui/audio_preferences{,/commands,/profile,/probe}.rs`, `views/settings_audio.rs`, `actions/audio.rs`; `:list device`, `:use device`, IDs CPAL, PipeWire compartido, rutas por nombre/canales locales, Hz, buffer, pruebas y perfil |
-| Mezcla de clips en una salida (PR-04, commit 2) | `src/audio/playback/mix.rs` | `playback.rs`, `ui/file_playback.rs`: preparación en worker, suma por pista antes de FX, master único; `playback/mix/tests.rs` verifica suma, bloques y aislamiento de filtro; controles publicados por TrackId |
+| Mezcla de WAV, MIDI y percusión en una salida (PR-05) | `src/audio/playback/mix.rs` | `playback.rs`, `ui/file_playback.rs`, `audio/drums/mix.rs`: preparación en worker, suma MIDI/WAV por pista antes de FX y percusión en master; un transporte por frames; `playback/mix/tests.rs` verifica fuentes simultáneas |
 | Fuente de clip sin stream (PR-04, commit 1) | `src/audio/clip_source.rs` | Fuente inmutable con render por posición absoluta; pruebas de recortes, particiones, seek y buffer remuestreado. `audio/playback.rs` conserva CPAL, transporte y FX del reproductor actual |
-| Preparación y remuestreo de clips para salida | `src/ui/file_playback.rs` | `audio/playback.rs`, `audio/export/soxr.rs`; worker cancelable, Stop cancela el arranque, salida física compartida con piano/sampler/percusión |
+| Preparación y remuestreo de clips para salida | `src/ui/file_playback.rs` | `audio/playback.rs`, `audio/export/soxr.rs`; worker cancelable, Stop cancela el arranque, snapshots de audio/MIDI/patrón y voz por instancia |
 | Documento CRDT de proyecto, pistas, FX y MIDI | `src/project.rs` | `src/project/{track,fx,midi}.rs`: esquema 4, IDs estables, notas por clip y silencio individual, snapshots/updates; todavía sin audio ni comandos UI |
 | Expresión por nota y probabilidad | `src/musical/note_expression.rs` | `scheduler.rs`, `project/midi.rs`, `scripting/{actions,output}.rs`, `ui/piano_roll/lane.rs`, `audio/piano/{render,fluidsynth/voices}.rs`; release sfizz, pan FluidSynth, probabilidad por vuelta |
 | Controles MIDI, CC, pitch bend y presión | `src/musical/automation.rs` | `scheduler.rs`, `project/midi_controls.rs`, `scripting/controls.rs`, `ui/piano_roll/control_actions.rs`, `views/piano_roll/control_lane.rs`; puntos por ID, acciones y mensajes por frame |
@@ -24,10 +24,10 @@
 | Sampler: ejecución y MIDI | `src/instruments/sampler.rs` | `ui/sampler/audio.rs`, `audio/piano/{backend,render}.rs`: reproductor y scheduler compartidos |
 | Voz de instrumento separada del stream (PR-05, commit 1) | `src/audio/piano/voice.rs` | `audio/piano/plan.rs` procesa eventos por frame también en export offline; `render.rs` conserva CPAL. La voz posee sintetizador, canal y patrón, sin GPUI ni dispositivo. Todavía se instancia dentro de un stream exclusivo |
 | Conjunto de voces por ID (PR-05, commit 2) | `src/audio/piano/voice.rs` | `PreparedVoices` registra motores ya preparados, enruta comandos y suma bloques; `audio/piano/render.rs` usa el conjunto con una voz local. Prueba con dos RustySynth y SoundFont compartido; aún sin asignación multipista en UI |
-| Plan MIDI multipista por frames (PR-05, commit 3) | `src/musical/arrangement_midi.rs` | `musical/scheduler.rs` publica eventos preparados; `audio/piano/voice.rs` renderiza segmentos entre eventos para varias instancias. Falta conectar la preparación a Play y al Mix de audio |
+| Plan MIDI multipista por frames (PR-05) | `src/musical/arrangement_midi.rs` | `musical/scheduler.rs` publica eventos preparados; `audio/piano/voice.rs` renderiza segmentos entre eventos y `audio/playback/mix.rs` los suma con WAV en el bus de su pista |
 | Despacho MIDI live por destino (PR-05, commit 4) | `src/musical/midi.rs` | `ui/audio_actions.rs`, `ui/sampler/audio.rs`, `ui/vst.rs`: NoteOff al ID original en cambios de foco, descarte de liberaciones tardías y limpieza al detener; ratón libera su propio instrumento |
 | Sampler: panel y carga | `src/ui/sampler/` | Catálogo `[+]`, perillas/teclado existentes, carga en background, waveform de 1024 picos |
-| Insertar pista sampler (`:sa`) | `src/ui/sampler/input.rs` | Acción `track.insert_sampler` del catálogo, menú de pistas y barra; reutiliza `edit_track_structure`, abre la pista existente si ya tiene la instancia |
+| Insertar pista sampler (`:sa`) | `src/ui/sampler/input.rs` | Cada inserción crea una pista e instancia nueva; `ui/sampler/audio.rs` cambia la instancia activa sin mezclar muestras, `ui/track_commit.rs` retira las eliminadas |
 | Sampler: exportación | `src/audio/export/sources.rs` | Snapshot por tipo de instrumento; `docs/SAMPLER.md` |
 | Arranque/ventana | `src/ui/app.rs` | `src/main.rs` solo llama `ui::run()` |
 | GPUI Kit, tema y atajos de integración | `src/ui/kit.rs` | `Cargo.toml`: alias `gpui` → `gpui-kit =0.9.0`; una sola familia GPUI `0.3.11`; `Root` en las tres ventanas |
@@ -151,8 +151,8 @@
 | Síntesis compartida live/offline y snapshot del piano | `src/audio/piano/{backend,offline}.rs` | `render.rs`, `instruments/piano.rs`; sin abrir CPAL en export |
 | Elegir formato CPAL | `src/audio/output.rs` | Frecuencia, buffer y pareja física de salida; todos los reproductores usan `AudioConfig` |
 | Paneo estéreo sin asignaciones en callback | `src/audio/stereo_pan.rs` | `audio/playback.rs`, `audio/piano/render.rs` |
-| Reproducir clip | `src/audio/playback.rs` | Un clip; remuestreo SoXR preparado en worker, ruteo estéreo a interfaz multicanal |
-| Reproducir patrón | `src/audio/drums/mod.rs` | `drums/stream.rs` |
+| Reproducir clips | `src/audio/playback.rs` | Varias pistas; remuestreo SoXR preparado en worker, ruteo estéreo a interfaz multicanal |
+| Reproducir patrón | `src/audio/drums/mix.rs` | Fuente provisional del Mix; loop por frames en la misma salida |
 | Sintetizar percusión | `src/audio/drums/voice.rs` | Mapeo instrumento → voz |
 | Resaltar paso sonando | `src/ui/pattern_editor.rs` | `views/pattern.rs` |
 | Ejecutar la app | `scripts/run.sh` | `scripts/check.sh` |
@@ -161,10 +161,10 @@
 | Render del piano | `src/audio/piano/render.rs` | Fachada `piano/mod.rs` |
 | Notas/validaciones | `src/musical/model.rs` | `tests/musical.rs` |
 | Conversión tick/frame | `src/musical/time.rs` | Scheduler y tests temporales |
-| Programar eventos y loop | `src/musical/scheduler.rs` | `drums/stream.rs`, `examples/sequencer.rs` |
+| Programar eventos y loop | `src/musical/scheduler.rs` | `drums/mix.rs`, `examples/sequencer.rs` |
 | DSP y composición | `src/primitives/`, `src/component.rs` | `tests/elevate.rs` |
 | Descriptor/fábrica de dispositivos internos y Hay Utility | `src/devices/{mod,utility}.rs` | `catalog.rs`, `tests/utility.rs`; Component → Volume → FunDSP |
-| Slot Utility de salida y snapshot para audio | `src/devices/utility_slot.rs` | `audio/{playback,drums/stream,piano/render}.rs`; prepara fuera del callback |
+| Slot Utility de salida y snapshot para audio | `src/devices/utility_slot.rs` | `audio/{playback,piano/render}.rs`; prepara fuera del callback |
 | Controles/acciones de Utility | `src/ui/utility.rs` | `views/utility.rs`, `input.rs`, `views/transport.rs`; salida de audición, no pista |
 
 ## Protocolo para un cambio pequeño
@@ -178,10 +178,10 @@
 6. Verificar el contrato afectado y actualizar esta tabla si se mueve un archivo.
 
 No interpretar nombres de archivos como garantías: `scheduler` planifica una pasada;
-el loop y la percusión viven en `audio/drums/stream.rs`; `PatternAction` no es un bus;
-`output` comparte configuración, todavía no mezcla. `catalog` indexa metadatos: no
+el loop de percusión vive en `audio/drums/mix.rs`; `PatternAction` no es un bus;
+`playback/mix.rs` realiza la suma. `catalog` indexa metadatos: no
 instancia primitivos, componentes ni instrumentos. El buscador asigna el piano actual a la
-pista destino mediante `musical/track.rs`; crear varias instancias requiere el futuro host.
+pista destino mediante `musical/track.rs`; `:sa` crea samplers por pista.
 La asignación es estado musical: no la guardes en la vista ni en `instruments::Piano`.
 
 La vista del piano no debe importar `audio::piano` ni `rustysynth`. El estado de ejecución
@@ -191,7 +191,7 @@ registra su entrada en `src/catalog.rs` y evita duplicar comandos entre teclado 
 
 La percusión usa un plan inmutable y síntesis provisional. Si cambias el modelo de notas,
 detén y vuelve a pulsar Play para escuchar el plan nuevo. No añadas asignaciones,
-reservas ni liberaciones costosas al callback de `drums/stream.rs`.
+reservas ni liberaciones costosas al callback de `playback.rs`.
 
 ## Comandos (desde la raíz)
 
