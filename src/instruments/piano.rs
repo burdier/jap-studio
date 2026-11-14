@@ -169,6 +169,14 @@ impl Piano {
         self.held.contains(&note)
     }
 
+    /// Estado visual de una nota cuya voz pertenece al transporte compartido.
+    pub fn note_on_shared(&mut self, note: u8) -> bool {
+        note <= 127 && self.held.insert(note)
+    }
+    pub fn note_off_shared(&mut self, note: u8) -> bool {
+        self.held.remove(&note)
+    }
+
     pub fn set_mouse_note(&mut self, note: Option<u8>) {
         self.mouse = note;
     }

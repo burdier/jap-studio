@@ -214,16 +214,30 @@ impl DawApp {
                 MidiTarget::Instrument(id) if id == self.instrument.id() => match message {
                     MidiMessage::NoteOn { note, velocity } => self.piano_note_on(note, velocity),
                     MidiMessage::NoteOff { note } => self.piano_note_off(note),
-                    MidiMessage::ControlChange { .. } => {}
+                    MidiMessage::ControlChange { .. } => {
+                        if let Some(player) = &self.player {
+                            player.send_live_midi(id, message);
+                        }
+                    }
                     MidiMessage::PitchBend { bend } => {
+                        if let Some(player) = &self.player {
+                            player.send_live_midi(id, message);
+                        }
                         let norm = (f32::from(bend) / 8192.0).clamp(-1.0, 1.0);
                         self.set_piano_param(ParamId::PitchBend, norm);
                     }
                     MidiMessage::ProgramChange { program } => {
+                        if let Some(player) = &self.player {
+                            player.send_live_midi(id, MidiMessage::AllNotesOff);
+                            player.send_live_midi(id, message);
+                        }
                         self.instrument.select_preset(usize::from(program));
                         self.track_revision = self.track_revision.wrapping_add(1);
                     }
                     MidiMessage::AllNotesOff => {
+                        if let Some(player) = &self.player {
+                            player.send_live_midi(id, message);
+                        }
                         self.instrument.all_notes_off();
                     }
                 },
@@ -232,8 +246,24 @@ impl DawApp {
                         self.sampler_midi(message);
                     } else if let Some(sampler) = self.sampler_instances.get_mut(&id) {
                         match message {
-                            MidiMessage::NoteOff { note } => sampler.note_off(note),
-                            MidiMessage::AllNotesOff => sampler.all_off(),
+                            MidiMessage::NoteOff { note } => {
+                                if let Some(player) = &self.player
+                                    && player.has_instrument(id)
+                                {
+                                    player.send_live_midi(id, message);
+                                    sampler.note_off_shared(note);
+                                } else {
+                                    sampler.note_off(note);
+                                }
+                            }
+                            MidiMessage::AllNotesOff => {
+                                if let Some(player) = &self.player
+                                    && player.has_instrument(id)
+                                {
+                                    player.send_live_midi(id, message);
+                                }
+                                sampler.all_off();
+                            }
                             _ => {}
                         }
                     }
@@ -301,9 +331,34 @@ impl DawApp {
         if note > 127 || self.instrument.held(note) {
             return;
         }
-        if !self.instrument.is_running() {
-            self.stop_audio();
-            self.stop_pattern();
+        let id = self.instrument.id();
+        if self
+            .player
+            .as_ref()
+            .is_some_and(|player| player.has_instrument(id))
+        {
+            if self.instrument.note_on_shared(note) {
+                let sent = self.player.as_ref().is_some_and(|player| {
+                    player.send_live_midi(id, MidiMessage::NoteOn { note, velocity })
+                });
+                if sent {
+                    self.midi_capture.record(
+                        MidiMessage::NoteOn { note, velocity },
+                        self.now_ns(),
+                        self.timeline.tempo.bpm(),
+                    );
+                    self.status_message = format!(
+                        "Note On {} · {}",
+                        note_name(note),
+                        self.instrument.active_name()
+                    );
+                } else {
+                    self.instrument.note_off_shared(note);
+                    self.status_message =
+                        "La cola MIDI de Play está llena; vuelve a tocar la nota".into();
+                }
+            }
+            return;
         }
         let now = self.now_ns();
         self.midi_capture.record(
@@ -354,8 +409,21 @@ impl DawApp {
         self.piano_note_off(note);
     }
     fn piano_note_off(&mut self, note: u8) {
-        if !self.instrument.note_off(note) {
+        let id = self.instrument.id();
+        let shared = self
+            .player
+            .as_ref()
+            .is_some_and(|player| player.has_instrument(id));
+        let released = if shared {
+            self.instrument.note_off_shared(note)
+        } else {
+            self.instrument.note_off(note)
+        };
+        if !released {
             return;
+        }
+        if shared && let Some(player) = &self.player {
+            player.send_live_midi(id, MidiMessage::NoteOff { note });
         }
         let now = self.now_ns();
         self.midi_capture.record(
@@ -379,13 +447,27 @@ impl DawApp {
             }
         }
         if let Some(note) = self.sampler.mouse.take() {
-            self.sampler.note_off(note);
+            if self
+                .player
+                .as_ref()
+                .is_some_and(|player| player.has_instrument(self.active_sampler_id))
+            {
+                if let Some(player) = &self.player {
+                    player.send_live_midi(self.active_sampler_id, MidiMessage::NoteOff { note });
+                }
+                self.sampler.note_off_shared(note);
+            } else {
+                self.sampler.note_off(note);
+            }
         }
         if let Some(note) = self.instrument.take_mouse_note() {
             self.piano_note_off(note);
         }
     }
     pub(super) fn all_notes_off(&mut self) {
+        if let Some(player) = &self.player {
+            player.all_live_notes_off();
+        }
         self.vst.all_off();
         for vst in self.vst_instances.values_mut() {
             vst.all_off();

@@ -29,6 +29,9 @@ por pista con MIDI y suma su salida con los WAV de esa pista antes de FX, nivel 
 La preparación de SoundFont, sfizz, recursos y plan ocurre en el worker, fuera del
 callback. Session añade `audio/drums/mix.rs` al mismo reloj y salida. El plan de
 percusión activo sigue inmutable hasta detener y volver a pulsar Play.
+Play también prepara las voces internas asignadas a pistas sin clip MIDI. Una cola
+acotada lleva sus notas en vivo al mismo `Mix`; tocar piano o sampler durante un
+WAV no detiene el transporte. Fuera de Play, la audición usa su adaptador CPAL.
 
 `:sa` crea un `InstrumentId` y un `Sampler` nuevos por pista. El editor mantiene una
 instancia activa y guarda las otras por ID; cambiar de foco no comparte parámetros ni

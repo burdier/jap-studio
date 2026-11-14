@@ -5,6 +5,7 @@ use elevate::musical::model::InstrumentId;
 use elevate::musical::scheduler::PreparedPattern;
 use elevate::musical::{
     arrangement_midi::PreparedMidiArrangement,
+    midi::MidiMessage,
     scheduler::{EventKind, ScheduledEvent},
     time::FrameWindow,
 };
@@ -140,6 +141,7 @@ pub(crate) enum VoiceSource {
 
 /// Una instancia por pista, preparada por el worker antes de publicar el Mix.
 pub(crate) struct PreparedArrangementVoice {
+    id: InstrumentId,
     voices: PreparedVoices,
     filter: Option<super::filter::StereoFilter>,
 }
@@ -181,7 +183,38 @@ impl PreparedArrangementVoice {
                 Arc::new(InstrumentState::new(1.0, Default::default(), 0.0, 1.0)),
             )
             .map_err(|_| "ID de instrumento duplicado")?;
-        Ok(Self { voices, filter })
+        Ok(Self { id, voices, filter })
+    }
+
+    pub fn id(&self) -> InstrumentId {
+        self.id
+    }
+
+    pub fn live_midi(&mut self, message: MidiMessage) {
+        let command = match message {
+            MidiMessage::NoteOn { note, velocity } => NoteCommand::On { note, velocity },
+            MidiMessage::NoteOff { note } => NoteCommand::Off { note },
+            MidiMessage::ControlChange { cc, value } => NoteCommand::Midi {
+                command: 0xb0,
+                data1: cc,
+                data2: value,
+            },
+            MidiMessage::PitchBend { bend } => {
+                let value = (i32::from(bend) + 8192).clamp(0, 16383) as u16;
+                NoteCommand::Midi {
+                    command: 0xe0,
+                    data1: (value & 127) as u8,
+                    data2: (value >> 7) as u8,
+                }
+            }
+            MidiMessage::ProgramChange { program } => NoteCommand::Midi {
+                command: 0xc0,
+                data1: program,
+                data2: 0,
+            },
+            MidiMessage::AllNotesOff => NoteCommand::AllOff,
+        };
+        self.voices.command(self.id, command);
     }
 
     pub fn render_timed(

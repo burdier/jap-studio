@@ -391,6 +391,73 @@ fn wav_and_midi_on_one_track_reach_the_same_bus() {
 }
 
 #[test]
+fn live_piano_note_joins_wav_without_a_midi_clip() {
+    use crate::audio::piano::{PianoSettings, PianoSnapshot, VoiceSource};
+    use elevate::musical::{
+        midi::MidiMessage,
+        model::InstrumentId,
+        track::{Track, TrackKind},
+    };
+
+    let id = InstrumentId(41);
+    let mut piano = Track::new("Keys", TrackKind::Synth);
+    piano.instrument = Some(id);
+    let mut instrument = track(piano.id.0, vec![]);
+    instrument.midi = Some(MidiTrackInput {
+        index: 0,
+        track: piano,
+        instrument: id,
+        clips: vec![],
+        source: VoiceSource::Piano(PianoSnapshot {
+            path: std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("assets/soundfonts/UprightPianoKW-20220221.sf2"),
+            settings: PianoSettings::default(),
+            midi: vec![],
+            master_volume: 0.7,
+            filter: Default::default(),
+        }),
+    });
+    let wav = track(900, vec![clip([0.1, 0.1], 0., 48_000)]);
+    let mut mix = Mix::prepare(
+        vec![wav, instrument],
+        None,
+        48_000,
+        120.0,
+        elevate::musical::time::Meter::default(),
+    )
+    .unwrap();
+    assert_eq!(mix.instrument_ids(), vec![id]);
+    let mut before = [[0.0; 2]; 256];
+    mix.render(0, &mut before);
+    assert!(before.iter().all(|frame| (frame[0] - 0.1).abs() < 0.0001));
+
+    mix.live_midi(
+        id,
+        MidiMessage::NoteOn {
+            note: 60,
+            velocity: 100,
+        },
+    );
+    let mut during = [[0.0; 2]; 1024];
+    mix.render(256, &mut during);
+    assert!(during.iter().any(|frame| (frame[0] - 0.1).abs() > 0.0001));
+    assert!(
+        during
+            .iter()
+            .all(|frame| frame[0].is_finite() && frame[1].is_finite())
+    );
+
+    mix.live_midi(id, MidiMessage::NoteOff { note: 60 });
+    let mut after = [[0.0; 2]; 256];
+    mix.render(1280, &mut after);
+    assert!(
+        after
+            .iter()
+            .all(|frame| frame[0].is_finite() && frame[1].is_finite())
+    );
+}
+
+#[test]
 fn two_sampler_instances_with_different_samples_mix_with_wav() {
     use crate::audio::{
         piano::VoiceSource,

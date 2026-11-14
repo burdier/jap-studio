@@ -13,11 +13,13 @@ use cpal::{
 use elevate::devices::utility_slot::UtilitySlot;
 use elevate::musical::time::{Meter, Tempo};
 use elevate::musical::track::TrackId;
+use elevate::musical::{midi::MidiMessage, model::InstrumentId};
 use elevate::{Primitive, ProcessSpec, primitives::amplitude::Volume};
 pub(crate) use mix::{MidiTrackInput, TrackInput};
 use mix::{Mix, TrackControl};
+use rtrb::{Producer, RingBuffer};
 use std::sync::{
-    Arc,
+    Arc, Mutex,
     atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
 };
 use transport::{Cursor, Request, beat_frame, loop_frames};
@@ -36,6 +38,9 @@ struct PlaybackState {
 pub(crate) struct Player {
     stream: Option<cpal::Stream>,
     vsts: Vec<Arc<super::vst3::SharedInstrument>>,
+    live_midi: Mutex<Producer<(InstrumentId, MidiMessage)>>,
+    instruments: Vec<InstrumentId>,
+    all_off: Arc<AtomicBool>,
     state: Arc<PlaybackState>,
     pub sample_rate: u32,
     beats_per_second: f64,
@@ -79,6 +84,9 @@ impl PreparedPlayback {
     ) -> Result<Player, String> {
         let Self { device, setup, mix } = self;
         let vsts = mix.vsts.clone();
+        let instruments = mix.instrument_ids();
+        let (live_midi, live_rx) = RingBuffer::new(512);
+        let all_off = Arc::new(AtomicBool::new(false));
         let beats_per_second = Tempo::new(bpm)
             .map_err(|error| error.to_string())?
             .beats_per_second();
@@ -104,6 +112,8 @@ impl PreparedPlayback {
                 setup.config,
                 setup.first_channel,
                 mix,
+                live_rx,
+                all_off.clone(),
                 state.clone(),
             ),
             SampleFormat::I16 => Player::stream::<i16>(
@@ -111,6 +121,8 @@ impl PreparedPlayback {
                 setup.config,
                 setup.first_channel,
                 mix,
+                live_rx,
+                all_off.clone(),
                 state.clone(),
             ),
             SampleFormat::I32 => Player::stream::<i32>(
@@ -118,6 +130,8 @@ impl PreparedPlayback {
                 setup.config,
                 setup.first_channel,
                 mix,
+                live_rx,
+                all_off.clone(),
                 state.clone(),
             ),
             SampleFormat::U16 => Player::stream::<u16>(
@@ -125,6 +139,8 @@ impl PreparedPlayback {
                 setup.config,
                 setup.first_channel,
                 mix,
+                live_rx,
+                all_off.clone(),
                 state.clone(),
             ),
             _ => return Err("Formato de salida no compatible".into()),
@@ -147,6 +163,9 @@ impl PreparedPlayback {
         Ok(Player {
             stream: Some(stream),
             vsts,
+            live_midi: Mutex::new(live_midi),
+            instruments,
+            all_off,
             state,
             sample_rate: rate,
             beats_per_second,
@@ -166,6 +185,30 @@ impl Drop for Player {
 }
 
 impl Player {
+    pub fn has_instrument(&self, id: InstrumentId) -> bool {
+        self.instruments.contains(&id)
+    }
+    pub fn send_live_midi(&self, id: InstrumentId, message: MidiMessage) -> bool {
+        if !self.has_instrument(id) {
+            return false;
+        }
+        let sent = self
+            .live_midi
+            .try_lock()
+            .is_ok_and(|mut queue| queue.push((id, message)).is_ok());
+        if !sent
+            && matches!(
+                message,
+                MidiMessage::NoteOff { .. } | MidiMessage::AllNotesOff
+            )
+        {
+            self.all_off.store(true, Ordering::Release);
+        }
+        sent
+    }
+    pub fn all_live_notes_off(&self) {
+        self.all_off.store(true, Ordering::Release);
+    }
     pub fn set_drum_gain(&self, gain: f32) {
         if let Some(control) = &self.state.drums {
             control.store(gain.clamp(0., 2.).to_bits(), Ordering::Relaxed);
@@ -176,6 +219,8 @@ impl Player {
         config: cpal::StreamConfig,
         first_channel: u16,
         mut mix: Mix,
+        mut live_midi: rtrb::Consumer<(InstrumentId, MidiMessage)>,
+        all_off: Arc<AtomicBool>,
         state: Arc<PlaybackState>,
     ) -> Result<cpal::Stream, String> {
         let channels = usize::from(config.channels);
@@ -194,6 +239,15 @@ impl Player {
                     let request = state.request.read(|r| *r);
                     let mut block = [[0.0_f32; 2]; 256];
                     for output_block in output.chunks_mut(256 * channels) {
+                        for _ in 0..512 {
+                            let Ok((id, message)) = live_midi.pop() else {
+                                break;
+                            };
+                            mix.live_midi(id, message);
+                        }
+                        if all_off.swap(false, Ordering::AcqRel) {
+                            mix.all_live_notes_off();
+                        }
                         let count = output_block.len() / channels;
                         cursor.render(request, &mut block[..count], |at, frames| {
                             mix.render_timed(at, frames, request.loop_range)

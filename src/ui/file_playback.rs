@@ -62,7 +62,10 @@ impl DawApp {
                     self.vst_instances.get(&id).is_some_and(|vst| vst.ready())
                 }
             });
-            let midi = if notes.is_empty() && !live_vst {
+            let live_internal = track
+                .instrument
+                .is_some_and(|id| id == self.instrument.id() || self.is_sampler_id(id));
+            let midi = if notes.is_empty() && !live_vst && !live_internal {
                 None
             } else {
                 let source = if track.instrument == Some(self.instrument.id()) {
@@ -91,6 +94,7 @@ impl DawApp {
                         source,
                     }),
                     None => None,
+                    Some(Err(_)) if notes.is_empty() => None,
                     Some(Err(error)) => {
                         self.status_message = error;
                         return;

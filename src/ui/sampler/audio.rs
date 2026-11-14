@@ -78,9 +78,30 @@ impl DawApp {
         let Some(track) = self.sampler_track() else {
             return;
         };
-        self.stop_pattern();
-        self.instrument.stop();
-        self.stop_audio();
+        let id = self.active_sampler_id;
+        if self
+            .player
+            .as_ref()
+            .is_some_and(|player| player.has_instrument(id))
+        {
+            if self.sampler.note_on_shared(note) {
+                let sent = self.player.as_ref().is_some_and(|player| {
+                    player.send_live_midi(id, MidiMessage::NoteOn { note, velocity })
+                });
+                if sent {
+                    self.midi_capture.record(
+                        MidiMessage::NoteOn { note, velocity },
+                        self.session_epoch.elapsed().as_nanos() as u64,
+                        self.timeline.tempo.bpm(),
+                    );
+                } else {
+                    self.sampler.note_off_shared(note);
+                    self.status_message =
+                        "La cola MIDI de Play está llena; vuelve a tocar la nota".into();
+                }
+            }
+            return;
+        }
         if !self.sampler.ready() {
             self.status_message = "Carga un sample antes de tocar".into();
             return;
@@ -106,19 +127,47 @@ impl DawApp {
         match message {
             MidiMessage::NoteOn { note, velocity } => self.sample_note_on(note, velocity),
             MidiMessage::NoteOff { note } => {
-                self.sampler.note_off(note);
+                if let Some(player) = &self.player
+                    && player.has_instrument(self.active_sampler_id)
+                {
+                    player.send_live_midi(self.active_sampler_id, message);
+                    self.sampler.note_off_shared(note);
+                } else {
+                    self.sampler.note_off(note);
+                }
                 self.midi_capture.record(
                     MidiMessage::NoteOff { note },
                     self.session_epoch.elapsed().as_nanos() as u64,
                     self.timeline.tempo.bpm(),
                 );
             }
-            MidiMessage::AllNotesOff => self.sampler.all_off(),
-            MidiMessage::ControlChange { cc, value } => self.sampler.midi(0xb0, cc, value),
+            MidiMessage::AllNotesOff => {
+                if let Some(player) = &self.player
+                    && player.has_instrument(self.active_sampler_id)
+                {
+                    player.send_live_midi(self.active_sampler_id, message);
+                }
+                self.sampler.all_off();
+            }
+            MidiMessage::ControlChange { cc, value } => {
+                if let Some(player) = &self.player
+                    && player.has_instrument(self.active_sampler_id)
+                {
+                    player.send_live_midi(self.active_sampler_id, message);
+                } else {
+                    self.sampler.midi(0xb0, cc, value);
+                }
+            }
             MidiMessage::PitchBend { bend } => {
-                let value = (bend as i32 + 8192).clamp(0, 16383) as u16;
-                self.sampler
-                    .midi(0xe0, (value & 127) as u8, (value >> 7) as u8);
+                if let Some(player) = &self.player
+                    && player.has_instrument(self.active_sampler_id)
+                {
+                    player.send_live_midi(self.active_sampler_id, message);
+                } else {
+                    let value = (bend as i32 + 8192).clamp(0, 16383) as u16;
+                    self.sampler
+                        .midi(0xe0, (value & 127) as u8, (value >> 7) as u8);
+                }
             }
             MidiMessage::ProgramChange { .. } => {}
         }

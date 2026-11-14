@@ -4,6 +4,10 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
 
 ## Disponible
 
+- **MIDI en vivo durante Play:** el piano SoundFont y Hay Sampler se suman al WAV
+  en el motor compartido, incluso si su pista no tiene clip MIDI. Tocar una nota
+  no detiene Play; fuera de Play sigue la audición individual.
+
 - **PR-06, tercer incremento:** los VST3 cargados en varias pistas participan en
   Play con un solo transporte y salida, junto a WAV, MIDI interno y FX. Se usa el
   mismo procesador editado en vivo: el stream de audición se silencia durante Play

@@ -8,6 +8,7 @@ use elevate::{
     musical::{
         arrangement_midi::PreparedMidiArrangement,
         clip::MidiClip,
+        midi::MidiMessage,
         model::InstrumentId,
         time::Meter,
         track::{Track, TrackId},
@@ -50,6 +51,30 @@ pub(super) struct Mix {
     timing: TransportContext,
 }
 impl Mix {
+    pub fn instrument_ids(&self) -> Vec<InstrumentId> {
+        self.tracks
+            .iter()
+            .filter_map(|track| track.midi.as_ref().map(|(_, voice)| voice.id()))
+            .collect()
+    }
+
+    pub fn live_midi(&mut self, id: InstrumentId, message: MidiMessage) {
+        for track in &mut self.tracks {
+            if let Some((_, voice)) = &mut track.midi
+                && voice.id() == id
+            {
+                voice.live_midi(message);
+                break;
+            }
+        }
+    }
+    pub fn all_live_notes_off(&mut self) {
+        for track in &mut self.tracks {
+            if let Some((_, voice)) = &mut track.midi {
+                voice.live_midi(MidiMessage::AllNotesOff);
+            }
+        }
+    }
     pub fn drum_control(&self) -> Option<Arc<AtomicU32>> {
         self.drums.as_ref().map(|drums| drums.control.clone())
     }
