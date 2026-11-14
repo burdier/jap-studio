@@ -1,31 +1,66 @@
-//! Franjas de compás compartidas por Arrangement y piano roll; independientes del snap.
-use crate::ui::{DesignSystem, time_grid::TimeGrid};
-use gpui::{Bounds, Pixels, Window, fill, point, px, rgba, size};
+//! Franjas, estilos y etiquetas compartidos por Arrangement y piano roll.
+use crate::ui::{
+    DesignSystem,
+    time_grid::{
+        TimeGrid,
+        musical::{MarkKind, MusicalMark},
+    },
+};
+use gpui::{Bounds, Pixels, Point, ShapedLine, TextRun, Window, fill, point, px, rgb, rgba, size};
 
-pub(in crate::ui) fn paint(
-    bounds: Bounds<Pixels>,
-    axis: TimeGrid,
-    beats_per_bar: f64,
-    design: &DesignSystem,
-    window: &mut Window,
-) {
-    paint_bands(bounds, axis, beats_per_bar, design, window);
-    let width = f64::from(f32::from(bounds.size.width));
-    for bar in axis.visible_bars(width, beats_per_bar) {
-        let start = axis.x_at(bar as f64 * beats_per_bar);
-        if start >= 0.0 && start < width {
-            window.paint_quad(fill(
-                Bounds::new(
-                    point(bounds.left() + px(start as f32), bounds.top()),
-                    size(px(1.5_f32.min((width - start) as f32)), bounds.size.height),
-                ),
-                rgba((design.muted << 8) | 0xa0),
-            ));
-        }
+pub(in crate::ui) fn mark_style(kind: MarkKind, design: &DesignSystem) -> (f32, f32, u32) {
+    match kind {
+        MarkKind::Bar => (1.5, 11.0, (design.muted << 8) | 0xa0),
+        MarkKind::Beat => (1.0, 7.0, (design.text << 8) | 0x40),
+        MarkKind::Subdivision => (1.0, 3.0, (design.text << 8) | 0x1c),
     }
 }
 
-/// Solo el fondo; permite que el Arrangement dibuje todas sus marcas en una pasada.
+pub(in crate::ui) fn ruler_labels(
+    bounds: Bounds<Pixels>,
+    axis: TimeGrid,
+    marks: &[MusicalMark],
+    design: &DesignSystem,
+    window: &mut Window,
+) -> Vec<(Point<Pixels>, ShapedLine)> {
+    let mut labels = Vec::new();
+    let mut previous_end = bounds.left();
+    for mark in marks {
+        let Some(text) = &mark.label else { continue };
+        let x = bounds.left() + px(axis.x_at(mark.beat).round() as f32);
+        let origin = point(x + px(design.padding_xs), bounds.top());
+        if origin.x < previous_end {
+            continue;
+        }
+        let run = TextRun {
+            len: text.len(),
+            font: window.text_style().font(),
+            color: rgb(if mark.kind == MarkKind::Bar {
+                design.text
+            } else {
+                design.muted
+            })
+            .into(),
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        };
+        let line = window.text_system().shape_line(
+            text.clone().into(),
+            px(design.font_size_xs),
+            &[run],
+            None,
+        );
+        if origin.x + line.width > bounds.right() {
+            continue;
+        }
+        previous_end = origin.x + line.width + px(design.padding_sm);
+        labels.push((origin, line));
+    }
+    labels
+}
+
+/// Solo el fondo; cada vista dibuja sus marcas sin duplicar fronteras de compás.
 pub(in crate::ui) fn paint_bands(
     bounds: Bounds<Pixels>,
     axis: TimeGrid,

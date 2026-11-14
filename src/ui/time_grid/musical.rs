@@ -1,15 +1,18 @@
-//! Marcas y etiquetas del Arrangement: densidad visual, independiente del snap.
-use crate::ui::time_grid::TimeGrid;
-use elevate::musical::time::{Meter, PPQ};
+//! Marcas y etiquetas compartidas por Arrangement y piano roll; sin cambiar el snap.
+use super::TimeGrid;
+use elevate::musical::{
+    grid::NoteGrid,
+    time::{Meter, PPQ},
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum MarkKind {
+pub(in crate::ui) enum MarkKind {
     Bar,
     Beat,
     Subdivision,
 }
 
-pub(super) struct MusicalMark {
+pub(in crate::ui) struct MusicalMark {
     pub beat: f64,
     pub kind: MarkKind,
     pub label: Option<String>,
@@ -17,7 +20,13 @@ pub(super) struct MusicalMark {
 
 /// Una sola secuencia de ticks enteros evita líneas duplicadas o desplazadas
 /// entre la regla y los carriles, incluso en compases de numerador impar.
-pub(super) fn marks(axis: TimeGrid, meter: Meter, width: f64, font_size: f64) -> Vec<MusicalMark> {
+pub(in crate::ui) fn marks(
+    axis: TimeGrid,
+    meter: Meter,
+    width: f64,
+    font_size: f64,
+    resolution: Option<NoteGrid>,
+) -> Vec<MusicalMark> {
     if width <= 0.0 || !width.is_finite() || axis.pixels_per_beat <= 0.0 {
         return Vec::new();
     }
@@ -30,6 +39,11 @@ pub(super) fn marks(axis: TimeGrid, meter: Meter, width: f64, font_size: f64) ->
     }
     while line_step <= beat && line_step % 2 == 0 && pixels(line_step / 2) >= 12.0 {
         line_step /= 2;
+    }
+    // En piano roll no sugerir subdivisiones más finas que la rejilla elegida.
+    // Compases y pulsos siguen siendo referencias estructurales con cualquier snap.
+    if let Some(resolution) = resolution {
+        line_step = line_step.max(resolution.ticks().0.min(beat));
     }
 
     // Reservar sitio según la posición visible, no solo para números de un dígito.
@@ -98,7 +112,7 @@ mod tests {
             pixels_per_beat,
         };
         let labels = |zoom| {
-            marks(axis(zoom), Meter::default(), 1024.0, 11.0)
+            marks(axis(zoom), Meter::default(), 1024.0, 11.0, None)
                 .into_iter()
                 .filter_map(|mark| mark.label.map(|label| (mark.beat, label)))
                 .collect::<Vec<_>>()
@@ -119,7 +133,7 @@ mod tests {
                     first_beat: 5.17,
                     pixels_per_beat: zoom,
                 };
-                let visible = marks(axis, meter, 800.0, 11.0);
+                let visible = marks(axis, meter, 800.0, 11.0, None);
                 assert!(
                     visible
                         .windows(2)
@@ -143,5 +157,38 @@ mod tests {
         assert_eq!(position_label(3 * PPQ, meter), "2");
         assert_eq!(position_label(3 * PPQ + PPQ / 2, meter), "2.2");
         assert_eq!(position_label(3 * PPQ + PPQ / 4, meter), "2.1.240");
+    }
+
+    #[test]
+    fn piano_roll_shares_labels_and_keeps_subdivisions_within_its_selected_grid() {
+        let axis = TimeGrid {
+            first_beat: 0.0,
+            pixels_per_beat: 256.0,
+        };
+        let labels = |resolution| {
+            marks(axis, Meter::default(), 1024.0, 11.0, resolution)
+                .into_iter()
+                .filter_map(|mark| mark.label.map(|label| (mark.beat, label)))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(labels(None), labels(Some(NoteGrid::default())));
+        let coarse = NoteGrid::new(4).unwrap();
+        assert!(
+            marks(axis, Meter::default(), 1024.0, 11.0, Some(coarse))
+                .iter()
+                .all(|mark| mark.kind != MarkKind::Subdivision)
+        );
+        let axis = TimeGrid {
+            pixels_per_beat: 1024.0,
+            ..axis
+        };
+        for denominator in [8, 16, 32, 64, 128] {
+            let resolution = NoteGrid::new(denominator).unwrap();
+            let visible = marks(axis, Meter::default(), 1024.0, 11.0, Some(resolution));
+            assert_eq!(visible[1].beat, resolution.ticks().0 as f64 / PPQ as f64);
+            assert!(visible.iter().all(|mark| {
+                (mark.beat * PPQ as f64).round() as i64 % resolution.ticks().0 == 0
+            }));
+        }
     }
 }

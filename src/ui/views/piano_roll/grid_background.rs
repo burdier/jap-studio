@@ -1,7 +1,9 @@
 //! Teclado, rejilla y regla del piano roll.
 use crate::ui::{
     DesignSystem,
+    components::bar_grid,
     piano_roll::geometry::{Grid, KEYBOARD_WIDTH},
+    time_grid::musical,
 };
 use elevate::musical::{keyboard::is_black, pitch::note_name, scale::PitchScale};
 use gpui::{App, Bounds, Pixels, TextAlign, TextRun, Window, fill, point, px, rgb, rgba, size};
@@ -126,74 +128,48 @@ pub(super) fn paint_time(
     window: &mut Window,
     cx: &mut App,
 ) {
-    let beat_length = 4.0 / f64::from(meter.denominator());
     let bar_length = meter.beats_per_bar();
     let width = f64::from(f32::from(grid.notes.size.width)).min(grid.axis().x_at(beats).max(0.0));
     let time_bounds = Bounds::new(
         point(grid.notes.left(), grid.all.top()),
         size(px(width as f32), grid.all.size.height - px(10.0)),
     );
-    crate::ui::components::bar_grid::paint(time_bounds, grid.axis(), bar_length, ds, window);
-    // Los compases no dependen de las subdivisiones visibles: también 3/4, 6/8, etc.
-    let mut previous_end = grid.notes.left();
-    for bar in grid.axis().visible_bars(width, bar_length) {
-        let x = grid.x(bar as f64 * bar_length).max(grid.notes.left()) + px(8.0);
-        if x < previous_end {
-            continue;
-        }
-        let text = (bar + 1).to_string();
-        label(
+    if bar_length * grid.axis().pixels_per_beat >= 8.0 {
+        bar_grid::paint_bands(time_bounds, grid.axis(), bar_length, ds, window);
+    }
+    let marks = musical::marks(
+        grid.axis(),
+        meter,
+        width,
+        f64::from(ds.font_size_xs),
+        Some(resolution),
+    );
+    let ruler = Bounds::new(
+        time_bounds.origin,
+        size(time_bounds.size.width, grid.notes.top() - grid.all.top()),
+    );
+    for (origin, line) in bar_grid::ruler_labels(ruler, grid.axis(), &marks, ds, window) {
+        let _ = line.paint(origin, ruler.size.height, TextAlign::Left, None, window, cx);
+    }
+    for mark in marks {
+        let x = grid.notes.left() + px(grid.axis().x_at(mark.beat).round() as f32);
+        let (thickness, tick_height, color) = bar_grid::mark_style(mark.kind, ds);
+        rectangle(
             window,
-            cx,
-            &text,
-            point(x, grid.all.top() + px(3.0)),
-            ds.text,
-            11.0,
+            x,
+            grid.notes.top(),
+            thickness,
+            f32::from(time_bounds.bottom() - grid.notes.top()),
+            color,
         );
-        previous_end = x + px(text.len() as f32 * 8.0 + 12.0);
-    }
-    // Mantener la rejilla elegida; al alejar, omitir líneas demasiado juntas.
-    let mut step_size = 4.0 / f64::from(resolution.denominator());
-    while step_size * f64::from(grid.pixels_per_beat) < 6.0 && step_size < 4.0 {
-        step_size *= 2.0;
-    }
-    let first = (grid.first_beat / step_size).floor() as usize;
-    let visible_beats = f64::from(f32::from(grid.notes.size.width) / grid.pixels_per_beat);
-    let last = ((grid.first_beat + visible_beats).min(beats) / step_size).ceil() as usize;
-    for step in first..=last.min(first.saturating_add(4096)) {
-        let beat = step as f64 * step_size;
-        let x = grid.x(beat);
-        let is_bar = (beat / bar_length - (beat / bar_length).round()).abs() < 0.000_001;
-        let is_beat = (beat / beat_length - (beat / beat_length).round()).abs() < 0.000_001;
-        let color = if is_beat {
-            (ds.grid << 8) | 0xba
-        } else {
-            (ds.border << 8) | 0x6a
-        };
-        let top = grid.notes.top();
-        if !is_bar {
-            rectangle(
-                window,
-                x,
-                top,
-                0.6,
-                f32::from(grid.all.bottom() - top) - 10.0,
-                color,
-            );
-        }
-        if is_beat && beat < beats && grid.pixels_per_beat > 12.0 {
-            label(
-                window,
-                cx,
-                &(meter.beat_at(beat) as usize).to_string(),
-                point(
-                    x + px(grid.pixels_per_beat * 0.42),
-                    grid.all.top() + px(23.0),
-                ),
-                ds.muted,
-                9.0,
-            );
-        }
+        rectangle(
+            window,
+            x,
+            grid.notes.top() - px(tick_height),
+            thickness,
+            tick_height,
+            color,
+        );
     }
     if grid.velocity.size.height > px(0.0) {
         for fraction in [0.25, 0.5, 0.75] {

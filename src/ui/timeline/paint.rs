@@ -1,10 +1,9 @@
 //! Regla, carriles, rejilla y cursores. La waveform se dibuja en waveform.rs.
-use super::musical_grid::{self, MarkKind};
 use super::{DesignSystem, DragKind, Timeline, TimelineArea, waveform};
 use crate::ui::track_drag::TrackReorderVisual;
+use crate::ui::{components::bar_grid, time_grid::musical};
 use gpui::{
-    Bounds, ContentMask, IntoElement, Styled, TextAlign, TextRun, canvas, fill, point, px, rgb,
-    rgba, size,
+    Bounds, ContentMask, IntoElement, Styled, TextAlign, canvas, fill, point, px, rgb, rgba, size,
 };
 
 impl Timeline {
@@ -44,6 +43,7 @@ impl Timeline {
         let import_preview = self.import_preview.clone();
         let edit_beat = self.visual_edit_beat();
         let design = design.clone();
+        let ruler_design = design.clone();
         let clip = self.clip.clone();
         let other_audio_clips = self.other_audio_clips.clone();
         let midi_clip = self.midi_clip.clone();
@@ -71,48 +71,18 @@ impl Timeline {
             move |bounds, window, _| {
                 bounds_handle.set(bounds);
                 let width = f64::from(f32::from(bounds.size.width));
-                let marks = musical_grid::marks(
+                let marks = musical::marks(
                     viewport.grid(),
                     meter,
                     width,
-                    f64::from(design.font_size_xs),
+                    f64::from(ruler_design.font_size_xs),
+                    None,
                 );
-                let mut labels = Vec::new();
-                if area == TimelineArea::Ruler {
-                    let mut previous_end = bounds.left();
-                    for mark in &marks {
-                        let Some(text) = &mark.label else { continue };
-                        let x = bounds.left() + px(viewport.x_at(mark.beat).round() as f32);
-                        let origin = point(x + px(design.padding_xs), bounds.top());
-                        if origin.x < previous_end {
-                            continue;
-                        }
-                        let run = TextRun {
-                            len: text.len(),
-                            font: window.text_style().font(),
-                            color: rgb(if mark.kind == MarkKind::Bar {
-                                design.text
-                            } else {
-                                design.muted
-                            })
-                            .into(),
-                            background_color: None,
-                            underline: None,
-                            strikethrough: None,
-                        };
-                        let line = window.text_system().shape_line(
-                            text.clone().into(),
-                            px(design.font_size_xs),
-                            &[run],
-                            None,
-                        );
-                        if origin.x + line.width > bounds.right() {
-                            continue;
-                        }
-                        previous_end = origin.x + line.width + px(design.padding_sm);
-                        labels.push((origin, line));
-                    }
-                }
+                let labels = if area == TimelineArea::Ruler {
+                    bar_grid::ruler_labels(bounds, viewport.grid(), &marks, &ruler_design, window)
+                } else {
+                    Vec::new()
+                };
                 (marks, labels)
             },
             move |bounds, (marks, labels), window, cx| {
@@ -175,7 +145,7 @@ impl Timeline {
                     }
                     // Evitar una textura de rayas en compases muy cortos al alejar.
                     if beats_per_bar * viewport.pixels_per_beat >= 8.0 {
-                        crate::ui::components::bar_grid::paint_bands(
+                        bar_grid::paint_bands(
                             bounds,
                             viewport.grid(),
                             beats_per_bar,
@@ -185,11 +155,8 @@ impl Timeline {
                     }
                     let width = f64::from(f32::from(bounds.size.width));
                     for mark in marks {
-                        let (thickness, tick_height, color) = match mark.kind {
-                            MarkKind::Bar => (1.5, 11.0, (design.muted << 8) | 0xa0),
-                            MarkKind::Beat => (1.0, 7.0, (design.text << 8) | 0x40),
-                            MarkKind::Subdivision => (1.0, 3.0, (design.text << 8) | 0x1c),
-                        };
+                        let (thickness, tick_height, color) =
+                            bar_grid::mark_style(mark.kind, &design);
                         let x = bounds.left() + px(viewport.x_at(mark.beat).round() as f32);
                         let height = if area == TimelineArea::Lanes {
                             bounds.size.height

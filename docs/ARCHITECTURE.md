@@ -149,14 +149,16 @@ alterar los segundos de la fuente. El compás modifica divisiones y etiquetas si
 mover eventos. El documento Loro aún no guarda tempo ni compás porque la UI todavía
 no expone guardado completo del proyecto.
 
-`ui/timeline/musical_grid` calcula una secuencia de marcas en ticks enteros para la
-regla musical y los carriles del Arrangement. El zoom determina la separación visual
+`ui/time_grid/musical` calcula una secuencia de marcas en ticks enteros para las
+reglas y rejillas del Arrangement y piano roll. El zoom determina la separación visual
 de líneas y etiquetas, no el snap ni PPQ. Compases, pulsos y subdivisiones tienen
 distinto contraste y longitud en la regla; las etiquetas progresan de compás a
 `compás.pulso` y `compás.pulso.ticks` (offset dentro del pulso, PPQ=960). Se alinean
 con su posición real, sin fijar a la izquierda el número de un compás fuera de vista.
-`components/bar_grid` conserva las franjas por compás compartidas con el piano roll;
-el Arrangement dibuja sus líneas aparte para no duplicar fronteras.
+`components/bar_grid` comparte franjas, estilos de líneas y composición de etiquetas
+(incluida la prevención de solapamientos). Ambas vistas dibujan una sola línea por marca.
+El piano roll limita las subdivisiones a su `NoteGrid` seleccionado; compases y pulsos
+siguen siendo referencias estructurales. El zoom no modifica esa resolución ni las notas.
 
 ## Sugerencias de comandos
 
