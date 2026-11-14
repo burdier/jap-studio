@@ -5,7 +5,7 @@ use crate::musical::{
 };
 use mlua::{Lua, Table};
 
-pub(super) fn snapshot(lua: &Lua, snapshot: &TrackSnapshot) -> Result<Table, String> {
+pub(crate) fn snapshot(lua: &Lua, snapshot: &TrackSnapshot) -> Result<Table, String> {
     let rows = lua.create_table().map_err(|e| e.to_string())?;
     for (index, entry) in snapshot.entries.iter().enumerate() {
         let row = lua.create_table().map_err(|e| e.to_string())?;

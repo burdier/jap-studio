@@ -1,6 +1,7 @@
 //! Inserción y control del instrumento externo; usa catálogo, pista y MIDI comunes.
 mod commands;
 pub(in crate::ui) mod effects;
+mod script;
 mod view;
 use super::DawApp;
 use crate::instruments::vst::{VST_ID, VstInstrument};

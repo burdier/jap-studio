@@ -125,6 +125,14 @@ pub const CATALOG: &[CatalogEntry] = &[
         action: CatalogAction::Invoke("instrument.vst3.remove"),
     },
     CatalogEntry {
+        id: "action.vst3.script",
+        kind: EntryKind::Action,
+        name: "Ejecutar acción Lua VST3…",
+        summary: "Carga o configura VST3 mediante IDs estables y el controlador compartido",
+        keywords: &["lua", "vst3", "script", "pista", "efecto"],
+        action: CatalogAction::Invoke("vst3.script"),
+    },
+    CatalogEntry {
         id: "action.audio.settings",
         kind: EntryKind::Action,
         name: "Audio: configuración",

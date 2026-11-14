@@ -1,6 +1,6 @@
 //! Lua construye un lote tipado a partir de una lectura; Rust conserva la autoridad.
 mod decode;
-mod encode;
+pub(crate) mod encode;
 use crate::musical::track::{TrackBatch, TrackSnapshot};
 use mlua::{Table, chunk::ChunkMode};
 

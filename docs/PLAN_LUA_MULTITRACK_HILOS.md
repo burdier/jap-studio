@@ -376,8 +376,9 @@ y el cambio de foco conserva el destino correcto de cada liberación.
 compartido, con campos válidos y offsets por subbloque. El segundo incremento
 asigna IDs VST3 por pista y conserva instancias, editores, FX y destino MIDI al
 cambiar de foco. El tercero conecta esos mismos procesadores al bus compartido
-durante Play, con contexto de transporte y cola MIDI en vivo. Quedan PDC,
-exportación, buses auxiliares y las operaciones Lua.
+durante Play, con contexto de transporte y cola MIDI en vivo. La acción Lua VST3
+usa IDs estables y los controladores de carga/FX existentes. Quedan PDC,
+exportación, buses auxiliares y automatización de parámetros.
 
 **Título sugerido:** `feat(vst3): integrar instancias independientes en el motor multipista`
 
@@ -393,12 +394,14 @@ y transporte sincronizados.
   escaneo y el ciclo de vida de editores; no escribir un segundo host.
 - [x] Pasar posición absoluta, tempo, compás, estado de reproducción y loop desde el
   motor, indicando solamente los campos válidos del contexto VST3.
-- [ ] Traducir notas y cambios de parámetros con offsets correctos. Representar buses,
-  latencia y cola de sonido en el adaptador aunque inicialmente se use el bus principal.
+- [x] Traducir notas y cambios de parámetros al inicio de cada segmento musical;
+  el scheduler divide en el frame del evento. Representar buses y cola de sonido
+  en el adaptador; la latencia/PDC queda pendiente.
 - [x] Preparar y destruir fuera del callback. Una instancia se procesa una sola vez
   por bloque y nunca se comparte simultáneamente entre rutas de ejecución.
-- [ ] Hacer accesibles desde Lua las operaciones de creación/conexión/configuración
+- [x] Hacer accesibles desde Lua las operaciones de creación/conexión/configuración
   soportadas, mediante el controlador de carga y handles, sin exponer interfaces COM.
+  Ver [acciones Lua VST3](VST3_LUA.md); los parámetros internos siguen pendientes.
 
 **Aceptación:** dos instancias tienen audio y parámetros independientes; un plugin
 sincronizado a tempo sigue Play/Stop/seek. Una carga fallida no reemplaza otra instancia.
