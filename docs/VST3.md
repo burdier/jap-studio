@@ -18,6 +18,9 @@ procesa los VST3 cargados en el mismo transporte y salida que WAV y los demás
 instrumentos MIDI, con el sonido ya editado en cada ventana. Stop devuelve cada
 VST3 a su audición en vivo.
 
+Lua puede solicitar cargas y configurar las opciones admitidas por el host mediante
+`vst3.script` y handles de pista/FX. [Contrato y ejemplos](VST3_LUA.md).
+
 Para comprobar la separación, carga el mismo instrumento en dos pistas MIDI,
 selecciona cada una y modifica un parámetro distinto en su editor. Toca una nota
 en la primera, cambia de pista antes de soltarla y verifica que la liberación
@@ -68,8 +71,8 @@ marcan los campos disponibles. La audición live todavía no entrega tiempo musi
 Contrato de flags: [Steinberg ProcessContext](https://steinbergmedia.github.io/vst3_doc/vstinterfaces/structSteinberg_1_1Vst_1_1ProcessContext.html).
 
 Límites de este incremento: no buses VST3 de grupo ni FX en la audición del patrón de
-percusión provisional, compensación de latencia, sidechains, automatización/Lua de
-parámetros, ni persistencia del estado binario del plugin. Duplicar un nodo VST3 no
+percusión provisional, compensación de latencia, sidechains, automatización Lua de
+parámetros internos, ni persistencia del estado binario del plugin. Duplicar un nodo VST3 no
 clona todavía la instancia: la validación rechaza la operación; se puede insertar una
 segunda instancia desde el catálogo. Duplicar/importar una pista con IDs sin instancias
 deja su cadena sin audio hasta recargar los plugins; nunca simula su procesamiento.
@@ -102,7 +105,9 @@ una escucha física ni a una comprobación de todos sus controles.
 - `audio/vst3/editor`: propietario de componente/controlador y ventana en un hilo
   separado; `IPlugView`, `IPlugFrame` e `IRunLoop` estándares, sin controles específicos
   de Pianoteq. El editor envía cambios por `IComponentHandler` y una cola SPSC al
-  procesador. No hay acceso a GPUI ni bloqueos de UI en el callback. Mapeo Lua pendiente.
+  procesador. No hay acceso a GPUI ni bloqueos de UI en el callback. Las acciones
+  Lua de carga y configuración del host usan el controlador compartido; los
+  parámetros internos del plugin siguen fuera del contrato Lua.
 - En gpui-dev sin Wine, `scripts/run.sh` configura `WINELOADER=scripts/wine-host.sh`.
   El arranque del binario también prepara un lanzador en caché antes de crear hilos;
   funciona desde cargo y con lanzamiento directo. Reconoce el enlace absoluto del

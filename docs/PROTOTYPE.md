@@ -14,6 +14,12 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
   y vuelve en Stop. MIDI en vivo entra por una cola acotada. Seek y loop liberan
   notas, y la cola final se acota; PDC, exportación y estado persistido siguen pendientes.
 
+- **PR-06, cuarto incremento:** `vst3.script` recibe una acción Lua tipada por
+  TrackId/FxId para cargar instrumento o efecto y configurar nivel, pan, nombre o
+  bypass del host. Revalida la revisión antes de delegar a los mismos controladores
+  de carga y FX. La prueba determinista cubre IDs, conexión y rechazo de campos
+  o destinos inválidos. [Uso y límites](VST3_LUA.md).
+
 - **PR-06, primer incremento:** los FX VST3 en Play reciben posición absoluta,
   BPM, compás y ciclo del transporte común. Seek y loop actualizan el contexto por
   bloque.
@@ -190,7 +196,8 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
   del escritorio usa el Wine del host desde gpui-dev. Carga/síntesis real comprobadas;
   editor original VST3 abierto desde Track FX. Bitstream Vera instalada para corregir
   textos ausentes bajo Wine; falta revisar el dibujo tras recargar el plugin.
-  Estado/presets, mapeo Lua y exportación VST3 pendientes. [Alcance](VST3.md).
+  Estado/presets, automatización Lua de parámetros internos y exportación VST3
+  pendientes. [Alcance](VST3.md).
 
 - M activa/desactiva el controlador también desde OFF. El icono asignado a teclado MIDI
   muestra ON/OFF y fondo activo desde el mismo estado que el instrumento.
