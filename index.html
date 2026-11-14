@@ -439,34 +439,34 @@
               </ol>
             </details>
           </article>
-          <article data-pr="PR-05" data-status="in-progress">
-            <div class="pr-head"><span class="pr-number">PR-05</span><span class="status">En curso</span></div>
+          <article data-pr="PR-05" data-status="done">
+            <div class="pr-head"><span class="pr-number">PR-05</span><span class="status">Completado</span></div>
             <h3>Instrumentos por pista</h3>
             <p>Ejecutar instancias internas independientes y MIDI simultáneo.</p>
             <div class="depends">Depende de PR-04</div>
             <details class="commit-plan">
-              <summary>4 de 5 commits · entrada MIDI dirigida por instancia</summary>
+              <summary>5 de 5 incrementos · MIDI, WAV y percusión en la salida compartida</summary>
               <ol>
-                <li data-status="done"><strong>refactor(instrument): separar síntesis de su stream</strong>Voz y scheduler por frames extraídos del adaptador CPAL; misma audición actual. La conexión al motor común sigue pendiente.</li>
-                <li data-status="done"><strong>feat(audio): crear instancias internas por ID</strong>Conjunto preparado con ID, comandos y suma independientes; dos sintetizadores probados sin dispositivo. UI multipista pendiente.</li>
-                <li data-status="done"><strong>feat(midi): programar clips de varias pistas</strong>Plan absoluto por TrackId/InstrumentId y render de voces en el frame del evento, probado con particiones distintas. Conexión a Play y WAV pendiente.</li>
-                <li data-status="done"><strong>feat(ui): enrutar teclado y MIDI por instancia</strong>Despacho por ID, NoteOff al dueño original y limpieza al cambiar foco/Stop; interfaz aún con una instancia global por tipo.</li>
-                <li><strong>feat(audio): compartir salida con la percusión de audición</strong>Integrar el plan de percusión existente y conservar explícita su limitación inmutable.</li>
+                <li data-status="done" data-commit="ea65a5f"><strong>refactor(instrument): separar síntesis de su stream</strong>Voz y scheduler por frames extraídos del adaptador CPAL; conserva la audición individual.</li>
+                <li data-status="done" data-commit="2f6376f"><strong>feat(audio): crear instancias internas por ID</strong>Conjunto preparado con ID, comandos y suma independientes; dos sintetizadores probados sin dispositivo.</li>
+                <li data-status="done" data-commit="2e3ccdc"><strong>feat(midi): programar clips de varias pistas</strong>Plan absoluto por TrackId/InstrumentId y render por frame, probado con particiones distintas.</li>
+                <li data-status="done" data-commit="d0cb8d2"><strong>fix(midi): liberar notas en su instancia al cambiar foco</strong>NoteOff al dueño original y limpieza al cambiar foco o detener.</li>
+                <li data-status="done" data-commit="b5afb5f"><strong>feat(audio): mezclar MIDI, WAV y percusión con samplers por pista</strong>Play comparte salida y reloj; dos samplers distintos y un WAV tienen prueba de mezcla. La percusión sigue siendo síntesis provisional con plan inmutable.</li>
               </ol>
             </details>
           </article>
-          <article data-pr="PR-06" data-status="pending">
-            <div class="pr-head"><span class="pr-number">PR-06</span><span class="status">Pendiente</span></div>
+          <article data-pr="PR-06" data-status="progress">
+            <div class="pr-head"><span class="pr-number">PR-06</span><span class="status">En progreso</span></div>
             <h3>VST3 en el motor común</h3>
             <p>Usar varias instancias VST3 bajo el mismo transporte.</p>
             <div class="depends">Depende de PR-05</div>
             <details class="commit-plan">
-              <summary>4 commits · 5–9 días · adaptar el host VST3 que ya existe</summary>
+              <summary>3 de 4 incrementos · integración Lua pendiente</summary>
               <ol>
-                <li><strong>refactor(vst3): implementar el procesador común</strong>Conectar el host actual, sus buses principales y ciclo de vida a una instancia por ID.</li>
-                <li><strong>feat(vst3): sincronizar contexto y eventos</strong>Pasar tiempo, tempo y offsets del motor; cubrir NoteOn, NoteOff y cambios por frame.</li>
-                <li><strong>feat(vst3): procesar instrumentos y efectos por pista</strong>Comprobar dos instancias con parámetros separados y exclusión de acceso concurrente antes de conectar UI.</li>
-                <li><strong>feat(ui): cargar VST3 desde el catálogo Lua existente</strong>Usar acciones/handles comunes sin exponer COM a Lua; incluir pruebas con el host de prueba. Los límites de plugins reales van documentados aparte.</li>
+                <li data-status="done" data-commit="bd197e7"><strong>feat(vst3): sincronizar FX con el transporte compartido</strong>ProcessContext recibe posición, tempo, compás y loop del motor.</li>
+                <li data-status="done" data-commit="b9bca52"><strong>feat(vst3): conservar instancias independientes por pista</strong>IDs, editores, FX y destino MIDI por pista.</li>
+                <li data-status="done" data-commit="bdda6b4"><strong>feat(vst3): mezclar instrumentos en el transporte compartido</strong>Play mezcla VST3 con WAV y MIDI interno; mantiene la exclusión entre audición y Arrangement.</li>
+                <li><strong>feat(lua): operar VST3 desde las acciones compartidas</strong>Exponer creación, conexión y configuración admitidas sin interfaces COM; completar pruebas deterministas y conservar visibles los límites de PDC, exportación y estado.</li>
               </ol>
             </details>
           </article>
@@ -625,7 +625,7 @@
       </section>
 
       <footer>
-        <span>Estimación inicial total: 68–127 jornadas-persona (aprox. 14–26 semanas a tiempo completo). PR-01: 4 de 4 commits; registro, catálogo, formularios, ejecución y dos herramientas migradas. Falta la comprobación interactiva de aceptación.</span>
+        <span>Estimación inicial total: 68–127 jornadas-persona (aprox. 14–26 semanas a tiempo completo). PR-01 a PR-05 completados; PR-06 en curso. Falta la comprobación interactiva de algunas entregas.</span>
         <a href="docs/PLAN_LUA_MULTITRACK_HILOS.md">Ver tareas y criterios completos</a>
       </footer>
     </main>
