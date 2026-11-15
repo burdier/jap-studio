@@ -20,3 +20,4 @@ pub mod scheduler;
 pub mod smf;
 pub mod time;
 pub mod track;
+pub mod weave;

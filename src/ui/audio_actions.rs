@@ -172,8 +172,34 @@ impl DawApp {
                 (targets, mode)
             }
         };
+        let rule = if mode == HiloMode::RoundRobin {
+            match &self.weave_rule {
+                Ok(rule) => rule.clone(),
+                Err(error) => {
+                    self.status_message = error.clone();
+                    let released = self.midi_server.focus_targets_mode([], HiloMode::Layer);
+                    self.dispatch_routed_midi(released);
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+        if rule
+            .as_ref()
+            .is_some_and(|rule| !rule.valid_for(targets.len()))
+        {
+            self.status_message = "Tejer: la regla menciona una rama inexistente".into();
+            let released = self.midi_server.focus_targets_mode([], HiloMode::Layer);
+            self.dispatch_routed_midi(released);
+            return;
+        }
         let released = self.midi_server.focus_targets_mode(targets, mode);
         self.dispatch_routed_midi(released);
+        match self.midi_server.set_weave_rule(rule) {
+            Ok(released) => self.dispatch_routed_midi(released),
+            Err(error) => self.status_message = error,
+        }
     }
     pub(super) fn poll_live_midi(&mut self) {
         let messages = self.midi_hw.drain();

@@ -12,6 +12,7 @@ use elevate::{
         model::InstrumentId,
         time::Meter,
         track::{HiloMode, Track, TrackId},
+        weave::WeaveRule,
     },
 };
 pub(crate) struct MidiTrackInput {
@@ -28,6 +29,7 @@ pub(crate) struct HiloBranchInput {
     pub branch_index: usize,
     pub instruments: Vec<InstrumentId>,
     pub mode: HiloMode,
+    pub weave: Option<WeaveRule>,
 }
 pub(crate) struct TrackInput {
     pub id: TrackId,
@@ -171,6 +173,7 @@ impl Mix {
                             hilo.branch_index,
                             &hilo.instruments,
                             hilo.mode,
+                            hilo.weave.as_ref(),
                             rate,
                             bpm,
                         )?)?;

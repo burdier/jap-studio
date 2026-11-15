@@ -50,6 +50,7 @@ mod transport;
 mod utility;
 mod views;
 mod vst;
+mod weave;
 mod workspace_focus;
 
 use crate::audio::{MidiHardwareIn, Player};
@@ -109,6 +110,7 @@ struct DawApp {
     vst_task: Option<gpui::Task<()>>,
     controller: ComputerKeyboard,
     midi_server: MidiServer,
+    weave_rule: Result<Option<elevate::musical::weave::WeaveRule>, String>,
     midi_armed_tracks: std::collections::HashSet<TrackId>,
     midi_mapper: MidiMapper,
     midi_hw: MidiHardwareIn,

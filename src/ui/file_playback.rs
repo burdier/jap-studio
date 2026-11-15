@@ -47,10 +47,27 @@ impl DawApp {
             .map(|_| self.pattern_editor.pattern.clone());
         let drum_gain = self.drum_gain();
         let mut hilo_plans = Vec::new();
+        let weave_rule = match &self.weave_rule {
+            Ok(rule) => rule.clone(),
+            Err(error) => {
+                self.status_message = error.clone();
+                return;
+            }
+        };
         for (index, group) in self.tracks.iter().enumerate() {
             if let Some(mode) = group.hilo {
                 match HiloPlan::compile(&self.tracks, group.id, mode) {
-                    Ok(plan) => hilo_plans.push((index, plan)),
+                    Ok(plan) => {
+                        if let Some(rule) = &weave_rule
+                            && mode == elevate::musical::track::HiloMode::RoundRobin
+                            && !rule.valid_for(plan.instruments().count())
+                        {
+                            self.status_message =
+                                "Tejer: la regla menciona una rama inexistente".into();
+                            return;
+                        }
+                        hilo_plans.push((index, plan));
+                    }
                     Err(error) => {
                         self.status_message = error;
                         return;
@@ -85,6 +102,11 @@ impl DawApp {
                     branch_index,
                     instruments: plan.instruments().collect(),
                     mode: plan.mode,
+                    weave: if plan.mode == elevate::musical::track::HiloMode::RoundRobin {
+                        weave_rule.clone()
+                    } else {
+                        None
+                    },
                 })
             });
             let has_hilo_notes = hilo.as_ref().is_some_and(|hilo| !hilo.clips.is_empty());

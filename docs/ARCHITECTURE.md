@@ -1,5 +1,19 @@
 # Arquitectura del prototipo
 
+## PR-09: primer incremento de Tejer
+
+`scripting/weave` evalúa una tabla Lua en el sandbox al abrir la aplicación.
+`musical/weave` conserva únicamente una lista validada y acotada de índices de
+rama; no contiene VM ni tipos de audio o UI. `MidiServer` consulta un paso por
+NoteOn en vivo y registra el destino para su NoteOff. La compilación de clips
+de Hilo aplica la misma secuencia antes de audio, con orden estable por frame,
+tipo, clip y NoteId. `audio/playback/mix` recibe el plan ya preparado y el
+callback no llama a Lua. El transporte y los buses siguen siendo los de PR-07.
+
+La regla es global durante esta primera entrega y se configura con
+`HAY_WEAVE_RULE_SCRIPT`. Cambiarla requiere reiniciar; no forma parte del
+documento de proyecto. [Uso y límites](TEJER.md).
+
 ## PR-08: transformación musical Lua preparada
 
 `scripting/live` prepara una VM por instancia fuera de audio y transforma

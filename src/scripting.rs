@@ -17,6 +17,7 @@ pub mod push;
 mod sandbox;
 pub mod tracks;
 pub mod vst3;
+pub mod weave;
 use crate::musical::{
     model::{NoteId, Pattern},
     time::PPQ,

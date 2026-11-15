@@ -78,6 +78,12 @@ impl DawApp {
         let explorer = super::explorer_host::ExplorerDock::new(&ds, cx);
         let fx = super::fx::FxDock::new((&ds).into(), cx);
         let lua_tools = super::lua_tools::LuaTools::new();
+        let weave_rule = super::weave::load_from_env();
+        let initial_status = match &weave_rule {
+            Ok(Some(_)) => "Tejer: regla Lua preparada".into(),
+            Ok(None) => "Ready".into(),
+            Err(error) => error.clone(),
+        };
         let mut palette = Palette::new();
         palette.replace_tools(elevate::catalog::tools::entries(&lua_tools.registry));
         Self {
@@ -108,6 +114,7 @@ impl DawApp {
             instrument,
             controller: ComputerKeyboard::default(),
             midi_server: MidiServer::new(initial_target),
+            weave_rule,
             midi_armed_tracks: Default::default(),
             midi_mapper: MidiMapper::new(),
             midi_hw: MidiHardwareIn::connect_all(),
@@ -152,7 +159,7 @@ impl DawApp {
             command_buffer: String::new(),
             cmd_selected: None,
             last_key: String::new(),
-            status_message: "Ready".into(),
+            status_message: initial_status,
         }
     }
     pub(super) fn reload(&mut self) {

@@ -592,6 +592,7 @@ fn layer_hilo_sums_two_soundfonts_and_wav_with_independent_branch_levels() {
                 branch_index: index - 1,
                 instruments: ids.to_vec(),
                 mode: HiloMode::Layer,
+                weave: None,
             }),
         });
         input

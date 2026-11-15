@@ -5,7 +5,7 @@
 //! si el cliente activo cambia mientras hay notas pulsadas, el servidor emite
 //! automáticamente los `NoteOff` al cliente anterior para que ningún instrumento
 //! o secuenciador se quede colgado con el MIDI ni con notas fantasma.
-use super::{model::InstrumentId, track::HiloMode};
+use super::{model::InstrumentId, track::HiloMode, weave::WeaveRule};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -94,6 +94,7 @@ pub struct MidiServer {
     held: HashSet<(MidiTarget, u8)>,
     mode: HiloMode,
     next_branch: usize,
+    weave_rule: Option<WeaveRule>,
     round_robin_owners: HashMap<u8, Vec<Option<MidiTarget>>>,
     /// NoteOff físico pendiente después de liberar una nota al cambiar de foco.
     released_on_focus: HashSet<u8>,
@@ -106,6 +107,7 @@ impl MidiServer {
             held: HashSet::new(),
             mode: HiloMode::Layer,
             next_branch: 0,
+            weave_rule: None,
             round_robin_owners: HashMap::new(),
             released_on_focus: HashSet::new(),
         }
@@ -117,6 +119,24 @@ impl MidiServer {
 
     pub fn active_targets(&self) -> &[MidiTarget] {
         &self.active_targets
+    }
+
+    /// Publica una regla preparada fuera de audio; cambiarla libera notas
+    /// anteriores antes de volver al primer paso.
+    pub fn set_weave_rule(&mut self, rule: Option<WeaveRule>) -> Result<Vec<RoutedMidi>, String> {
+        if rule
+            .as_ref()
+            .is_some_and(|rule| !rule.valid_for(self.active_targets.len()))
+        {
+            return Err("Tejer: la regla menciona una rama inexistente".into());
+        }
+        if self.weave_rule == rule {
+            return Ok(Vec::new());
+        }
+        let released = self.release_all();
+        self.weave_rule = rule;
+        self.next_branch = 0;
+        Ok(released)
     }
 
     /// Cambia el cliente suscrito a la entrada MIDI. Si el cliente anterior tenía
@@ -176,6 +196,13 @@ impl MidiServer {
             }
         }
         self.active_targets = next;
+        if self
+            .weave_rule
+            .as_ref()
+            .is_some_and(|rule| !rule.valid_for(self.active_targets.len()))
+        {
+            self.weave_rule = None;
+        }
         released
     }
 
@@ -192,8 +219,12 @@ impl MidiServer {
                     if !self.active_targets.is_empty() {
                         self.released_on_focus.remove(&note);
                         let targets: Vec<_> = if self.mode == HiloMode::RoundRobin {
-                            let target =
-                                self.active_targets[self.next_branch % self.active_targets.len()];
+                            let index = self
+                                .weave_rule
+                                .as_ref()
+                                .map(|rule| rule.branch_at(self.next_branch))
+                                .unwrap_or(self.next_branch % self.active_targets.len());
+                            let target = self.active_targets[index];
                             self.next_branch = self.next_branch.wrapping_add(1);
                             self.round_robin_owners
                                 .entry(note)
@@ -322,6 +353,7 @@ impl MidiServer {
 
     /// Libera todas las notas sostenidas de todos los clientes registrados.
     pub fn release_all(&mut self) -> Vec<RoutedMidi> {
+        self.next_branch = 0;
         self.round_robin_owners.clear();
         let mut entries: Vec<(MidiTarget, u8)> = self.held.drain().collect();
         entries.sort_by_key(|&(_, note)| note);
@@ -340,6 +372,42 @@ impl MidiServer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prepared_weave_routes_three_branches_and_releases_original_owners() {
+        let targets = [1, 2, 3].map(|n| MidiTarget::Instrument(InstrumentId(n)));
+        let mut server = MidiServer::new(None);
+        server.focus_targets_mode(targets, HiloMode::RoundRobin);
+        server
+            .set_weave_rule(Some(WeaveRule::new(vec![0, 2, 1]).unwrap()))
+            .unwrap();
+        let owners: Vec<_> = (60..66)
+            .map(|note| {
+                server.publish([MidiMessage::NoteOn {
+                    note,
+                    velocity: 100,
+                }])[0]
+                    .target
+            })
+            .collect();
+        assert_eq!(
+            owners,
+            [
+                targets[0], targets[2], targets[1], targets[0], targets[2], targets[1]
+            ]
+        );
+        for note in (60..66).rev() {
+            assert_eq!(
+                server.publish([MidiMessage::NoteOff { note }])[0].target,
+                owners[(note - 60) as usize]
+            );
+        }
+        assert!(
+            server
+                .set_weave_rule(Some(WeaveRule::new(vec![3]).unwrap()))
+                .is_err()
+        );
+    }
 
     #[test]
     fn round_robin_releases_the_branch_that_received_each_press() {

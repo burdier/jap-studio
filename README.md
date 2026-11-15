@@ -90,6 +90,10 @@ tengan instrumento y añade Hay Utility a cada rama.
 El modo queda en el documento de proyecto; la UI todavía no guarda una sesión
 completa al salir. [Estado y límites](docs/ARCHITECTURE.md#pr-07-primer-recorrido-de-hilos-sobre-grupos).
 
+Para elegir el orden de ramas con Lua, inicia con
+`HAY_WEAVE_RULE_SCRIPT=assets/scripts/hilos/tejer.lua bash scripts/run.sh` y
+usa un Hilo de tres instrumentos en round robin. [Contrato y prueba](docs/TEJER.md).
+
 ## Lua musical previo a Play
 
 Para oír el transpositor Lua de ejemplo, inicia Hay desde la raíz con

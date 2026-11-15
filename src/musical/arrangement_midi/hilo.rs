@@ -6,6 +6,7 @@ use crate::musical::{
     scheduler::{EventKind, PreparedPattern, ScheduledEvent},
     time::TimeBase,
     track::{HiloMode, Track},
+    weave::WeaveRule,
 };
 use std::collections::HashMap;
 
@@ -26,6 +27,7 @@ impl PreparedMidiArrangement {
         branch_index: usize,
         instruments: &[InstrumentId],
         mode: HiloMode,
+        weave: Option<&WeaveRule>,
         rate: u32,
         bpm: f64,
     ) -> Result<Self, String> {
@@ -34,6 +36,9 @@ impl PreparedMidiArrangement {
             || branch.instrument != Some(instruments[branch_index])
         {
             return Err("Rama de Hilo inválida".into());
+        }
+        if weave.is_some_and(|rule| !rule.valid_for(instruments.len())) {
+            return Err("Tejer: la regla menciona una rama inexistente".into());
         }
         let base = TimeBase::new(rate, bpm).map_err(|error| error.to_string())?;
         let mut source = Vec::new();
@@ -73,7 +78,9 @@ impl PreparedMidiArrangement {
         for item in source {
             let selected = match item.event.kind {
                 EventKind::NoteOn { .. } => {
-                    let selected = next % instruments.len();
+                    let selected = weave
+                        .map(|rule| rule.branch_at(next))
+                        .unwrap_or(next % instruments.len());
                     next += 1;
                     owners.insert((item.clip, item.event.note), selected);
                     selected
@@ -108,7 +115,54 @@ mod tests {
         model::Pattern,
         time::{FrameWindow, PPQ, Tick},
         track::TrackKind,
+        weave::WeaveRule,
     };
+
+    #[test]
+    fn prepared_weave_routes_six_notes_across_three_branches() {
+        let instruments = [InstrumentId(51), InstrumentId(52), InstrumentId(53)];
+        let mut branches = [
+            Track::new("A", TrackKind::Synth),
+            Track::new("B", TrackKind::Synth),
+            Track::new("C", TrackKind::Synth),
+        ];
+        for (branch, &id) in branches.iter_mut().zip(&instruments) {
+            branch.instrument = Some(id);
+        }
+        let mut pattern = Pattern::new(Tick(PPQ * 4)).unwrap();
+        for i in 0..6 {
+            pattern
+                .add_note(instruments[0], Tick(i * 120), Tick(60), 60 + i as u8, 100)
+                .unwrap();
+        }
+        let clips = [MidiClip::new("Tejer", 0, 0.0, pattern)];
+        let rule = WeaveRule::new(vec![0, 2, 1]).unwrap();
+        let notes: Vec<Vec<u8>> = branches
+            .iter()
+            .enumerate()
+            .map(|(index, branch)| {
+                PreparedMidiArrangement::compile_hilo_branch(
+                    &clips,
+                    0,
+                    branch,
+                    index,
+                    &instruments,
+                    HiloMode::RoundRobin,
+                    Some(&rule),
+                    48_000,
+                    120.0,
+                )
+                .unwrap()
+                .events_in(FrameWindow::new(0, 96_000).unwrap())
+                .filter_map(|event| {
+                    matches!(event.event.kind, EventKind::NoteOn { .. })
+                        .then_some(event.event.pitch)
+                })
+                .collect()
+            })
+            .collect();
+        assert_eq!(notes, vec![vec![60, 63], vec![62, 65], vec![61, 64]]);
+    }
 
     #[test]
     fn round_robin_keeps_each_release_on_its_note_on_branch() {
@@ -135,6 +189,7 @@ mod tests {
             0,
             &instruments,
             HiloMode::RoundRobin,
+            None,
             48_000,
             120.0,
         )
@@ -146,6 +201,7 @@ mod tests {
             1,
             &instruments,
             HiloMode::RoundRobin,
+            None,
             48_000,
             120.0,
         )

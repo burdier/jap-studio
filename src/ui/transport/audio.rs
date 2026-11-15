@@ -7,6 +7,7 @@ impl DawApp {
         }
         if let Some(player) = self.player.as_mut() {
             player.seek(beat)?;
+            self.all_notes_off();
         } else {
             self.stop_all();
         }

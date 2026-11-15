@@ -9,10 +9,17 @@ y devuelve NoteOff al tono correcto, incluso con notas repetidas sin ID. En fall
 libera destinos ya publicados y desactiva solo la instancia afectada. El worker
 de Play puede transformar snapshots MIDI cuando se indica `HAY_LUA_PREPLAY_SCRIPT`;
 los clips editables permanecen intactos. La [medición](LUA_LIVE_REPORT.md) y la
-auditoría de `mlua` impiden anunciar Lua en el callback. PR-09 debe revisarse
-para reglas expresables con operaciones acotadas o esperar un runtime apto.
+auditoría de `mlua` impiden anunciar Lua en el callback. El primer incremento
+de PR-09 ya prepara [reglas Tejer](TEJER.md) en Lua y ejecuta solo una secuencia
+acotada de selección por NoteOn durante la reproducción.
 
 ## Disponible
+
+- **PR-09, primer incremento:** una regla Lua cargada al abrir la aplicación
+  distribuye notas entre 2–16 ramas de un Hilo en round robin. Se aplica tanto
+  al MIDI en vivo como a clips del grupo preparados para Play. El archivo de
+  ejemplo y los límites están en [Tejer](TEJER.md); faltan regla por Hilo,
+  persistencia y los contratos restantes de expresión/sustain/colas.
 
 - **PR-07, primer incremento:** agrupa dos pistas con instrumento, abre el menú del
   grupo y elige **Hilo · capas** o **Hilo · round robin**. Inserta un clip MIDI en
