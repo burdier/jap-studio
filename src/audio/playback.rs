@@ -15,7 +15,7 @@ use elevate::musical::time::{Meter, Tempo};
 use elevate::musical::track::TrackId;
 use elevate::musical::{midi::MidiMessage, model::InstrumentId};
 use elevate::{Primitive, ProcessSpec, primitives::amplitude::Volume};
-pub(crate) use mix::{MidiTrackInput, TrackInput};
+pub(crate) use mix::{HiloBranchInput, MidiTrackInput, TrackInput};
 use mix::{Mix, TrackControl};
 use rtrb::{Producer, RingBuffer};
 use std::sync::{

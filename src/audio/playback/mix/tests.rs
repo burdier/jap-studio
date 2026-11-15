@@ -307,6 +307,7 @@ fn two_real_vst_instruments_share_one_mix_with_wav() {
             instrument: id,
             clips: vec![midi],
             source: VoiceSource::Vst(vst.clone()),
+            hilo: None,
         });
         inputs.push(input);
         shared.push(vst);
@@ -371,6 +372,7 @@ fn wav_and_midi_on_one_track_reach_the_same_bus() {
         instrument: InstrumentId(41),
         clips: vec![midi],
         source,
+        hilo: None,
     });
     let mut mix = Mix::prepare(
         vec![input],
@@ -416,6 +418,7 @@ fn live_piano_note_joins_wav_without_a_midi_clip() {
             master_volume: 0.7,
             filter: Default::default(),
         }),
+        hilo: None,
     });
     let wav = track(900, vec![clip([0.1, 0.1], 0., 48_000)]);
     let mut mix = Mix::prepare(
@@ -525,6 +528,7 @@ fn two_sampler_instances_with_different_samples_mix_with_wav() {
                 asset: sample(hz),
                 params: SamplerParams::default(),
             }),
+            hilo: None,
         });
         input
     };
@@ -545,6 +549,94 @@ fn two_sampler_instances_with_different_samples_mix_with_wav() {
     assert!(frames[512..].iter().any(|f| (f[0] - 0.1).abs() > 0.0001));
     assert!(frames[512..].iter().any(|f| (f[1] - 0.1).abs() > 0.0001));
     assert!(frames[512..].iter().any(|f| (f[0] - f[1]).abs() > 0.001));
+}
+
+#[test]
+fn layer_hilo_sums_two_soundfonts_and_wav_with_independent_branch_levels() {
+    use crate::audio::piano::{PianoSettings, PianoSnapshot, VoiceSource};
+    use elevate::musical::{
+        clip::MidiClip,
+        model::{InstrumentId, Pattern},
+        time::{PPQ, Tick},
+        track::{HiloMode, Track, TrackKind},
+    };
+    let group = Track::new("Hilo", TrackKind::Group);
+    let ids = [InstrumentId(101), InstrumentId(102)];
+    let mut pattern = Pattern::new(Tick(PPQ)).unwrap();
+    pattern
+        .add_note(ids[0], Tick(0), Tick(PPQ / 2), 60, 100)
+        .unwrap();
+    let group_clip = MidiClip::new("capa", 0, 0.0, pattern);
+    let make_branch = |index: usize, instrument: InstrumentId, pan: f32| {
+        let mut musical_track = Track::new("Piano", TrackKind::Synth);
+        musical_track.parent = Some(group.id);
+        musical_track.instrument = Some(instrument);
+        let mut input = track(musical_track.id.0, vec![]);
+        input.pan = pan;
+        input.midi = Some(MidiTrackInput {
+            index,
+            track: musical_track,
+            instrument,
+            clips: vec![],
+            source: VoiceSource::Piano(PianoSnapshot {
+                path: std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("assets/soundfonts/UprightPianoKW-20220221.sf2"),
+                settings: PianoSettings::default(),
+                midi: vec![],
+                master_volume: 0.7,
+                filter: Default::default(),
+            }),
+            hilo: Some(HiloBranchInput {
+                clips: vec![group_clip.clone()],
+                group_index: 0,
+                branch_index: index - 1,
+                instruments: ids.to_vec(),
+                mode: HiloMode::Layer,
+            }),
+        });
+        input
+    };
+    let mut mix = Mix::prepare(
+        vec![
+            make_branch(1, ids[0], -1.0),
+            make_branch(2, ids[1], 1.0),
+            track(103, vec![clip([0.1, 0.1], 0.0, 20_000)]),
+        ],
+        None,
+        48_000,
+        120.0,
+        elevate::musical::time::Meter::default(),
+    )
+    .unwrap();
+    let mut before = vec![[0.0; 2]; 2_048];
+    mix.render(0, &mut before);
+    assert!(
+        before[512..]
+            .iter()
+            .any(|frame| (frame[0] - 0.1).abs() > 0.0001)
+    );
+    assert!(
+        before[512..]
+            .iter()
+            .any(|frame| (frame[1] - 0.1).abs() > 0.0001)
+    );
+
+    mix.tracks[0]
+        .control
+        .gain
+        .store(0.0f32.to_bits(), Ordering::Relaxed);
+    let mut after = vec![[0.0; 2]; 2_048];
+    mix.render(2_048, &mut after);
+    assert!(
+        after[1_024..]
+            .iter()
+            .all(|frame| (frame[0] - 0.1).abs() < 0.001)
+    );
+    assert!(
+        after[1_024..]
+            .iter()
+            .any(|frame| (frame[1] - 0.1).abs() > 0.0001)
+    );
 }
 
 #[test]

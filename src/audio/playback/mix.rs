@@ -11,7 +11,7 @@ use elevate::{
         midi::MidiMessage,
         model::InstrumentId,
         time::Meter,
-        track::{Track, TrackId},
+        track::{HiloMode, Track, TrackId},
     },
 };
 pub(crate) struct MidiTrackInput {
@@ -20,6 +20,14 @@ pub(crate) struct MidiTrackInput {
     pub instrument: InstrumentId,
     pub clips: Vec<MidiClip>,
     pub source: VoiceSource,
+    pub hilo: Option<HiloBranchInput>,
+}
+pub(crate) struct HiloBranchInput {
+    pub clips: Vec<MidiClip>,
+    pub group_index: usize,
+    pub branch_index: usize,
+    pub instruments: Vec<InstrumentId>,
+    pub mode: HiloMode,
 }
 pub(crate) struct TrackInput {
     pub id: TrackId,
@@ -148,16 +156,33 @@ impl Mix {
                         VoiceSource::Vst(shared) => shared.tail_frames,
                         _ => 0,
                     };
-                    let plan = PreparedMidiArrangement::compile_track(
+                    let mut plan = PreparedMidiArrangement::compile_track(
                         &source.clips,
                         &source.track,
                         source.index,
                         rate,
                         bpm,
                     )?;
+                    if let Some(hilo) = &source.hilo {
+                        plan.append(PreparedMidiArrangement::compile_hilo_branch(
+                            &hilo.clips,
+                            hilo.group_index,
+                            &source.track,
+                            hilo.branch_index,
+                            &hilo.instruments,
+                            hilo.mode,
+                            rate,
+                            bpm,
+                        )?)?;
+                    }
                     let voice =
                         PreparedArrangementVoice::prepare(source.instrument, source.source, rate)?;
-                    if !source.clips.is_empty() {
+                    if !source.clips.is_empty()
+                        || source
+                            .hilo
+                            .as_ref()
+                            .is_some_and(|hilo| !hilo.clips.is_empty())
+                    {
                         end = end.max(plan.end_frame().saturating_add(tail));
                     }
                     Ok::<_, String>((plan, voice))

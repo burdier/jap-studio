@@ -4,6 +4,12 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
 
 ## Disponible
 
+- **PR-07, tercer incremento (audio):** Play prepara una voz por pista hija de
+  un Hilo y reproduce los clips MIDI del grupo en capas o round robin en el
+  transporte común. Cada rama conserva su FX, nivel y pan; la salida se suma
+  con los clips WAV. Una prueba audible verifica dos instrumentos en capas y
+  que silenciar uno deja sonar al otro. La edición desde UI y Lua sigue pendiente.
+
 - **PR-07, segundo incremento (modelo interno):** un grupo puede guardar un
   modo Hilo de capas o round robin. El plan valida ramas tipadas con dos
   instrumentos distintos; los clips del grupo se preparan por frame y cada

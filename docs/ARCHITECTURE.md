@@ -1,5 +1,16 @@
 # Arquitectura del prototipo
 
+## PR-07, tercer incremento: reproducción de Hilos
+
+`ui/file_playback.rs` compila el plan de cada grupo y entrega sus clips MIDI a
+las pistas hijas con instrumento. `audio/playback/mix.rs` prepara una voz y un
+plan de eventos por rama fuera del callback; el callback procesa cada bus en
+secuencia, aplica FX, nivel y pan de la hija, y suma las salidas con WAV en el
+transporte existente. Una rama de audio conserva sus clips y su bus de pista.
+Si falta un instrumento o falla la preparación de una rama con notas, Play
+rechaza el plan completo. El control visual y Lua quedan para el incremento
+siguiente.
+
 ## PR-07, segundo incremento: modelo de Hilo
 
 `musical/hilo.rs` compila las hijas de un grupo como ramas con puertos

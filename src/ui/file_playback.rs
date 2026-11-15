@@ -2,8 +2,9 @@
 use super::DawApp;
 use crate::audio::drums::DrumInput;
 use crate::audio::piano::VoiceSource;
-use crate::audio::{AudioClip, MidiTrackInput, PreparedPlayback, TrackInput};
+use crate::audio::{AudioClip, HiloBranchInput, MidiTrackInput, PreparedPlayback, TrackInput};
 use elevate::musical::clip::MidiClip;
+use elevate::musical::hilo::HiloPlan;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 pub(super) struct PendingPlayback {
     result: Receiver<Result<PreparedPlayback, String>>,
@@ -43,6 +44,18 @@ impl DawApp {
             .pattern_loop_beats
             .map(|_| self.pattern_editor.pattern.clone());
         let drum_gain = self.drum_gain();
+        let mut hilo_plans = Vec::new();
+        for (index, group) in self.tracks.iter().enumerate() {
+            if let Some(mode) = group.hilo {
+                match HiloPlan::compile(&self.tracks, group.id, mode) {
+                    Ok(plan) => hilo_plans.push((index, plan)),
+                    Err(error) => {
+                        self.status_message = error;
+                        return;
+                    }
+                }
+            }
+        }
         let mut inputs = Vec::new();
         for (index, track) in self.tracks.iter().enumerate() {
             let sources: Vec<_> = clips
@@ -55,6 +68,24 @@ impl DawApp {
                 .filter(|clip| clip.track == index && !clip.props.muted)
                 .cloned()
                 .collect();
+            let hilo = track.parent.and_then(|parent| {
+                let (group_index, plan) =
+                    hilo_plans.iter().find(|(_, plan)| plan.group == parent)?;
+                let branch_index = plan.branch_index(track.id)?;
+                let clips: Vec<_> = midi_clips
+                    .iter()
+                    .filter(|clip| clip.track == *group_index && !clip.props.muted)
+                    .cloned()
+                    .collect();
+                Some(HiloBranchInput {
+                    clips,
+                    group_index: *group_index,
+                    branch_index,
+                    instruments: plan.instruments().collect(),
+                    mode: plan.mode,
+                })
+            });
+            let has_hilo_notes = hilo.as_ref().is_some_and(|hilo| !hilo.clips.is_empty());
             let live_vst = track.instrument.is_some_and(|id| {
                 if id == self.vst.id {
                     self.vst.ready()
@@ -65,7 +96,11 @@ impl DawApp {
             let live_internal = track
                 .instrument
                 .is_some_and(|id| id == self.instrument.id() || self.is_sampler_id(id));
-            let midi = if notes.is_empty() && !live_vst && !live_internal {
+            let midi = if notes.is_empty()
+                && hilo.as_ref().is_none_or(|hilo| hilo.clips.is_empty())
+                && !live_vst
+                && !live_internal
+            {
                 None
             } else {
                 let source = if track.instrument == Some(self.instrument.id()) {
@@ -92,9 +127,14 @@ impl DawApp {
                         instrument: track.instrument.unwrap(),
                         clips: notes,
                         source,
+                        hilo,
                     }),
+                    None if has_hilo_notes => {
+                        self.status_message = "Falta el instrumento de una rama del Hilo".into();
+                        return;
+                    }
                     None => None,
-                    Some(Err(_)) if notes.is_empty() => None,
+                    Some(Err(_)) if notes.is_empty() && !has_hilo_notes => None,
                     Some(Err(error)) => {
                         self.status_message = error;
                         return;
@@ -115,7 +155,11 @@ impl DawApp {
             });
         }
         if inputs.iter().all(|input| {
-            input.clips.is_empty() && input.midi.as_ref().is_none_or(|midi| midi.clips.is_empty())
+            input.clips.is_empty()
+                && input.midi.as_ref().is_none_or(|midi| {
+                    midi.clips.is_empty()
+                        && midi.hilo.as_ref().is_none_or(|hilo| hilo.clips.is_empty())
+                })
         }) && pattern.is_none()
         {
             self.status_message = "No hay clips de audio o MIDI para reproducir".into();
