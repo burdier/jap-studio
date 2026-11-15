@@ -4,14 +4,30 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
 
 ## Disponible
 
-- **PR-07, ruta fija de Hilos:** dos pistas hijas con instrumentos distintos
-  pueden recibir los clips MIDI del grupo en capas o round robin. Menú, comandos
-  `:hilo.layer`/`:hilo.rr` y `:track.template.hilo` configuran el modo; Track FX
-  muestra cada rama y permite seleccionar, silenciar o cambiar su nivel. El botón
-  MIDI del grupo reparte notas en vivo y devuelve cada NoteOff a su rama. La
-  plantilla Lua reutiliza dos instrumentos cargados y añade Hay Utility por
-  rama. Crear instancias desde Lua, editar un grafo arbitrario y conservar colas
-  de plugins durante una edición estructural siguen pendientes.
+- **PR-07, primer incremento:** agrupa dos pistas con instrumento, abre el menú del
+  grupo y elige **Hilo · capas** o **Hilo · round robin**. Inserta un clip MIDI en
+  el grupo o activa su botón MIDI. Las pistas hijas conservan nivel, pan y FX;
+  round robin alterna NoteOn y devuelve cada NoteOff a su rama original. En Play
+  suenan mediante el transporte y la salida comunes. El modo se guarda en Loro y
+  también puede declararse con `hilo.mode` en un lote `track.script`. Quedan
+  disponibles en Track FX para seleccionar, silenciar y cambiar nivel. El plan
+  de puertos tipados rechaza rutas sin dos instrumentos distintos antes de
+  publicarlas. Quedan pendientes las topologías arbitrarias y la creación de
+  instrumentos mediante Lua.
+
+- **Hay Chord:** cuatro cuadros iniciales para construir una progresión antes de
+  insertarla; cada uno puede sonar mientras se pulsa y tiene inversión ▲/▼.
+  Compás/Tiempo decide la distancia entre cuadros según la firma actual. La
+  inserción aplica el plan completo sobre una copia del clip, desde la unidad que
+  contiene el cursor. `musical/chord` prepara notas en ticks y pares MIDI de audición
+  para reutilizarlos en un secuenciador posterior; no crea otro transporte.
+
+- **Entrada MIDI por pista:** el botón **MIDI** de cada cabecera activa esa pista como
+  destino de teclado y controlador físico. Se pueden activar varias pistas a la vez;
+  desactivar una libera solo sus notas. Sin pistas activadas, la entrada sigue la pista
+  seleccionada, también con su editor de instrumento abierto. Los controles de ratón
+  ajustan parámetros sin cambiar el destino MIDI. Las pistas que comparten el piano
+  interno siguen compartiendo una sola instancia de síntesis.
 
 - **MIDI en vivo durante Play:** el piano SoundFont y Hay Sampler se suman al WAV
   en el motor compartido, incluso si su pista no tiene clip MIDI. Tocar una nota

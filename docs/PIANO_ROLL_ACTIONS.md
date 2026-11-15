@@ -58,6 +58,13 @@ fino y la sombra no cambian la geometría del picking.
 
 ## Inspector y vista
 
+- En **Acordes**, elige grado, color y voicing; pulsa un cuadro vacío para añadirlo.
+  Pulsa uno ocupado para escucharlo mientras mantienes el botón. ▲/▼ ajustan su
+  inversión, ↺ lo sustituye por el acorde elegido y × lo deja como silencio.
+  Hay cuatro cuadros iniciales; **+ Cuadro** amplía hasta 16. **Compás/Tiempo**
+  fija la duración y separación según la firma actual. **Insertar secuencia**
+  alinea el primer cuadro al compás o tiempo del cursor y confirma todos los
+  acordes juntos; si no caben en el clip, no modifica ninguna nota.
 - `midi.clip.rename <nombre>`, `midi.clip.color auto|0–6`, `midi.clip.mute`:
   propiedades del clip activo, con bloqueo respetado. Color sin argumentos abre el picker.
 - Length, Channel, escala, raíz, Q y Swing llaman las mismas acciones de la barra.
