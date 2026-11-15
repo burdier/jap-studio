@@ -104,6 +104,7 @@ impl Window {
                             }
                         }
                     }
+                    19 => self.x11.focus(),
                     9 => {
                         self.view.onFocus(1);
                     }

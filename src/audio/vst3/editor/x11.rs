@@ -69,6 +69,7 @@ pub(super) struct X11 {
     pub protocols: c_ulong,
     pub resize: unsafe extern "C" fn(*mut Display, c_ulong, c_uint, c_uint) -> c_int,
     pub map: unsafe extern "C" fn(*mut Display, c_ulong) -> c_int,
+    focus: unsafe extern "C" fn(*mut Display, c_ulong, c_int, c_ulong) -> c_int,
     pub flush: unsafe extern "C" fn(*mut Display) -> c_int,
     sync: unsafe extern "C" fn(*mut Display, c_int) -> c_int,
     pending: unsafe extern "C" fn(*mut Display) -> c_int,
@@ -137,6 +138,7 @@ impl X11 {
                 protocols: 0,
                 resize: symbol(library, c"XResizeWindow")?,
                 map: symbol(library, c"XMapRaised")?,
+                focus: symbol(library, c"XSetInputFocus")?,
                 flush: symbol(library, c"XFlush")?,
                 sync: symbol(library, c"XSync")?,
                 pending: symbol(library, c"XPending")?,
@@ -198,6 +200,14 @@ impl X11 {
         unsafe {
             (self.map)(self.display, self.window);
             (self.sync)(self.display, 0);
+        }
+    }
+    pub fn focus(&self) {
+        // Esperar MapNotify: el gestor de ventanas puede diferir XMapRaised y
+        // XSetInputFocus sobre una ventana aún no visible provoca BadMatch.
+        unsafe {
+            (self.focus)(self.display, self.window, 2, 0);
+            (self.flush)(self.display);
         }
     }
     pub fn resize(&self, width: u32, height: u32) {

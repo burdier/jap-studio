@@ -88,6 +88,22 @@ La acción `fx.vst3.load` también insertó Cathar en Track FX dentro de Hay y a
 `Cathar Restore — Hay`; la captura mostró los controles originales. No equivale a
 una escucha física ni a una comprobación de todos sus controles.
 
+## Diagnóstico de StandardCLIP
+
+StandardCLIP instalado en `~/.vst3/yabridge/SIR Audio Tools/StandardCLIP.vst3`
+se reconoce como efecto y procesa la senoide del probe a 48 kHz: pico `0.100001`,
+sin error. Con yabridge 5.1.1 y Wine Staging 11.20 su editor se dibuja y el usuario
+confirmó subir y bajar controles. El log de la prueba registra `beginEdit`,
+`performEdit` con valores cambiantes y `endEdit`: las interacciones llegan al host.
+Los intentos automatizados iniciales no mostraron respuesta; eso no demuestra una
+incompatibilidad del puente. La última prueba incluyó mover la ventana a la esquina
+superior izquierda; queda comprobar la interacción después de moverla a otras posiciones.
+
+El host espera ahora `MapNotify` antes de solicitar foco X11. Solicitarlo justo
+después de `XMapRaised` provocaba `BadMatch (X_SetInputFocus)` cuando el gestor
+todavía no había mostrado la ventana. El probe ya abre y termina correctamente;
+la interacción manual está confirmada en la sesión de diagnóstico.
+
 ## Implementación
 
 - Binding `vst3 =0.3.0`, MIT/Apache-2.0; no se incluye el código de yabridge.
@@ -135,6 +151,17 @@ teclas sin consumir a Hay. La interacción de Espacio con un plugin real sigue
 pendiente de comprobación manual.
 
 ## Verificación realizada
+
+Pianoteq 9 se copió desde `~/Games/piano/drive_c/Pianoteq 9` a
+`~/.local/share/Steam/steamapps/compatdata/standardclip_test/pfx/drive_c/Pianoteq 9`,
+el mismo prefijo que StandardCLIP. Se actualizó el directorio registrado en
+yabridgectl y se sincronizó; el wrapper conserva `~/.vst3/yabridge/VST3/Pianoteq 9.vst3`.
+El original se conserva como respaldo. El probe confirmó el prefijo nuevo y audio
+con pico `0.341817`, sin error. El editor abre, pero la captura todavía muestra
+zonas negras/grises y controles parcialmente dibujados; trasladar el prefijo no
+ha resuelto esos defectos gráficos. La prueba con editor agotó el límite de 95 s
+sin terminar el proceso; su cierre limpio sigue pendiente, aunque el probe sin
+editor terminó correctamente.
 
 `cargo check --all-targets --locked`, sin ejecutar la suite de tests.
 `vst3_probe` cargó el Pianoteq 9 del usuario mediante yabridge 5.1.1 y Wine Staging 11.20,
