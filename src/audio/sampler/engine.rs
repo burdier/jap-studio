@@ -55,6 +55,8 @@ impl SfizzEngine {
         unsafe {
             (self.api.rate)(self.synth, rate as f32);
         }
+        let params = self._snapshot.params.clone();
+        self.parameters(&params);
     }
     pub fn control(&mut self, cc: u8, value: f32) {
         unsafe {
@@ -62,6 +64,7 @@ impl SfizzEngine {
         }
     }
     pub fn parameters(&mut self, params: &elevate::devices::sampler::SamplerParams) {
+        self._snapshot.params = params.clone();
         for id in 0..elevate::devices::sampler::PARAMS.len() {
             if let Some((cc, v)) = elevate::devices::sampler::live_control(params, id) {
                 self.control(cc, v);

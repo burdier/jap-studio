@@ -14,14 +14,15 @@ El dispositivo conserva colores, tipografía, botones, perillas y teclado de Hay
 organización sigue la referencia de Simpler: modos a la izquierda, waveform arriba,
 región/afinación/voces debajo y filtro/ADSR/salida en una segunda fila.
 
+- **Drum Kit (Simpler para drums):** atajo que activa `1-Shot`, `Keytrack` apagado (cualquier tecla MIDI dispara el golpe a su tono original), `Choke` (`group=1 off_by=1`) para que cada golpe corte la cola del anterior (p. ej. hi-hats), envolvente **AHD** (`Attack`, `Hold`, `Decay`, `Sustain = 0`), filtro activo y sensibilidad de velocidad.
 - **Classic:** la duración de la nota gobierna el instrumento; **Loop** repite entre el
   marcador de loop y Final mientras se sostiene, con salida de loop al liberar.
-- **1-Shot:** el sample continúa al soltar la nota, hasta su final.
+- **1-Shot:** el sample continúa al soltar la nota, hasta su final o el cierre de la envolvente AHD.
+- **Keytrack / Choke / Reverse:** botones independientes para fijar o cromatizar el tono (`pitch_keytrack`), cortar voces previas de la instancia o invertir el sample (`direction=reverse`).
 - Inicio, Final y Loop se expresan en porcentaje del archivo. Arrastra los marcadores
   blancos; Alt+arrastre edita el inicio del loop. Se validan orden y rango mínimo.
-- Los controles aceptan arrastre vertical, Shift para precisión, rueda y doble clic
-  para restaurar. Afinación en semitonos, nota raíz MIDI, voces 1–128, filtro LP 12 dB/oct,
-  frecuencia Hz, resonancia dB, ADSR en ms/% y salida dB/pan.
+- **Filtro estilo Hay Filter (`CurveOverlay`):** modos **LP / HP / BP** (`lpf_2p`, `hpf_2p`, `bpf_2p`) con curva interactiva 2D donde el arrastre horizontal controla la frecuencia (escala log continua) y el vertical o la rueda controla la resonancia (dB), con `Shift` para ajuste fino y doble clic para restaurar.
+- Los controles incluyen además **Hold**, **Pitch Env** (semitonos), **Pitch Decay** (ms) para dar ataque percusivo a kicks/toms, **Vel → Vol** (`amp_veltrack`) y **Vel → Cut** (`fil_veltrack`) para que las curvas/rampas/ondas de Velocity del Piano Roll modulen dinámica y brillo del filtro.
 - Volumen, pan, afinación, cutoff/resonancia y envolvente usan CC de alta resolución de
   sfizz. Los valores son efectivos según las reglas de modulación/envolventes de sfizz;
   cambiar la envolvente no reinicia una nota ya disparada.

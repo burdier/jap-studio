@@ -63,6 +63,16 @@ impl Sampler {
             }
         }
     }
+    pub fn update_live_param(&mut self, id: usize) {
+        if let Some(engine) = &mut self.prepared {
+            engine.parameters(&self.params);
+        }
+        if let Some(player) = &self.player
+            && let Some((cc, v)) = elevate::devices::sampler::live_control(&self.params, id)
+        {
+            player.sampler_control(cc, v);
+        }
+    }
     pub fn snapshot(&self) -> Result<SamplerSnapshot, String> {
         Ok(SamplerSnapshot {
             asset: self.asset.clone().ok_or("Carga un sample en Hay Sampler")?,
@@ -112,6 +122,7 @@ impl Sampler {
                 fx,
                 &self.output_config,
             )?);
+            self.update_live();
         }
         if let Some(player) = &self.player {
             player.set_fx_rack(self.fx_rack.clone());

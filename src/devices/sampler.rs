@@ -1,5 +1,5 @@
-//! Contrato headless del sampler. Unidades musicales; sin UI ni motor nativo.
-use crate::{ParameterId, ParameterSpec};
+//! Contrato headless del sampler / Simpler para drums. Unidades musicales; sin UI ni motor nativo.
+use crate::{ParameterId, ParameterSpec, devices::filter::FilterMode};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PlayMode {
@@ -9,10 +9,17 @@ pub enum PlayMode {
 
 #[derive(Clone, Debug)]
 pub struct SamplerParams {
-    values: [f32; 14],
+    values: [f32; 19],
     pub mode: PlayMode,
     pub looped: bool,
     pub filter: bool,
+    pub filter_mode: FilterMode,
+    /// En `false` (modo Drum) cualquier nota MIDI dispara el golpe a su tono original.
+    pub keytrack: bool,
+    /// Invierte la reproducción del sample (`direction=reverse` en SFZ).
+    pub reverse: bool,
+    /// Grupo de corte mutuo dentro de la instancia (choke de hi-hat / golpe único).
+    pub choke: bool,
 }
 
 pub const START: usize = 0;
@@ -29,6 +36,11 @@ pub const SUSTAIN: usize = 10;
 pub const RELEASE: usize = 11;
 pub const GAIN: usize = 12;
 pub const PAN: usize = 13;
+pub const HOLD: usize = 14;
+pub const PITCH_ENV: usize = 15;
+pub const PITCH_DECAY: usize = 16;
+pub const VEL_VOLUME: usize = 17;
+pub const VEL_FILTER: usize = 18;
 
 const fn spec(
     id: usize,
@@ -50,7 +62,7 @@ const fn spec(
     }
 }
 
-pub const PARAMS: [ParameterSpec; 14] = [
+pub const PARAMS: [ParameterSpec; 19] = [
     spec(START, "start", "Inicio", "%", 0., 99.9, 0.),
     spec(END, "end", "Final", "%", 0.1, 100., 100.),
     spec(LOOP_START, "loop_start", "Loop", "%", 0., 99.9, 0.),
@@ -65,6 +77,27 @@ pub const PARAMS: [ParameterSpec; 14] = [
     spec(RELEASE, "release", "Release", "ms", 1., 10000., 50.),
     spec(GAIN, "gain", "Volumen", "dB", -60., 6., -12.),
     spec(PAN, "pan", "Pan", "%", -100., 100., 0.),
+    spec(HOLD, "hold", "Hold", "ms", 0., 5000., 40.),
+    spec(PITCH_ENV, "pitch_env", "Pitch Env", "st", -24., 24., 0.),
+    spec(
+        PITCH_DECAY,
+        "pitch_decay",
+        "Pitch Decay",
+        "ms",
+        1.,
+        2000.,
+        80.,
+    ),
+    spec(VEL_VOLUME, "vel_volume", "Vel → Vol", "%", 0., 100., 80.),
+    spec(
+        VEL_FILTER,
+        "vel_filter",
+        "Vel → Cut",
+        "ct",
+        -4800.,
+        4800.,
+        0.,
+    ),
 ];
 
 impl Default for SamplerParams {
@@ -73,7 +106,11 @@ impl Default for SamplerParams {
             values: PARAMS.map(|s| s.default),
             mode: PlayMode::Classic,
             looped: false,
-            filter: false,
+            filter: true,
+            filter_mode: FilterMode::LowPass,
+            keytrack: true,
+            reverse: false,
+            choke: false,
         }
     }
 }
@@ -122,13 +159,39 @@ impl SamplerParams {
             s.min + f * (s.max - s.min)
         }
     }
+
+    /// Configura el Simpler para programar baterías de un toque (1-Shot + AHD + Pitch fijo + Choke).
+    pub fn apply_drum_preset(&mut self) {
+        self.mode = PlayMode::OneShot;
+        self.looped = false;
+        self.keytrack = false;
+        self.choke = true;
+        self.filter = true;
+        self.set(VOICES, 4.);
+        self.set(ATTACK, 0.5);
+        self.set(HOLD, 35.);
+        self.set(DECAY, 320.);
+        self.set(SUSTAIN, 0.);
+        self.set(RELEASE, 40.);
+        self.set(VEL_VOLUME, 85.);
+    }
 }
 
 /// CC de alta resolución privados del instrumento SFZ. Los cambios no reconstruyen voces.
 pub fn live_control(params: &SamplerParams, id: usize) -> Option<(u8, f32)> {
     if matches!(
         id,
-        TUNE | CUTOFF | RESONANCE | ATTACK | DECAY | SUSTAIN | RELEASE | GAIN | PAN
+        TUNE | CUTOFF
+            | RESONANCE
+            | ATTACK
+            | DECAY
+            | SUSTAIN
+            | RELEASE
+            | GAIN
+            | PAN
+            | HOLD
+            | PITCH_ENV
+            | PITCH_DECAY
     ) {
         Some((80 + id as u8, params.fraction(id)))
     } else {
