@@ -61,10 +61,11 @@ sin cambiar la propiedad de las notas ni el transporte.
 Cada rama conserva nivel, pan, FX y mute propios. Cambiar el nivel de una rama
 no cambia el de sus hermanas. Silenciar una rama deja procesar su voz y sus
 colas con ganancia de salida cero; permite recuperarla sin reconstruirla.
-Desactivar o retirar una rama libera primero solo las notas de esa rama. Si la
-edición estructural requiere un nuevo plan, se prepara y valida antes de
-publicarlo. Las colas de sonido de una rama retirada tienen un límite explícito
-del motor; no se destruye un plugin ni se hace trabajo costoso en el callback.
+Al quitar una rama de los destinos MIDI en vivo se liberan solo sus notas. En
+este primer recorrido, una edición estructural detiene Play y libera todas las
+notas antes de publicar el nuevo plan; todavía no conserva las colas de sonido
+de una rama retirada. La validación ocurre antes de confirmar la edición y no
+se destruye un plugin ni se hace trabajo costoso en el callback.
 
 La UI y Lua describen la misma composición por IDs. Ambas pasan por la misma
 validación antes de confirmar. Guardar un documento musical no implica guardar
@@ -76,8 +77,8 @@ recursos externos ni estado de plugins hasta que esos contratos existan.
   niveles se pueden cambiar por separado.
 - Round robin alterna NoteOn y devuelve NoteOff a la rama original, también con
   notas del mismo pitch repetidas.
-- Una ruta inválida deja intacto el plan activo. Retirar o silenciar una rama
-  no libera las notas de otra.
+- Una ruta inválida deja intacto el plan activo. Desarmar una rama MIDI en vivo
+  no libera las notas de otra; editar la estructura detiene Play.
 - Lua y Track FX muestran y editan el mismo Hilo; las pruebas de audio no
   requieren abrir un dispositivo físico.
 

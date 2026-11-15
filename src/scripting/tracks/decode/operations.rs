@@ -5,7 +5,7 @@ use super::{
 };
 use crate::musical::{
     fx::{FxEdit, FxKind, FxNode},
-    track::{TrackBatchEdit, TrackDevice},
+    track::{HiloMode, TrackBatchEdit, TrackDevice},
 };
 use mlua::{Table, Value};
 use std::collections::BTreeMap;
@@ -56,6 +56,19 @@ fn decode(row: &Table, op: &str) -> Result<TrackBatchEdit, String> {
                 handle: string(row, "handle")?,
                 name: string(row, "name")?,
                 members,
+            }
+        }
+        "hilo.mode" => {
+            keys(row, &["op", "track", "mode"])?;
+            let mode = match string(row, "mode")?.as_str() {
+                "layer" => Some(HiloMode::Layer),
+                "round_robin" => Some(HiloMode::RoundRobin),
+                "off" => None,
+                _ => return Err("mode debe ser layer, round_robin u off".into()),
+            };
+            TrackBatchEdit::Hilo {
+                track: reference(row, "track")?,
+                mode,
             }
         }
         "rename" => {

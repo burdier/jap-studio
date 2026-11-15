@@ -75,6 +75,11 @@ impl DawApp {
             })
             .collect();
         self.tracks = tracks;
+        self.midi_armed_tracks.retain(|id| {
+            self.tracks.iter().any(|track| {
+                track.id == *id && (track.instrument.is_some() || track.hilo.is_some())
+            })
+        });
         // El borrado de una pista retira su instancia; los NoteOff pendientes ya
         // fueron liberados por stop_all antes de publicar el nuevo plan.
         let live_samplers: std::collections::HashSet<_> = self

@@ -5,7 +5,7 @@ use super::super::{
 };
 use crate::musical::track::{
     Track, TrackEdit, TrackId, TrackKind, TrackMix, TrackSnapshot, TrackSnapshotEntry, edit_tracks,
-    validate_track_layout,
+    validate_track_structure,
 };
 use std::collections::BTreeMap;
 
@@ -111,6 +111,7 @@ pub(super) fn apply_edit(
             for id in &selected {
                 let row = index(&candidate.entries, *id)?;
                 if candidate.entries[row].track.parent.is_some()
+                    || candidate.entries[row].track.kind == TrackKind::Group
                     || !candidate.entries[row].track.accepts_clips()
                 {
                     return Err(error(
@@ -148,6 +149,26 @@ pub(super) fn apply_edit(
                 })
                 .collect();
             handles.insert(handle.clone(), id);
+        }
+        TrackBatchEdit::Hilo { track, mode } => {
+            let id = reference(track, &handles)?;
+            let row = index(&candidate.entries, id)?;
+            if candidate.entries[row].track.kind != TrackKind::Group {
+                return Err(error(
+                    "estructura_invalida",
+                    "Hilo requiere una pista grupo",
+                ));
+            }
+            if let Some(mode) = mode {
+                let tracks: Vec<_> = candidate
+                    .entries
+                    .iter()
+                    .map(|entry| entry.track.clone())
+                    .collect();
+                crate::musical::hilo::HiloPlan::compile(&tracks, id, *mode)
+                    .map_err(|message| error("estructura_invalida", message))?;
+            }
+            candidate.entries[row].track.hilo = *mode;
         }
         TrackBatchEdit::Rename { track, name: label } => {
             name(label)?;
@@ -234,11 +255,12 @@ pub(super) fn apply_edit(
                 .map_err(|e| error("estructura_invalida", e))?;
         }
     }
-    validate_track_layout(
-        candidate
+    validate_track_structure(
+        &candidate
             .entries
             .iter()
-            .map(|entry| (entry.track.id, entry.track.kind, entry.track.parent)),
+            .map(|entry| entry.track.clone())
+            .collect::<Vec<_>>(),
     )
     .map_err(|e| error("estructura_invalida", e))?;
     validate_instruments(&candidate.entries)?;

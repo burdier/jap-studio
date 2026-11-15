@@ -162,7 +162,7 @@ impl DawApp {
             .iter()
             .find(|t| t.id == target.track)
             .ok_or("Pista inexistente")?;
-        if !track.accepts_clips() {
+        if track.kind == elevate::musical::track::TrackKind::Group || !track.accepts_clips() {
             return Err("Los buses de grupo aún no procesan FX".into());
         }
         if target.node.is_some_and(|id| track.chain.find(id).is_none()) {

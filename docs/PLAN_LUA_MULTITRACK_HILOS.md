@@ -415,6 +415,13 @@ plugins reales; mantener visibles los límites de exportación y estado aún pen
 **Valor:** una pista puede disparar dos instrumentos en capas, con efectos y nivel por
 rama, usando un Hilo definido desde Lua o desde el árbol existente.
 
+**Incremento integrado:** el grupo de pistas funciona como primer contenedor Hilo:
+sus hijas son ramas con nivel/FX propios y un clip del grupo puede usar capas o
+round robin. Cada NoteOff vuelve a la rama elegida por su NoteOn. Un lote Lua
+puede cambiar el modo con `hilo.mode`. El plan fijo usa puertos tipados de eventos
+y audio; Track FX muestra sus ramas con nivel/mute. Quedan el grafo editable de
+puertos y la creación de instancias desde Lua.
+
 **Puntos de entrada:** `src/musical/fx/`, `src/musical/track.rs`,
 `src/audio/effects/`, `src/ui/fx/`, `src/scripting/` y motor de PR-04 a PR-06.
 
@@ -422,9 +429,12 @@ rama, usando un Hilo definido desde Lua o desde el árbol existente.
 
 - [ ] Ampliar la composición actual para alojar eventos, instrumentos y audio en
   puertos tipados. Conservar IDs y semántica de las cadenas FX existentes.
+- [x] Compilar y validar la ruta fija Events → Instrument → Audio de las hijas.
+- [x] Implementar el primer recorrido de ramificación de eventos sobre pistas hijas.
 - [ ] Implementar ramificación de eventos, procesamiento por rama y suma de salidas.
   Diferenciar una rama de audio de una rama que contiene un instrumento.
 - [ ] Exponer la misma composición en Lua y en Track FX, con controles de nivel/bypass.
+- [x] Exponer el modo en lotes Lua y las ramas en Track FX con nivel/mute de pista.
 - [ ] Compilar las dependencias y buffers fuera del callback. Inicialmente ejecutar
   el plan de forma secuencial y rechazar conexiones incompatibles o ciclos.
 - [ ] Definir eliminación/bypass de ramas con notas activas y preservar colas de sonido

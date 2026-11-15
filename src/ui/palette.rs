@@ -313,9 +313,8 @@ impl DawApp {
             self.status_message = "Pista inválida".into();
             return;
         }
-        if !self.track_accepts_clips(track) {
-            self.status_message =
-                "El grupo recibe sus pistas hijas; no admite un instrumento MIDI directo".into();
+        if self.tracks[track].kind == elevate::musical::track::TrackKind::Group {
+            self.status_message = "Añade instrumentos a las pistas hijas del Hilo".into();
             return;
         }
         if entry.id == "instrument.sampler" {

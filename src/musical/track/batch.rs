@@ -1,5 +1,5 @@
 //! Plan privado de edición: ninguna operación modifica la sesión antes de validar todo.
-use super::{TrackId, TrackSnapshot};
+use super::{HiloMode, TrackId, TrackSnapshot};
 use crate::musical::fx::FxEdit;
 use std::{collections::BTreeMap, fmt};
 
@@ -25,6 +25,10 @@ pub enum TrackBatchEdit {
         handle: String,
         name: String,
         members: Vec<TrackRef>,
+    },
+    Hilo {
+        track: TrackRef,
+        mode: Option<HiloMode>,
     },
     Rename {
         track: TrackRef,
@@ -61,6 +65,7 @@ impl TrackBatchEdit {
         match self {
             Self::InsertAudio { .. } => "insert_audio",
             Self::Group { .. } => "group",
+            Self::Hilo { .. } => "hilo.mode",
             Self::Rename { .. } => "rename",
             Self::Move { .. } => "move",
             Self::Mute { .. } => "mute",

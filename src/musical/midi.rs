@@ -5,8 +5,8 @@
 //! si el cliente activo cambia mientras hay notas pulsadas, el servidor emite
 //! automáticamente los `NoteOff` al cliente anterior para que ningún instrumento
 //! o secuenciador se quede colgado con el MIDI ni con notas fantasma.
-use super::model::InstrumentId;
-use std::collections::HashSet;
+use super::{model::InstrumentId, track::HiloMode};
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MidiMessage {
@@ -90,8 +90,11 @@ pub struct RoutedMidi {
 /// (instrumentos, secuenciador).
 #[derive(Debug, Default)]
 pub struct MidiServer {
-    active_target: Option<MidiTarget>,
+    active_targets: Vec<MidiTarget>,
     held: HashSet<(MidiTarget, u8)>,
+    mode: HiloMode,
+    next_branch: usize,
+    round_robin_owners: HashMap<u8, Vec<Option<MidiTarget>>>,
     /// NoteOff físico pendiente después de liberar una nota al cambiar de foco.
     released_on_focus: HashSet<u8>,
 }
@@ -99,41 +102,86 @@ pub struct MidiServer {
 impl MidiServer {
     pub fn new(initial: Option<MidiTarget>) -> Self {
         Self {
-            active_target: initial,
+            active_targets: initial.into_iter().collect(),
             held: HashSet::new(),
+            mode: HiloMode::Layer,
+            next_branch: 0,
+            round_robin_owners: HashMap::new(),
             released_on_focus: HashSet::new(),
         }
     }
 
     pub fn active_target(&self) -> Option<MidiTarget> {
-        self.active_target
+        self.active_targets.first().copied()
+    }
+
+    pub fn active_targets(&self) -> &[MidiTarget] {
+        &self.active_targets
     }
 
     /// Cambia el cliente suscrito a la entrada MIDI. Si el cliente anterior tenía
     /// notas sostenidas, devuelve los `NoteOff` dirigidos a ese cliente anterior.
     pub fn focus(&mut self, target: Option<MidiTarget>) -> Vec<RoutedMidi> {
-        if self.active_target == target {
+        self.focus_targets_mode(target, HiloMode::Layer)
+    }
+
+    /// Cambia el reparto de un Hilo. Una edición del modo libera las notas activas
+    /// antes de publicar la nueva ruta, evitando NoteOff en otra rama.
+    pub fn focus_targets_mode(
+        &mut self,
+        targets: impl IntoIterator<Item = MidiTarget>,
+        mode: HiloMode,
+    ) -> Vec<RoutedMidi> {
+        let changed = self.mode != mode;
+        let mut released = if changed {
+            self.release_all()
+        } else {
+            Vec::new()
+        };
+        self.mode = mode;
+        if changed {
+            self.next_branch = 0;
+        }
+        released.extend(self.focus_targets(targets));
+        released
+    }
+
+    /// Suscribe uno o varios clientes simultáneamente (ej. dos pistas armadas con MIDI).
+    /// Libera únicamente las notas sostenidas por clientes que dejan de estar activos.
+    pub fn focus_targets(
+        &mut self,
+        targets: impl IntoIterator<Item = MidiTarget>,
+    ) -> Vec<RoutedMidi> {
+        let mut next = Vec::new();
+        for target in targets {
+            if !next.contains(&target) {
+                next.push(target);
+            }
+        }
+        if self.active_targets == next {
             return Vec::new();
         }
-        let released = match self.active_target {
-            Some(previous) => self.release_target(previous),
-            None => Vec::new(),
-        };
-        self.released_on_focus
-            .extend(released.iter().filter_map(|event| {
-                if let MidiMessage::NoteOff { note } = event.message {
-                    Some(note)
-                } else {
-                    None
-                }
-            }));
-        self.active_target = target;
+        self.next_branch = 0;
+        let mut released = Vec::new();
+        for &previous in &self.active_targets.clone() {
+            if !next.contains(&previous) {
+                released.extend(self.release_target(previous));
+            }
+        }
+        for event in &released {
+            if let MidiMessage::NoteOff { note } = event.message
+                && !self.held.iter().any(|&(_, held_note)| held_note == note)
+            {
+                self.released_on_focus.insert(note);
+            }
+        }
+        self.active_targets = next;
         released
     }
 
     /// Publica mensajes en el servidor.
-    /// - `NoteOn` va al cliente actualmente enfocado y queda registrado a su nombre.
-    /// - `NoteOff` va al cliente que inició esa nota (aunque el foco haya cambiado),
+    /// - `NoteOn` va a todos los clientes activos y queda registrado a su nombre.
+    /// - `NoteOff` va a los clientes que iniciaron esa nota (aunque el foco haya cambiado),
     ///   evitando que el instrumento anterior se quede con la nota pegada.
     /// - `AllNotesOff` libera todos los clientes con notas activas.
     pub fn publish(&mut self, messages: impl IntoIterator<Item = MidiMessage>) -> Vec<RoutedMidi> {
@@ -141,26 +189,63 @@ impl MidiServer {
         for message in messages {
             match message {
                 MidiMessage::NoteOn { note, velocity } => {
-                    if let Some(target) = self.active_target {
+                    if !self.active_targets.is_empty() {
                         self.released_on_focus.remove(&note);
-                        self.held.insert((target, note));
-                        routed.push(RoutedMidi {
-                            target,
-                            message: MidiMessage::NoteOn { note, velocity },
-                        });
+                        let targets: Vec<_> = if self.mode == HiloMode::RoundRobin {
+                            let target =
+                                self.active_targets[self.next_branch % self.active_targets.len()];
+                            self.next_branch = self.next_branch.wrapping_add(1);
+                            self.round_robin_owners
+                                .entry(note)
+                                .or_default()
+                                .push(Some(target));
+                            vec![target]
+                        } else {
+                            self.active_targets.clone()
+                        };
+                        for target in targets {
+                            self.held.insert((target, note));
+                            routed.push(RoutedMidi {
+                                target,
+                                message: MidiMessage::NoteOn { note, velocity },
+                            });
+                        }
                     }
                 }
                 MidiMessage::NoteOff { note } => {
-                    let owners: Vec<MidiTarget> = self
+                    if self.mode == HiloMode::RoundRobin {
+                        if let Some(owners) = self.round_robin_owners.get_mut(&note)
+                            && let Some(slot) = owners.pop()
+                        {
+                            if let Some(target) = slot
+                                && !owners.contains(&Some(target))
+                            {
+                                self.held.remove(&(target, note));
+                                routed.push(RoutedMidi {
+                                    target,
+                                    message: MidiMessage::NoteOff { note },
+                                });
+                            }
+                            continue;
+                        }
+                        continue;
+                    }
+                    let mut owners: Vec<MidiTarget> = self
                         .held
                         .iter()
                         .filter_map(|&(target, held_note)| (held_note == note).then_some(target))
                         .collect();
+                    owners.sort_by_key(|target| {
+                        self.active_targets
+                            .iter()
+                            .position(|t| t == target)
+                            .unwrap_or(usize::MAX)
+                    });
                     if owners.is_empty() {
                         if self.released_on_focus.remove(&note) {
                             continue;
                         }
-                        if let Some(target) = self.active_target {
+                        for &target in &self.active_targets {
                             routed.push(RoutedMidi {
                                 target,
                                 message: MidiMessage::NoteOff { note },
@@ -177,7 +262,7 @@ impl MidiServer {
                     }
                 }
                 MidiMessage::ControlChange { cc, value } => {
-                    if let Some(target) = self.active_target {
+                    for &target in &self.active_targets {
                         routed.push(RoutedMidi {
                             target,
                             message: MidiMessage::ControlChange { cc, value },
@@ -185,7 +270,7 @@ impl MidiServer {
                     }
                 }
                 MidiMessage::PitchBend { bend } => {
-                    if let Some(target) = self.active_target {
+                    for &target in &self.active_targets {
                         routed.push(RoutedMidi {
                             target,
                             message: MidiMessage::PitchBend { bend },
@@ -193,7 +278,7 @@ impl MidiServer {
                     }
                 }
                 MidiMessage::ProgramChange { program } => {
-                    if let Some(target) = self.active_target {
+                    for &target in &self.active_targets {
                         routed.push(RoutedMidi {
                             target,
                             message: MidiMessage::ProgramChange { program },
@@ -210,6 +295,13 @@ impl MidiServer {
 
     /// Libera todas las notas sostenidas de un cliente específico.
     pub fn release_target(&mut self, target: MidiTarget) -> Vec<RoutedMidi> {
+        for owners in self.round_robin_owners.values_mut() {
+            for owner in owners {
+                if *owner == Some(target) {
+                    *owner = None;
+                }
+            }
+        }
         let mut notes: Vec<u8> = self
             .held
             .iter()
@@ -230,6 +322,7 @@ impl MidiServer {
 
     /// Libera todas las notas sostenidas de todos los clientes registrados.
     pub fn release_all(&mut self) -> Vec<RoutedMidi> {
+        self.round_robin_owners.clear();
         let mut entries: Vec<(MidiTarget, u8)> = self.held.drain().collect();
         entries.sort_by_key(|&(_, note)| note);
         self.released_on_focus
@@ -247,6 +340,132 @@ impl MidiServer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn round_robin_releases_the_branch_that_received_each_press() {
+        let a = MidiTarget::Instrument(InstrumentId(41));
+        let b = MidiTarget::Instrument(InstrumentId(42));
+        let mut server = MidiServer::new(None);
+        server.focus_targets_mode([a, b], HiloMode::RoundRobin);
+        assert_eq!(
+            server.publish([MidiMessage::NoteOn {
+                note: 60,
+                velocity: 100
+            }])[0]
+                .target,
+            a
+        );
+        assert_eq!(
+            server.publish([MidiMessage::NoteOn {
+                note: 60,
+                velocity: 100
+            }])[0]
+                .target,
+            b
+        );
+        assert_eq!(
+            server.publish([MidiMessage::NoteOff { note: 60 }])[0].target,
+            b
+        );
+        assert_eq!(
+            server.publish([MidiMessage::NoteOff { note: 60 }])[0].target,
+            a
+        );
+        assert!(server.release_all().is_empty());
+    }
+
+    #[test]
+    fn round_robin_repeated_pitch_waits_for_last_press_on_the_same_branch() {
+        let a = MidiTarget::Instrument(InstrumentId(41));
+        let b = MidiTarget::Instrument(InstrumentId(42));
+        let mut server = MidiServer::new(None);
+        server.focus_targets_mode([a, b], HiloMode::RoundRobin);
+        for _ in 0..3 {
+            server.publish([MidiMessage::NoteOn {
+                note: 60,
+                velocity: 100,
+            }]);
+        }
+        assert!(
+            server
+                .publish([MidiMessage::NoteOff { note: 60 }])
+                .is_empty()
+        );
+        assert_eq!(
+            server.publish([MidiMessage::NoteOff { note: 60 }])[0].target,
+            b
+        );
+        assert_eq!(
+            server.publish([MidiMessage::NoteOff { note: 60 }])[0].target,
+            a
+        );
+        assert!(server.release_all().is_empty());
+    }
+
+    #[test]
+    fn removing_one_round_robin_branch_keeps_the_other_note_held() {
+        let a = MidiTarget::Instrument(InstrumentId(41));
+        let b = MidiTarget::Instrument(InstrumentId(42));
+        let mut server = MidiServer::new(None);
+        server.focus_targets_mode([a, b], HiloMode::RoundRobin);
+        server.publish([MidiMessage::NoteOn {
+            note: 60,
+            velocity: 100,
+        }]);
+        server.publish([MidiMessage::NoteOn {
+            note: 62,
+            velocity: 100,
+        }]);
+        assert_eq!(
+            server.focus_targets_mode([b], HiloMode::RoundRobin),
+            vec![RoutedMidi {
+                target: a,
+                message: MidiMessage::NoteOff { note: 60 },
+            }]
+        );
+        assert_eq!(
+            server.publish([MidiMessage::NoteOff { note: 62 }])[0].target,
+            b
+        );
+        assert!(
+            server
+                .publish([MidiMessage::NoteOff { note: 60 }])
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn late_release_of_removed_branch_does_not_release_same_pitch_on_another() {
+        let a = MidiTarget::Instrument(InstrumentId(41));
+        let b = MidiTarget::Instrument(InstrumentId(42));
+        let mut server = MidiServer::new(None);
+        server.focus_targets_mode([a, b], HiloMode::RoundRobin);
+        for _ in 0..2 {
+            server.publish([MidiMessage::NoteOn {
+                note: 60,
+                velocity: 100,
+            }]);
+        }
+        assert_eq!(
+            server.focus_targets_mode([a], HiloMode::RoundRobin),
+            vec![RoutedMidi {
+                target: b,
+                message: MidiMessage::NoteOff { note: 60 },
+            }]
+        );
+        assert!(
+            server
+                .publish([MidiMessage::NoteOff { note: 60 }])
+                .is_empty()
+        );
+        assert_eq!(
+            server.publish([MidiMessage::NoteOff { note: 60 }]),
+            vec![RoutedMidi {
+                target: a,
+                message: MidiMessage::NoteOff { note: 60 },
+            }]
+        );
+    }
 
     #[test]
     fn switching_focus_releases_notes_on_the_previous_client() {
@@ -371,6 +590,55 @@ mod tests {
         assert_eq!(
             MidiMessage::from_bytes(&[0xE0, 0x00, 0x40]),
             Some(MidiMessage::PitchBend { bend: 0 })
+        );
+    }
+
+    #[test]
+    fn two_active_targets_receive_notes_and_partial_unfocus_releases_only_removed() {
+        let a = MidiTarget::Instrument(InstrumentId(1));
+        let b = MidiTarget::Instrument(InstrumentId(2));
+        let mut server = MidiServer::new(None);
+        assert!(server.focus_targets([a, b]).is_empty());
+        assert_eq!(server.active_targets(), &[a, b]);
+
+        let on = server.publish([MidiMessage::NoteOn {
+            note: 60,
+            velocity: 100,
+        }]);
+        assert_eq!(
+            on,
+            vec![
+                RoutedMidi {
+                    target: a,
+                    message: MidiMessage::NoteOn {
+                        note: 60,
+                        velocity: 100
+                    }
+                },
+                RoutedMidi {
+                    target: b,
+                    message: MidiMessage::NoteOn {
+                        note: 60,
+                        velocity: 100
+                    }
+                },
+            ]
+        );
+
+        let handoff = server.focus_targets([b]);
+        assert_eq!(
+            handoff,
+            vec![RoutedMidi {
+                target: a,
+                message: MidiMessage::NoteOff { note: 60 }
+            }]
+        );
+        assert_eq!(
+            server.publish([MidiMessage::NoteOff { note: 60 }]),
+            vec![RoutedMidi {
+                target: b,
+                message: MidiMessage::NoteOff { note: 60 }
+            }]
         );
     }
 }

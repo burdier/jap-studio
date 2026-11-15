@@ -31,6 +31,10 @@ impl DawApp {
         if track >= self.tracks.len() {
             return;
         }
+        if self.tracks[track].kind == TrackKind::Group {
+            self.status_message = "Añade el sampler a una pista hija del Hilo".into();
+            return;
+        }
         self.stop_all();
         let id = self
             .tracks

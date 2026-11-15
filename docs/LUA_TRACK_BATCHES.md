@@ -1,7 +1,7 @@
 # Lotes de pistas desde Lua · contrato de PR-02
 
-Estado: **implementado en PR-02**. `track.script` ejecuta un archivo Lua y
-`track.template.two` ejecuta la plantilla incluida. Ambos confirman el lote
+Estado: **implementado en PR-02**. `track.script` ejecuta un archivo Lua;
+`track.template.two` y `track.template.hilo` ejecutan plantillas incluidas. Confirman el lote
 mediante el mismo ejecutor headless. [Plan](PLAN_LUA_MULTITRACK_HILOS.md#pr-02--automatizar-pistas-desde-lua).
 
 ## Uso
@@ -28,7 +28,8 @@ return {
 }
 ```
 
-También hay `group` (`handle`, `name`, `members`), `rename` (`track`, `name`),
+También hay `group` (`handle`, `name`, `members`), `hilo.mode` (`track`, `mode`
+igual a `layer`, `round_robin` u `off`), `rename` (`track`, `name`),
 `move` (`track`, `after`), `mute` y `solo` (`track`, `value` booleano). Las
 operaciones FX admitidas son `fx.insert_utility`, `fx.insert_serial`,
 `fx.insert_parallel`, `fx.rename`, `fx.toggle`, `fx.remove`, `fx.duplicate`,
@@ -42,7 +43,7 @@ confirmar; la confirmación fallida no devuelve IDs.
 
 El controlador captura en el hilo de la sesión una copia inmutable y coherente de:
 
-- `TrackId`, orden, nombre, `TrackKind`, padre, instrumento, mute y solo de cada pista;
+- `TrackId`, orden, nombre, `TrackKind`, padre, instrumento, `hilo_mode`, mute y solo de cada pista;
 - nivel de fader y panorama de la misma fila (`track_levels` y `track_pans`, enteros
   de 0 a 100; 75 es unidad de fader y 50 es panorama central);
 - árbol FX por pista, con `FxId`, tipo, posición, nombre, bypass, identidad de
@@ -70,10 +71,22 @@ Un lote ordenado puede pedir:
 | Mover pista | Destino existente, dentro del mismo grupo o nivel; respeta el orden de hijos contiguos |
 | Fijar mute, solo, nivel o panorama | Valores absolutos; nivel y panorama enteros de 0 a 100 |
 | Editar FX de una pista | Variantes soportadas por `FxEdit` sobre cadenas de Hay Utility y contenedores serie/paralelo; valores de parámetros validados por el descriptor |
+| Configurar Hilo | `hilo.mode` solo en un grupo; las pistas hijas con instrumento son sus ramas. El lote no instancia instrumentos nuevos |
 
 `group` usa un handle y al menos dos miembros raíz existentes o creados antes
 en el lote. Comparte `TrackEdit::Group` y la validación de un nivel de grupos;
 no expone una escritura arbitraria de `parent`.
+
+Para un grupo creado dentro del mismo lote:
+
+```lua
+{ op = "group", handle = "hilo", name = "Hilo", members = { "a", "b" } },
+{ op = "hilo.mode", track = "hilo", mode = "round_robin" },
+```
+
+`:track.template.hilo` agrupa las dos primeras pistas raíz con instrumentos
+distintos, configura round robin e inserta Hay Utility en cada rama. Los
+instrumentos deben estar cargados antes de ejecutar la plantilla.
 
 No se aceptan índices Lua como IDs, nombres como referencias, mutación libre de
 tablas `Track`/`FxNode`, borrado o duplicación de pistas, grabación, buses, estado

@@ -1,8 +1,59 @@
 //! Operaciones de pistas compartidas por menú, catálogo y comandos.
 use super::{CenterView, DawApp, VimMode};
-use elevate::musical::track::{TrackEdit, TrackKind, edit_tracks};
+use elevate::musical::track::{HiloMode, TrackEdit, TrackKind, edit_tracks};
 
 impl DawApp {
+    pub(in crate::ui) fn set_hilo_mode(&mut self, mode: Option<HiloMode>) {
+        let Some(group) = self.tracks.get(self.cursor_row) else {
+            return;
+        };
+        if group.kind != TrackKind::Group {
+            self.status_message = "Selecciona un grupo para configurar el Hilo".into();
+            return;
+        }
+        if mode.is_none()
+            && (self
+                .timeline
+                .midi_clip
+                .iter()
+                .chain(&self.timeline.other_midi_clips)
+                .any(|clip| clip.track == self.cursor_row)
+                || self
+                    .timeline
+                    .clip
+                    .iter()
+                    .chain(&self.timeline.other_audio_clips)
+                    .any(|clip| clip.track == self.cursor_row))
+        {
+            self.status_message = "Retira los clips del Hilo antes de desactivarlo".into();
+            return;
+        }
+        if group.hilo == mode {
+            return;
+        }
+        if let Some(mode) = mode {
+            if let Err(error) =
+                elevate::musical::hilo::HiloPlan::compile(&self.tracks, group.id, mode)
+            {
+                self.status_message = error;
+                return;
+            }
+        }
+        self.stop_all();
+        let group = &mut self.tracks[self.cursor_row];
+        group.hilo = mode;
+        let name = group.name.to_string();
+        self.track_revision = self.track_revision.wrapping_add(1);
+        self.sync_midi_focus();
+        self.status_message = format!(
+            "{name}: {}",
+            match mode {
+                Some(HiloMode::Layer) => "Hilo en capas",
+                Some(HiloMode::RoundRobin) => "Hilo round robin",
+                None => "Hilo desactivado",
+            }
+        );
+    }
     pub(in crate::ui) fn track_selected(&self, index: usize) -> bool {
         if self.selected_tracks.is_empty() {
             index == self.cursor_row
@@ -154,7 +205,12 @@ impl DawApp {
                 .iter()
                 .filter(|child| !child.muted && !t.muted)
                 .count();
-            format!("{} [{active}/{}]", t.name, children.len())
+            let mode = match t.hilo {
+                Some(HiloMode::Layer) => " · capas",
+                Some(HiloMode::RoundRobin) => " · RR",
+                None => "",
+            };
+            format!("{} [{active}/{}]{mode}", t.name, children.len())
         } else {
             format!("{}{}", if t.parent.is_some() { "↳ " } else { "" }, t.name)
         }

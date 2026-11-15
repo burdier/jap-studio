@@ -14,12 +14,12 @@ impl DawApp {
         let result = (|| {
             let mut options =
                 ExportOptions::parse_with_defaults(command, &self.settings.export.saved)?;
-            // Elegir una cabecera de grupo exporta sus pistas hijas; el grupo no aloja clips.
+            // Elegir una cabecera de grupo incluye también sus pistas hijas.
             if !options.tracks.is_empty() {
                 let selected = options.tracks.clone();
                 for index in selected {
                     if let Some(group) = self.tracks.get(index)
-                        && !group.accepts_clips()
+                        && group.kind == elevate::musical::track::TrackKind::Group
                     {
                         for (child, track) in self.tracks.iter().enumerate() {
                             if track.parent == Some(group.id) && !options.tracks.contains(&child) {

@@ -4,17 +4,14 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
 
 ## Disponible
 
-- **PR-07, tercer incremento (audio):** Play prepara una voz por pista hija de
-  un Hilo y reproduce los clips MIDI del grupo en capas o round robin en el
-  transporte común. Cada rama conserva su FX, nivel y pan; la salida se suma
-  con los clips WAV. Una prueba audible verifica dos instrumentos en capas y
-  que silenciar uno deja sonar al otro. La edición desde UI y Lua sigue pendiente.
-
-- **PR-07, segundo incremento (modelo interno):** un grupo puede guardar un
-  modo Hilo de capas o round robin. El plan valida ramas tipadas con dos
-  instrumentos distintos; los clips del grupo se preparan por frame y cada
-  NoteOff regresa a la rama del NoteOn. La reproducción y la edición desde UI
-  quedan para los siguientes commits.
+- **PR-07, ruta fija de Hilos:** dos pistas hijas con instrumentos distintos
+  pueden recibir los clips MIDI del grupo en capas o round robin. Menú, comandos
+  `:hilo.layer`/`:hilo.rr` y `:track.template.hilo` configuran el modo; Track FX
+  muestra cada rama y permite seleccionar, silenciar o cambiar su nivel. El botón
+  MIDI del grupo reparte notas en vivo y devuelve cada NoteOff a su rama. La
+  plantilla Lua reutiliza dos instrumentos cargados y añade Hay Utility por
+  rama. Crear instancias desde Lua, editar un grafo arbitrario y conservar colas
+  de plugins durante una edición estructural siguen pendientes.
 
 - **MIDI en vivo durante Play:** el piano SoundFont y Hay Sampler se suman al WAV
   en el motor compartido, incluso si su pista no tiene clip MIDI. Tocar una nota

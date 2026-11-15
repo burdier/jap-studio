@@ -104,7 +104,7 @@ impl DawApp {
             return;
         }
         if let Some(track) = target.and_then(|id| self.tracks.iter().find(|track| track.id == id)) {
-            if !track.accepts_clips() {
+            if track.kind == elevate::musical::track::TrackKind::Group || !track.accepts_clips() {
                 self.status_message = "Selecciona una pista MIDI para el instrumento".into();
                 return;
             }

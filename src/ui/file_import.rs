@@ -75,7 +75,9 @@ impl DawApp {
                                     clip.notes().len(),
                                     clip.duration_beats()
                                 );
-                                assign_instrument(&mut this.tracks, track, instrument_id);
+                                if this.tracks[track].hilo.is_none() {
+                                    assign_instrument(&mut this.tracks, track, instrument_id);
+                                }
                                 this.timeline.insert_midi_clip(clip);
                             }
                             ImportedFile::Audio(file) => {

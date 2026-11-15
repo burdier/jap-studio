@@ -623,6 +623,14 @@ pub const CATALOG: &[CatalogEntry] = &[
         action: CatalogAction::Invoke("track.template.two"),
     },
     CatalogEntry {
+        id: "action.track.template.hilo",
+        kind: EntryKind::Action,
+        name: "Lua · plantilla de Hilo round robin",
+        summary: "Agrupar dos instrumentos existentes y añadir Utility por rama",
+        keywords: &["lua", "hilo", "round robin", "instrumentos", "utility"],
+        action: CatalogAction::Invoke("track.template.hilo"),
+    },
+    CatalogEntry {
         id: "action.midi.quantize",
         kind: EntryKind::Action,
         name: "Cuantizar notas…",

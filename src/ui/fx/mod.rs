@@ -32,6 +32,16 @@ pub(super) enum FxEvent {
     Action(FxTarget, &'static str),
     Edit(TrackId, FxEdit),
     Menu(FxTarget, Point<Pixels>),
+    BranchSelect(TrackId),
+    BranchMute(TrackId),
+    BranchLevel(TrackId, i32),
+}
+#[derive(Clone, PartialEq)]
+struct HiloBranchView {
+    id: TrackId,
+    name: String,
+    level: i32,
+    muted: bool,
 }
 #[derive(Default)]
 struct Presentation {
@@ -59,6 +69,7 @@ pub(super) struct FxTree {
     chain: FxChain,
     instrument: Option<InstrumentId>,
     instrument_name: String,
+    hilo_branches: Vec<HiloBranchView>,
     views: HashMap<TrackId, Presentation>,
     rows: Vec<Row>,
     suspended: bool,
@@ -75,6 +86,7 @@ impl FxTree {
             chain: FxChain::new(),
             instrument: None,
             instrument_name: String::new(),
+            hilo_branches: Vec::new(),
             views: HashMap::new(),
             rows: Vec::new(),
             suspended: false,

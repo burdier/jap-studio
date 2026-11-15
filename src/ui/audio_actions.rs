@@ -6,7 +6,7 @@ use elevate::musical::{
     midi::{MidiMessage, MidiTarget, RoutedMidi},
     midi_map::{MappedEffect, MidiAction, MidiBindTarget},
     pitch::note_name,
-    track::{TrackKind, assign_instrument, effective_mix},
+    track::{HiloMode, TrackKind, assign_instrument, effective_mix},
 };
 
 impl DawApp {
@@ -42,6 +42,36 @@ impl DawApp {
         }
         self.cursor_row = track;
         self.toggle_midi_record();
+    }
+
+    pub(super) fn toggle_track_midi(&mut self, track: usize) {
+        let Some(entry) = self.tracks.get(track) else {
+            return;
+        };
+        if entry.instrument.is_none() && entry.hilo.is_none() {
+            self.status_message =
+                "Asigna un instrumento o configura un Hilo para activar MIDI".into();
+            return;
+        }
+        if entry.hilo.is_some()
+            && !self
+                .tracks
+                .iter()
+                .any(|child| child.parent == Some(entry.id) && child.instrument.is_some())
+        {
+            self.status_message = "Añade instrumentos a las pistas hijas del Hilo".into();
+            return;
+        }
+        let id = entry.id;
+        let name = entry.name.to_string();
+        let enabled = if self.midi_armed_tracks.insert(id) {
+            true
+        } else {
+            self.midi_armed_tracks.remove(&id);
+            false
+        };
+        self.sync_midi_focus();
+        self.status_message = format!("{name}: MIDI {}", if enabled { "ON" } else { "OFF" });
     }
 
     pub(super) fn set_track_pan(&mut self, track: usize, value: i32) {
@@ -99,15 +129,50 @@ impl DawApp {
                 self.activate_vst(id);
             }
         }
-        let target = match self.center_view {
-            CenterView::Session => Some(MidiTarget::Sequencer),
-            CenterView::Arrangement | CenterView::Mixer => self
-                .tracks
-                .get(self.cursor_row)
-                .and_then(|track| track.instrument)
-                .map(MidiTarget::Instrument),
+        let (targets, mode) = match self.center_view {
+            CenterView::Session => (vec![MidiTarget::Sequencer], HiloMode::Layer),
+            CenterView::Arrangement | CenterView::Mixer => {
+                let armed: Vec<_> = self
+                    .tracks
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, track)| self.midi_armed_tracks.contains(&track.id))
+                    .map(|(index, _)| index)
+                    .collect();
+                let selected = if armed.is_empty() {
+                    vec![self.cursor_row]
+                } else {
+                    armed
+                };
+                let mode = if selected.len() == 1 {
+                    self.tracks
+                        .get(selected[0])
+                        .and_then(|track| track.hilo)
+                        .unwrap_or(HiloMode::Layer)
+                } else {
+                    HiloMode::Layer
+                };
+                let mut targets = Vec::new();
+                for index in selected {
+                    if let Some(track) = self.tracks.get(index) {
+                        if track.hilo.is_some() {
+                            targets.extend(
+                                self.tracks
+                                    .iter()
+                                    .filter(|child| child.parent == Some(track.id))
+                                    .filter_map(|child| {
+                                        child.instrument.map(MidiTarget::Instrument)
+                                    }),
+                            );
+                        } else if let Some(id) = track.instrument {
+                            targets.push(MidiTarget::Instrument(id));
+                        }
+                    }
+                }
+                (targets, mode)
+            }
         };
-        let released = self.midi_server.focus(target);
+        let released = self.midi_server.focus_targets_mode(targets, mode);
         self.dispatch_routed_midi(released);
     }
     pub(super) fn poll_live_midi(&mut self) {
@@ -117,10 +182,7 @@ impl DawApp {
         }
     }
     pub(super) fn focus_midi_instrument(&mut self) {
-        let released = self
-            .midi_server
-            .focus(Some(MidiTarget::Instrument(self.active_instrument_id())));
-        self.dispatch_routed_midi(released);
+        self.sync_midi_focus();
     }
     pub(super) fn midi_target_label(&self) -> &'static str {
         match self.midi_server.active_target() {
@@ -208,7 +270,10 @@ impl DawApp {
             target.label()
         );
     }
-    fn dispatch_routed_midi(&mut self, routed: impl IntoIterator<Item = RoutedMidi>) {
+    pub(in crate::ui) fn dispatch_routed_midi(
+        &mut self,
+        routed: impl IntoIterator<Item = RoutedMidi>,
+    ) {
         for RoutedMidi { target, message } in routed {
             match target {
                 MidiTarget::Instrument(id) if id == self.instrument.id() => match message {
@@ -511,7 +576,9 @@ impl DawApp {
         let note_count = clip.notes().len();
         let duration = clip.duration_beats();
         let id = self.active_instrument_id();
-        assign_instrument(&mut self.tracks, target_track, id);
+        if self.tracks[target_track].hilo.is_none() {
+            assign_instrument(&mut self.tracks, target_track, id);
+        }
         self.timeline.insert_midi_clip(clip);
         self.sync_midi_focus();
         self.status_message = format!(

@@ -94,6 +94,13 @@ impl DawApp {
             .flex()
             .flex_col()
             .overflow_hidden()
+            .capture_any_mouse_down(cx.listener(|this, _, window, cx| {
+                this.workspace_focus.active = crate::ui::workspace_focus::Panel::Fx;
+                if !this.fx.view.read(cx).focus.is_focused(window) {
+                    window.focus(&this.focus_handle, cx);
+                }
+                this.sync_midi_focus();
+            }))
             .child(
                 div().flex_1().min_h_0().child(
                     self.fx
@@ -146,9 +153,11 @@ impl DawApp {
                             .flex_grow_0()
                             .flex_shrink_0()
                     })
-                    .capture_any_mouse_down(cx.listener(|this, _, _, _| {
+                    .capture_any_mouse_down(cx.listener(|this, _, window, cx| {
                         this.workspace_focus.active =
                             crate::ui::workspace_focus::Panel::Arrangement;
+                        window.focus(&this.focus_handle, cx);
+                        this.sync_midi_focus();
                     }))
                     .child(self.render_arrangement(cx)),
             )
@@ -223,12 +232,16 @@ impl DawApp {
                                         ),
                                 )
                             })
-                            .capture_any_mouse_down(cx.listener(move |this, _, _, _| {
+                            .capture_any_mouse_down(cx.listener(move |this, _, window, cx| {
                                 this.workspace_focus.active = if instrument_open {
                                     crate::ui::workspace_focus::Panel::Instrument
                                 } else {
                                     crate::ui::workspace_focus::Panel::PianoRoll
                                 };
+                                if instrument_open {
+                                    window.focus(&this.focus_handle, cx);
+                                    this.sync_midi_focus();
+                                }
                             }))
                             .child(bottom),
                     )

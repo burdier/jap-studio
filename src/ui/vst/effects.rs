@@ -79,7 +79,9 @@ impl DawApp {
             .tracks
             .iter()
             .find(|t| t.id == target.track)
-            .is_none_or(|t| !t.accepts_clips())
+            .is_none_or(|t| {
+                t.kind == elevate::musical::track::TrackKind::Group || !t.accepts_clips()
+            })
         {
             self.status_message =
                 "Selecciona una pista de audio o MIDI; los buses VST3 de grupo están pendientes"

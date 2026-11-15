@@ -1,6 +1,6 @@
 use elevate::{
     musical::track::{
-        DEMO_TRACKS, TrackBatch, TrackBatchEdit, TrackId, TrackRef, TrackSnapshot,
+        DEMO_TRACKS, HiloMode, TrackBatch, TrackBatchEdit, TrackId, TrackRef, TrackSnapshot,
         apply_track_batch,
     },
     project::ProjectDoc,
@@ -9,6 +9,75 @@ use elevate::{
 
 fn origin() -> TrackSnapshot {
     TrackSnapshot::capture(&DEMO_TRACKS[..2], &[75, 75], &[50, 50], 1).unwrap()
+}
+
+#[test]
+fn round_robin_template_groups_existing_instruments() {
+    use elevate::musical::model::InstrumentId;
+    let mut tracks = DEMO_TRACKS[..2].to_vec();
+    tracks[0].instrument = Some(InstrumentId(41));
+    tracks[1].instrument = Some(InstrumentId(42));
+    let before = TrackSnapshot::capture(&tracks, &[75, 75], &[50, 50], 1).unwrap();
+    let source = include_str!("../assets/scripts/tracks/hilo_round_robin.lua");
+    let batch = build_track_batch(source, &before).unwrap();
+    let result = apply_track_batch(&before, &batch).unwrap();
+    let group = result.handles["hilo"];
+    assert_eq!(
+        result.snapshot.get(group).unwrap().track.hilo,
+        Some(HiloMode::RoundRobin)
+    );
+    assert_eq!(
+        result
+            .snapshot
+            .entries
+            .iter()
+            .filter(|entry| entry.track.parent == Some(group) && entry.track.instrument.is_some())
+            .count(),
+        2
+    );
+    assert!(
+        result
+            .snapshot
+            .entries
+            .iter()
+            .filter(|entry| entry.track.parent == Some(group))
+            .all(|entry| entry.track.chain.nodes().len() == 1)
+    );
+    let branches: Vec<_> = result
+        .snapshot
+        .entries
+        .iter()
+        .filter(|entry| entry.track.parent == Some(group))
+        .collect();
+    let first_fx = branches[0].track.chain.nodes()[0].id;
+    let bypass = TrackBatch {
+        origin: result.snapshot.clone(),
+        edits: vec![TrackBatchEdit::Fx {
+            track: TrackRef::Id(branches[0].track.id),
+            edit: elevate::musical::fx::FxEdit::Toggle(first_fx),
+        }],
+    };
+    let bypassed = apply_track_batch(&result.snapshot, &bypass).unwrap();
+    assert!(
+        !bypassed
+            .snapshot
+            .get(branches[0].track.id)
+            .unwrap()
+            .track
+            .chain
+            .nodes()[0]
+            .enabled
+    );
+    assert!(
+        bypassed
+            .snapshot
+            .get(branches[1].track.id)
+            .unwrap()
+            .track
+            .chain
+            .nodes()[0]
+            .enabled
+    );
 }
 
 #[test]

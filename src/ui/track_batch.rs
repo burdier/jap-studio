@@ -28,6 +28,27 @@ impl DawApp {
             .iter()
             .map(|entry| entry.track.clone())
             .collect();
+        for (index, old) in self
+            .tracks
+            .iter()
+            .enumerate()
+            .filter(|(_, old)| old.hilo.is_some())
+        {
+            if tracks
+                .iter()
+                .any(|track| track.id == old.id && track.hilo.is_none())
+                && self
+                    .timeline
+                    .clip
+                    .iter()
+                    .chain(&self.timeline.other_audio_clips)
+                    .any(|clip| clip.track == index)
+            {
+                return Err(
+                    "Lote: retira los clips de audio del Hilo antes de desactivarlo".into(),
+                );
+            }
+        }
 
         // FX que necesitan instancias o tomas de análisis exigen preparación del
         // host; esta versión del lote publica únicamente cambios de cadena Utility.
@@ -81,7 +102,11 @@ impl DawApp {
             .map(|entry| entry.mix.pan)
             .collect();
         let handles = result.handles;
-        let selected = self.selected_tracks.clone();
+        let selected = tracks
+            .iter()
+            .find(|track| track.hilo.is_some() && current.get(track.id).is_none())
+            .map(|track| vec![track.id])
+            .unwrap_or_else(|| self.selected_tracks.clone());
         self.commit_track_plan(
             tracks,
             result.sources,

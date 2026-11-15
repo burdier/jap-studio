@@ -1,24 +1,30 @@
 # Arquitectura del prototipo
 
-## PR-07, tercer incremento: reproducción de Hilos
+## PR-07: primer recorrido de Hilos sobre grupos
 
-`ui/file_playback.rs` compila el plan de cada grupo y entrega sus clips MIDI a
-las pistas hijas con instrumento. `audio/playback/mix.rs` prepara una voz y un
-plan de eventos por rama fuera del callback; el callback procesa cada bus en
-secuencia, aplica FX, nivel y pan de la hija, y suma las salidas con WAV en el
-transporte existente. Una rama de audio conserva sus clips y su bus de pista.
-Si falta un instrumento o falla la preparación de una rama con notas, Play
-rechaza el plan completo. El control visual y Lua quedan para el incremento
-siguiente.
+Un grupo puede elegir `Layer` o `RoundRobin` desde su menú contextual. `musical/hilo`
+compila la ruta fija `Events → Instrument → Audio` con IDs de pista estables;
+valida dos instrumentos distintos antes de publicar un cambio. Sus pistas
+hijas con instrumento son las ramas: cada una conserva su nivel, pan y FX. Un clip
+MIDI en el carril del grupo dispara todas las ramas en capas o alterna cada NoteOn
+por orden temporal; el plan preparado conserva la rama para el NoteOff de esa nota.
+`track.script` acepta `hilo.mode` en un lote validado para grupos existentes o
+creados en ese lote. `ui/file_playback` prepara una voz por hija y `audio/playback/mix` suma sus buses en
+la salida y transporte existentes. `MidiServer` aplica el mismo reparto al tocar
+con el grupo seleccionado o su botón MIDI activado. Cambiar el modo libera notas
+antes de cambiar destinos. Loro guarda el modo del Hilo junto a la pista.
 
-## PR-07, segundo incremento: modelo de Hilo
+Track FX muestra las ramas del grupo y permite seleccionar cada hija, cambiar su
+nivel y silenciarla con los controladores de pista existentes. Al quitar una rama,
+la edición estructural detiene Play y libera sus notas antes de retirar el motor;
+silenciarla mantiene su voz y cola en proceso con ganancia cero. La topología de
+un nivel de grupos no admite ciclos ni conexiones de tipo incompatible.
 
-`musical/hilo.rs` compila las hijas de un grupo como ramas con puertos
-`Events` o `Audio`, IDs estables e instrumentos distintos.
-`musical/arrangement_midi/hilo.rs` prepara fuera del callback la distribución
-`Layer` o `RoundRobin` y conserva la rama elegida para cada NoteOff. El modo
-se guarda en el documento Loro junto al grupo; un grupo Hilo puede contener
-clips MIDI. Todavía falta conectar estos planes con el motor de audio y la UI.
+Este recorrido reutiliza grupos y cadenas FX de sus hijas. Aún faltan
+topologías arbitrarias y creación de instrumentos desde Lua. Un grupo armado junto a otras pistas armadas
+usa el envío normal a todos los destinos; round robin se aplica al seleccionar o
+armar solo ese Hilo. La edición de un clip durante Play requiere detener y volver
+a reproducir para recompilar el plan.
 
 ## PR-06: contexto temporal y propiedad de instrumentos VST3
 

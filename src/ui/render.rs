@@ -273,7 +273,6 @@ impl Render for DawApp {
                 cx.listener(|this, event: &gpui::MouseDownEvent, window, cx| {
                     this.track_delete_pending = false;
                     window.focus(&this.focus_handle, cx);
-                    this.sync_midi_focus();
                     this.cursor_fx.on_mouse_down(event.position);
                     cx.notify();
                 }),

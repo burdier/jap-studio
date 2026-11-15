@@ -75,6 +75,89 @@ impl Render for FxTree {
                         }),
                     ),
             )
+            .when(!self.hilo_branches.is_empty(), |panel| {
+                panel.child(
+                    div()
+                        .px_2()
+                        .pb_2()
+                        .children(self.hilo_branches.iter().map(|branch| {
+                            let id = branch.id;
+                            let muted = branch.muted;
+                            div()
+                                .id(format!("hilo-branch-{}", id.0))
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .py_1()
+                                .px_2()
+                                .border_1()
+                                .border_color(rgb(style.border))
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .min_w_0()
+                                        .cursor_pointer()
+                                        .text_color(rgb(style.text))
+                                        .child(branch.name.clone())
+                                        .on_mouse_down(
+                                            MouseButton::Left,
+                                            cx.listener(move |_, _, _, cx| {
+                                                cx.emit(FxEvent::BranchSelect(id));
+                                                cx.stop_propagation();
+                                            }),
+                                        ),
+                                )
+                                .child(
+                                    div()
+                                        .text_color(rgb(style.muted))
+                                        .child(format!("{}%", branch.level)),
+                                )
+                                .child(
+                                    div()
+                                        .cursor_pointer()
+                                        .text_color(rgb(style.accent))
+                                        .child("−")
+                                        .on_mouse_down(
+                                            MouseButton::Left,
+                                            cx.listener(move |_, _, _, cx| {
+                                                cx.emit(FxEvent::BranchLevel(id, -5));
+                                                cx.stop_propagation();
+                                            }),
+                                        ),
+                                )
+                                .child(
+                                    div()
+                                        .cursor_pointer()
+                                        .text_color(rgb(style.accent))
+                                        .child("+")
+                                        .on_mouse_down(
+                                            MouseButton::Left,
+                                            cx.listener(move |_, _, _, cx| {
+                                                cx.emit(FxEvent::BranchLevel(id, 5));
+                                                cx.stop_propagation();
+                                            }),
+                                        ),
+                                )
+                                .child(
+                                    div()
+                                        .cursor_pointer()
+                                        .text_color(rgb(if muted {
+                                            style.muted
+                                        } else {
+                                            style.text
+                                        }))
+                                        .child(if muted { "OFF" } else { "ON" })
+                                        .on_mouse_down(
+                                            MouseButton::Left,
+                                            cx.listener(move |_, _, _, cx| {
+                                                cx.emit(FxEvent::BranchMute(id));
+                                                cx.stop_propagation();
+                                            }),
+                                        ),
+                                )
+                        })),
+                )
+            })
             .when(self.track.is_none(), |panel| {
                 panel.child(
                     div()

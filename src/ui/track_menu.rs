@@ -1,5 +1,6 @@
 //! Menú de pistas; utiliza el catálogo y los mismos controladores que los comandos.
 use super::DawApp;
+use elevate::musical::track::{HiloMode, TrackKind};
 use gpui::{Context, KeyDownEvent, Pixels, Point, Size, Window, point, px};
 
 pub(super) const ITEMS: &[(&str, &str)] = &[
@@ -36,10 +37,18 @@ impl DawApp {
         if self
             .tracks
             .get(self.cursor_row)
-            .is_some_and(|t| !t.accepts_clips())
+            .is_some_and(|t| t.kind == TrackKind::Group)
         {
+            items.splice(
+                6..6,
+                [
+                    ("Hilo · capas", "action.track.hilo.layer"),
+                    ("Hilo · round robin", "action.track.hilo.round_robin"),
+                    ("Hilo · desactivar", "action.track.hilo.off"),
+                ],
+            );
             items.insert(
-                6,
+                9,
                 (
                     if self.track_collapsed(self.cursor_row) {
                         "Desplegar grupo"
@@ -90,6 +99,19 @@ impl DawApp {
         cx: &mut Context<Self>,
     ) {
         self.track_menu = None;
+        if let Some((_, command)) = self.track_menu_items().get(index) {
+            let mode = match *command {
+                "action.track.hilo.layer" => Some(Some(HiloMode::Layer)),
+                "action.track.hilo.round_robin" => Some(Some(HiloMode::RoundRobin)),
+                "action.track.hilo.off" => Some(None),
+                _ => None,
+            };
+            if let Some(mode) = mode {
+                self.set_hilo_mode(mode);
+                cx.notify();
+                return;
+            }
+        }
         if let Some(entry) = self
             .track_menu_items()
             .get(index)

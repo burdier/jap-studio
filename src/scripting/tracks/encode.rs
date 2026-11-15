@@ -1,7 +1,7 @@
 //! Snapshot de solo lectura lógica: cambiar esta tabla Lua no altera el proyecto.
 use crate::musical::{
     fx::{FxKind, FxNode},
-    track::{TrackKind, TrackSnapshot},
+    track::{HiloMode, TrackKind, TrackSnapshot},
 };
 use mlua::{Lua, Table};
 
@@ -21,6 +21,16 @@ pub(crate) fn snapshot(lua: &Lua, snapshot: &TrackSnapshot) -> Result<Table, Str
         }
         if let Some(parent) = entry.track.parent {
             row.raw_set("parent", parent.0).map_err(|e| e.to_string())?;
+        }
+        if let Some(mode) = entry.track.hilo {
+            row.raw_set(
+                "hilo_mode",
+                match mode {
+                    HiloMode::Layer => "layer",
+                    HiloMode::RoundRobin => "round_robin",
+                },
+            )
+            .map_err(|e| e.to_string())?;
         }
         row.raw_set("muted", entry.track.muted)
             .map_err(|e| e.to_string())?;

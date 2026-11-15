@@ -73,6 +73,23 @@ de texto, cantidades musicales, casillas y botones. El adaptador está en
 `src/ui/components/parameter_field.rs`; el tema Hay se proyecta desde `src/ui/kit.rs`.
 El contrato de parámetros y las operaciones del DAW siguen siendo independientes de la UI.
 
+## Hilos: capas y round robin
+
+Selecciona dos pistas con instrumento y usa **Agrupar selección**. En el menú del
+grupo elige **Hilo · capas** para tocar ambos instrumentos con cada nota, o
+**Hilo · round robin** para alternar una nota por instrumento. Coloca el clip MIDI
+en el carril del grupo o activa el botón **MIDI** del grupo para tocar en vivo.
+Cada hija conserva su volumen, panorama y FX. `track.script` admite
+`{ op="hilo.mode", track=<TrackId o handle>, mode="round_robin" }`.
+En la barra de comandos: `:track.group` agrupa la selección, `:hilo.rr` cambia
+el grupo seleccionado a round robin, `:hilo.layer` activa capas y `:track.midi`
+activa su entrada MIDI. `:hilo.off` desactiva el Hilo cuando no tiene clips.
+Para crear el grupo sin seleccionar pistas con el ratón, usa
+`:track.template.hilo`; la plantilla agrupa las dos primeras pistas raíz que ya
+tengan instrumento y añade Hay Utility a cada rama.
+El modo queda en el documento de proyecto; la UI todavía no guarda una sesión
+completa al salir. [Estado y límites](docs/ARCHITECTURE.md#pr-07-primer-recorrido-de-hilos-sobre-grupos).
+
 ## Track FX sin cambiar Add
 
 El **[+]**, **A** y **:add** siguen abriendo el mismo catálogo general. Elegir **Hay Utility**

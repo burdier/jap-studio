@@ -1,5 +1,5 @@
 //! Conecta eventos del TreeView con catálogo, comandos y pista por identidad estable.
-use super::{FxEvent, FxTarget, FxTree};
+use super::{FxEvent, FxTarget, FxTree, HiloBranchView};
 use crate::ui::{CenterView, DawApp, components::tree::TreeStyle};
 use elevate::musical::{fx::FxEdit, track::TrackId};
 use gpui::{AppContext, Context, Entity, Subscription, Window};
@@ -48,6 +48,21 @@ impl FxDock {
                         position: *position,
                         selected: 0,
                     })
+                }
+                FxEvent::BranchSelect(id) => {
+                    if let Some(index) = this.tracks.iter().position(|track| track.id == *id) {
+                        this.select_track(index, false, false);
+                    }
+                }
+                FxEvent::BranchMute(id) => {
+                    if let Some(index) = this.tracks.iter().position(|track| track.id == *id) {
+                        this.toggle_track_mute(index);
+                    }
+                }
+                FxEvent::BranchLevel(id, delta) => {
+                    if let Some(index) = this.tracks.iter().position(|track| track.id == *id) {
+                        this.set_track_level(index, this.track_levels[index] + delta);
+                    }
                 }
             }
             cx.notify();
@@ -168,6 +183,22 @@ impl DawApp {
             self.fx.track_ids = self.tracks.iter().map(|track| track.id).collect();
         }
         let track = self.tracks.get(self.cursor_row);
+        let hilo_branches: Vec<_> = track
+            .filter(|track| track.hilo.is_some())
+            .map(|group| {
+                self.tracks
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, child)| child.parent == Some(group.id))
+                    .map(|(index, child)| HiloBranchView {
+                        id: child.id,
+                        name: child.name.to_string(),
+                        level: self.track_levels.get(index).copied().unwrap_or(75),
+                        muted: child.muted,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
         let select = self.fx.select_request.take();
         let instrument_select = self.fx.instrument_select_request.take();
         self.fx.view.update(cx, |tree, cx| {
@@ -194,8 +225,13 @@ impl DawApp {
                     instrument_name,
                     cx,
                 );
+                if tree.hilo_branches != hilo_branches {
+                    tree.hilo_branches = hilo_branches;
+                    cx.notify();
+                }
             } else if tree.track.take().is_some() {
                 tree.rows.clear();
+                tree.hilo_branches.clear();
                 cx.notify();
             }
             if let Some(id) = instrument_select {
@@ -282,7 +318,9 @@ impl DawApp {
             component_instances.insert(id, effect);
         }
         if crate::audio::effects::needs_rack(&chain) {
-            if !self.tracks[index].accepts_clips() {
+            if self.tracks[index].kind == elevate::musical::track::TrackKind::Group
+                || !self.tracks[index].accepts_clips()
+            {
                 return Err("Spectrum/VST3 requieren una pista de audio o MIDI; los buses de grupo aún no están implementados".into());
             }
             let rate = self

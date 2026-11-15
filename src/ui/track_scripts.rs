@@ -5,9 +5,11 @@ use gpui::{AppContext, Context};
 use std::{io::Read, path::PathBuf};
 
 const TEMPLATE: &str = include_str!("../../assets/scripts/tracks/two_tracks.lua");
+const HILO_TEMPLATE: &str = include_str!("../../assets/scripts/tracks/hilo_round_robin.lua");
 enum TrackScriptSource {
     File(PathBuf),
     Template,
+    HiloTemplate,
 }
 
 impl DawApp {
@@ -17,7 +19,10 @@ impl DawApp {
         cx: &mut Context<Self>,
     ) -> bool {
         let first = command.split_whitespace().next().unwrap_or("");
-        if !matches!(first, "track.script" | "track.template.two") {
+        if !matches!(
+            first,
+            "track.script" | "track.template.two" | "track.template.hilo"
+        ) {
             return false;
         }
         let parts = match elevate::actions::tokenize(command) {
@@ -29,12 +34,13 @@ impl DawApp {
         };
         let source = match parts.as_slice() {
             [name] if name == "track.template.two" => TrackScriptSource::Template,
+            [name] if name == "track.template.hilo" => TrackScriptSource::HiloTemplate,
             [name, path] if name == "track.script" && !path.is_empty() => {
                 TrackScriptSource::File(PathBuf::from(path))
             }
             _ => {
                 self.status_message =
-                    "Uso: track.script '/ruta/script.lua' o track.template.two".into();
+                    "Uso: track.script '/ruta/script.lua', track.template.two o track.template.hilo".into();
                 return true;
             }
         };
@@ -58,6 +64,7 @@ impl DawApp {
         let work = cx.background_spawn(async move {
             let source = match source {
                 TrackScriptSource::Template => TEMPLATE.to_owned(),
+                TrackScriptSource::HiloTemplate => HILO_TEMPLATE.to_owned(),
                 TrackScriptSource::File(path) => {
                     let mut source = String::new();
                     std::fs::File::open(path)

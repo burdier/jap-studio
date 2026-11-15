@@ -104,6 +104,7 @@ impl DawApp {
             instrument,
             controller: ComputerKeyboard::default(),
             midi_server: MidiServer::new(initial_target),
+            midi_armed_tracks: Default::default(),
             midi_mapper: MidiMapper::new(),
             midi_hw: MidiHardwareIn::connect_all(),
             midi_capture: MidiCapture::new(),

@@ -109,6 +109,7 @@ struct DawApp {
     vst_task: Option<gpui::Task<()>>,
     controller: ComputerKeyboard,
     midi_server: MidiServer,
+    midi_armed_tracks: std::collections::HashSet<TrackId>,
     midi_mapper: MidiMapper,
     midi_hw: MidiHardwareIn,
     midi_capture: MidiCapture,

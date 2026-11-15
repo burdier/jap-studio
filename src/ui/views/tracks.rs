@@ -63,6 +63,7 @@ pub(in crate::ui) enum TcpWidget {
     Solo,
     Rec,
     Add,
+    Midi,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,7 +88,7 @@ impl TcpGroup {
 }
 
 impl TcpWidget {
-    pub const TOGGLEABLE: [Self; 8] = [
+    pub const TOGGLEABLE: [Self; 9] = [
         Self::Type,
         Self::Pan,
         Self::Vol,
@@ -96,6 +97,7 @@ impl TcpWidget {
         Self::Solo,
         Self::Rec,
         Self::Add,
+        Self::Midi,
     ];
 
     pub fn from_token(token: &str) -> Option<Self> {
@@ -109,6 +111,7 @@ impl TcpWidget {
             "solo" | "s" => Some(Self::Solo),
             "rec" | "record" | "r" => Some(Self::Rec),
             "add" | "fx" | "plus" | "+" => Some(Self::Add),
+            "midi" | "input" => Some(Self::Midi),
             _ => None,
         }
     }
@@ -124,6 +127,7 @@ impl TcpWidget {
             Self::Solo => "S",
             Self::Rec => "R",
             Self::Add => "[+]",
+            Self::Midi => "MIDI",
         }
     }
 
@@ -131,7 +135,7 @@ impl TcpWidget {
         match self {
             Self::Name | Self::Type => TcpGroup::Identity,
             Self::Pan | Self::Vol | Self::Pct => TcpGroup::Mix,
-            Self::Mute | Self::Solo | Self::Rec => TcpGroup::State,
+            Self::Mute | Self::Solo | Self::Rec | Self::Midi => TcpGroup::State,
             Self::Add => TcpGroup::Fx,
         }
     }
@@ -202,20 +206,34 @@ impl TrackHeaderConfig {
             TcpLayoutPreset::Standard => [
                 [Some(Name), Some(Type), None, None, None, None],
                 [Some(Pan), Some(Vol), Some(Pct), None, None, None],
-                [Some(Mute), Some(Solo), Some(Rec), Some(Add), None, None],
+                [
+                    Some(Mute),
+                    Some(Solo),
+                    Some(Midi),
+                    Some(Rec),
+                    Some(Add),
+                    None,
+                ],
             ],
             TcpLayoutPreset::Compact => [
                 [Some(Name), Some(Type), None, None, None, None],
-                [Some(Mute), Some(Solo), Some(Rec), Some(Add), None, None],
+                [
+                    Some(Mute),
+                    Some(Solo),
+                    Some(Midi),
+                    Some(Rec),
+                    Some(Add),
+                    None,
+                ],
                 [None; MAX_COLS],
             ],
             TcpLayoutPreset::Mixer => [
-                [Some(Name), Some(Type), Some(Add), None, None, None],
+                [Some(Name), Some(Type), Some(Midi), Some(Add), None, None],
                 [Some(Pan), Some(Vol), Some(Pct), None, None, None],
                 [None; MAX_COLS],
             ],
             TcpLayoutPreset::Minimal => [
-                [Some(Name), Some(Type), Some(Add), None, None, None],
+                [Some(Name), Some(Type), Some(Midi), Some(Add), None, None],
                 [None; MAX_COLS],
                 [None; MAX_COLS],
             ],
@@ -489,8 +507,8 @@ impl DawApp {
                     Some(TcpWidget::Name),
                     Some(TcpWidget::Mute),
                     Some(TcpWidget::Solo),
+                    Some(TcpWidget::Midi),
                     Some(TcpWidget::Add),
-                    None,
                     None,
                 ],
                 [None; MAX_COLS],
@@ -509,9 +527,9 @@ impl DawApp {
                 [
                     Some(TcpWidget::Mute),
                     Some(TcpWidget::Solo),
+                    Some(TcpWidget::Midi),
                     Some(TcpWidget::Rec),
                     Some(TcpWidget::Add),
-                    None,
                     None,
                 ],
                 [None; MAX_COLS],
@@ -811,6 +829,21 @@ impl DawApp {
                     )
                     .into_any_element()
             }
+            TcpWidget::Midi => toggle_badge(
+                ds,
+                "MIDI",
+                self.midi_armed_tracks.contains(&track.id),
+                ds.cyan,
+            )
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, _, _, cx| {
+                    this.toggle_track_midi(i);
+                    cx.stop_propagation();
+                    cx.notify();
+                }),
+            )
+            .into_any_element(),
             TcpWidget::Add => {
                 let add = badge_tag(ds, "[+]", ds.accent)
                     .cursor_pointer()
