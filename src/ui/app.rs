@@ -36,6 +36,7 @@ pub(crate) fn run() {
     application()
         .with_assets(gpui::assets::Assets)
         .run(|cx: &mut App| {
+            cx.set_cursor_hide_mode(gpui::CursorHideMode::Never);
             super::kit::init(cx);
             let bounds = Bounds::centered(None, size(px(1400.0), px(900.0)), cx);
             if let Err(error) = gpui::open_window(
@@ -76,6 +77,9 @@ impl DawApp {
         let initial_target = Some(MidiTarget::Instrument(instrument.id()));
         let explorer = super::explorer_host::ExplorerDock::new(&ds, cx);
         let fx = super::fx::FxDock::new((&ds).into(), cx);
+        let lua_tools = super::lua_tools::LuaTools::new();
+        let mut palette = Palette::new();
+        palette.replace_tools(elevate::catalog::tools::entries(&lua_tools.registry));
         Self {
             timeline: Timeline::new(ds.timeline_pixels_per_beat),
             pattern_editor: PatternEditor::new(),
@@ -111,7 +115,7 @@ impl DawApp {
             session_epoch: Instant::now(),
             instrument_window: None,
             window_request: None,
-            palette: Palette::new(),
+            palette,
             settings,
             toolbar_icons: ToolbarBindings::new(),
             cursor_fx: CursorFx::new(ds.cursor_fx),
@@ -122,7 +126,7 @@ impl DawApp {
             piano_ui: Default::default(),
             import_task: None,
             script_task: None,
-            lua_tools: Default::default(),
+            lua_tools,
             lua_components: super::lua_components::LuaComponents::new(),
             sampler,
             active_sampler_id: crate::instruments::sampler::SAMPLER_ID,

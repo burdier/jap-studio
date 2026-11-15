@@ -7,8 +7,13 @@ impl DawApp {
         let ds = &self.ds;
         let clip = self.timeline.midi_clip.as_ref().expect("clip visible");
         let clip_color = ds.clip_color(clip.track, clip.props);
+        let width = if self.piano_roll.inspector_tab == 4 {
+            268.0
+        } else {
+            218.0
+        };
         div()
-            .w(px(218.0))
+            .w(px(width))
             .flex_shrink_0()
             .h_full()
             .min_h_0()
@@ -29,7 +34,7 @@ impl DawApp {
                     .border_b_1()
                     .border_color(rgb(ds.border))
                     .children(
-                        ["Clip", "Notas", "Escala", "Vista"]
+                        ["Clip", "Notas", "Escala", "Vista", "Acordes"]
                             .into_iter()
                             .enumerate()
                             .map(|(index, label)| {
@@ -257,6 +262,9 @@ impl DawApp {
                                     cx,
                                 )),
                         )
+                    }))
+                    .child(div().when(self.piano_roll.inspector_tab == 4, |container| {
+                        container.child(self.render_roll_chord_panel(cx))
                     })),
             )
     }

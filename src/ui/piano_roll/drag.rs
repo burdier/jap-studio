@@ -1,7 +1,10 @@
 //! Arrastre y selección rectangular; snap musical al soltar, preview visual independiente.
 use super::RollDrag;
 use crate::ui::DawApp;
-use elevate::musical::time::PPQ;
+use elevate::musical::{
+    model::{NoteId, Pattern},
+    time::PPQ,
+};
 use gpui::{Pixels, Point};
 
 impl DawApp {
@@ -44,6 +47,7 @@ impl DawApp {
     pub(in crate::ui) fn finish_roll_drag(&mut self, position: Point<Pixels>) {
         self.piano_roll.paint_stroke = None;
         self.piano_roll.control_drag = false;
+        self.piano_roll.lane_span = None;
         let step = self.piano_roll.resolution.ticks().0;
         self.drag_roll_to(position);
         let Some(drag) = self.piano_roll.drag.take() else {
@@ -53,6 +57,7 @@ impl DawApp {
             return;
         };
         if clip.props.locked {
+            self.piano_roll.snap_guide.land(None);
             self.piano_roll.motion.borrow_mut().clear();
             self.piano_roll.push = None;
             self.piano_roll.push_error = None;
@@ -61,6 +66,11 @@ impl DawApp {
         }
         let grid = self.piano_roll.grid.get();
         let resize = matches!(&drag, RollDrag::Length { .. });
+        let moved_ids = match &drag {
+            RollDrag::Move { notes, .. } => notes.clone(),
+            RollDrag::Length { note, .. } => vec![*note],
+            RollDrag::Box { .. } => Vec::new(),
+        };
         let replacement = match drag {
             RollDrag::Box {
                 origin,
@@ -94,6 +104,7 @@ impl DawApp {
             } => {
                 let offset = current - origin;
                 if offset.x.abs() < gpui::px(2.0) && (resize || offset.y.abs() < gpui::px(2.0)) {
+                    self.piano_roll.snap_guide.land(None);
                     self.piano_roll.motion.borrow_mut().clear();
                     self.piano_roll.push = None;
                     self.piano_roll.push_error = None;
@@ -118,6 +129,11 @@ impl DawApp {
                 }
             }
         };
+        // El commit siempre ajusta a la rejilla: confirmar el borde donde quedó.
+        let landed = replacement
+            .as_ref()
+            .and_then(|pattern| landed_edge(pattern, &moved_ids, resize));
+        self.piano_roll.snap_guide.land(landed);
         if let Some(pattern) = replacement {
             self.piano_roll
                 .motion
@@ -136,11 +152,24 @@ impl DawApp {
     }
 
     pub(in crate::ui) fn end_roll_drag(&mut self) {
+        self.piano_roll.snap_guide.clear();
         self.piano_roll.paint_stroke = None;
         self.piano_roll.control_drag = false;
+        self.piano_roll.lane_span = None;
         self.piano_roll.drag = None;
         self.piano_roll.push = None;
         self.piano_roll.push_error = None;
         self.piano_roll.motion.borrow_mut().clear();
     }
+}
+
+/// Inicio (mover) o final (redimensionar) del grupo de notas tras el commit, en beats.
+fn landed_edge(pattern: &Pattern, ids: &[NoteId], resize: bool) -> Option<f64> {
+    let notes = pattern.notes().iter().filter(|note| ids.contains(&note.id));
+    let tick = if resize {
+        notes.map(|note| note.start.0 + note.duration.0).max()
+    } else {
+        notes.map(|note| note.start.0).min()
+    }?;
+    Some(tick as f64 / PPQ as f64)
 }

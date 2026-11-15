@@ -264,6 +264,7 @@ impl ProjectDoc {
                     kind: entry.kind,
                     instrument: entry.instrument.map(crate::musical::model::InstrumentId),
                     hilo: entry.hilo,
+                    midi_enabled: false,
                     muted: entry.muted,
                     solo: entry.solo,
                     parent: entry.parent,

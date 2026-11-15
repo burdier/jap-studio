@@ -6,8 +6,8 @@ use crate::ui::{
     },
 };
 use elevate::devices::sampler::{
-    ATTACK, CUTOFF, DECAY, END, GAIN, LOOP_START, PAN, PlayMode, RELEASE, RESONANCE, ROOT, START,
-    SUSTAIN, TUNE, VOICES,
+    ATTACK, CUTOFF, DECAY, END, GAIN, HOLD, LOOP_START, PAN, PITCH_DECAY, PITCH_ENV, PlayMode,
+    RELEASE, RESONANCE, ROOT, START, SUSTAIN, TUNE, VEL_FILTER, VEL_VOLUME, VOICES,
 };
 use gpui::{Context, IntoElement, MouseButton, div, prelude::*, px, rgb};
 use std::rc::Rc;
@@ -40,12 +40,33 @@ impl DawApp {
                         cx.stop_propagation(); cx.notify();
                     }))));
         let modes = div()
-            .w(px(78.))
+            .w(px(92.))
             .flex_shrink_0()
             .flex()
             .flex_col()
-            .gap_2()
+            .gap_1()
             .p_2()
+            .child(
+                pill_button(
+                    ds,
+                    "Drum Kit",
+                    !params.keytrack && params.mode == PlayMode::OneShot,
+                    ds.cyan,
+                )
+                .id("sampler-drum-preset")
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, _, _, cx| {
+                        this.sampler.params.apply_drum_preset();
+                        this.prepare_sampler(cx);
+                        this.status_message =
+                            "Simpler Drum · 1-Shot + Pitch fijo + Choke + AHD listos para programar"
+                                .into();
+                        cx.stop_propagation();
+                        cx.notify();
+                    }),
+                ),
+            )
             .child(
                 pill_button(ds, "Classic", params.mode == PlayMode::Classic, ds.accent)
                     .id("sampler-classic")
@@ -86,6 +107,45 @@ impl DawApp {
                         cx.notify();
                     }),
                 ),
+            )
+            .child(
+                pill_button(ds, "Keytrack", params.keytrack, ds.accent)
+                    .id("sampler-keytrack")
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, cx| {
+                            this.sampler.params.keytrack = !this.sampler.params.keytrack;
+                            this.prepare_sampler(cx);
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    ),
+            )
+            .child(
+                pill_button(ds, "Choke", params.choke, ds.cyan)
+                    .id("sampler-choke")
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, cx| {
+                            this.sampler.params.choke = !this.sampler.params.choke;
+                            this.prepare_sampler(cx);
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    ),
+            )
+            .child(
+                pill_button(ds, "Reverse", params.reverse, ds.accent)
+                    .id("sampler-reverse")
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, cx| {
+                            this.sampler.params.reverse = !this.sampler.params.reverse;
+                            this.prepare_sampler(cx);
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    ),
             );
         let wave = div()
             .flex_1()
@@ -124,31 +184,36 @@ impl DawApp {
             .p_2()
             .bg(rgb(ds.panel_dark))
             .children(
-                [START, END, LOOP_START, TUNE, ROOT, VOICES]
-                    .map(|id| self.sample_knob(id, cx).into_any_element()),
+                [
+                    START,
+                    END,
+                    LOOP_START,
+                    TUNE,
+                    ROOT,
+                    VOICES,
+                    PITCH_ENV,
+                    PITCH_DECAY,
+                    VEL_VOLUME,
+                    VEL_FILTER,
+                ]
+                .map(|id| self.sample_knob(id, cx).into_any_element()),
             );
         let filter = div()
             .flex()
-            .items_center()
+            .items_start()
             .gap_2()
             .p_2()
+            .child(self.sample_filter_card(cx))
             .child(
-                pill_button(ds, "Filtro · LP 12", params.filter, ds.accent)
-                    .id("sampler-filter")
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(|this, _, _, cx| {
-                            this.sampler.params.filter = !this.sampler.params.filter;
-                            this.prepare_sampler(cx);
-                            cx.stop_propagation();
-                            cx.notify();
-                        }),
-                    ),
-            )
-            .child(self.sample_knob(CUTOFF, cx))
-            .child(self.sample_knob(RESONANCE, cx));
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(self.sample_knob(CUTOFF, cx))
+                    .child(self.sample_knob(RESONANCE, cx)),
+            );
         let envelope = div().flex().flex_wrap().gap_2().p_2().children(
-            [ATTACK, DECAY, SUSTAIN, RELEASE, GAIN, PAN]
+            [ATTACK, HOLD, DECAY, SUSTAIN, RELEASE, GAIN, PAN]
                 .map(|id| self.sample_knob(id, cx).into_any_element()),
         );
         let press: NotePress = Rc::new(cx.listener(|this, note: &u8, _, cx| {
@@ -165,6 +230,10 @@ impl DawApp {
         );
         div().id("hay-sampler").flex_1().min_h_0().min_w_0().flex().flex_col().text_size(px(11.)).bg(rgb(ds.bg))
             .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
+                if !this.instrument_detached() {
+                    return;
+                }
+                this.cursor_fx.on_mouse_move(event.position);
                 if let Some((id, bounds)) = this.sampler_ui.wave_drag {
                     if event.dragging() {
                         let percent = f32::from(event.position.x - bounds.left()) / f32::from(bounds.size.width).max(1.) * 100.;

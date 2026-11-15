@@ -1,10 +1,11 @@
 //! Estado visual del piano roll. El contenido sigue siendo un `MidiClip` en ticks.
 mod actions;
 mod choices;
+pub(in crate::ui) mod chord;
+pub(in crate::ui) mod chord_sequence;
 mod clipboard;
 mod commands;
 mod control_actions;
-mod demo;
 mod drag;
 mod edit;
 pub(in crate::ui) mod geometry;
@@ -22,7 +23,15 @@ mod push;
 mod selection;
 mod window;
 
+pub(in crate::ui) use crate::ui::components::curve_overlay::shapes::ContourShape;
 pub(in crate::ui) use lane::{RollLane, RollLaneMenu};
+
+#[derive(Clone, Copy)]
+pub(in crate::ui) struct LaneSpanDrag {
+    pub origin: Point<Pixels>,
+    pub current: Point<Pixels>,
+    pub tension: f32,
+}
 
 use elevate::musical::{
     model::{NoteId, Pattern},
@@ -76,6 +85,8 @@ pub(super) enum RollAction {
     Follow,
     Velocities,
     SetLane(RollLane),
+    CycleLaneContour,
+    SetLaneContour(ContourShape),
     HighlightScale,
     ResetView,
     ZoomWidth(f64),
@@ -114,6 +125,21 @@ pub(super) enum RollAction {
     SelectAll,
     ClearSelection,
     DeleteSelection,
+    ChordDegree(u8),
+    ChordColor(u8),
+    ChordVoicing(u8),
+    ChordToggleBass,
+    ChordInversion(i8),
+    ChordStrum(i16),
+    ChordInsertAtCursor,
+    ChordApplySelection,
+    ChordSequenceUnit(chord_sequence::ChordUnit),
+    ChordSequenceSlot(usize),
+    ChordSequenceReplace(usize),
+    ChordSequenceClear(usize),
+    ChordSequenceInvert(usize, i8),
+    ChordSequenceResize(i8),
+    ChordSequenceInsert,
 }
 
 pub(super) struct PianoRoll {
@@ -129,6 +155,7 @@ pub(super) struct PianoRoll {
     pub motion: Rc<RefCell<motion::NoteMotion>>,
     push: Option<push::PushGesture>,
     push_error: Option<String>,
+    pub snap_guide: crate::ui::components::snap_guide::SnapGuide,
     pub control_drag: bool,
     pub selected_control: Option<u64>,
     pub paint_stroke: Option<std::collections::HashSet<(i64, u8)>>,
@@ -136,12 +163,16 @@ pub(super) struct PianoRoll {
     pub follow: bool,
     pub velocities: bool,
     pub active_lane: RollLane,
+    pub lane_contour: ContourShape,
+    pub lane_span: Option<LaneSpanDrag>,
     pub lane_menu: Option<RollLaneMenu>,
     pub choices: Option<choices::RollChoices>,
     pub highlight_scale: bool,
     pub show_scale_keyboard: bool,
     pub show_note_names: bool,
     pub inspector_tab: u8,
+    pub chord_pad: chord::ChordPadState,
+    pub chord_sequence: chord_sequence::ChordSequenceState,
     pub draw_length: elevate::musical::grid::NoteGrid,
     pub scale_root: u8,
     pub scale_minor: bool,
@@ -169,6 +200,7 @@ impl Default for PianoRoll {
             motion: Rc::default(),
             push: None,
             push_error: None,
+            snap_guide: Default::default(),
             paint_stroke: None,
             control_drag: false,
             selected_control: None,
@@ -176,12 +208,16 @@ impl Default for PianoRoll {
             follow: true,
             velocities: true,
             active_lane: RollLane::Velocity,
+            lane_contour: ContourShape::Smooth,
+            lane_span: None,
             lane_menu: None,
             choices: None,
             highlight_scale: true,
             show_scale_keyboard: true,
             show_note_names: false,
             inspector_tab: 0,
+            chord_pad: Default::default(),
+            chord_sequence: Default::default(),
             draw_length: elevate::musical::grid::NoteGrid::new(8).expect("rejilla 1/8"),
             scale_root: 0,
             scale_minor: true,

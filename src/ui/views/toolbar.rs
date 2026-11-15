@@ -22,14 +22,14 @@ impl DawApp {
         } else {
             ds.orange
         };
+        let add_size = if compact { 24.0 } else { ds.transport_btn_size };
         div()
             .flex_1()
             .min_w(px(48.0))
             .h_full()
             .flex()
             .items_center()
-            .gap(px(5.0))
-            .px_2()
+            .px_1()
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(move |this, _, window, cx| {
@@ -50,7 +50,7 @@ impl DawApp {
                     .h_full()
                     .flex()
                     .items_center()
-                    .gap(px(5.0))
+                    .gap(px(4.0))
                     .overflow_x_scroll()
                     .children(list.iter().enumerate().map(|(idx, bound)| {
                         let icon = self.toolbar_icons.icon_by_id(&bound.icon_id);
@@ -107,33 +107,33 @@ impl DawApp {
                                 cx.notify();
                             }),
                         )
-                    })),
-            )
-            .child(
-                div()
-                    .size(px(if compact { 24.0 } else { 28.0 }))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .cursor_pointer()
-                    .bg(rgb(ds.panel_dark))
-                    .border_1()
-                    .border_color(rgb(ds.border))
-                    .rounded(px(ds.radius_sm))
-                    .child(render_svg_icon(
-                        include_bytes!("../../../assets/icons/toolbar/plus.svg"),
-                        16.0,
-                        ds.text,
-                    ))
-                    .flex_shrink_0()
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |this, _, window, cx| {
-                            this.toolbar_icons.open_picker(scope);
-                            window.focus(&this.focus_handle, cx);
-                            cx.stop_propagation();
-                            cx.notify();
-                        }),
+                    }))
+                    .child(
+                        div()
+                            .size(px(add_size))
+                            .flex_shrink_0()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .cursor_pointer()
+                            .bg(rgb(ds.panel_dark))
+                            .border_1()
+                            .border_color(rgb(ds.border))
+                            .rounded(px(ds.radius_sm))
+                            .child(render_svg_icon(
+                                include_bytes!("../../../assets/icons/toolbar/plus.svg"),
+                                if compact { 13.0 } else { 14.0 },
+                                ds.muted,
+                            ))
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |this, _, window, cx| {
+                                    this.toolbar_icons.open_picker(scope);
+                                    window.focus(&this.focus_handle, cx);
+                                    cx.stop_propagation();
+                                    cx.notify();
+                                }),
+                            ),
                     ),
             )
     }

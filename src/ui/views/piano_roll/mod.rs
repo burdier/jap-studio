@@ -1,5 +1,7 @@
 //! Editor reutilizado en el panel inferior del Arrangement y en una ventana propia.
 mod choices;
+mod chord;
+mod chord_sequence;
 mod control_lane;
 mod grid;
 mod grid_background;

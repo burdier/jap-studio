@@ -1,6 +1,9 @@
 //! Coordina proyección continua, política Lua y confirmación con el mismo snap del grid.
 use super::{RollDrag, geometry::Grid, motion::NoteMotion};
-use crate::ui::{DawApp, time_grid::TimeSpan};
+use crate::ui::{
+    DawApp,
+    time_grid::{TimeSpan, magnet::MagnetHit},
+};
 use elevate::{
     musical::{model::Pattern, time::PPQ},
     scripting::push::NotePush,
@@ -73,15 +76,33 @@ impl PushGesture {
         }
     }
 
+    /// Proyección continua con imán: cerca de una línea usa el mismo destino que el commit.
+    /// Devuelve el borde visible (inicio al mover, final al redimensionar) y el imán.
     fn preview(
         &mut self,
         pattern: &Pattern,
         grid: Grid,
         offset: Point<Pixels>,
+        step: f64,
         motion: &mut NoteMotion,
-    ) -> Result<(), String> {
-        let (delta, pitch) = self.parameters(grid, offset, 0.0);
-        let result = self.session.project(delta, pitch, self.resize)?;
+    ) -> Result<(f64, Option<MagnetHit>), String> {
+        let (free, free_pitch) = self.parameters(grid, offset, 0.0);
+        let (snapped, _) = self.parameters(grid, offset, step);
+        let base = if self.resize {
+            self.span.end
+        } else {
+            self.span.start
+        };
+        let ppq = PPQ as f64;
+        let hit = grid
+            .axis()
+            .magnet_to(base + free / ppq, base + snapped / ppq, step);
+        let delta = if hit.is_some_and(|hit| hit.captured) {
+            snapped
+        } else {
+            free
+        };
+        let result = self.session.project(delta, free_pitch, self.resize)?;
         let y = if self.resize {
             px(0.0)
         } else {
@@ -95,7 +116,7 @@ impl PushGesture {
             y,
         ));
         motion.push_neighbors(pattern, &result.neighbors, grid);
-        Ok(())
+        Ok((base + result.delta as f64 / ppq, hit))
     }
 
     pub fn commit(
@@ -150,17 +171,23 @@ impl DawApp {
                 }
             }
         }
+        let step = self.piano_roll.resolution.ticks().0 as f64 / PPQ as f64;
         if let Some(push) = &mut self.piano_roll.push {
             let result = push.preview(
                 original,
                 self.piano_roll.grid.get(),
                 offset,
+                step,
                 &mut self.piano_roll.motion.borrow_mut(),
             );
-            if let Err(error) = result {
-                self.piano_roll.hint = error.clone();
-                self.piano_roll.push_error = Some(error);
-                self.piano_roll.motion.borrow_mut().clear();
+            match result {
+                Ok((edge, hit)) => self.piano_roll.snap_guide.track(edge, hit),
+                Err(error) => {
+                    self.piano_roll.hint = error.clone();
+                    self.piano_roll.push_error = Some(error);
+                    self.piano_roll.motion.borrow_mut().clear();
+                    self.piano_roll.snap_guide.clear();
+                }
             }
         }
     }

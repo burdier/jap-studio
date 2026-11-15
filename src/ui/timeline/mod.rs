@@ -76,6 +76,7 @@ pub(crate) enum ClipBarHit {
 pub(crate) struct Timeline {
     pub(crate) tempo: Tempo,
     pub(crate) meter: Meter,
+    pub(crate) tempo_drag: Option<crate::ui::timing::TempoDrag>,
     pub(crate) layout: Option<crate::ui::track_layout::TrackLayout>,
     clip_drag: Option<(Point<Pixels>, f64, bool, DragKind)>,
     trim_drag: Option<trim::TrimDrag>,
@@ -97,6 +98,7 @@ pub(crate) struct Timeline {
     time_ruler_bounds: Rc<Cell<Bounds<Pixels>>>,
     lanes_bounds: Rc<Cell<Bounds<Pixels>>>,
     particles: ParticleTrail,
+    snap_guide: crate::ui::components::snap_guide::SnapGuide,
     pub(crate) import_preview: Option<import_preview::ImportPreview>,
 }
 
@@ -105,6 +107,7 @@ impl Timeline {
         Self {
             tempo: Tempo::default(),
             meter: Meter::default(),
+            tempo_drag: None,
             layout: None,
             clip_drag: None,
             trim_drag: None,
@@ -128,6 +131,7 @@ impl Timeline {
             time_ruler_bounds: Rc::default(),
             lanes_bounds: Rc::default(),
             particles: ParticleTrail::default(),
+            snap_guide: Default::default(),
             import_preview: None,
         }
     }
@@ -189,6 +193,10 @@ impl Timeline {
     }
     pub(crate) fn lanes_bounds(&self) -> Bounds<Pixels> {
         self.lanes_bounds.get()
+    }
+    /// Destello del imán todavía en curso; el render pide frames mientras dure.
+    pub(crate) fn snap_animating(&self) -> bool {
+        self.snap_guide.animating()
     }
     pub(crate) fn advance_particles(&mut self, design: &DesignSystem, visible: bool) -> bool {
         let bounds = self.lanes_bounds.get();

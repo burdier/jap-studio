@@ -141,6 +141,12 @@ impl DawApp {
             ))
             .child(separator(ds.border))
             .child(self.roll_button("Subdividir", false, RollAction::Subdivide, cx))
+            .child(self.roll_button(
+                "🎹 Hay Chord",
+                self.piano_roll.inspector_tab == 4,
+                RollAction::InspectorTab(4),
+                cx,
+            ))
             .child(self.roll_button("Velocidad…", false, RollAction::Velocity, cx))
             .child(self.roll_button("Duración…", false, RollAction::Gate, cx))
             .child(self.roll_button("Lua…", false, RollAction::Form("midi.script"), cx));

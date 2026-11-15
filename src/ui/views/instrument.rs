@@ -168,6 +168,11 @@ impl DawApp {
         div().id("hay-piano").flex_1().min_h_0().min_w_0().flex().flex_col()
             .text_size(px(11.)).bg(rgb(ds.bg))
             .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
+                if !this.instrument_detached() {
+                    return;
+                }
+                this.cursor_fx.on_mouse_move(event.position);
+                cx.notify();
                 if let Some((id, origin, fraction)) = this.piano_ui.drag {
                     if event.dragging() {
                         let delta = f32::from(origin - event.position.y) / if event.modifiers.shift { 1600. } else { 160. };

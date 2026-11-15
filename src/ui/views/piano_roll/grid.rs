@@ -44,6 +44,7 @@ impl DawApp {
             _ => None,
         };
         let motion = self.piano_roll.motion.clone();
+        let snap_guide = self.piano_roll.snap_guide.clone();
         let app = cx.weak_entity();
         let ghost_notes = if self.piano_roll.ghost_notes {
             ghost_notes_for(&clip, &self.timeline.other_midi_clips)
@@ -52,6 +53,8 @@ impl DawApp {
         };
         let velocities = self.piano_roll.velocities;
         let active_lane = self.piano_roll.active_lane;
+        let lane_contour = self.piano_roll.lane_contour;
+        let lane_span = self.piano_roll.lane_span;
         let selected_control = self.piano_roll.selected_control;
         let highlight = self.piano_roll.highlight_scale;
         let scale_keyboard = self.piano_roll.show_scale_keyboard;
@@ -86,8 +89,11 @@ impl DawApp {
                 }),
             )
             .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
+                this.cursor_fx.on_mouse_move(event.position);
                 if event.dragging() {
-                    if this.piano_roll.control_drag {
+                    if this.piano_roll.lane_span.is_some() {
+                        this.apply_lane_span_to(event.position, event.modifiers.shift);
+                    } else if this.piano_roll.control_drag {
                         if this
                             .piano_roll
                             .grid
@@ -106,6 +112,7 @@ impl DawApp {
                 } else {
                     if this.piano_roll.drag.is_some()
                         || this.piano_roll.control_drag
+                        || this.piano_roll.lane_span.is_some()
                         || this.piano_roll.paint_stroke.is_some()
                     {
                         this.end_roll_drag();
@@ -137,7 +144,7 @@ impl DawApp {
                     },
                     move |bounds, grid, window, cx| {
                         let mut motion = motion.borrow_mut();
-                        if motion.advance() {
+                        if motion.advance() | snap_guide.animating() {
                             let app = app.clone();
                             window.on_next_frame(move |_, cx| {
                                 let _ = app.update(cx, |_, cx| cx.notify());
@@ -186,6 +193,14 @@ impl DawApp {
                                         active_lane,
                                         show_note_names,
                                         pitch_scale,
+                                        window,
+                                        cx,
+                                    );
+                                    snap_guide.paint(
+                                        grid.axis(),
+                                        grid.notes,
+                                        meter,
+                                        &ds,
                                         window,
                                         cx,
                                     );
@@ -263,6 +278,36 @@ impl DawApp {
                                     ds.text,
                                     10.0,
                                 );
+                                if active_lane.controller().is_none() {
+                                    let contour_label = format!("∿ {}", lane_contour.label());
+                                    rectangle(
+                                        window,
+                                        bounds.left() + px(6.0),
+                                        grid.velocity.top() + px(21.0),
+                                        84.0,
+                                        16.0,
+                                        (ds.panel << 8) | 0xff,
+                                    );
+                                    rectangle(
+                                        window,
+                                        bounds.left() + px(6.0),
+                                        grid.velocity.top() + px(21.0),
+                                        84.0,
+                                        1.0,
+                                        (ds.border << 8) | 0x90,
+                                    );
+                                    label(
+                                        window,
+                                        cx,
+                                        &contour_label,
+                                        point(
+                                            bounds.left() + px(10.0),
+                                            grid.velocity.top() + px(23.0),
+                                        ),
+                                        ds.cyan,
+                                        9.5,
+                                    );
+                                }
                                 if active_lane.is_bipolar() {
                                     let center_y = grid.velocity.bottom()
                                         - px(0.5
@@ -293,6 +338,15 @@ impl DawApp {
                                 }
                             }
                             if velocities {
+                                super::control_lane::paint_note_contour(
+                                    &grid,
+                                    &ds,
+                                    &clip,
+                                    active_lane,
+                                    lane_contour,
+                                    lane_span,
+                                    window,
+                                );
                                 super::control_lane::paint_controls(
                                     &grid,
                                     &ds,

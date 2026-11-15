@@ -21,6 +21,7 @@ impl DetachedPianoRoll {
             // El cierre del sistema devuelve el editor al panel inferior, con su selección.
             if let Some(app) = weak.upgrade() {
                 app.update(cx, |app, cx| {
+                    app.release_chord_audition();
                     app.piano_roll_window = None;
                     if app
                         .action_form
@@ -70,6 +71,18 @@ impl Render for DetachedPianoRoll {
             div()
                 .relative()
                 .size_full()
+                .on_mouse_up(
+                    gpui::MouseButton::Left,
+                    cx.listener(|this, _, _, _| {
+                        this.release_chord_audition();
+                    }),
+                )
+                .on_mouse_up_out(
+                    gpui::MouseButton::Left,
+                    cx.listener(|this, _, _, _| {
+                        this.release_chord_audition();
+                    }),
+                )
                 .child(content)
                 .children(picker)
                 .children(settings)

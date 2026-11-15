@@ -11,7 +11,7 @@ mod activate;
 mod entry;
 mod plugins;
 mod tools;
-use entry::PaletteEntry;
+pub(in crate::ui) use entry::PaletteEntry;
 
 pub(super) struct Palette {
     open: bool,
@@ -101,6 +101,12 @@ impl Palette {
 
     pub fn selected(&self) -> usize {
         self.selected
+    }
+
+    pub fn select(&mut self, index: usize) {
+        if index < self.results.len() {
+            self.selected = index;
+        }
     }
 
     pub fn open_for_track(&mut self, track: usize) {

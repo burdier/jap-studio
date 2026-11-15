@@ -53,27 +53,41 @@ impl Render for FxTree {
                     ),
             )
             .child(
-                div()
-                    .px_2()
-                    .pb_2()
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    .cursor_pointer()
-                    .child(render_svg_icon(tree::ADD, 16.0, style.accent))
-                    .child(
-                        div()
-                            .text_color(rgb(style.accent))
-                            .child("Add · añadir efecto"),
-                    )
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(|this, _, _, cx| {
-                            if let Some(target) = this.target() {
-                                cx.emit(FxEvent::Add(target));
-                            }
-                        }),
-                    ),
+                div().px_2().pb_2().child(
+                    div()
+                        .id("fx-add-button")
+                        .px_2()
+                        .py_1()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .border_1()
+                        .border_color(rgb(style.border))
+                        .bg(rgb(style.hover))
+                        .cursor_pointer()
+                        .hover(move |s| s.border_color(rgb(style.accent)).bg(rgb(style.selected)))
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(gpui::px(6.0))
+                                .child(render_svg_icon(tree::EFFECT, 13.0, style.accent))
+                                .child(
+                                    div()
+                                        .text_color(rgb(style.text))
+                                        .child("+ Add · Instrumento / Efecto FX"),
+                                ),
+                        )
+                        .child(div().text_color(rgb(style.muted)).child("A"))
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|this, _, _, cx| {
+                                if let Some(target) = this.target() {
+                                    cx.emit(FxEvent::Add(target));
+                                }
+                            }),
+                        ),
+                ),
             )
             .when(!self.hilo_branches.is_empty(), |panel| {
                 panel.child(
@@ -194,6 +208,13 @@ impl FxTree {
             .container
             .then(|| id.map_or(!view.root_closed, |id| !view.collapsed.contains(&id)));
         let color = if row.enabled { style.text } else { style.muted };
+        let icon_color = if !row.enabled {
+            style.muted
+        } else if row.instrument {
+            style.accent
+        } else {
+            style.text
+        };
         let mut line = tree::row(
             if row.instrument {
                 usize::MAX
@@ -210,19 +231,21 @@ impl FxTree {
                 } else {
                     !view.instrument_selected && view.selected == id
                 },
-                icon: if row.container {
+                icon: if row.instrument {
+                    tree::INSTRUMENT
+                } else if row.container {
                     tree::FOLDER
                 } else {
-                    tree::AUDIO
+                    tree::EFFECT
                 },
                 color,
-                icon_color: color,
+                icon_color,
                 status: if row.instrument {
                     Some("Instrumento")
                 } else if row.parallel {
                     Some("Paralelo")
                 } else {
-                    None
+                    Some("FX")
                 },
             },
         )

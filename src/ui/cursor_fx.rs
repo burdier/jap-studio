@@ -290,7 +290,7 @@ impl CursorFx {
             return None;
         }
         let particles: Vec<CursorParticle> = self.system.iter_particles().copied().collect();
-        if particles.is_empty() {
+        if particles.is_empty() && self.cursor.is_none() {
             return None;
         }
         let mode = self.mode;

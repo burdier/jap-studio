@@ -73,10 +73,6 @@ impl Render for DetachedPanel {
                 MouseButton::Left,
                 cx.listener(|this, _, window, cx| {
                     window.focus(&this.focus_handle, cx);
-                    this.app.update(cx, |app, cx| {
-                        app.focus_midi_instrument();
-                        cx.notify();
-                    });
                 }),
             )
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {

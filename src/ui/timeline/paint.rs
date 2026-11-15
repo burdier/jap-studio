@@ -62,6 +62,7 @@ impl Timeline {
             self.hover_clip
         };
         let floating_color = track_visual.map(|visual| design.track_color(visual.source_track));
+        let snap_guide = self.snap_guide.clone();
         let particles = if area == TimelineArea::Lanes {
             self.particles.snapshot()
         } else {
@@ -285,6 +286,9 @@ impl Timeline {
                                 cx,
                             );
                         }
+                    }
+                    if area == TimelineArea::Lanes {
+                        snap_guide.paint(viewport.grid(), bounds, meter, &design, window, cx);
                     }
                     for (origin, label) in labels {
                         if let Err(error) = label.paint(

@@ -64,6 +64,8 @@ pub struct Track {
     pub kind: TrackKind,
     /// Instrumento asignado. El host conserva una instancia de piano y una de sampler.
     pub instrument: Option<InstrumentId>,
+    /// Pista armada explícitamente para recibir MIDI en vivo (permite tocar varias a la vez).
+    pub midi_enabled: bool,
     pub muted: bool,
     pub solo: bool,
     pub parent: Option<TrackId>,
@@ -87,6 +89,7 @@ impl Track {
             name: Cow::Owned(name.into()),
             kind,
             instrument: None,
+            midi_enabled: false,
             muted: false,
             solo: false,
             parent: None,
@@ -130,6 +133,7 @@ const fn track(id: u32, name: &'static str, kind: TrackKind) -> Track {
         name: Cow::Borrowed(name),
         kind,
         instrument: None,
+        midi_enabled: false,
         muted: false,
         solo: false,
         parent: None,

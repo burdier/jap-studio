@@ -87,6 +87,11 @@ pub(in crate::ui) fn marks(
         .collect()
 }
 
+/// Etiqueta compás.pulso[.tick] de un beat cualquiera, con el formato de la regla.
+pub(in crate::ui) fn beat_label(beat: f64, meter: Meter) -> String {
+    position_label((beat.max(0.0) * PPQ as f64).round() as i64, meter)
+}
+
 fn position_label(tick: i64, meter: Meter) -> String {
     let bar = tick / meter.ticks_per_bar() + 1;
     let within = tick % meter.ticks_per_bar();

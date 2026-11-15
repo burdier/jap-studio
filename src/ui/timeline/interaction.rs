@@ -1,7 +1,6 @@
 //! Picking, arrastre y scroll. Mismo viewport que utiliza paint.rs.
 use super::{ClipHover, DragKind, Timeline, TimelineArea, clip_frame::ClipEdge, trim::EDGE_PX};
 use crate::ui::navigation::{Navigation, pinch_factor, scroll_navigation};
-use crate::ui::time_grid::TimeSpan;
 use gpui::{PinchEvent, Pixels, Point, ScrollEvent, px};
 
 impl Timeline {
@@ -95,50 +94,37 @@ impl Timeline {
         )?;
         match kind {
             DragKind::Audio => {
-                let bpm = self.tempo.bpm();
+                let start = self.magnet_start(beat - grab_offset);
                 let clip = self.clip.as_mut()?;
-                let span = TimeSpan {
-                    start: clip.start_beat,
-                    end: clip.end_beat(bpm),
-                };
-                clip.start_beat = self
-                    .viewport
-                    .grid()
-                    .move_span(
-                        span,
-                        beat - grab_offset - span.start,
-                        0.0,
-                        f64::INFINITY,
-                        0.0,
-                    )
-                    .start;
+                clip.start_beat = start;
                 clip.track = track;
-                self.edit_beat = clip.start_beat;
+                self.edit_beat = start;
             }
             DragKind::Midi => {
+                let start = self.magnet_start(beat - grab_offset);
                 let clip = self.midi_clip.as_mut()?;
-                let span = TimeSpan {
-                    start: clip.start_beat,
-                    end: clip.end_beat(),
-                };
-                clip.start_beat = self
-                    .viewport
-                    .grid()
-                    .move_span(
-                        span,
-                        beat - grab_offset - span.start,
-                        0.0,
-                        f64::INFINITY,
-                        0.0,
-                    )
-                    .start;
+                clip.start_beat = start;
                 clip.track = track;
-                self.edit_beat = clip.start_beat;
+                self.edit_beat = start;
             }
         }
         Some(track)
     }
+    /// Inicio libre salvo cerca de una línea de la rejilla visible, donde se pega.
+    fn magnet_start(&mut self, raw: f64) -> f64 {
+        let raw = raw.max(0.0);
+        let grid = self.viewport.grid();
+        let hit = grid.magnet(raw, self.viewport.grid_step());
+        let start = hit.filter(|hit| hit.captured).map_or(raw, |hit| hit.target);
+        self.snap_guide.track(start, hit);
+        start
+    }
     pub(crate) fn end_clip_drag(&mut self) {
+        if self.clip_drag.is_some_and(|(_, _, moved, _)| moved) {
+            self.snap_guide.release();
+        } else {
+            self.snap_guide.land(None);
+        }
         self.clip_drag = None;
         self.trim_drag = None;
         self.slip_drag = None;

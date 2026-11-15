@@ -206,8 +206,19 @@ impl DawApp {
     ) {
         self.sampler.params.set(id, value);
         self.track_revision = self.track_revision.wrapping_add(1);
-        if sampler::live_control(&self.sampler.params, id).is_some() {
-            self.sampler.update_live();
+        if let Some((cc, v)) = sampler::live_control(&self.sampler.params, id) {
+            self.sampler.update_live_param(id);
+            if let Some(player) = &self.player
+                && player.has_instrument(self.active_sampler_id)
+            {
+                player.send_live_midi(
+                    self.active_sampler_id,
+                    elevate::musical::midi::MidiMessage::ControlChange {
+                        cc,
+                        value: (v.clamp(0.0, 1.0) * 127.0).round() as u8,
+                    },
+                );
+            }
         } else if self.sampler_ui.drag.is_none() && self.sampler_ui.wave_drag.is_none() {
             self.prepare_sampler(cx);
         }

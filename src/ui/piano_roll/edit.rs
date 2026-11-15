@@ -43,6 +43,16 @@ impl DawApp {
             && position.y <= grid.velocity.bottom()
         {
             if position.x < grid.notes.left() {
+                if position.y >= grid.velocity.top() + gpui::px(21.0)
+                    && position.y <= grid.velocity.top() + gpui::px(38.0)
+                {
+                    self.piano_roll.lane_contour = self.piano_roll.lane_contour.next();
+                    self.piano_roll.hint = format!(
+                        "Contorno del carril: {} · Alt+arrastre traza rampa/curva/onda sobre los palitos",
+                        self.piano_roll.lane_contour.label()
+                    );
+                    return;
+                }
                 let current_index = super::lane::LANE_MENU_ITEMS
                     .iter()
                     .position(|item| item.lane == self.piano_roll.active_lane)

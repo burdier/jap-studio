@@ -62,7 +62,9 @@ impl DawApp {
                 ScriptSource::Tool(invocation)
                     if matches!(
                         invocation.package().descriptor().id.as_str(),
-                        "hay.midi.subdivide" | "hay.midi.note_midi_to_chord"
+                        "hay.midi.subdivide"
+                            | "hay.midi.note_midi_to_chord"
+                            | "hay.midi.chord_utility"
                     )
             );
         let package = match &source {
@@ -103,7 +105,10 @@ impl DawApp {
             self.piano_roll.hint = if matches!(
                 &source,
                 ScriptSource::Tool(invocation)
-                    if invocation.package().descriptor().id == "hay.midi.note_midi_to_chord"
+                    if matches!(
+                        invocation.package().descriptor().id.as_str(),
+                        "hay.midi.note_midi_to_chord" | "hay.midi.chord_utility"
+                    )
             ) {
                 "Selecciona las fundamentales para crear acordes".into()
             } else {

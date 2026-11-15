@@ -20,6 +20,22 @@ impl DawApp {
         let Some(name) = parts.first() else {
             return false;
         };
+        if name == "midi.lane.shape" {
+            match parts.as_slice() {
+                [_] => self.apply_roll_action(A::CycleLaneContour, window, cx),
+                [_, key] => {
+                    if let Some(shape) = super::ContourShape::from_key(key) {
+                        self.apply_roll_action(A::SetLaneContour(shape), window, cx);
+                    } else {
+                        self.status_message =
+                            "Contorno inválido: bars, linear, smooth o wave".into();
+                    }
+                }
+                _ => self.status_message = "Uso: midi.lane.shape [bars|linear|smooth|wave]".into(),
+            }
+            cx.notify();
+            return true;
+        }
         if name == "midi.lane.select" {
             if let [_, key] = parts.as_slice() {
                 if let Some(lane) = super::RollLane::from_key(key) {

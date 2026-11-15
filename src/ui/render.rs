@@ -175,6 +175,7 @@ impl Render for DawApp {
             || self.midi_hw.has_ports()
             || cursor_animating
             || particles_alive
+            || self.timeline.snap_animating()
             || cursor_fx_alive
             || self.export_job.is_some()
             || self.settings.audio.probe.is_some()
@@ -268,12 +269,15 @@ impl Render for DawApp {
             .bg(rgb(ds.gutter_color()))
             .text_color(rgb(ds.text))
             .font_family("monospace")
+            .capture_any_mouse_down(cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
+                this.cursor_fx.on_mouse_down(event.position);
+                cx.notify();
+            }))
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(|this, event: &gpui::MouseDownEvent, window, cx| {
+                cx.listener(|this, _: &gpui::MouseDownEvent, window, cx| {
                     this.track_delete_pending = false;
                     window.focus(&this.focus_handle, cx);
-                    this.cursor_fx.on_mouse_down(event.position);
                     cx.notify();
                 }),
             )
@@ -302,9 +306,47 @@ impl Render for DawApp {
             .child(self.render_title_bar(mode_label.clone(), mode_color, cx))
             .on_mouse_move(
                 cx.listener(|this, event: &gpui::MouseMoveEvent, window, cx| {
+                    this.update_tempo_drag(event);
                     this.update_track_control_drag(event.position, event.dragging());
                     let track_drag_changed =
                         this.update_track_reorder_drag(event.position, event.dragging());
+                    if let Some((id, bounds)) = this.sampler_ui.wave_drag {
+                        if event.dragging() {
+                            let percent = f32::from(event.position.x - bounds.left())
+                                / f32::from(bounds.size.width).max(1.)
+                                * 100.;
+                            this.set_sample_param(id, percent, cx);
+                        } else {
+                            this.finish_sample_drag(cx);
+                        }
+                    }
+                    if let Some((id, origin, fraction)) = this.sampler_ui.drag {
+                        if event.dragging() {
+                            let delta = f32::from(origin - event.position.y)
+                                / if event.modifiers.shift { 1600. } else { 160. };
+                            this.set_sample_param(
+                                id,
+                                elevate::devices::sampler::SamplerParams::value_at(
+                                    id,
+                                    fraction + delta,
+                                ),
+                                cx,
+                            );
+                        } else {
+                            this.finish_sample_drag(cx);
+                        }
+                    }
+                    if let Some((id, origin, fraction)) = this.piano_ui.drag {
+                        if event.dragging() {
+                            let delta = f32::from(origin - event.position.y)
+                                / if event.modifiers.shift { 1600. } else { 160. };
+                            let spec = crate::instruments::piano_params::spec_of(id);
+                            this.set_piano_param(id, spec.from_fraction(fraction + delta));
+                        } else {
+                            this.piano_ui.drag = None;
+                        }
+                        cx.notify();
+                    }
                     this.cursor_fx.on_mouse_move(event.position);
                     if let Some(drag) = this.split_drag {
                         if !event.dragging() {
@@ -400,28 +442,36 @@ impl Render for DawApp {
             )
             .on_mouse_up(
                 MouseButton::Left,
-                cx.listener(|this, event: &gpui::MouseUpEvent, _, cx| {
+                cx.listener(|this, event: &gpui::MouseUpEvent, window, cx| {
+                    let tempo_dragged = this.end_tempo_drag(window, cx);
                     let track_dragged = this.track_reorder_drag.is_some();
                     this.finish_track_reorder_drag(event.position);
                     this.end_track_control_drag();
+                    this.finish_sample_drag(cx);
+                    this.piano_ui.drag = None;
                     this.release_mouse_note();
+                    this.release_chord_audition();
                     this.timeline.end_clip_drag();
                     let split_dragged = this.split_drag.take().is_some();
-                    if track_dragged || split_dragged {
+                    if tempo_dragged || track_dragged || split_dragged {
                         cx.notify();
                     }
                 }),
             )
             .on_mouse_up_out(
                 MouseButton::Left,
-                cx.listener(|this, event: &gpui::MouseUpEvent, _, cx| {
+                cx.listener(|this, event: &gpui::MouseUpEvent, window, cx| {
+                    let tempo_dragged = this.end_tempo_drag(window, cx);
                     let track_dragged = this.track_reorder_drag.is_some();
                     this.finish_track_reorder_drag(event.position);
                     this.end_track_control_drag();
+                    this.finish_sample_drag(cx);
+                    this.piano_ui.drag = None;
                     this.release_mouse_note();
+                    this.release_chord_audition();
                     this.timeline.end_clip_drag();
                     let split_dragged = this.split_drag.take().is_some();
-                    if track_dragged || split_dragged {
+                    if tempo_dragged || track_dragged || split_dragged {
                         cx.notify();
                     }
                 }),

@@ -530,6 +530,7 @@ impl DawApp {
         }
     }
     pub(super) fn all_notes_off(&mut self) {
+        let _ = self.piano_roll.chord_sequence.audition.release();
         if let Some(player) = &self.player {
             player.all_live_notes_off();
         }
@@ -689,6 +690,7 @@ impl DawApp {
         }
     }
     pub(super) fn stop_instrument(&mut self) {
+        let _ = self.piano_roll.chord_sequence.audition.release();
         self.vst.silence();
         for vst in self.vst_instances.values_mut() {
             vst.silence();

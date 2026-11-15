@@ -56,7 +56,6 @@ impl DawApp {
                     ) {
                         this.status_message = error;
                     }
-                    cx.stop_propagation();
                     cx.notify();
                 }));
                 let reset: Reset = Rc::new(cx.listener(move |this, _, _, cx| {
@@ -65,7 +64,6 @@ impl DawApp {
                     {
                         this.status_message = error;
                     }
-                    cx.stop_propagation();
                     cx.notify();
                 }));
                 if !control.choices.is_empty() {
@@ -115,12 +113,23 @@ impl DawApp {
             }));
         if let Some(node) = effect.descriptor().response_node {
             let rate = effect.sample_rate() as f64;
+            let track = target.track;
+            let on_edit: response::ParameterEditFn = Rc::new(cx.listener(
+                move |this, &(parameter, value): &(u32, f32), _, cx| {
+                    if let Err(error) = this.edit_fx(track, FxEdit::Parameter(id, parameter, value))
+                    {
+                        this.status_message = error;
+                    }
+                    cx.notify();
+                },
+            ));
             panel.child(response::plot(
                 &self.ds,
                 effect.descriptor(),
                 parameters,
                 node,
                 rate,
+                on_edit,
             ))
         } else {
             panel

@@ -1,5 +1,6 @@
 //! Eje temporal común para bloques del Arrangement y notas del piano roll.
 //! Solo transforma beats y píxeles; no conoce clips, notas ni transporte.
+pub(in crate::ui) mod magnet;
 pub(in crate::ui) mod musical;
 
 #[derive(Clone, Copy)]
