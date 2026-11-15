@@ -2,6 +2,7 @@
 //! Modelo editable → plan preparado → eventos por ventana de frames.
 pub mod arrangement_midi;
 pub mod automation;
+pub mod chord;
 pub mod clip;
 pub mod controller;
 pub mod fx;

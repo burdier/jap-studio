@@ -9,6 +9,28 @@ pub(super) struct LuaTools {
     reload_task: Option<Task<()>>,
 }
 
+impl LuaTools {
+    pub fn new() -> Self {
+        let directories = PackageDirectories {
+            bundled: std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("assets/scripts/tools/midi"),
+            user: dirs::config_dir().map(|root| root.join("hay-daw/tools/midi")),
+        };
+        let mut registry = PackageRegistry::default();
+        if registry.reload(&directories).is_err() {
+            let bundled_only = PackageDirectories {
+                bundled: directories.bundled,
+                user: None,
+            };
+            let _ = registry.reload(&bundled_only);
+        }
+        Self {
+            registry,
+            reload_task: None,
+        }
+    }
+}
+
 impl DawApp {
     pub(super) fn execute_tool_command(
         &mut self,

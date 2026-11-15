@@ -96,3 +96,37 @@ fn catalog_uses_the_same_invocation_and_preserves_native_entries() {
     assert!(elevate::catalog::find("action.export").is_some());
     assert!(elevate::actions::find("midi.script").is_some());
 }
+
+#[test]
+fn bundled_chord_utility_builds_voicings_inversions_bass_and_strum() {
+    let dirs = elevate::scripting::packages::PackageDirectories {
+        bundled: std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("assets/scripts/tools/midi"),
+        user: None,
+    };
+    let mut registry = PackageRegistry::default();
+    registry.reload(&dirs).unwrap();
+    assert!(registry.get("hay.midi.chord_utility").is_some());
+
+    let mut pat = Pattern::new(Tick(3840)).unwrap();
+    let root_id = pat
+        .add_note(InstrumentId(1), Tick(0), Tick(960), 60, 100)
+        .unwrap();
+
+    // Maj7 en 1ª inversión con bajo (-1 octava) y rasgueo de 20 ticks por voz.
+    let edit = invoke(
+        &registry,
+        "midi.tool hay.midi.chord_utility maj7 1 close true 20",
+    )
+    .edit_midi(&pat, &[root_id], MidiOptions::default())
+    .unwrap();
+
+    let mut pitches: Vec<u8> = edit.pattern.notes().iter().map(|n| n.pitch).collect();
+    pitches.sort_unstable();
+    // C4 maj7 (60,64,67,71) -> 1ª inv (64,67,71,72) + bajo C3 (48).
+    assert_eq!(pitches, vec![48, 64, 67, 71, 72]);
+
+    let mut starts: Vec<i64> = edit.pattern.notes().iter().map(|n| n.start.0).collect();
+    starts.sort_unstable();
+    assert_eq!(starts, vec![0, 20, 40, 60, 80]);
+}
