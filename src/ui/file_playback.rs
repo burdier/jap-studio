@@ -1,4 +1,5 @@
 //! Preparación de mezcla cancelable; fuentes y remuestreo fuera del callback.
+mod lua;
 use super::DawApp;
 use crate::audio::drums::DrumInput;
 use crate::audio::piano::VoiceSource;
@@ -16,6 +17,7 @@ pub(super) struct PendingPlayback {
     pattern: Option<elevate::musical::model::Pattern>,
     revision: u64,
     audio: crate::audio::device::AudioConfig,
+    lua_preplay: bool,
 }
 impl DawApp {
     fn audio_snapshot(&self) -> Vec<AudioClip> {
@@ -167,6 +169,7 @@ impl DawApp {
         }
         let (tx, rx) = mpsc::sync_channel(1);
         let audio = self.settings.audio.saved.clone();
+        let lua_script = std::env::var_os("HAY_LUA_PREPLAY_SCRIPT").map(std::path::PathBuf::from);
         let vsts = std::iter::once(&self.vst)
             .chain(self.vst_instances.values())
             .filter_map(|vst| vst.shared().ok())
@@ -181,6 +184,7 @@ impl DawApp {
             pattern: pattern.clone(),
             revision: self.track_revision,
             audio: audio.clone(),
+            lua_preplay: lua_script.is_some(),
         });
         self.status_message = "Preparando mezcla de clips…".into();
         std::thread::spawn(move || {
@@ -188,9 +192,16 @@ impl DawApp {
                 pattern,
                 gain: drum_gain,
             });
-            let _ = tx.send(PreparedPlayback::load(
-                inputs, drums, bpm, meter, audio, vsts,
-            ));
+            let result = (|| {
+                let mut inputs = inputs;
+                if let Some(path) = lua_script {
+                    let source = std::fs::read_to_string(&path)
+                        .map_err(|error| format!("Lua pre-Play ({}): {error}", path.display()))?;
+                    lua::transform_inputs(&mut inputs, &source)?;
+                }
+                PreparedPlayback::load(inputs, drums, bpm, meter, audio, vsts)
+            })();
+            let _ = tx.send(result);
         });
     }
     pub(super) fn poll_file_playback(&mut self) {
@@ -232,14 +243,24 @@ impl DawApp {
                 player.set_drum_gain(self.drum_gain());
                 self.player = Some(player);
                 self.status_message = if self.pattern_loop_beats.is_some() {
-                    "Patrón, MIDI y audio · una salida y un reloj compartidos".into()
+                    if pending.lua_preplay {
+                        "Patrón y MIDI · Lua aplicado antes de Play".into()
+                    } else {
+                        "Patrón, MIDI y audio · una salida y un reloj compartidos".into()
+                    }
+                } else if pending.lua_preplay {
+                    "Reproduciendo MIDI transformado por Lua antes de Play".into()
                 } else {
                     "Reproduciendo mezcla de audio y MIDI · una salida compartida".into()
                 };
             }
             Err(error) => {
                 self.pattern_loop_beats = None;
-                self.status_message = format!("Salida de audio: {error}");
+                self.status_message = if error.starts_with("Lua pre-Play") {
+                    error
+                } else {
+                    format!("Salida de audio: {error}")
+                };
             }
         }
     }

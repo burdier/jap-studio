@@ -152,6 +152,24 @@ impl Pattern {
         &self.notes
     }
 
+    /// Snapshot de reproducción con tonos sustituidos; conserva IDs, tiempos,
+    /// expresión, automatización y el siguiente ID libre del patrón editable.
+    pub fn with_note_pitches(&self, pitches: &[(NoteId, u8)]) -> Result<Self, EditError> {
+        let mut copy = self.clone();
+        for &(id, pitch) in pitches {
+            if pitch > 127 {
+                return Err(EditError::InvalidNote);
+            }
+            let note = copy
+                .notes
+                .iter_mut()
+                .find(|note| note.id == id)
+                .ok_or(EditError::UnknownNote)?;
+            note.pitch = pitch;
+        }
+        Ok(copy)
+    }
+
     pub fn add_note(
         &mut self,
         instrument: InstrumentId,

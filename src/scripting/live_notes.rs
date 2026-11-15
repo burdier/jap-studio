@@ -1,6 +1,7 @@
 //! Correspondencia acotada de notas originales y transformadas, fuera de audio RT.
 use super::live::{LiveEvent, LiveProcessor, MAX_EVENTS_PER_BLOCK};
 use crate::musical::{midi::MidiMessage, model::NoteId};
+mod safety;
 
 pub const MAX_ACTIVE_NOTES: usize = 1024;
 
@@ -20,6 +21,8 @@ pub struct LiveNoteProcessor {
     active: Vec<ActiveNote>,
     pending: Vec<ActiveNote>,
     output: Vec<LiveEvent>,
+    disabled: bool,
+    last_error: Option<String>,
 }
 
 impl LiveNoteProcessor {
@@ -28,7 +31,9 @@ impl LiveNoteProcessor {
             lua: LiveProcessor::prepare(source)?,
             active: Vec::with_capacity(MAX_ACTIVE_NOTES),
             pending: Vec::with_capacity(MAX_ACTIVE_NOTES),
-            output: Vec::with_capacity(MAX_EVENTS_PER_BLOCK),
+            output: Vec::with_capacity(MAX_ACTIVE_NOTES.max(MAX_EVENTS_PER_BLOCK)),
+            disabled: false,
+            last_error: None,
         })
     }
 
@@ -39,6 +44,9 @@ impl LiveNoteProcessor {
         input: &[LiveEvent],
         frames: u32,
     ) -> Result<&[LiveEvent], String> {
+        if self.disabled {
+            return Err("Lua live: instancia desactivada".into());
+        }
         self.output.clear();
         let transformed = self.lua.process_block(input, frames)?;
         self.pending.clear();

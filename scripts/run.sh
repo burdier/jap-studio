@@ -12,6 +12,9 @@ if [ -z "${CONTAINER_ID:-}" ] && command -v distrobox >/dev/null 2>&1; then
         exit 1
     fi
     echo "Entrando a '$CONTAINER'… (la primera compilación tarda; luego se abre la ventana)" >&2
+    if [[ -n "${HAY_LUA_PREPLAY_SCRIPT:-}" ]]; then
+        exec distrobox enter "$CONTAINER" -- env HAY_LUA_PREPLAY_SCRIPT="$HAY_LUA_PREPLAY_SCRIPT" bash scripts/run.sh "$@"
+    fi
     exec distrobox enter "$CONTAINER" -- bash scripts/run.sh "$@"
 fi
 export RUST_BACKTRACE="${RUST_BACKTRACE:-1}"
