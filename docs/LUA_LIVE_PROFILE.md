@@ -11,7 +11,10 @@ clips; tampoco mide el callback.
 
 - Una instancia musical tiene una VM y un script propios. Carga, validación,
   inicialización, reservas y destrucción ocurren fuera del callback. El host
-  publica solo una instancia preparada y un estado con capacidades fijas.
+  publica solo una instancia preparada y un estado con capacidades fijas. El
+  primer `LiveProcessor` admite fuentes de hasta 64 KiB, VM de 2 MiB, 256
+  eventos por bloque y bloques de hasta 4 096 frames; usa 250 ms para preparar
+  y un plazo de 2 ms por bloque procesado.
 - El procesador recibe eventos MIDI ordenados por offset de frame y devuelve
   eventos para el mismo bloque. Conserva el offset salvo que una transformación
   declare explícitamente otro offset válido dentro del bloque. El host conserva
@@ -20,11 +23,10 @@ clips; tampoco mide el callback.
 - El script no accede a archivos, red, reloj, carga de módulos, UI ni plugins.
   Tampoco puede llamar código C arbitrario. El transporte y la mezcla existentes
   siguen siendo los únicos dueños del tiempo y la salida.
-- Se fijarán antes de activar una instancia los máximos de eventos de entrada y
-  salida por bloque, notas activas, bytes de estado y trabajo por llamada. Si no
-  caben los eventos, se informa desbordamiento y se preservan las liberaciones;
-  nunca se trunca un NoteOff silenciosamente. Los números concretos se cerrarán
-  con la implementación y el perfil de carga de este PR.
+- Antes de activar una instancia en audio hay que fijar también el máximo de
+  notas activas y verificar que el plazo de 2 ms sirve para cada tamaño de
+  buffer. Si no caben los eventos, se informa desbordamiento y se preservan las
+  liberaciones; nunca se trunca un NoteOff silenciosamente.
 
 ## Revisión obligatoria del camino RT
 
@@ -36,6 +38,13 @@ tablas por nota ni se ejecuta GC o destrucción costosa en el callback. Se
 reutilizan buffers y almacenamiento de eventos. Si no se puede demostrar una
 ruta acotada, el procesador se prepara y ejecuta antes de Play sobre clips, sin
 anunciar Lua live.
+
+El segundo commit solo aporta `src/scripting/live.rs`: una función Lua preparada
+por instancia que transforma un evento tipado en otro, con buffer Rust
+preasignado y validación de rango. Su método `process_block` se invoca
+explícitamente fuera de RT; `mlua` todavía puede asignar y su plazo basado en
+hook no garantiza un tiempo máximo en el callback. El emparejamiento de
+NoteOn/NoteOff y la integración de audio pertenecen a los siguientes commits.
 
 Si el script falla o excede el presupuesto, el host desactiva solo esa instancia,
 conserva los NoteOff necesarios para sus notas ya enviadas y publica el aviso
