@@ -2,13 +2,14 @@
 mod frame;
 mod handler;
 pub(super) mod session;
+mod shortcut;
 mod stream;
 mod window;
 mod x11;
 pub(super) use handler::{Edit, Handler};
 use std::sync::{
     Arc, Mutex,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU32, Ordering},
     mpsc,
 };
 
@@ -21,6 +22,7 @@ pub(crate) struct EditorHandle {
     pub(super) commands: mpsc::SyncSender<Command>,
     pub(super) closed: Arc<AtomicBool>,
     pub(super) message: Arc<Mutex<Option<String>>>,
+    pub(super) transport_toggles: Arc<AtomicU32>,
     pub(super) join: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
 }
 impl EditorHandle {
@@ -32,6 +34,9 @@ impl EditorHandle {
     }
     pub fn take_message(&self) -> Option<String> {
         self.message.lock().ok()?.take()
+    }
+    pub fn take_transport_toggles(&self) -> u32 {
+        self.transport_toggles.swap(0, Ordering::AcqRel)
     }
     /// Diagnóstico síncrono, después de parar el stream. Nunca desde GPUI o RT.
     #[allow(dead_code)]

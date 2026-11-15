@@ -66,7 +66,7 @@ impl DawApp {
         true
     }
 
-    fn toggle_playback(&mut self) {
+    pub(in crate::ui) fn toggle_playback(&mut self) {
         if self.player.is_some()
             || self.file_playback.is_some()
             || self.instrument.clip_playing()

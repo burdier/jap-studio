@@ -129,8 +129,10 @@ La audición VST3 usa un stream por instancia; Play silencia esos streams y usa 
 motor común. El tail se acota entre 2 y 10 segundos; todavía no hay compensación
 de latencia ni buses auxiliares.
 Los plugins nativos se ejecutan dentro del proceso; este host no aísla crashes nativos.
-El teclado de ordenador y Espacio con foco en la ventana externa dependen del editor;
-no se ha implementado el retorno de teclas sin consumir a Hay.
+Espacio con foco en la ventana externa solicita Play/Stop al transporte común de Hay.
+El resto del teclado depende del editor; no se ha implementado el retorno de otras
+teclas sin consumir a Hay. La interacción de Espacio con un plugin real sigue
+pendiente de comprobación manual.
 
 ## Verificación realizada
 

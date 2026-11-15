@@ -14,6 +14,18 @@ use gpui::{AppContext, Context};
 use std::path::PathBuf;
 
 impl DawApp {
+    pub(in crate::ui) fn poll_vst_transport_shortcuts(&mut self) {
+        let mut toggles = self.vst.take_transport_toggles();
+        for vst in self.vst_instances.values() {
+            toggles = toggles.wrapping_add(vst.take_transport_toggles());
+        }
+        for effect in self.vst_effects.instances.values() {
+            toggles = toggles.wrapping_add(effect.editor.take_transport_toggles());
+        }
+        if toggles % 2 == 1 {
+            self.toggle_playback();
+        }
+    }
     pub(in crate::ui) fn is_vst_id(&self, id: InstrumentId) -> bool {
         id == self.vst.id || self.vst_instances.contains_key(&id)
     }

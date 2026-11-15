@@ -44,7 +44,7 @@ pub(super) struct Key {
     pub window: c_ulong,
     root: c_ulong,
     subwindow: c_ulong,
-    time: c_ulong,
+    pub time: c_ulong,
     x: c_int,
     y: c_int,
     x_root: c_int,
@@ -74,6 +74,8 @@ pub(super) struct X11 {
     pending: unsafe extern "C" fn(*mut Display) -> c_int,
     next: unsafe extern "C" fn(*mut Display, *mut Event) -> c_int,
     lookup: unsafe extern "C" fn(*mut Key, *mut c_char, c_int, *mut c_ulong, *mut c_void) -> c_int,
+    keysym_to_keycode: unsafe extern "C" fn(*mut Display, c_ulong) -> u8,
+    grab_key: unsafe extern "C" fn(*mut Display, c_int, c_uint, c_ulong, c_int, c_int, c_int),
     destroy: unsafe extern "C" fn(*mut Display, c_ulong) -> c_int,
     close: unsafe extern "C" fn(*mut Display) -> c_int,
 }
@@ -140,6 +142,8 @@ impl X11 {
                 pending: symbol(library, c"XPending")?,
                 next: symbol(library, c"XNextEvent")?,
                 lookup: symbol(library, c"XLookupString")?,
+                keysym_to_keycode: symbol(library, c"XKeysymToKeycode")?,
+                grab_key: symbol(library, c"XGrabKey")?,
                 destroy: symbol(library, c"XDestroyWindow")?,
                 close: symbol(library, c"XCloseDisplay")?,
             };
@@ -160,6 +164,12 @@ impl X11 {
                 0x202224,
             );
             select(api.display, api.window, (1 << 17) | (1 << 21) | 1 | 2);
+            // Un grab pasivo sobre el host recibe Espacio aunque el foco esté
+            // dentro del editor hijo que el plugin crea para IPlugView.
+            let space = (api.keysym_to_keycode)(api.display, 0x20);
+            if space != 0 {
+                (api.grab_key)(api.display, i32::from(space), 1 << 15, api.window, 0, 1, 1);
+            }
             name(api.display, api.window, title.as_ptr());
             api.delete = atom(api.display, c"WM_DELETE_WINDOW".as_ptr(), 0);
             api.protocols = atom(api.display, c"WM_PROTOCOLS".as_ptr(), 0);

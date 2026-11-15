@@ -47,6 +47,7 @@ pub(crate) fn spawn(
         commands,
         closed: Arc::new(AtomicBool::new(false)),
         message: Arc::new(Mutex::new(None)),
+        transport_toggles: Arc::new(std::sync::atomic::AtomicU32::new(0)),
         join: Arc::new(Mutex::new(None)),
     };
     let owner = handle.clone();
@@ -120,7 +121,7 @@ impl Session {
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
             }
-            if window.as_mut().is_some_and(|window| !window.tick()) {
+            if window.as_mut().is_some_and(|window| !window.tick(handle)) {
                 window = None;
             }
             let flags = self.handler.restart.swap(0, Ordering::Relaxed);

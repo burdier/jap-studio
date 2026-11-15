@@ -21,6 +21,7 @@ impl Render for DawApp {
             self.timeline.import_preview = None;
         }
         self.poll_live_midi();
+        self.poll_vst_transport_shortcuts();
         if self.vst_task.is_none()
             && let Some((track, bundle, class)) = self.vst_reloads.pop_front()
         {

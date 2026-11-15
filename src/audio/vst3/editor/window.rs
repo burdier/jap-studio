@@ -1,6 +1,8 @@
 //! Ventana original devuelta por createView("editor"), sin reconstruir controles.
 use super::{
+    EditorHandle,
     frame::{Frame, valid},
+    shortcut::SpaceShortcut,
     x11::X11,
 };
 use std::{ptr, rc::Rc};
@@ -14,6 +16,7 @@ pub(super) struct Window {
     _frame_interface: ComPtr<IPlugFrame>,
     x11: Rc<X11>,
     attached: bool,
+    space: SpaceShortcut,
 }
 impl Window {
     pub fn open(controller: &ComPtr<IEditController>, name: &str) -> Result<Self, String> {
@@ -44,6 +47,7 @@ impl Window {
                 _frame_interface: interface,
                 x11,
                 attached: false,
+                space: SpaceShortcut::default(),
             };
             window.x11.raise();
             super::super::check(
@@ -65,7 +69,7 @@ impl Window {
         self.x11.raise();
     }
     /// false solicita cerrar solo la ventana; el instrumento continúa procesando audio.
-    pub fn tick(&mut self) -> bool {
+    pub fn tick(&mut self, handle: &EditorHandle) -> bool {
         self.frame.tick();
         for _ in 0..256 {
             let Some(mut event) = self.x11.poll() else {
@@ -108,8 +112,23 @@ impl Window {
                     }
                     2 | 3 => {
                         let down = event.kind == 2;
-                        let (character, _) = self.x11.key(&mut event.key);
+                        let (character, symbol) = self.x11.key(&mut event.key);
                         let state = event.key.state;
+                        if symbol == 0x20 {
+                            if !down {
+                                self.space.key(false, event.key.time as u64);
+                                if state & (1 | 4 | 8 | 64) == 0 {
+                                    continue;
+                                }
+                            } else if state & (1 | 4 | 8 | 64) == 0 {
+                                if self.space.key(true, event.key.time as u64) {
+                                    handle
+                                        .transport_toggles
+                                        .fetch_add(1, std::sync::atomic::Ordering::Release);
+                                }
+                                continue;
+                            }
+                        }
                         let modifiers = ((state & 1 != 0) as i16)
                             | (((state & 8 != 0) as i16) << 1)
                             | (((state & 4 != 0) as i16) << 2);
