@@ -6,6 +6,7 @@ pub mod clip;
 pub mod controller;
 pub mod fx;
 pub mod grid;
+pub mod hilo;
 pub mod keyboard;
 pub mod materialize;
 pub mod midi;

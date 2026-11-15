@@ -33,6 +33,18 @@ pub enum TrackKind {
     Group,
 }
 
+/// Distribución de las notas de un Hilo entre sus pistas hijas con instrumento.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HiloMode {
+    Layer,
+    RoundRobin,
+}
+impl Default for HiloMode {
+    fn default() -> Self {
+        Self::Layer
+    }
+}
+
 impl TrackKind {
     pub fn label(self) -> &'static str {
         match self {
@@ -55,6 +67,8 @@ pub struct Track {
     pub muted: bool,
     pub solo: bool,
     pub parent: Option<TrackId>,
+    /// Solo los grupos pueden actuar como Hilo. Sus hijas son las ramas.
+    pub hilo: Option<HiloMode>,
     /// Topología FX recursiva; datos de proyecto, sin instancias DSP.
     pub chain: FxChain,
 }
@@ -76,6 +90,7 @@ impl Track {
             muted: false,
             solo: false,
             parent: None,
+            hilo: None,
             chain: FxChain::new(),
         }
     }
@@ -86,7 +101,7 @@ impl Track {
         Ok(())
     }
     pub fn accepts_clips(&self) -> bool {
-        self.kind != TrackKind::Group
+        self.kind != TrackKind::Group || self.hilo.is_some()
     }
 
     pub fn is_audible(&self, solo_active: bool) -> bool {
@@ -118,6 +133,7 @@ const fn track(id: u32, name: &'static str, kind: TrackKind) -> Track {
         muted: false,
         solo: false,
         parent: None,
+        hilo: None,
         chain: FxChain::new(),
     }
 }
@@ -129,7 +145,7 @@ pub fn assign_instrument(
     index: usize,
     instrument: InstrumentId,
 ) -> Option<usize> {
-    if index >= tracks.len() {
+    if index >= tracks.len() || tracks[index].kind == TrackKind::Group {
         return None;
     }
     let previous = tracks

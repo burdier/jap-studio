@@ -25,8 +25,8 @@ pub(super) fn write_clips(
             return Err("ID de clip MIDI duplicado".into());
         }
         let track = tracks.get(clip.track).ok_or("Carril MIDI inexistente")?;
-        if track.kind == TrackKind::Group {
-            return Err("Un grupo no admite clips MIDI".into());
+        if track.kind == TrackKind::Group && track.hilo.is_none() {
+            return Err("Un grupo sin Hilo no admite clips MIDI".into());
         }
         validate_clip(clip)?;
     }
@@ -109,7 +109,9 @@ pub(super) fn read_clips(doc: &LoroDoc, tracks: &[ProjectTrack]) -> Result<Vec<M
             .map_err(|_| "TrackId MIDI inválido")?;
         let track = tracks
             .iter()
-            .position(|track| track.id == track_id && track.kind != TrackKind::Group)
+            .position(|track| {
+                track.id == track_id && (track.kind != TrackKind::Group || track.hilo.is_some())
+            })
             .ok_or("Pista del clip MIDI inexistente")?;
         let note_order = doc.get_movable_list(note_order_key(id));
         let mut notes = Vec::with_capacity(note_order.len());

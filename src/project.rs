@@ -1,5 +1,5 @@
 //! Documento CRDT del proyecto. Solo datos editables; audio decodificado y vistas viven fuera.
-use crate::musical::track::{Track, TrackId, TrackKind};
+use crate::musical::track::{HiloMode, Track, TrackId, TrackKind};
 use loro::{ExportMode, LoroDoc};
 use std::{
     collections::HashSet,
@@ -28,6 +28,7 @@ pub struct ProjectTrack {
     pub kind: TrackKind,
     pub parent: Option<TrackId>,
     pub instrument: Option<u32>,
+    pub hilo: Option<HiloMode>,
     pub muted: bool,
     pub solo: bool,
 }
@@ -40,6 +41,7 @@ impl From<&Track> for ProjectTrack {
             kind: track.kind,
             parent: track.parent,
             instrument: track.instrument.map(|id| id.0),
+            hilo: track.hilo,
             muted: track.muted,
             solo: track.solo,
         }
@@ -152,6 +154,15 @@ impl ProjectDoc {
             map.insert("instrument", track.instrument.map_or(-1, i64::from))
                 .map_err(|e| e.to_string())?;
         }
+        let hilo_code = match track.hilo {
+            None => -1,
+            Some(HiloMode::Layer) => 0,
+            Some(HiloMode::RoundRobin) => 1,
+        };
+        if read_i64(&map, "hilo_mode").ok() != Some(hilo_code) {
+            map.insert("hilo_mode", hilo_code)
+                .map_err(|e| e.to_string())?;
+        }
         if read_bool(&map, "muted").ok() != Some(track.muted) {
             map.insert("muted", track.muted)
                 .map_err(|e| e.to_string())?;
@@ -190,6 +201,16 @@ impl ProjectDoc {
                 kind: kind_from_code(read_i64(&map, "kind")?)?,
                 parent: read_optional_id(&map, "parent")?.map(TrackId),
                 instrument: read_optional_id(&map, "instrument")?,
+                hilo: match if map.get("hilo_mode").is_some() {
+                    read_i64(&map, "hilo_mode")?
+                } else {
+                    -1
+                } {
+                    -1 => None,
+                    0 => Some(HiloMode::Layer),
+                    1 => Some(HiloMode::RoundRobin),
+                    _ => return Err("Modo de Hilo inválido".into()),
+                },
                 muted: read_bool(&map, "muted")?,
                 solo: read_bool(&map, "solo")?,
             });
@@ -242,6 +263,7 @@ impl ProjectDoc {
                     name: entry.name.into(),
                     kind: entry.kind,
                     instrument: entry.instrument.map(crate::musical::model::InstrumentId),
+                    hilo: entry.hilo,
                     muted: entry.muted,
                     solo: entry.solo,
                     parent: entry.parent,

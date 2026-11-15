@@ -6,6 +6,7 @@ use super::{
     time::{FrameWindow, TimeBase},
     track::{Track, TrackId},
 };
+mod hilo;
 
 #[derive(Debug, Clone, Copy)]
 pub struct ArrangementEvent {
@@ -29,6 +30,23 @@ pub struct PreparedMidiArrangement {
 }
 
 impl PreparedMidiArrangement {
+    /// Une planes ya compilados fuera del callback; conserva el orden de los eventos.
+    pub fn append(&mut self, mut other: Self) -> Result<(), String> {
+        if self.events.len() + other.events.len() > 65_536 {
+            return Err("Plan MIDI excede 65536 eventos".into());
+        }
+        self.end_frame = self.end_frame.max(other.end_frame);
+        self.events.append(&mut other.events);
+        self.events.sort_by_key(|item| {
+            (
+                item.frame,
+                item.routed.event.kind,
+                item.routed.track,
+                item.routed.event.note,
+            )
+        });
+        Ok(())
+    }
     /// Prepara una pista conservando su TrackId, aunque el Arrangement la sitúe
     /// en cualquier índice. La copia y el remapeo ocurren fuera del callback.
     pub fn compile_track(

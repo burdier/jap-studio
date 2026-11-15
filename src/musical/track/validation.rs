@@ -3,11 +3,27 @@ use super::{Track, TrackId, TrackKind};
 use std::collections::HashMap;
 
 pub fn validate_track_structure(tracks: &[Track]) -> Result<(), String> {
+    if tracks
+        .iter()
+        .any(|track| track.hilo.is_some() && track.kind != TrackKind::Group)
+    {
+        return Err("Solo un grupo puede ser Hilo".into());
+    }
+    if tracks
+        .iter()
+        .any(|track| track.kind == TrackKind::Group && track.instrument.is_some())
+    {
+        return Err("Los instrumentos del Hilo pertenecen a sus pistas hijas".into());
+    }
     validate_track_layout(
         tracks
             .iter()
             .map(|track| (track.id, track.kind, track.parent)),
-    )
+    )?;
+    for group in tracks.iter().filter(|track| track.hilo.is_some()) {
+        super::super::hilo::HiloPlan::compile(tracks, group.id, group.hilo.unwrap())?;
+    }
+    Ok(())
 }
 
 /// El orden es el orden visible: grupo seguido inmediatamente por sus hijos.

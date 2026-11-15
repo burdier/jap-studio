@@ -39,6 +39,34 @@ pub(super) fn order_id(order: &loro::LoroMovableList, index: usize) -> Option<Tr
         .map(TrackId)
 }
 pub(super) fn validate_tracks(tracks: &[ProjectTrack]) -> Result<(), String> {
+    if tracks
+        .iter()
+        .any(|track| track.hilo.is_some() && track.kind != TrackKind::Group)
+    {
+        return Err("Solo un grupo puede ser Hilo".into());
+    }
+    if tracks
+        .iter()
+        .any(|track| track.kind == TrackKind::Group && track.instrument.is_some())
+    {
+        return Err("Los instrumentos del Hilo pertenecen a sus pistas hijas".into());
+    }
+    for group in tracks.iter().filter(|track| track.hilo.is_some()) {
+        let instruments: Vec<_> = tracks
+            .iter()
+            .filter(|child| child.parent == Some(group.id))
+            .filter_map(|child| child.instrument)
+            .collect();
+        if instruments.len() < 2
+            || instruments
+                .iter()
+                .collect::<std::collections::HashSet<_>>()
+                .len()
+                != instruments.len()
+        {
+            return Err("El Hilo necesita dos instrumentos distintos".into());
+        }
+    }
     validate_track_layout(
         tracks
             .iter()

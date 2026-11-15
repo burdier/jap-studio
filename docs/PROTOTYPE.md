@@ -4,6 +4,12 @@ Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MOD
 
 ## Disponible
 
+- **PR-07, segundo incremento (modelo interno):** un grupo puede guardar un
+  modo Hilo de capas o round robin. El plan valida ramas tipadas con dos
+  instrumentos distintos; los clips del grupo se preparan por frame y cada
+  NoteOff regresa a la rama del NoteOn. La reproducción y la edición desde UI
+  quedan para los siguientes commits.
+
 - **MIDI en vivo durante Play:** el piano SoundFont y Hay Sampler se suman al WAV
   en el motor compartido, incluso si su pista no tiene clip MIDI. Tocar una nota
   no detiene Play; fuera de Play sigue la audición individual.

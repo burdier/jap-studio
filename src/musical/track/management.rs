@@ -50,6 +50,9 @@ pub fn edit_tracks(
                 copy.name = format!("{} copia", original.name).into();
                 // La única instancia de instrumento sigue asignada a su pista original.
                 copy.instrument = None;
+                if copy.kind == TrackKind::Group {
+                    copy.hilo = None;
+                }
                 copy.chain = original.chain.duplicate();
                 if copy.kind == TrackKind::Group {
                     groups.push((original.id, copy.id));
@@ -71,7 +74,9 @@ pub fn edit_tracks(
         TrackEdit::Group => {
             let members: Vec<_> = tracks
                 .iter()
-                .filter(|t| selected.contains(&t.id) && t.accepts_clips())
+                .filter(|t| {
+                    selected.contains(&t.id) && t.kind != TrackKind::Group && t.accepts_clips()
+                })
                 .cloned()
                 .collect();
             if members.len() < 2 {

@@ -1,5 +1,14 @@
 # Arquitectura del prototipo
 
+## PR-07, segundo incremento: modelo de Hilo
+
+`musical/hilo.rs` compila las hijas de un grupo como ramas con puertos
+`Events` o `Audio`, IDs estables e instrumentos distintos.
+`musical/arrangement_midi/hilo.rs` prepara fuera del callback la distribución
+`Layer` o `RoundRobin` y conserva la rama elegida para cada NoteOff. El modo
+se guarda en el documento Loro junto al grupo; un grupo Hilo puede contener
+clips MIDI. Todavía falta conectar estos planes con el motor de audio y la UI.
+
 ## PR-06: contexto temporal y propiedad de instrumentos VST3
 
 `audio/vst3/context.rs` convierte la posición en frames del transporte de Play a
