@@ -8,10 +8,12 @@ eventos MIDI tipados con un límite de 256 eventos por bloque. El host conserva
 por cada NoteOn; NoteOff usa ese destino y su offset original. Para MIDI físico
 sin ID, empareja pulsaciones repetidas del mismo canal y tono en orden inverso.
 Un resultado inválido descarta el bloque completo sin cambiar el registro. El
-intervalo del transpositor vive en el script Lua. No está conectado al callback:
-`mlua` puede asignar o ejecutar GC y el plazo basado en hook no demuestra un
-límite de tiempo RT. El [perfil y la medición pendiente](LUA_LIVE_PROFILE.md)
-definen la condición para esa integración.
+intervalo del transpositor vive en el script Lua. Ante fallo, la instancia emite
+NoteOff para sus destinos previos y se desactiva. La ruta de Play puede aplicar
+el script a copias de clips MIDI en su worker antes de preparar el motor. No está
+conectado al callback: `mlua` usa un mutex reentrante y puede asignar o ejecutar
+GC. El [perfil](LUA_LIVE_PROFILE.md) y el [informe](LUA_LIVE_REPORT.md) documentan
+la decisión de alcance revisado.
 
 ## PR-07: primer recorrido de Hilos sobre grupos
 

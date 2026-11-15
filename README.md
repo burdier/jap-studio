@@ -90,6 +90,16 @@ tengan instrumento y añade Hay Utility a cada rama.
 El modo queda en el documento de proyecto; la UI todavía no guarda una sesión
 completa al salir. [Estado y límites](docs/ARCHITECTURE.md#pr-07-primer-recorrido-de-hilos-sobre-grupos).
 
+## Lua musical previo a Play
+
+Para oír el transpositor Lua de ejemplo, inicia Hay desde la raíz con
+`HAY_LUA_PREPLAY_SCRIPT=assets/scripts/components/midi/transposer.lua bash scripts/run.sh`,
+abre un clip MIDI y pulsa Play. El worker aplica el script a una copia de los
+clips; el piano roll conserva sus notas. Editar `local semitones = 7` en el
+script cambia el intervalo para el siguiente Play. Un error cancela la
+preparación y aparece en el estado del DAW. La ruta no se guarda en el proyecto
+ni ejecuta Lua en audio. [Medición y alcance](docs/LUA_LIVE_REPORT.md).
+
 ## Track FX sin cambiar Add
 
 El **[+]**, **A** y **:add** siguen abriendo el mismo catálogo general. Elegir **Hay Utility**

@@ -48,7 +48,7 @@ mismo canal y tono. Lua decide el intervalo en
 bloque completo o conserva el estado anterior; los NoteOff usan el offset
 original. Estos métodos se invocan explícitamente fuera de RT: `mlua` todavía
 puede asignar y su plazo basado en hook no garantiza un tiempo máximo en el
-callback. Faltan el manejo de error en el flujo de audio y la medición.
+callback. [Medición y decisión de alcance](LUA_LIVE_REPORT.md).
 
 Si el script falla o excede el presupuesto, el host desactiva solo esa instancia,
 conserva los NoteOff necesarios para sus notas ya enviadas y publica el aviso
@@ -68,8 +68,8 @@ del callback y el incremento frente al recorrido sin script. El presupuesto de
 cada bloque es `frames / sample_rate` segundos; un promedio bajo o un p50 bajo
 no prueban que se cumpla el plazo.
 
-El cierre de PR-08 requiere que la peor carga medida no incumpla plazos y que
-se pueda justificar un límite de trabajo y memoria para la ruta ejecutada en
-audio. Si falla cualquiera de las dos condiciones, se entrega la transformación
-previa a Play como alcance revisado y se deja explícitamente pendiente Lua live.
-No se añade otro runtime ni se marca PR-09 como procesamiento live por inferencia.
+La medición en memoria no incumplió plazos, pero la auditoría encontró un mutex
+reentrante y trabajo de asignación/GC no acotado en el camino de `mlua`. Por ello
+el cierre de PR-08 entrega la transformación previa a Play como alcance revisado
+y deja explícitamente pendiente Lua live. No se añade otro runtime ni se marca
+PR-09 como procesamiento live por inferencia.

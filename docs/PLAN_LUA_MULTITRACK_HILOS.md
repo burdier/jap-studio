@@ -446,6 +446,13 @@ No anunciar ejecución multinúcleo en este PR.
 
 ## PR-08 — Procesador musical Lua y medición de ejecución
 
+**Estado (alcance revisado):** el procesador y el transpositor Lua están
+preparados y probados; el worker transforma snapshots MIDI antes de Play. La
+[medición y auditoría](LUA_LIVE_REPORT.md) no justifican llamar `mlua` desde el
+callback, por su mutex reentrante y asignación/GC potenciales. El cierre de
+este PR se limita a esa ruta previa a Play. Lua live queda pendiente y PR-09
+debe usar operaciones acotadas o esperar una solución RT demostrada.
+
 **Título sugerido:** `feat(lua): incorporar procesamiento musical con presupuesto verificable`
 
 **Valor previsto:** insertar un transpositor Lua que procese notas en vivo y permita
