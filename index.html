@@ -502,7 +502,7 @@
               <ol>
                 <li data-status="done"><strong>docs(lua): fijar el perfil de ejecución musical</strong><a href="docs/LUA_LIVE_PROFILE.md">Contrato y protocolo de medición</a>; todavía no ejecuta Lua en audio.</li>
                 <li data-status="done"><strong>feat(lua): preparar el procesador y sus límites</strong>VM por instancia y eventos tipados acotados; ejecución explícita fuera del callback hasta completar la auditoría de <code>mlua</code>.</li>
-                <li><strong>feat(lua): exponer transformación de notas</strong>Implementar el transpositor Lua y probar offsets, IDs asociados y NoteOff.</li>
+                <li data-status="done"><strong>feat(lua): exponer transformación de notas</strong>Transpositor Lua y registro de NoteOn/NoteOff por ID o pila MIDI; offsets y liberaciones probados fuera de RT.</li>
                 <li><strong>feat(audio): proteger el flujo ante error o sobrecarga Lua</strong>Preservar liberaciones, desactivar la instancia afectada y notificar fuera del callback.</li>
                 <li><strong>perf(lua): medir la integración live bajo carga</strong>Comparar 1/8/32 instancias y buffers; registrar equipo, percentiles, máximo y plazos perdidos. Revisar el alcance si no cumple.</li>
               </ol>
@@ -625,7 +625,7 @@
       </section>
 
       <footer>
-        <span>Estimación inicial total: 68–127 jornadas-persona (aprox. 14–26 semanas a tiempo completo). PR-01 a PR-06 completados; PR-07 en progreso local; PR-08 tiene su contrato documentado. Falta la comprobación interactiva de algunas entregas.</span>
+        <span>Estimación inicial total: 68–127 jornadas-persona (aprox. 14–26 semanas a tiempo completo). PR-01 a PR-06 completados; PR-07 en progreso local; PR-08 tiene transpositor preparado fuera de RT. Falta la comprobación interactiva de algunas entregas.</span>
         <a href="docs/PLAN_LUA_MULTITRACK_HILOS.md">Ver tareas y criterios completos</a>
       </footer>
     </main>

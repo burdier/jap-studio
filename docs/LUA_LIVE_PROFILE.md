@@ -39,12 +39,16 @@ reutilizan buffers y almacenamiento de eventos. Si no se puede demostrar una
 ruta acotada, el procesador se prepara y ejecuta antes de Play sobre clips, sin
 anunciar Lua live.
 
-El segundo commit solo aporta `src/scripting/live.rs`: una función Lua preparada
-por instancia que transforma un evento tipado en otro, con buffer Rust
-preasignado y validación de rango. Su método `process_block` se invoca
-explícitamente fuera de RT; `mlua` todavía puede asignar y su plazo basado en
-hook no garantiza un tiempo máximo en el callback. El emparejamiento de
-NoteOn/NoteOff y la integración de audio pertenecen a los siguientes commits.
+`src/scripting/live.rs` aporta una función Lua preparada por instancia que
+transforma un evento tipado en otro, con buffer Rust preasignado y validación de
+rango. `src/scripting/live_notes.rs` conserva por `NoteId` el tono y canal de
+salida de cada NoteOn; para MIDI físico sin ID, libera la última pulsación del
+mismo canal y tono. Lua decide el intervalo en
+`assets/scripts/components/midi/transposer.lua`. El registro confirma cada
+bloque completo o conserva el estado anterior; los NoteOff usan el offset
+original. Estos métodos se invocan explícitamente fuera de RT: `mlua` todavía
+puede asignar y su plazo basado en hook no garantiza un tiempo máximo en el
+callback. Faltan el manejo de error en el flujo de audio y la medición.
 
 Si el script falla o excede el presupuesto, el host desactiva solo esa instancia,
 conserva los NoteOff necesarios para sus notas ya enviadas y publica el aviso

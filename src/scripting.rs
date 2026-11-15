@@ -10,6 +10,7 @@ pub use target::MidiScriptTarget;
 mod arrays;
 pub mod audio_components;
 pub mod live;
+pub mod live_notes;
 pub mod packages;
 pub mod push;
 mod sandbox;

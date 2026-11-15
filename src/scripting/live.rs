@@ -1,5 +1,5 @@
 //! Procesador musical Lua preparado por instancia. Aún no se invoca desde audio RT.
-use crate::musical::midi::MidiMessage;
+use crate::musical::{midi::MidiMessage, model::NoteId};
 use mlua::{Function, HookTriggers, Lua, LuaOptions, StdLib, VmState, chunk::ChunkMode};
 use std::{
     cell::Cell,
@@ -21,6 +21,8 @@ pub struct LiveEvent {
     pub offset: u32,
     pub channel: u8,
     pub message: MidiMessage,
+    /// Identidad estable del clip; `None` para MIDI físico sin ID propio.
+    pub note_id: Option<NoteId>,
 }
 
 /// La función Lua recibe `(tipo, canal, dato1, dato2, offset)` y devuelve cinco
@@ -107,10 +109,11 @@ impl LiveProcessor {
                 self.output.clear();
                 error.to_string()
             })?;
-            let transformed = decode(result, frames).map_err(|error| {
+            let mut transformed = decode(result, frames).map_err(|error| {
                 self.output.clear();
                 error
             })?;
+            transformed.note_id = event.note_id;
             self.output.push(transformed);
         }
         if Instant::now() >= self.deadline.get() {
@@ -195,6 +198,7 @@ fn decode(
         offset,
         channel,
         message,
+        note_id: None,
     })
 }
 
@@ -216,11 +220,13 @@ mod tests {
                     note: 60,
                     velocity: 100,
                 },
+                note_id: Some(NoteId(1)),
             },
             LiveEvent {
                 offset: 63,
                 channel: 2,
                 message: MidiMessage::NoteOff { note: 60 },
+                note_id: Some(NoteId(1)),
             },
         ];
         assert_eq!(processor.process_block(&input, 64).unwrap(), input);
@@ -241,6 +247,7 @@ mod tests {
                 note: 60,
                 velocity: 100,
             },
+            note_id: None,
         };
         let mut invalid = LiveProcessor::prepare(
             "return function(kind, channel, a, b, offset) return kind, channel, a, b, 64 end",

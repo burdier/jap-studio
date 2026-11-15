@@ -2,11 +2,12 @@
 
 Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MODULATION.md).
 
-**PR-08, segundo incremento:** el [perfil Lua musical live](LUA_LIVE_PROFILE.md)
+**PR-08, tercer incremento:** el [perfil Lua musical live](LUA_LIVE_PROFILE.md)
 define ciclo de vida, liberación de notas y medición. `LiveProcessor` prepara una
-VM por instancia y transforma eventos tipados con límites de memoria y bloque;
-todavía se invoca fuera de RT. Faltan emparejamiento NoteOn/NoteOff, integración
-de audio y medición del callback.
+VM por instancia y transforma eventos tipados con límites de memoria y bloque.
+El transpositor Lua cambia el tono; el host guarda `NoteId` y el destino de cada
+NoteOn para devolver NoteOff al tono correcto, incluso con notas repetidas sin ID.
+Se invoca fuera de RT. Faltan manejo de error en audio y medición del callback.
 
 ## Disponible
 

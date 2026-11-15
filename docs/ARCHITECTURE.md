@@ -1,5 +1,18 @@
 # Arquitectura del prototipo
 
+## PR-08: transformación musical Lua preparada
+
+`scripting/live` prepara una VM por instancia fuera de audio y transforma
+eventos MIDI tipados con un límite de 256 eventos por bloque. El host conserva
+`NoteId` fuera de Lua. `scripting/live_notes` registra el tono/canal producido
+por cada NoteOn; NoteOff usa ese destino y su offset original. Para MIDI físico
+sin ID, empareja pulsaciones repetidas del mismo canal y tono en orden inverso.
+Un resultado inválido descarta el bloque completo sin cambiar el registro. El
+intervalo del transpositor vive en el script Lua. No está conectado al callback:
+`mlua` puede asignar o ejecutar GC y el plazo basado en hook no demuestra un
+límite de tiempo RT. El [perfil y la medición pendiente](LUA_LIVE_PROFILE.md)
+definen la condición para esa integración.
+
 ## PR-07: primer recorrido de Hilos sobre grupos
 
 Un grupo puede elegir `Layer` o `RoundRobin` desde su menú contextual. `musical/hilo`
