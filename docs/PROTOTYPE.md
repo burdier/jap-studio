@@ -2,6 +2,10 @@
 
 Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MODULATION.md).
 
+**Siguiente incremento (PR-08):** el [perfil Lua musical live](LUA_LIVE_PROFILE.md)
+define ciclo de vida, liberación de notas y medición antes de implementar el
+procesador. El sandbox actual y el diagnóstico de edición siguen fuera de RT.
+
 ## Disponible
 
 - **PR-07, primer incremento:** agrupa dos pistas con instrumento, abre el menú del
