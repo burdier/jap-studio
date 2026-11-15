@@ -508,16 +508,16 @@
               </ol>
             </details>
           </article>
-          <article data-pr="PR-09" data-status="pending">
-            <div class="pr-head"><span class="pr-number">PR-09</span><span class="status">Pendiente</span></div>
+          <article data-pr="PR-09" data-status="progress">
+            <div class="pr-head"><span class="pr-number">PR-09</span><span class="status">En progreso</span></div>
             <h3>Modo Tejer</h3>
-            <p>Distribuir notas round robin sin perder liberaciones ni expresión.</p>
+            <p>Una regla Lua preparada distribuye notas entre ramas del Hilo en vivo y en clips. Pendientes identidad/expresión completa, sustain y colas.</p>
             <div class="depends">Depende de PR-07 y 08</div>
             <details class="commit-plan">
               <summary>4 commits · 4–8 días · reglas Tejer en Lua</summary>
               <ol>
-                <li><strong>docs(tejer): especificar selección y reinicio</strong>Fijar avance, simultaneidad, seek/Play, edición del Hilo y manejo de errores.</li>
-                <li><strong>feat(tejer): enrutar NoteOn y registrar su destino</strong>Aplicar A-B-C con orden estable, guardar destino por voz y probar NoteOff/expresión, repeticiones y acordes. El registro se necesita para no perder liberaciones.</li>
+                <li data-status="done" data-commit="795aa5e"><strong>feat(tejer): preparar reglas Lua y distribuir notas por ramas</strong>Secuencia acotada en vivo y clips, destino de NoteOff y reinicio; <a href="docs/TEJER.md">uso y límites</a>.</li>
+                <li><strong>feat(tejer): completar identidad y expresión por nota</strong>Emparejar repeticiones y acordes por voz/canal, conservar el destino de NoteOff y expresión fuera de orden.</li>
                 <li><strong>feat(tejer): conservar sustain, control y colas</strong>Aplicar CC/pitch bend, panic y retiros de rama; probar que no queden notas colgadas con sus cambios activos.</li>
                 <li><strong>feat(tejer): mantener el resultado independiente del bloque</strong>Probar A-B-C-A-B-C, simultaneidad y partición en varios tamaños como cierre del comportamiento musical.</li>
               </ol>
@@ -625,7 +625,7 @@
       </section>
 
       <footer>
-        <span>Estimación inicial total: 68–127 jornadas-persona (aprox. 14–26 semanas a tiempo completo). PR-01 a PR-06 completados; PR-07 en progreso local; PR-08 cerrado con transformación previa a Play. Lua en audio sigue pendiente.</span>
+        <span>Estimación inicial total: 68–127 jornadas-persona (aprox. 14–26 semanas a tiempo completo). PR-01 a PR-06 completados; PR-07 y PR-09 en progreso local; PR-08 cerrado con transformación previa a Play. Lua en audio sigue pendiente.</span>
         <a href="docs/PLAN_LUA_MULTITRACK_HILOS.md">Ver tareas y criterios completos</a>
       </footer>
     </main>
