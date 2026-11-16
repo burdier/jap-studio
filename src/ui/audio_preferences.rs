@@ -157,6 +157,9 @@ impl DawApp {
                     Ok(description) if this.settings.audio.draft == config => {
                         this.stop_all();
                         this.instrument.configure_audio(config.clone());
+                        for piano in this.piano_instances.values_mut() {
+                            piano.configure_audio(config.clone());
+                        }
                         this.sampler.configure_audio(config.clone());
                         this.vst_reloads = this
                             .tracks

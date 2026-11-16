@@ -654,8 +654,13 @@ impl DawApp {
                             .map_or("Hay Sampler", |s| s.name())
                     };
                     format!("Sampler · {name}")
-                } else if track.instrument == Some(self.instrument.id()) {
-                    self.instrument.active_name().to_string()
+                } else if track.instrument.is_some_and(|id| self.is_piano_id(id)) {
+                    let id = track.instrument.unwrap();
+                    if id == self.instrument.id() {
+                        self.instrument.active_name().to_string()
+                    } else {
+                        self.piano_instances[&id].active_name().to_string()
+                    }
                 } else if has_audio {
                     "Audio".to_string()
                 } else {

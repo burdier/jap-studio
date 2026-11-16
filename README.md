@@ -95,6 +95,8 @@ completa al salir. [Estado y límites](docs/ARCHITECTURE.md#pr-07-primer-recorri
 
 No hace falta configurar Lua para usar Tejer. Un archivo Lua puede cambiar el
 orden de ramas como opción avanzada. [Contrato y prueba](docs/TEJER.md).
+Puedes insertar **Hay Piano** en varias pistas: cada inserción crea una instancia
+independiente, con sus propios controles y voces.
 
 ## Lua musical previo a Play
 

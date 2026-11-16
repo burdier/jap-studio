@@ -119,7 +119,7 @@ impl DawApp {
             });
             let live_internal = track
                 .instrument
-                .is_some_and(|id| id == self.instrument.id() || self.is_sampler_id(id));
+                .is_some_and(|id| self.is_piano_id(id) || self.is_sampler_id(id));
             let midi = if notes.is_empty()
                 && hilo.as_ref().is_none_or(|hilo| hilo.clips.is_empty())
                 && !live_vst
@@ -127,8 +127,11 @@ impl DawApp {
             {
                 None
             } else {
-                let source = if track.instrument == Some(self.instrument.id()) {
-                    Some(self.instrument.export_snapshot().map(VoiceSource::Piano))
+                let source = if track.instrument.is_some_and(|id| self.is_piano_id(id)) {
+                    Some(
+                        self.piano_snapshot(track.instrument.unwrap())
+                            .map(VoiceSource::Piano),
+                    )
                 } else if track.instrument.is_some_and(|id| self.is_sampler_id(id)) {
                     Some(
                         self.sampler_snapshot(track.instrument.unwrap())

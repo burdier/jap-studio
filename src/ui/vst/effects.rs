@@ -214,6 +214,21 @@ impl DawApp {
         let piano_rack = self.piano_output_track().and_then(|i| self.effect_rack(i));
         let sampler_rack = self.sampler_track().and_then(|i| self.effect_rack(i));
         self.instrument.set_fx_rack(piano_rack);
+        let piano_racks: Vec<_> = self
+            .piano_instances
+            .keys()
+            .filter_map(|id| {
+                self.tracks
+                    .iter()
+                    .position(|track| track.instrument == Some(*id))
+                    .map(|index| (*id, self.effect_rack(index)))
+            })
+            .collect();
+        for (id, rack) in piano_racks {
+            if let Some(piano) = self.piano_instances.get_mut(&id) {
+                piano.set_fx_rack(rack);
+            }
+        }
         self.sampler.set_fx_rack(sampler_rack);
         let vst_rack = self.vst_track().and_then(|i| self.effect_rack(i));
         self.vst.set_fx_rack(vst_rack);

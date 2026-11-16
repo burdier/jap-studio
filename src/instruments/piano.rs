@@ -22,6 +22,7 @@ const LAST_NOTE: u8 = 83;
 /// Sintetizador SoundFont del prototipo. Carga cualquier banco `.sf2` descubierto en
 /// `assets/soundfonts/` y expone sus presets y créditos del autor.
 pub(crate) struct Piano {
+    id: InstrumentId,
     player: Option<PianoPlayer>,
     fx_rack: Option<std::sync::Arc<crate::audio::effects::Rack>>,
     held: HashSet<u8>,
@@ -59,7 +60,12 @@ impl Piano {
     }
 
     pub fn new() -> Self {
+        Self::new_with_id(InstrumentId(1))
+    }
+
+    pub fn new_with_id(id: InstrumentId) -> Self {
         Self {
+            id,
             player: None,
             fx_rack: None,
             held: HashSet::new(),
@@ -77,9 +83,9 @@ impl Piano {
         }
     }
 
-    /// Identidad estable de la instancia del prototipo.
+    /// Identidad estable de esta instancia.
     pub fn id(&self) -> InstrumentId {
-        InstrumentId(1)
+        self.id
     }
 
     pub fn descriptor(&self) -> &'static CatalogEntry {
@@ -472,6 +478,20 @@ impl Piano {
 
     pub fn failed(&self) -> bool {
         self.player.as_ref().is_some_and(PianoPlayer::failed)
+    }
+}
+
+#[cfg(test)]
+mod instance_tests {
+    use super::*;
+
+    #[test]
+    fn two_pianos_keep_distinct_ids_and_parameter_state() {
+        let mut first = Piano::new_with_id(InstrumentId(1));
+        let second = Piano::new_with_id(InstrumentId(1000));
+        first.set_param(ParamId::Cutoff, 800.0);
+        assert_ne!(first.id(), second.id());
+        assert_ne!(first.param(ParamId::Cutoff), second.param(ParamId::Cutoff));
     }
 }
 

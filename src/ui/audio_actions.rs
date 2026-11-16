@@ -123,7 +123,9 @@ impl DawApp {
             .get(self.cursor_row)
             .and_then(|track| track.instrument)
         {
-            if self.is_sampler_id(id) {
+            if self.is_piano_id(id) {
+                self.activate_piano(id);
+            } else if self.is_sampler_id(id) {
                 self.activate_sampler(id);
             } else if self.is_vst_id(id) {
                 self.activate_vst(id);
@@ -300,38 +302,44 @@ impl DawApp {
         &mut self,
         routed: impl IntoIterator<Item = RoutedMidi>,
     ) {
+        let selected_piano = self.instrument.id();
         for RoutedMidi { target, message } in routed {
             match target {
-                MidiTarget::Instrument(id) if id == self.instrument.id() => match message {
-                    MidiMessage::NoteOn { note, velocity } => self.piano_note_on(note, velocity),
-                    MidiMessage::NoteOff { note } => self.piano_note_off(note),
-                    MidiMessage::ControlChange { .. } => {
-                        if let Some(player) = &self.player {
-                            player.send_live_midi(id, message);
+                MidiTarget::Instrument(id) if self.is_piano_id(id) => {
+                    self.activate_piano(id);
+                    match message {
+                        MidiMessage::NoteOn { note, velocity } => {
+                            self.piano_note_on(note, velocity)
+                        }
+                        MidiMessage::NoteOff { note } => self.piano_note_off(note),
+                        MidiMessage::ControlChange { .. } => {
+                            if let Some(player) = &self.player {
+                                player.send_live_midi(id, message);
+                            }
+                        }
+                        MidiMessage::PitchBend { bend } => {
+                            if let Some(player) = &self.player {
+                                player.send_live_midi(id, message);
+                            }
+                            let norm = (f32::from(bend) / 8192.0).clamp(-1.0, 1.0);
+                            self.set_piano_param(ParamId::PitchBend, norm);
+                        }
+                        MidiMessage::ProgramChange { program } => {
+                            if let Some(player) = &self.player {
+                                player.send_live_midi(id, MidiMessage::AllNotesOff);
+                                player.send_live_midi(id, message);
+                            }
+                            self.instrument.select_preset(usize::from(program));
+                            self.track_revision = self.track_revision.wrapping_add(1);
+                        }
+                        MidiMessage::AllNotesOff => {
+                            if let Some(player) = &self.player {
+                                player.send_live_midi(id, message);
+                            }
+                            self.instrument.all_notes_off();
                         }
                     }
-                    MidiMessage::PitchBend { bend } => {
-                        if let Some(player) = &self.player {
-                            player.send_live_midi(id, message);
-                        }
-                        let norm = (f32::from(bend) / 8192.0).clamp(-1.0, 1.0);
-                        self.set_piano_param(ParamId::PitchBend, norm);
-                    }
-                    MidiMessage::ProgramChange { program } => {
-                        if let Some(player) = &self.player {
-                            player.send_live_midi(id, MidiMessage::AllNotesOff);
-                            player.send_live_midi(id, message);
-                        }
-                        self.instrument.select_preset(usize::from(program));
-                        self.track_revision = self.track_revision.wrapping_add(1);
-                    }
-                    MidiMessage::AllNotesOff => {
-                        if let Some(player) = &self.player {
-                            player.send_live_midi(id, message);
-                        }
-                        self.instrument.all_notes_off();
-                    }
-                },
+                }
                 MidiTarget::Instrument(id) if self.is_sampler_id(id) => {
                     if id == self.active_sampler_id {
                         self.sampler_midi(message);
@@ -375,6 +383,7 @@ impl DawApp {
                 }
             }
         }
+        self.activate_piano(selected_piano);
     }
     pub(super) fn controller_status(&self) -> String {
         if self.controller.enabled() {
@@ -554,6 +563,17 @@ impl DawApp {
         if let Some(note) = self.instrument.take_mouse_note() {
             self.piano_note_off(note);
         }
+        let selected_piano = self.instrument.id();
+        let released: Vec<_> = self
+            .piano_instances
+            .iter_mut()
+            .filter_map(|(id, piano)| piano.take_mouse_note().map(|note| (*id, note)))
+            .collect();
+        for (id, note) in released {
+            self.activate_piano(id);
+            self.piano_note_off(note);
+        }
+        self.activate_piano(selected_piano);
     }
     pub(super) fn all_notes_off(&mut self) {
         let _ = self.piano_roll.chord_sequence.audition.release();
@@ -574,6 +594,9 @@ impl DawApp {
             .record(MidiMessage::AllNotesOff, now, self.timeline.tempo.bpm());
         if self.instrument.all_notes_off() {
             self.status_message = "Todas las notas liberadas".into();
+        }
+        for piano in self.piano_instances.values_mut() {
+            piano.all_notes_off();
         }
     }
     /// Recupera el MIDI tocado en el búfer del controlador y lo inserta como `MidiClip`
@@ -602,9 +625,16 @@ impl DawApp {
         };
         let note_count = clip.notes().len();
         let duration = clip.duration_beats();
-        let id = self.active_instrument_id();
-        if self.tracks[target_track].hilo.is_none() {
-            assign_instrument(&mut self.tracks, target_track, id);
+        if self.tracks[target_track].hilo.is_none()
+            && self.tracks[target_track].instrument.is_none()
+        {
+            let id = self.active_instrument_id();
+            if self.is_piano_id(id) {
+                self.assign_piano_instance(target_track);
+            } else {
+                assign_instrument(&mut self.tracks, target_track, id);
+            }
+            self.track_revision = self.track_revision.wrapping_add(1);
         }
         self.timeline.insert_midi_clip(clip);
         self.sync_midi_focus();
@@ -682,6 +712,15 @@ impl DawApp {
             };
             cx.notify();
         }
+        for piano in self.piano_instances.values_mut() {
+            if let Some(result) = piano.poll_resources() {
+                self.status_message = match result {
+                    Ok(()) => format!("{} · listo", piano.active_name()),
+                    Err(error) => format!("Piano: {error}"),
+                };
+                cx.notify();
+            }
+        }
     }
     pub(super) fn select_soundfont_bank(&mut self, index: usize) {
         self.all_notes_off();
@@ -726,6 +765,9 @@ impl DawApp {
             sampler.silence();
         }
         self.instrument.stop();
+        for piano in self.piano_instances.values_mut() {
+            piano.stop();
+        }
     }
     /// Audición en loop del patrón. El plan se compila al pulsar Play.
     pub(super) fn play_pattern(&mut self) {
@@ -777,6 +819,9 @@ impl DawApp {
         self.file_playback = None;
         self.player = None;
         self.instrument.stop_clip();
+        for piano in self.piano_instances.values_mut() {
+            piano.stop_clip();
+        }
         self.sampler.stop_clip();
         self.timeline.playhead = None;
         self.pattern_loop_beats = None;
@@ -828,6 +873,22 @@ impl DawApp {
         }
         self.instrument.set_gain(self.piano_gain());
         self.instrument.set_pan(self.piano_pan());
+        let piano_mix: Vec<_> = self
+            .piano_instances
+            .keys()
+            .filter_map(|id| {
+                self.tracks
+                    .iter()
+                    .position(|track| track.instrument == Some(*id))
+                    .map(|index| (*id, self.track_gain(index), self.track_pan(index)))
+            })
+            .collect();
+        for (id, gain, pan) in piano_mix {
+            if let Some(piano) = self.piano_instances.get_mut(&id) {
+                piano.set_gain(gain);
+                piano.set_pan(pan);
+            }
+        }
         self.publish_track_fx();
     }
 

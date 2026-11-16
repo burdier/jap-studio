@@ -75,8 +75,15 @@ impl DawApp {
                                     clip.notes().len(),
                                     clip.duration_beats()
                                 );
-                                if this.tracks[track].hilo.is_none() {
-                                    assign_instrument(&mut this.tracks, track, instrument_id);
+                                if this.tracks[track].hilo.is_none()
+                                    && this.tracks[track].instrument.is_none()
+                                {
+                                    if this.is_piano_id(instrument_id) {
+                                        this.assign_piano_instance(track);
+                                    } else {
+                                        assign_instrument(&mut this.tracks, track, instrument_id);
+                                    }
+                                    this.track_revision = this.track_revision.wrapping_add(1);
                                 }
                                 this.timeline.insert_midi_clip(clip);
                             }

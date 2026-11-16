@@ -62,7 +62,7 @@ pub struct Track {
     pub id: TrackId,
     pub name: Cow<'static, str>,
     pub kind: TrackKind,
-    /// Instrumento asignado. El host conserva una instancia de piano y una de sampler.
+    /// ID de la instancia asignada; pistas distintas pueden usar el mismo tipo de instrumento.
     pub instrument: Option<InstrumentId>,
     /// Pista armada explícitamente para recibir MIDI en vivo (permite tocar varias a la vez).
     pub midi_enabled: bool,

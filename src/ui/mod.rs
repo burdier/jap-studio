@@ -27,6 +27,7 @@ mod lua_tools;
 mod navigation;
 mod palette;
 mod pattern_editor;
+mod piano_instances;
 mod piano_roll;
 mod profile;
 mod render;
@@ -97,6 +98,7 @@ struct DawApp {
     audio_loop: Option<(f64, f64)>,
     pattern_loop_beats: Option<f64>,
     instrument: Piano,
+    piano_instances: HashMap<elevate::musical::model::InstrumentId, Piano>,
     sampler: crate::instruments::sampler::Sampler,
     active_sampler_id: elevate::musical::model::InstrumentId,
     sampler_instances:

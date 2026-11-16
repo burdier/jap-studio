@@ -75,6 +75,20 @@ impl DawApp {
             })
             .collect();
         self.tracks = tracks;
+        let live_pianos: std::collections::HashSet<_> = self
+            .tracks
+            .iter()
+            .filter_map(|track| track.instrument)
+            .collect();
+        self.piano_instances
+            .retain(|id, _| live_pianos.contains(id));
+        if !live_pianos.contains(&self.instrument.id()) {
+            if let Some(id) = self.piano_instances.keys().copied().next() {
+                self.activate_piano(id);
+                self.piano_instances
+                    .retain(|id, _| live_pianos.contains(id));
+            }
+        }
         self.midi_armed_tracks.retain(|id| {
             self.tracks.iter().any(|track| {
                 track.id == *id && (track.instrument.is_some() || track.hilo.is_some())

@@ -68,6 +68,21 @@ impl DawApp {
         let track = self.piano_output_track();
         let gain = track.map_or(1.0, |index| self.track_fx_gain(index));
         self.instrument.set_fx_gain(gain);
+        let piano_gains: Vec<_> = self
+            .piano_instances
+            .keys()
+            .filter_map(|id| {
+                self.tracks
+                    .iter()
+                    .position(|track| track.instrument == Some(*id))
+                    .map(|index| (*id, self.track_fx_gain(index)))
+            })
+            .collect();
+        for (id, gain) in piano_gains {
+            if let Some(piano) = self.piano_instances.get_mut(&id) {
+                piano.set_fx_gain(gain);
+            }
+        }
     }
 }
 

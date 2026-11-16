@@ -112,6 +112,7 @@ impl DawApp {
             audio_loop: None,
             pattern_loop_beats: None,
             instrument,
+            piano_instances: Default::default(),
             controller: ComputerKeyboard::default(),
             midi_server: MidiServer::new(initial_target),
             weave_rule,

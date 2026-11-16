@@ -1,10 +1,7 @@
 //! Estado del buscador de instrumentos, primitivos, componentes y acciones.
 //! La UI solo presenta resultados; el catálogo y las acciones viven fuera de GPUI.
 use super::DawApp;
-use elevate::{
-    catalog::{self, CatalogAction, CatalogEntry, EntryKind},
-    musical::track::assign_instrument,
-};
+use elevate::catalog::{self, CatalogAction, CatalogEntry, EntryKind};
 use gpui::{Context, Window};
 
 mod activate;
@@ -331,20 +328,7 @@ impl DawApp {
             self.status_message = format!("{} · instrumento sin implementación", entry.name);
             return;
         }
-        let previous = assign_instrument(&mut self.tracks, track, self.instrument.id());
-        self.track_revision = self.track_revision.wrapping_add(1);
-        self.mix_vst();
-        self.cursor_row = track;
-        self.open_track_instrument(self.tracks[track].id);
-        self.sync_midi_focus();
-        let name = self.tracks[track].name.clone();
-        self.status_message = match previous {
-            Some(previous) => format!(
-                "{} movido de {} a {}",
-                entry.name, self.tracks[previous].name, name
-            ),
-            None => format!("{} asignado a {}", entry.name, name),
-        };
+        self.add_piano(track);
     }
 }
 

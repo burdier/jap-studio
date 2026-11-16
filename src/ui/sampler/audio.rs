@@ -178,6 +178,9 @@ impl DawApp {
         start: f64,
     ) {
         self.instrument.stop();
+        for piano in self.piano_instances.values_mut() {
+            piano.stop();
+        }
         let gain = self.track_gain(clip.track) * clip.props.gain_linear();
         let result = self
             .sampler

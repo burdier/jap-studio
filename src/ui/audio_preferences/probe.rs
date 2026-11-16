@@ -12,6 +12,9 @@ impl DawApp {
         }
         self.stop_all();
         self.instrument.stop();
+        for piano in self.piano_instances.values_mut() {
+            piano.stop();
+        }
         self.sampler.stop();
         self.settings.audio.busy = true;
         let config = self.settings.audio.draft.clone();

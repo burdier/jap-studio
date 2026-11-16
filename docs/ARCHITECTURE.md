@@ -1,5 +1,14 @@
 # Arquitectura del prototipo
 
+## Instancias de Hay Piano por pista
+
+`Piano` conserva su `InstrumentId`, parámetros, SoundFont, notas y reproductor.
+La UI mantiene un piano activo para el editor y los restantes por ID; seleccionar
+una pista activa su instancia. El servidor MIDI envía cada evento al ID de su
+rama y Play prepara un snapshot distinto por pista. La asignación musical sigue
+exigiendo un ID único por pista: insertar el mismo tipo crea otro ID. El cambio
+de salida, Stop y la eliminación de pistas recorren todas las instancias.
+
 ## PR-09: reparto de Tejer y activación desde la selección
 
 `scripting/weave` evalúa una tabla Lua en el sandbox al abrir la aplicación.

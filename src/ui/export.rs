@@ -60,6 +60,24 @@ impl DawApp {
                 .chain(self.timeline.midi_clip.iter())
                 .cloned()
                 .collect();
+            if midi.iter().any(|clip| {
+                options.includes_track(clip.track)
+                    && self.tracks[clip.track].hilo.is_some()
+                    && !clip.props.muted
+            }) {
+                return Err("Exportar clips de Hilo todavía no está disponible".into());
+            }
+            let piano_ids: std::collections::HashSet<_> = midi
+                .iter()
+                .filter(|clip| options.includes_track(clip.track) && !clip.props.muted)
+                .filter_map(|clip| self.tracks[clip.track].instrument)
+                .filter(|id| self.is_piano_id(*id))
+                .collect();
+            if piano_ids.len() > 1 {
+                return Err(
+                    "Exportar varias instancias de Hay Piano todavía no está disponible".into(),
+                );
+            }
             let needs_piano = midi.iter().any(|c| {
                 options.includes_track(c.track)
                     && !c.props.muted
@@ -79,7 +97,15 @@ impl DawApp {
                 return Err("La exportación de instrumentos VST3 todavía no está disponible; excluye esa pista del rango de exportación".into());
             }
             let piano = if needs_piano {
-                Some(self.instrument.export_snapshot()?)
+                Some(
+                    self.piano_snapshot(
+                        piano_ids
+                            .iter()
+                            .next()
+                            .copied()
+                            .unwrap_or(self.instrument.id()),
+                    )?,
+                )
             } else {
                 None
             };
