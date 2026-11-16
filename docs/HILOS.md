@@ -95,8 +95,9 @@ pruebas `fixed_route_has_typed_ports_and_rejects_invalid_branches`,
 abrir un dispositivo físico.
 
 El cierre de PR-07 corresponde a esta topología fija, que es la que se puede
-usar y escuchar. Las conexiones de puertos editables, la creación de instancias
-desde un lote Lua y la conservación de colas al retirar una rama requieren
-ampliaciones posteriores; no se presentan aquí como capacidades implementadas.
+usar y escuchar. Las conexiones de puertos editables (PR-12), la creación de
+instancias desde Lua (PR-10) y la conservación de colas al retirar una rama
+(PR-09) requieren ampliaciones posteriores; no se presentan aquí como
+capacidades implementadas.
 El estado visible se registra en [`PROTOTYPE.md`](PROTOTYPE.md) y en
 [`index.html`](../index.html).

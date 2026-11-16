@@ -443,10 +443,11 @@ son ampliaciones pendientes, no capacidades de este cierre.
 - [x] Definir la política de edición estructural: detener Play y liberar notas
   antes de retirar una rama. Una rama no libera las notas de otra.
 
-**Ampliaciones pendientes fuera del recorrido fijo:** conexiones Events/Audio
-editables entre ramas, creación de instancias de instrumento desde Lua y
-conservación de colas al retirar ramas durante Play. Requieren contratos de
-estado y transición propios; el PR cerrado no los anuncia como implementados.
+**Ampliaciones pendientes fuera del recorrido fijo:** PR-09 define la conservación
+de colas al retirar ramas; PR-10 debe crear instancias independientes desde Lua
+al cargar o duplicar un Hilo; PR-12 aborda conexiones Events/Audio editables
+junto a su routing. Requieren contratos de estado y transición propios; el PR
+cerrado no los anuncia como implementados.
 
 **Aceptación:** un Hilo de dos instrumentos produce una capa audible; editar el nivel
 de una rama conserva la otra. Una ruta inválida mantiene el último plan válido.
