@@ -1,4 +1,4 @@
-# Hilos: identidad y contrato de ramas (PR-07, commit 1)
+# Hilos: identidad y contrato de ramas (PR-07, ruta fija)
 
 Un **Hilo** es un contenedor musical de una pista. Recibe eventos MIDI, los envía a
 ramas con instrumento y suma audio de las ramas en el transporte existente. No es
@@ -82,6 +82,21 @@ recursos externos ni estado de plugins hasta que esos contratos existan.
 - Lua y Track FX muestran y editan el mismo Hilo; las pruebas de audio no
   requieren abrir un dispositivo físico.
 
-Este documento fija el contrato. Los commits siguientes conectan modelo,
-procesamiento y presentación. El estado implementado se registra en
-[`PROTOTYPE.md`](PROTOTYPE.md) y en [`index.html`](../index.html).
+## Cierre del recorrido fijo
+
+Los cuatro criterios anteriores están implementados. `musical::hilo` valida la
+ruta; `musical::arrangement_midi::hilo` conserva la rama del NoteOff;
+`audio::playback::mix` suma dos voces SoundFont con niveles independientes y
+WAV; `track.template.hilo` y Track FX editan el grupo por los mismos IDs. Las
+pruebas `fixed_route_has_typed_ports_and_rejects_invalid_branches`,
+`round_robin_keeps_each_release_on_its_note_on_branch`,
+`layer_hilo_sums_two_soundfonts_and_wav_with_independent_branch_levels` y
+`round_robin_template_groups_existing_instruments` cubren esos contratos sin
+abrir un dispositivo físico.
+
+El cierre de PR-07 corresponde a esta topología fija, que es la que se puede
+usar y escuchar. Las conexiones de puertos editables, la creación de instancias
+desde un lote Lua y la conservación de colas al retirar una rama requieren
+ampliaciones posteriores; no se presentan aquí como capacidades implementadas.
+El estado visible se registra en [`PROTOTYPE.md`](PROTOTYPE.md) y en
+[`index.html`](../index.html).

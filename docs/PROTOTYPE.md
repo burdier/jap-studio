@@ -22,7 +22,7 @@ acotada de selección por NoteOn durante la reproducción.
   ejemplo y los límites están en [Tejer](TEJER.md); faltan regla por Hilo,
   persistencia y los contratos restantes de expresión/sustain/colas.
 
-- **PR-07, primer incremento:** agrupa dos pistas con instrumento, abre el menú del
+- **PR-07, recorrido fijo cerrado:** agrupa dos pistas con instrumento, abre el menú del
   grupo y elige **Hilo · capas** o **Hilo · round robin**. Inserta un clip MIDI en
   el grupo o activa su botón MIDI. Las pistas hijas conservan nivel, pan y FX;
   round robin alterna NoteOn y devuelve cada NoteOff a su rama original. En Play

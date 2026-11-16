@@ -415,30 +415,38 @@ plugins reales; mantener visibles los límites de exportación y estado aún pen
 **Valor:** una pista puede disparar dos instrumentos en capas, con efectos y nivel por
 rama, usando un Hilo definido desde Lua o desde el árbol existente.
 
-**Incremento integrado:** el grupo de pistas funciona como primer contenedor Hilo:
+**Estado: cerrado para el recorrido fijo.** El grupo de pistas funciona como contenedor Hilo:
 sus hijas son ramas con nivel/FX propios y un clip del grupo puede usar capas o
 round robin. Cada NoteOff vuelve a la rama elegida por su NoteOn. Un lote Lua
 puede cambiar el modo con `hilo.mode`. El plan fijo usa puertos tipados de eventos
-y audio; Track FX muestra sus ramas con nivel/mute. Quedan el grafo editable de
-puertos y la creación de instancias desde Lua.
+y audio; Track FX muestra sus ramas con nivel/mute. El cierre se apoya en los
+[criterios de la ruta fija](HILOS.md#criterios-de-cierre-de-pr-07) y en la suite
+headless. La edición libre de conexiones y la creación de instancias desde Lua
+son ampliaciones pendientes, no capacidades de este cierre.
 
 **Puntos de entrada:** `src/musical/fx/`, `src/musical/track.rs`,
 `src/audio/effects/`, `src/ui/fx/`, `src/scripting/` y motor de PR-04 a PR-06.
 
 **Tareas**
 
-- [ ] Ampliar la composición actual para alojar eventos, instrumentos y audio en
-  puertos tipados. Conservar IDs y semántica de las cadenas FX existentes.
+- [x] Representar los puertos Events y Audio de la ruta fija, conservando IDs
+  y las cadenas FX existentes.
 - [x] Compilar y validar la ruta fija Events → Instrument → Audio de las hijas.
 - [x] Implementar el primer recorrido de ramificación de eventos sobre pistas hijas.
-- [ ] Implementar ramificación de eventos, procesamiento por rama y suma de salidas.
+- [x] Implementar ramificación de eventos, procesamiento por rama y suma de salidas.
   Diferenciar una rama de audio de una rama que contiene un instrumento.
-- [ ] Exponer la misma composición en Lua y en Track FX, con controles de nivel/bypass.
+- [x] Exponer el grupo y sus ramas en Lua y Track FX, con nivel/mute y Utility
+  por rama en la plantilla incluida.
 - [x] Exponer el modo en lotes Lua y las ramas en Track FX con nivel/mute de pista.
-- [ ] Compilar las dependencias y buffers fuera del callback. Inicialmente ejecutar
+- [x] Compilar las dependencias y buffers fuera del callback. Ejecutar
   el plan de forma secuencial y rechazar conexiones incompatibles o ciclos.
-- [ ] Definir eliminación/bypass de ramas con notas activas y preservar colas de sonido
-  según una política explícita; ninguna rama puede liberar notas de otra.
+- [x] Definir la política de edición estructural: detener Play y liberar notas
+  antes de retirar una rama. Una rama no libera las notas de otra.
+
+**Ampliaciones pendientes fuera del recorrido fijo:** conexiones Events/Audio
+editables entre ramas, creación de instancias de instrumento desde Lua y
+conservación de colas al retirar ramas durante Play. Requieren contratos de
+estado y transición propios; el PR cerrado no los anuncia como implementados.
 
 **Aceptación:** un Hilo de dos instrumentos produce una capa audible; editar el nivel
 de una rama conserva la otra. Una ruta inválida mantiene el último plan válido.
