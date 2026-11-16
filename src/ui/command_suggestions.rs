@@ -62,6 +62,7 @@ const KNOWN: &[(&str, &str)] = &[
     ("stop", "Detener reproducción"),
     ("hilo.layer", "Hilo seleccionado en capas"),
     ("hilo.rr", "Hilo seleccionado en round robin"),
+    ("tejer.selection", "Agrupar instrumentos y activar Tejer"),
     ("hilo.off", "Desactivar Hilo seleccionado"),
     (
         "track.template.hilo",

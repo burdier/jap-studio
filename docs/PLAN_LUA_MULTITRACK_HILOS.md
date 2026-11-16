@@ -491,10 +491,12 @@ un runtime distinto sin autorización. La medición es la que justifica esa deci
 
 **Título sugerido:** `feat(hilos): distribuir notas con el modo Tejer`
 
-**Avance:** primer incremento implementado: una tabla Lua define 1–64 pasos
-para 2–16 ramas y se prepara al abrir la aplicación. MIDI en vivo y clips
+**Avance:** dos incrementos implementados. Una tabla Lua opcional define 1–64
+pasos para 2–16 ramas y se prepara al abrir la aplicación. MIDI en vivo y clips
 preparados para Play comparten la selección de rama sin ejecutar Lua en el
-callback. [Contrato, uso y límites](TEJER.md). Quedan pendientes los contratos
+callback. La acción **Tejer pistas seleccionadas** agrupa instrumentos y activa
+el reparto desde el menú o `[+]`, sin configuración externa.
+[Contrato, uso y límites](TEJER.md). Quedan pendientes los contratos
 de expresión, sustain y colas, la regla por Hilo y la aceptación completa.
 
 **Valor:** tocar una secuencia y oír cómo las notas alternan entre instrumentos, con

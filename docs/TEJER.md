@@ -1,6 +1,21 @@
-# Tejer: regla Lua preparada
+# Tejer: reparto de notas entre pistas
 
-Tejer usa el Hilo en modo **round robin**. El archivo Lua devuelve una tabla con
+## Uso normal
+
+Selecciona dos o más pistas con instrumentos diferentes usando Ctrl+clic o
+Shift+clic y pulsa **Tejer pistas seleccionadas** en el menú de pista o en `[+]`.
+Hay crea el Hilo, activa su entrada **MIDI** y distribuye cada NoteOn a la
+siguiente rama. Para reproducir un clip,
+insértalo en el carril del grupo y pulsa Play. No hace falta una variable de
+entorno ni un archivo Lua para este flujo.
+
+Si ya tienes un grupo, elige **Tejer · automático** en su menú; también activa
+su entrada MIDI. Sin una regla
+personalizada, el orden es A-B-C-A-B-C para tres instrumentos.
+
+## Regla Lua opcional
+
+Para personalizar el orden de ramas, el archivo Lua devuelve una tabla con
 `steps`: una lista de posiciones de las pistas hijas que tienen instrumento,
 numeradas desde 1 en su orden visible. La lista se repite por cada NoteOn aceptado.
 
@@ -15,11 +30,8 @@ El ejemplo reparte seis notas A-C-B-A-C-B. Hay un ejemplo A-B-C en
 HAY_WEAVE_RULE_SCRIPT=assets/scripts/hilos/tejer.lua bash scripts/run.sh
 ```
 
-Crea un Hilo con tres pistas hijas que tengan instrumentos distintos; cambia el
-grupo a **Hilo · round robin**. Selecciona el grupo o activa su botón **MIDI**
-para tocar notas en vivo. Para probar un clip, insértalo en el carril del grupo
-y pulsa Play. Sin la variable de entorno, el round robin existente sigue el
-orden de las ramas.
+Este comando es para quien edita scripts. La interfaz no solicita esa variable.
+El archivo de ejemplo requiere tres ramas con instrumento.
 
 La VM Lua se ejecuta una sola vez al abrir la aplicación. El resultado se valida
 y se convierte en una secuencia de 1–64 pasos dirigida a 2–16 ramas. La selección

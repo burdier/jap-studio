@@ -15,8 +15,9 @@ acotada de selección por NoteOn durante la reproducción.
 
 ## Disponible
 
-- **PR-09, primer incremento:** una regla Lua cargada al abrir la aplicación
-  distribuye notas entre 2–16 ramas de un Hilo en round robin. Se aplica tanto
+- **PR-09 en progreso:** **Tejer pistas seleccionadas** agrupa los
+  instrumentos elegidos y activa el reparto de notas desde la interfaz. Una
+  regla Lua opcional, cargada al abrir, cambia el orden entre 2–16 ramas. Se aplica tanto
   al MIDI en vivo como a clips del grupo preparados para Play. El archivo de
   ejemplo y los límites están en [Tejer](TEJER.md); faltan regla por Hilo,
   persistencia y los contratos restantes de expresión/sustain/colas.

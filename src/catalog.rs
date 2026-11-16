@@ -807,6 +807,14 @@ pub const CATALOG: &[CatalogEntry] = &[
         action: CatalogAction::Invoke("track.group"),
     },
     CatalogEntry {
+        id: "action.track.tejer.selection",
+        kind: EntryKind::Action,
+        name: "Tejer pistas seleccionadas",
+        summary: "Agrupar instrumentos y repartir una nota por rama automáticamente",
+        keywords: &["tejer", "hilo", "round robin", "pista", "midi"],
+        action: CatalogAction::Invoke("tejer.selection"),
+    },
+    CatalogEntry {
         id: "action.track.ungroup",
         kind: EntryKind::Action,
         name: "Desagrupar pistas",

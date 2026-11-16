@@ -25,8 +25,19 @@ pub(super) struct TrackMenu {
 impl DawApp {
     pub(in crate::ui) fn track_menu_items(&self) -> Vec<(&'static str, &'static str)> {
         let mut items = ITEMS.to_vec();
+        let is_group = self
+            .tracks
+            .get(self.cursor_row)
+            .is_some_and(|t| t.kind == TrackKind::Group);
+        if !is_group {
+            items.insert(
+                6,
+                ("Tejer pistas seleccionadas", "action.track.tejer.selection"),
+            );
+        }
+        let height_at = if is_group { 6 } else { 7 };
         items.splice(
-            6..6,
+            height_at..height_at,
             [
                 ("Altura · compacta", "action.track.height.compact"),
                 ("Altura · predeterminada", "action.track.height.default"),
@@ -34,16 +45,12 @@ impl DawApp {
                 ("Altura personalizada…", "action.track.height"),
             ],
         );
-        if self
-            .tracks
-            .get(self.cursor_row)
-            .is_some_and(|t| t.kind == TrackKind::Group)
-        {
+        if is_group {
             items.splice(
                 6..6,
                 [
                     ("Hilo · capas", "action.track.hilo.layer"),
-                    ("Hilo · round robin", "action.track.hilo.round_robin"),
+                    ("Tejer · automático", "action.track.hilo.round_robin"),
                     ("Hilo · desactivar", "action.track.hilo.off"),
                 ],
             );
@@ -100,6 +107,11 @@ impl DawApp {
     ) {
         self.track_menu = None;
         if let Some((_, command)) = self.track_menu_items().get(index) {
+            if *command == "action.track.tejer.selection" {
+                self.tejer_selected_tracks();
+                cx.notify();
+                return;
+            }
             let mode = match *command {
                 "action.track.hilo.layer" => Some(Some(HiloMode::Layer)),
                 "action.track.hilo.round_robin" => Some(Some(HiloMode::RoundRobin)),

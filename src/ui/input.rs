@@ -399,6 +399,7 @@ impl DawApp {
             "track.delete" => self.edit_track_structure(elevate::musical::track::TrackEdit::Delete),
             "track.duplicate" => self.edit_track_structure(elevate::musical::track::TrackEdit::Duplicate),
             "track.group" => self.edit_track_structure(elevate::musical::track::TrackEdit::Group),
+            "tejer.selection" => self.tejer_selected_tracks(),
             "track.ungroup" => self.edit_track_structure(elevate::musical::track::TrackEdit::Ungroup),
             "hilo.layer" => self.set_hilo_mode(Some(elevate::musical::track::HiloMode::Layer)),
             "hilo.rr" | "hilo.round_robin" => self.set_hilo_mode(Some(elevate::musical::track::HiloMode::RoundRobin)),

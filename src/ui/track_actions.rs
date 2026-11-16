@@ -3,6 +3,66 @@ use super::{CenterView, DawApp, VimMode};
 use elevate::musical::track::{HiloMode, TrackEdit, TrackKind, edit_tracks};
 
 impl DawApp {
+    /// Agrupa la selección y activa el reparto de notas en una sola operación.
+    pub(in crate::ui) fn tejer_selected_tracks(&mut self) {
+        let selected = self.selected_tracks.clone();
+        let (mut tracks, sources) =
+            match edit_tracks(&self.tracks, &selected, TrackEdit::Group, self.cursor_row) {
+                Ok(plan) => plan,
+                Err(error) => {
+                    self.status_message = error;
+                    return;
+                }
+            };
+        let Some(group) = tracks
+            .iter()
+            .find(|track| {
+                track.kind == TrackKind::Group && !self.tracks.iter().any(|old| old.id == track.id)
+            })
+            .map(|track| track.id)
+        else {
+            self.status_message = "No se pudo crear el Hilo".into();
+            return;
+        };
+        let plan =
+            match elevate::musical::hilo::HiloPlan::compile(&tracks, group, HiloMode::RoundRobin) {
+                Ok(plan) => plan,
+                Err(error) => {
+                    self.status_message = error;
+                    return;
+                }
+            };
+        match &self.weave_rule {
+            Ok(Some(rule)) if !rule.valid_for(plan.instruments().count()) => {
+                self.status_message = "Tejer: la regla menciona una rama inexistente".into();
+                return;
+            }
+            Err(error) => {
+                self.status_message = error.clone();
+                return;
+            }
+            _ => {}
+        }
+        tracks
+            .iter_mut()
+            .find(|track| track.id == group)
+            .unwrap()
+            .hilo = Some(HiloMode::RoundRobin);
+        let levels = sources
+            .iter()
+            .map(|source| source.map_or(75, |i| self.track_levels[i]))
+            .collect();
+        let pans = sources
+            .iter()
+            .map(|source| source.map_or(50, |i| self.track_pans[i]))
+            .collect();
+        self.commit_track_plan(tracks, sources, levels, pans, selected, false, true, None);
+        self.midi_armed_tracks.clear();
+        self.midi_armed_tracks.insert(group);
+        self.sync_midi_focus();
+        self.status_message = "Tejer activo: cada nota irá a la siguiente pista del Hilo".into();
+    }
+
     pub(in crate::ui) fn set_hilo_mode(&mut self, mode: Option<HiloMode>) {
         let Some(group) = self.tracks.get(self.cursor_row) else {
             return;
@@ -28,28 +88,55 @@ impl DawApp {
             self.status_message = "Retira los clips del Hilo antes de desactivarlo".into();
             return;
         }
-        if group.hilo == mode {
-            return;
-        }
         if let Some(mode) = mode {
-            if let Err(error) =
-                elevate::musical::hilo::HiloPlan::compile(&self.tracks, group.id, mode)
+            let plan = match elevate::musical::hilo::HiloPlan::compile(&self.tracks, group.id, mode)
             {
-                self.status_message = error;
-                return;
+                Ok(plan) => plan,
+                Err(error) => {
+                    self.status_message = error;
+                    return;
+                }
+            };
+            if mode == HiloMode::RoundRobin {
+                match &self.weave_rule {
+                    Ok(Some(rule)) if !rule.valid_for(plan.instruments().count()) => {
+                        self.status_message =
+                            "Tejer: la regla menciona una rama inexistente".into();
+                        return;
+                    }
+                    Err(error) => {
+                        self.status_message = error.clone();
+                        return;
+                    }
+                    _ => {}
+                }
             }
+        }
+        if group.hilo == mode {
+            if mode == Some(HiloMode::RoundRobin) {
+                let id = group.id;
+                self.midi_armed_tracks.clear();
+                self.midi_armed_tracks.insert(id);
+                self.sync_midi_focus();
+            }
+            return;
         }
         self.stop_all();
         let group = &mut self.tracks[self.cursor_row];
         group.hilo = mode;
+        let group_id = group.id;
         let name = group.name.to_string();
         self.track_revision = self.track_revision.wrapping_add(1);
+        if mode == Some(HiloMode::RoundRobin) {
+            self.midi_armed_tracks.clear();
+            self.midi_armed_tracks.insert(group_id);
+        }
         self.sync_midi_focus();
         self.status_message = format!(
             "{name}: {}",
             match mode {
                 Some(HiloMode::Layer) => "Hilo en capas",
-                Some(HiloMode::RoundRobin) => "Hilo round robin",
+                Some(HiloMode::RoundRobin) => "Tejer automático",
                 None => "Hilo desactivado",
             }
         );

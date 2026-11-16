@@ -1,6 +1,6 @@
 # Arquitectura del prototipo
 
-## PR-09: primer incremento de Tejer
+## PR-09: reparto de Tejer y activación desde la selección
 
 `scripting/weave` evalúa una tabla Lua en el sandbox al abrir la aplicación.
 `musical/weave` conserva únicamente una lista validada y acotada de índices de
@@ -10,8 +10,12 @@ de Hilo aplica la misma secuencia antes de audio, con orden estable por frame,
 tipo, clip y NoteId. `audio/playback/mix` recibe el plan ya preparado y el
 callback no llama a Lua. El transporte y los buses siguen siendo los de PR-07.
 
-La regla es global durante esta primera entrega y se configura con
-`HAY_WEAVE_RULE_SCRIPT`. Cambiarla requiere reiniciar; no forma parte del
+La acción `tejer.selection` compone la edición estructural de pistas y la
+validación de `HiloPlan` antes de publicar el nuevo grupo. Arma el grupo como
+destino MIDI único para que la ruta live use su round robin. El round robin
+automático funciona sin script. La regla Lua opcional es global durante esta
+primera entrega y se configura con `HAY_WEAVE_RULE_SCRIPT` para pruebas y
+personalización avanzada. Cambiarla requiere reiniciar; no forma parte del
 documento de proyecto. [Uso y límites](TEJER.md).
 
 ## PR-08: transformación musical Lua preparada
