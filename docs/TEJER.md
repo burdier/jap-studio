@@ -8,6 +8,11 @@ Hay crea el Hilo, activa su entrada **MIDI** y distribuye cada NoteOn a la
 siguiente rama. Para reproducir un clip,
 insértalo en el carril del grupo y pulsa Play. No hace falta una variable de
 entorno ni un archivo Lua para este flujo.
+Un clip colocado en una pista hija toca solamente el instrumento de esa hija.
+Para repartir un clip que ya está allí, abre su menú contextual y elige
+**Enviar notas a Tejer**: el clip pasa al carril del grupo sin cambiar sus notas
+ni su posición. Al crear un clip, la barra de estado indica si quedó en el Hilo
+o en una rama.
 
 Si ya tienes un grupo, elige **Tejer · automático** en su menú; también activa
 su entrada MIDI. Sin una regla

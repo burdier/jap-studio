@@ -22,6 +22,7 @@ acotada de selección por NoteOn durante la reproducción.
   ejemplo y los límites están en [Tejer](TEJER.md); faltan regla por Hilo,
   persistencia y los contratos restantes de expresión/sustain/colas. La entrada
   MIDI física conserva el canal para devolver NoteOff a la rama de cada pulsación.
+  Un clip en una rama permanece local; su menú permite enviarlo al carril del Hilo.
 
 - **PR-07, recorrido fijo cerrado:** agrupa dos pistas con instrumento, abre el menú del
   grupo y elige **Hilo · capas** o **Hilo · round robin**. Inserta un clip MIDI en

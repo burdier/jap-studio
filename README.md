@@ -82,6 +82,8 @@ por instrumento automáticamente. También puedes agrupar primero y elegir
 **Tejer · automático** en el menú del grupo; **Hilo · capas** toca todos los
 instrumentos con cada nota. Coloca el clip MIDI
 en el carril del grupo o activa el botón **MIDI** del grupo para tocar en vivo.
+Un clip en una pista hija suena solo en esa hija; su menú ofrece **Enviar notas a Tejer**
+para moverlo al grupo.
 Cada hija conserva su volumen, panorama y FX. `track.script` admite
 `{ op="hilo.mode", track=<TrackId o handle>, mode="round_robin" }`.
 En la barra de comandos: `:track.group` agrupa la selección, `:hilo.rr` cambia
