@@ -61,6 +61,26 @@ impl DawApp {
                 let mut items = Vec::new();
                 if kind == DragKind::Midi {
                     items.push(MenuItem::new("Editar en Piano Roll", A::EditMidi));
+                    if let Some(group) = self
+                        .tracks
+                        .get(menu.track)
+                        .and_then(|track| track.parent)
+                        .and_then(|parent| self.tracks.iter().find(|track| track.id == parent))
+                        .filter(|group| group.hilo.is_some())
+                    {
+                        items.push(
+                            MenuItem::new(
+                                if group.hilo == Some(elevate::musical::track::HiloMode::RoundRobin)
+                                {
+                                    "Enviar notas a Tejer"
+                                } else {
+                                    "Enviar clip al Hilo"
+                                },
+                                A::SendToHilo,
+                            )
+                            .enabled(!props.locked),
+                        );
+                    }
                     items.push(
                         MenuItem::new(
                             format!("Materialize · {} MIDI", self.timeline.selected_midi.len()),

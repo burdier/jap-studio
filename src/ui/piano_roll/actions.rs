@@ -53,6 +53,17 @@ impl DawApp {
         );
         self.timeline.insert_midi_clip(clip);
         self.open_piano_roll();
+        self.status_message = if self.tracks[track].hilo.is_some() {
+            "Clip en Hilo: Play repartirá cada nota entre las ramas".into()
+        } else if self.tracks[track].parent.is_some_and(|parent| {
+            self.tracks
+                .iter()
+                .any(|group| group.id == parent && group.hilo.is_some())
+        }) {
+            "Clip en rama: suena solo aquí · menú del clip → Enviar notas a Tejer".into()
+        } else {
+            "Clip MIDI insertado".into()
+        };
     }
 
     pub(in crate::ui) fn open_piano_roll(&mut self) {

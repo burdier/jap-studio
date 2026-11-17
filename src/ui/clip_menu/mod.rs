@@ -28,6 +28,7 @@ pub(super) enum ClipAction {
     Color(Option<u8>),
     Gain(Option<f32>),
     Move(isize),
+    SendToHilo,
     Delete,
     Page(MenuPage),
     Rename,

@@ -71,7 +71,6 @@ impl DawApp {
             ToolbarAction::InsertMidiClip => {
                 self.insert_midi_clip_at(self.cursor_row, self.timeline.edit_beat());
                 self.focus_piano_roll(window, cx);
-                self.status_message = "Clip MIDI insertado desde botón de icono".into();
             }
             ToolbarAction::CaptureMidi => self.capture_midi_to_track(),
             ToolbarAction::DuplicateClip => self.execute_clip_catalog_action("clip.duplicate"),

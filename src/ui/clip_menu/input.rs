@@ -192,6 +192,7 @@ impl DawApp {
                 return;
             }
             A::Move(delta) => self.move_active_clip_track(kind, delta),
+            A::SendToHilo => self.send_active_midi_clip_to_hilo(),
             A::Delete => self.delete_active_clip(kind),
             A::Page(_) | A::InsertMidi | A::InsertCapture => unreachable!(),
         }

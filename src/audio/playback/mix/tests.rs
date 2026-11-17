@@ -641,6 +641,79 @@ fn layer_hilo_sums_two_soundfonts_and_wav_with_independent_branch_levels() {
 }
 
 #[test]
+fn round_robin_group_clip_alternates_audible_branches_on_play() {
+    use crate::audio::piano::{PianoSettings, PianoSnapshot, VoiceSource};
+    use elevate::musical::{
+        clip::MidiClip,
+        model::{InstrumentId, Pattern},
+        time::{PPQ, Tick},
+        track::{HiloMode, Track, TrackKind},
+    };
+    let group = Track::new("Hilo", TrackKind::Group);
+    let ids = [InstrumentId(151), InstrumentId(152)];
+    let mut pattern = Pattern::new(Tick(2 * PPQ)).unwrap();
+    for (index, pitch) in [60, 64].into_iter().enumerate() {
+        pattern
+            .add_note(ids[0], Tick(index as i64 * PPQ), Tick(PPQ / 4), pitch, 100)
+            .unwrap();
+    }
+    let group_clip = MidiClip::new("Tejer", 0, 0.0, pattern);
+    let inputs: Vec<_> = ids
+        .into_iter()
+        .enumerate()
+        .map(|(branch_index, instrument)| {
+            let mut musical_track = Track::new("Piano", TrackKind::Synth);
+            musical_track.parent = Some(group.id);
+            musical_track.instrument = Some(instrument);
+            let mut input = track(musical_track.id.0, vec![]);
+            input.pan = if branch_index == 0 { -1.0 } else { 1.0 };
+            input.midi = Some(MidiTrackInput {
+                index: branch_index + 1,
+                track: musical_track,
+                instrument,
+                clips: vec![],
+                source: VoiceSource::Piano(PianoSnapshot {
+                    path: std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                        .join("assets/soundfonts/UprightPianoKW-20220221.sf2"),
+                    settings: PianoSettings {
+                        maximum_polyphony: 64,
+                        reverb_and_chorus: false,
+                    },
+                    midi: vec![],
+                    master_volume: 0.7,
+                    filter: Default::default(),
+                }),
+                hilo: Some(HiloBranchInput {
+                    clips: vec![group_clip.clone()],
+                    group_index: 0,
+                    branch_index,
+                    instruments: ids.to_vec(),
+                    mode: HiloMode::RoundRobin,
+                    weave: None,
+                }),
+            });
+            input
+        })
+        .collect();
+    let mut mix = Mix::prepare(
+        inputs,
+        None,
+        48_000,
+        120.0,
+        elevate::musical::time::Meter::default(),
+    )
+    .unwrap();
+    let mut first = [[0.0; 2]; 2048];
+    mix.render(0, &mut first);
+    assert!(first.iter().any(|frame| frame[0].abs() > 0.001));
+    assert!(first.iter().all(|frame| frame[1].abs() < 1e-6));
+    let mut second = [[0.0; 2]; 2048];
+    mix.render(24_000, &mut second);
+    assert!(second.iter().any(|frame| frame[1].abs() > 0.001));
+    // La primera voz puede conservar una cola de release tras su NoteOff.
+}
+
+#[test]
 fn drums_and_wav_use_the_same_frame_clock() {
     use elevate::musical::{
         model::{InstrumentId, Pattern},

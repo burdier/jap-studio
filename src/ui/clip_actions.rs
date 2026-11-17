@@ -222,4 +222,38 @@ impl DawApp {
             }
         }
     }
+
+    pub(in crate::ui) fn send_active_midi_clip_to_hilo(&mut self) {
+        let Some(clip) = &self.timeline.midi_clip else {
+            return;
+        };
+        if clip.props.locked {
+            return;
+        }
+        let Some(parent) = self.tracks.get(clip.track).and_then(|track| track.parent) else {
+            return;
+        };
+        let Some(group_index) = self
+            .tracks
+            .iter()
+            .position(|track| track.id == parent && track.hilo.is_some())
+        else {
+            return;
+        };
+        self.stop_audio();
+        if let Some(clip) = &mut self.timeline.midi_clip {
+            clip.track = group_index;
+            if self
+                .piano_roll
+                .opened_clip
+                .as_ref()
+                .is_some_and(|opened| opened.id == clip.id)
+            {
+                self.piano_roll.opened_clip = Some(clip.clone());
+            }
+        }
+        self.cursor_row = group_index;
+        self.status_message =
+            "Clip enviado al Hilo: Play repartirá sus notas entre las ramas".into();
+    }
 }
