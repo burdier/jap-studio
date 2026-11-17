@@ -47,8 +47,9 @@ acotada de selección por NoteOn durante la reproducción.
   seleccionada, también con su editor de instrumento abierto. Los controles de ratón
   ajustan parámetros sin cambiar el destino MIDI. Cada inserción de Hay Piano
   conserva una instancia y un ID propios, incluso dentro de un Hilo. La
-  exportación de varias instancias de Hay Piano y de clips de Hilo aún no está
-  disponible; la aplicación rechaza esas exportaciones con un mensaje.
+  exportación de clips de Hilo ya mezcla instancias separadas de Hay Piano o Hay
+  Sampler por rama, también como stems. Varios pianos en pistas ordinarias y
+  las ramas con VST3 siguen rechazados explícitamente hasta ampliar el render offline.
 
 - **MIDI en vivo durante Play:** el piano SoundFont y Hay Sampler se suman al WAV
   en el motor compartido, incluso si su pista no tiene clip MIDI. Tocar una nota

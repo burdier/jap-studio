@@ -314,6 +314,8 @@ Render offline en segundo plano mediante **libsndfile + LAME + libsoxr**; audio 
 stems alineados, rango/cola, mono/estéreo, frecuencia, profundidad y MP3 CBR/VBR configurables.
 Por defecto escribe en `exports/` y respeta mute/solo y niveles de pista. `:export.help`
 muestra las opciones y `:export.cancel` cancela. [Guía de exportación](docs/EXPORT.md).
+Los Hilos con Hay Piano o Hay Sampler se exportan como master o stems por rama;
+las ramas y cadenas VST3 todavía requieren render offline de plugins.
 
 Al ejecutar **Exportar audio** desde el buscador o su icono aparece un formulario flotante
 con los parámetros de esa exportación y botón **OK**. Parte de las preferencias guardadas;

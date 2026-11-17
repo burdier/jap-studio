@@ -771,9 +771,12 @@ Los individuales tienen un rango común; el master suma todas las fuentes selecc
 El preroll prepara el estado antes de escribir rangos recortados; la cola libera la entrada.
 
 `audio/piano/backend.rs` y el consumidor del scheduler se comparten con la audición.
-`PianoSnapshot` contiene configuración, nunca voces o streams. Las voces se crean por clip
-en el worker para conservar solapamientos sin NoteOff cruzados entre clips. Es un host
-offline provisional del piano actual, no un sistema de instancias por pista.
+`PianoSnapshot` contiene configuración, nunca voces o streams. Las voces MIDI ordinarias
+se crean por clip en el worker para conservar solapamientos sin NoteOff cruzados entre clips.
+Para un Hilo, el snapshot captura cada rama con su instrumento y la regla Tejer;
+`PreparedMidiArrangement::compile_hilo_branch` produce el mismo plan que Play y
+`PreparedArrangementVoice` renderiza una voz offline por rama. Los stems individuales
+son las ramas, sin salida muda de la cabecera. VST3 sigue fuera del export offline.
 
 Los codecs son adaptadores C acotados a libsndfile, LAME y libsoxr, con handles RAII locales
 al worker. `files.rs` prepara archivos temporales y publica el lote sin sobrescritura.

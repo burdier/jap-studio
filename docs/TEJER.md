@@ -53,3 +53,7 @@ El MIDI físico sin ID empareja notas por canal y tono; si se repiten dentro de
 esa pareja, usa orden inverso. NoteOff conserva la rama elegida aunque cambie
 el turno o se retire otra rama. El registro acotado, la expresión por voz,
 el sustain y las colas al retirar ramas requieren el cierre restante de PR-09.
+
+**Exportación:** «Exportar audio» renderiza los clips MIDI del Hilo con Hay Piano
+y Hay Sampler en sus ramas. Master suma las ramas y «archivos por pista» produce
+un stem por rama. Los instrumentos y efectos VST3 aún no tienen render offline.

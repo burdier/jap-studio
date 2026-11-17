@@ -159,8 +159,8 @@
 | Partículas | `src/ui/timeline/particles.rs` | `paint.rs`, tokens en `design.rs` |
 | Decodificar archivo | `src/audio/assets.rs` | Symphonia, trabajo offline |
 | Opciones/parser y serialización de preferencias de exportación | `src/export/{mod,command,preset}.rs` | `tests/export.rs`, `docs/EXPORT.md`; argumentos explícitos prevalecen sobre los valores guardados |
-| Acción de exportación y snapshot de Arrangement | `src/ui/export.rs` | `input.rs`, `catalog.rs`, `render.rs`; worker independiente de reproducción |
-| Mezcla offline y fuentes | `src/audio/export/{render,sources}.rs` | `job.rs`, `tests.rs`; posiciones por frames y rango común |
+| Acción de exportación y snapshot de Arrangement | `src/ui/export.rs` | `ui/export/hilo.rs`, `input.rs`, `catalog.rs`, `render.rs`; captura ramas e instrumentos del Hilo sin abrir audio físico |
+| Mezcla offline y fuentes | `src/audio/export/{render,sources,hilo}.rs` | `job.rs`, `tests.rs`, `audio/piano/voice.rs`; posiciones por frames, rango común y plan de Tejer compartido con Play |
 | Codecs C y publicación de exportaciones | `src/audio/export/{sndfile,lame,soxr,native,files}.rs` | `docs/EXPORT.md`; carga dinámica y archivos temporales |
 | Síntesis compartida live/offline y snapshot del piano | `src/audio/piano/{backend,offline}.rs` | `render.rs`, `instruments/piano.rs`; sin abrir CPAL en export |
 | Elegir formato CPAL | `src/audio/output.rs` | Frecuencia, buffer y pareja física de salida; todos los reproductores usan `AudioConfig` |

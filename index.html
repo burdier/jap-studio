@@ -579,13 +579,13 @@
           <article data-pr="PR-13" data-status="pending">
             <div class="pr-head"><span class="pr-number">PR-13</span><span class="status">Pendiente</span></div>
             <h3>Exportación compartida</h3>
-            <p>Renderizar el mismo procesamiento que se escucha.</p>
+            <p>La exportación de Hilos con Hay Piano y Hay Sampler ya usa el reparto de Play y genera master o stems. Falta unificar el grafo completo e incluir VST3, colas y PDC.</p>
             <div class="depends">Depende de PR-10 y 12</div>
             <details class="commit-plan">
               <summary>4 commits · 5–9 días · un grafo para reproducir y exportar</summary>
               <ol>
                 <li><strong>refactor(export): preparar fuentes con el motor común</strong>Separar instancias offline y mantener codecs/cancelación existentes.</li>
-                <li><strong>feat(export): renderizar Hilos, MIDI y Tejer</strong>Transportar los mismos offsets, parámetros y semilla/reinicio.</li>
+                <li><strong>feat(export): completar Hilos, MIDI y Tejer en el grafo común</strong>Ampliar el render interno disponible a rutas, parámetros y semilla/reinicio del grafo completo.</li>
                 <li><strong>feat(export): incluir VST3 y compensación de latencia</strong>Procesar estado restaurado con colas, pre-roll y rangos explícitos; probar ruta live/offline en tolerancia.</li>
                 <li><strong>feat(export): publicar solo archivos completos</strong>Conservar cancelación, sustitución atómica y pruebas de errores de codec junto a la publicación.</li>
               </ol>

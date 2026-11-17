@@ -620,6 +620,10 @@ la señal auxiliar no se suma accidentalmente al master. Una ruta cíclica no se
 **Valor:** exportar una mezcla con Tejer, instrumentos y efectos VST3, incluyendo sus
 colas y la compensación de latencia.
 
+**Avance previo:** la exportación offline de Hilos con Hay Piano y Hay Sampler
+reutiliza el plan musical de Play y produce master o stems por rama. Este PR
+completa la equivalencia del grafo y añade plugins VST3, colas y PDC.
+
 **Puntos de entrada:** `src/audio/export/{mod,sources,render,job}.rs`, `src/ui/export.rs`,
 motor común y mecanismos de estado de PR-10.
 

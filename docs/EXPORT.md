@@ -61,17 +61,24 @@ automáticamente y todavía no hay dither.
 - Todos los clips conservados de audio y MIDI del Arrangement, con posiciones, silencios,
   recortes, solapamientos, ganancia/mute de clip, nivel/mute/solo y balance de pista.
 - Audio se convierte con **libsoxr VHQ**, compensando el retardo mediante su API offline.
-- MIDI usa el SoundFont, preset y parámetros capturados del piano actual. Cada clip tiene
-  voces independientes para no cortar notas de otro clip solapado; todavía no hay varias
-  instancias de instrumento configurables por pista. Reutiliza backend y scheduler de audición.
+- MIDI ordinario usa el SoundFont, preset y parámetros capturados del piano actual. Cada clip
+  tiene voces independientes para no cortar notas de otro clip solapado.
+- Los clips MIDI de un **Hilo** usan el mismo reparto por rama de Play (capas o Tejer),
+  con una instancia offline de Hay Piano o Hay Sampler por rama. Master suma las ramas;
+  `-individuals` escribe un stem por rama, sin un stem vacío para la cabecera. Elegir
+  solo una rama exporta las notas que le corresponden en la secuencia completa.
 - Un rango con inicio posterior a cero se prepara renderizando lo anterior sin escribirlo,
   para conservar notas sostenidas y estado de efectos.
 - Utility se construye con su estado capturado y se aplica después de la mezcla.
 
 El patrón de percusión de la vista Pattern no forma parte del Arrangement y no se añade
-implícitamente. Loop interno/transposición de clips aún no tienen procesador y se rechazan
-si están activados. Retornos, automatización, render como loop, normalización, LUFS, dither
-son incrementos posteriores.
+implícitamente. En clips ordinarios, loop interno/transposición aún se rechazan;
+el plan de Hilo aplica la transposición MIDI como Play y termina al final del clip.
+Retornos, automatización, render como loop, normalización, LUFS y dither son
+incrementos posteriores.
+Las ramas con instrumentos VST3, las cadenas con FX VST3 y los componentes de
+audio Lua siguen rechazándose explícitamente: todavía no hay render offline
+de su estado.
 
 MP3 escribe la etiqueta LAME de delay/padding; la alineación exacta depende de que el lector
 la respete. Usa PCM/FLAC para intercambio de stems sample-accurate.
