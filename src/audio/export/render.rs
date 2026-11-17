@@ -33,7 +33,13 @@ pub(super) fn range(snapshot: &Snapshot, options: &ExportOptions) -> Result<Rend
             snapshot
                 .midi
                 .iter()
-                .filter(|c| options.includes_track(c.track))
+                .filter(|c| {
+                    options.includes_track(c.track)
+                        || snapshot.hilo.iter().any(|branch| {
+                            branch.group_index == c.track
+                                && options.includes_track(branch.track_index)
+                        })
+                })
                 .map(|c| c.end_beat()),
         )
         .fold(0.0, f64::max);

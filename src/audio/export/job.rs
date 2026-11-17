@@ -64,7 +64,10 @@ pub(super) fn run(
         .filter(|&i| {
             options.includes_track(i)
                 && (snapshot.audio.iter().any(|c| c.track == i)
-                    || snapshot.midi.iter().any(|c| c.track == i))
+                    || snapshot.midi.iter().any(|c| {
+                        c.track == i && !snapshot.hilo.iter().any(|branch| branch.group_index == i)
+                    })
+                    || snapshot.hilo.iter().any(|branch| branch.track_index == i))
         })
         .collect();
     if tracks.is_empty() {

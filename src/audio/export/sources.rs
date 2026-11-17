@@ -1,5 +1,5 @@
 //! Adaptadores de fuentes del Arrangement. Los clips solapados conservan voces independientes.
-use super::{Snapshot, TrackMix, render::frame_at, soxr};
+use super::{Snapshot, TrackMix, hilo::HiloSource, render::frame_at, soxr};
 use crate::audio::{
     AudioClip,
     piano::{OfflinePiano, PianoSnapshot},
@@ -15,14 +15,14 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-struct Mix {
+pub(super) struct Mix {
     volume: Volume,
     pan: StereoPan,
     clip_gain: f32,
 }
 
 impl Mix {
-    fn new(track: &TrackMix, props: ClipProps, rate: u32) -> Result<Self, String> {
+    pub(super) fn new(track: &TrackMix, props: ClipProps, rate: u32) -> Result<Self, String> {
         if props.looped || props.pitch_semitones != 0 {
             return Err(
                 "Export: loop interno/transposición de clips todavía no tienen procesador".into(),
@@ -39,7 +39,7 @@ impl Mix {
             clip_gain: gain * track.fx_gain,
         })
     }
-    fn add(&mut self, source: &mut [StereoFrame], output: &mut [StereoFrame]) {
+    pub(super) fn add(&mut self, source: &mut [StereoFrame], output: &mut [StereoFrame]) {
         for sample in source.iter_mut().flatten() {
             *sample *= self.clip_gain;
         }
@@ -117,6 +117,7 @@ pub(super) struct MidiSource {
 pub(super) struct Sources {
     audio: Vec<AudioSource>,
     midi: Vec<MidiSource>,
+    hilo: Vec<HiloSource>,
     piano: Option<PianoSnapshot>,
     sampler: Option<crate::audio::sampler::SamplerSnapshot>,
     rate: u32,
@@ -132,6 +133,7 @@ impl Sources {
     ) -> Result<Self, String> {
         let mut audio = Vec::new();
         let mut midi = Vec::new();
+        let mut hilo = Vec::new();
         for clip in &snapshot.audio {
             if cancel.load(Ordering::Relaxed) {
                 return Err("Exportación cancelada".into());
@@ -149,7 +151,14 @@ impl Sources {
                 .tracks
                 .get(clip.track)
                 .ok_or("Clip MIDI en pista inexistente")?;
-            if selected.contains(&clip.track) && track.gain != 0.0 && !clip.props.muted {
+            if selected.contains(&clip.track)
+                && track.gain != 0.0
+                && !clip.props.muted
+                && !snapshot
+                    .hilo
+                    .iter()
+                    .any(|branch| branch.group_index == clip.track)
+            {
                 let sampler = snapshot
                     .sampler
                     .as_ref()
@@ -174,9 +183,28 @@ impl Sources {
                 });
             }
         }
+        for branch in &snapshot.hilo {
+            if cancel.load(Ordering::Relaxed) {
+                return Err("Exportación cancelada".into());
+            }
+            let track = snapshot
+                .tracks
+                .get(branch.track_index)
+                .ok_or("Rama de Hilo en pista inexistente")?;
+            if selected.contains(&branch.track_index) && track.gain != 0.0 {
+                hilo.push(HiloSource::prepare(
+                    branch,
+                    &snapshot.midi,
+                    track,
+                    rate,
+                    snapshot.bpm,
+                )?);
+            }
+        }
         Ok(Self {
             audio,
             midi,
+            hilo,
             piano: snapshot.piano.clone(),
             sampler: snapshot.sampler.as_ref().map(|(_, s)| s.clone()),
             rate,
@@ -189,6 +217,9 @@ impl Sources {
             if let Some(synth) = &mut source.synth {
                 synth.finish_input();
             }
+        }
+        for source in &mut self.hilo {
+            source.finish_input();
         }
     }
 
@@ -241,6 +272,9 @@ impl Sources {
             let mut scratch = [[0.0; 2]; 512];
             source.synth.as_mut().unwrap().render(&mut scratch[..count]);
             source.mix.add(&mut scratch[..count], &mut output[offset..]);
+        }
+        for source in &mut self.hilo {
+            source.render(position, output, tail);
         }
         Ok(())
     }

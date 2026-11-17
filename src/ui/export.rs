@@ -1,4 +1,5 @@
 //! Acción de exportación: captura estado propio y observa el resultado del worker.
+mod hilo;
 use super::DawApp;
 use crate::audio::export::{self, Snapshot, TrackMix};
 use elevate::export::ExportOptions;
@@ -39,12 +40,26 @@ impl DawApp {
                     .map_err(|e| e.to_string())?
                     .join(&options.directory);
             }
-            if self
-                .tracks
-                .iter()
-                .any(|t| crate::audio::effects::contains_vst(&t.chain))
-            {
+            if self.tracks.iter().enumerate().any(|(index, t)| {
+                (options.includes_track(index)
+                    || self.tracks.iter().enumerate().any(|(child_index, child)| {
+                        options.includes_track(child_index) && child.parent == Some(t.id)
+                    }))
+                    && crate::audio::effects::contains_vst(&t.chain)
+            }) {
                 return Err("La exportación con efectos VST3 todavía requiere render offline de sus estados; no se exportará sin ellos".into());
+            }
+            if self.tracks.iter().enumerate().any(|(index, t)| {
+                (options.includes_track(index)
+                    || self.tracks.iter().enumerate().any(|(child_index, child)| {
+                        options.includes_track(child_index) && child.parent == Some(t.id)
+                    }))
+                    && crate::audio::effects::contains_component(
+                        &t.chain,
+                        &self.lua_components.instances,
+                    )
+            }) {
+                return Err("La exportación con componentes de audio Lua todavía no está disponible; no se exportará sin esos efectos".into());
             }
             let audio = self
                 .timeline
@@ -60,16 +75,11 @@ impl DawApp {
                 .chain(self.timeline.midi_clip.iter())
                 .cloned()
                 .collect();
-            if midi.iter().any(|clip| {
-                options.includes_track(clip.track)
-                    && self.tracks[clip.track].hilo.is_some()
-                    && !clip.props.muted
-            }) {
-                return Err("Exportar clips de Hilo todavía no está disponible".into());
-            }
+            let hilo = self.capture_hilo_export(&midi, &options)?;
             let piano_ids: std::collections::HashSet<_> = midi
                 .iter()
                 .filter(|clip| options.includes_track(clip.track) && !clip.props.muted)
+                .filter(|clip| self.tracks[clip.track].hilo.is_none())
                 .filter_map(|clip| self.tracks[clip.track].instrument)
                 .filter(|id| self.is_piano_id(*id))
                 .collect();
@@ -81,6 +91,7 @@ impl DawApp {
             let needs_piano = midi.iter().any(|c| {
                 options.includes_track(c.track)
                     && !c.props.muted
+                    && self.tracks[c.track].hilo.is_none()
                     && self.track_gain(c.track) > 0.0
                     && !self.tracks[c.track]
                         .instrument
@@ -89,6 +100,7 @@ impl DawApp {
             if midi.iter().any(|clip| {
                 options.includes_track(clip.track)
                     && !clip.props.muted
+                    && self.tracks[clip.track].hilo.is_none()
                     && self.track_gain(clip.track) > 0.
                     && self.tracks[clip.track]
                         .instrument
@@ -149,6 +161,7 @@ impl DawApp {
                 midi,
                 piano,
                 sampler,
+                hilo,
                 tracks,
                 utility: self.utility.state(),
                 bpm: self.timeline.tempo.bpm(),

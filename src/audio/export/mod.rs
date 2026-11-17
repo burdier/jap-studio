@@ -1,5 +1,6 @@
 //! Exportación offline: snapshot → bloques mezclados → codecs C. No importa GPUI/CPAL.
 mod files;
+mod hilo;
 mod job;
 mod lame;
 mod native;
@@ -21,6 +22,7 @@ use std::{
     },
 };
 
+pub(crate) use hilo::HiloExportBranch;
 pub(crate) use job::start;
 
 #[derive(Clone)]
@@ -36,6 +38,7 @@ pub(crate) struct Snapshot {
     pub midi: Vec<MidiClip>,
     pub piano: Option<PianoSnapshot>,
     pub sampler: Option<(Vec<usize>, super::sampler::SamplerSnapshot)>,
+    pub hilo: Vec<HiloExportBranch>,
     pub tracks: Vec<TrackMix>,
     pub utility: UtilityState,
     pub bpm: f64,

@@ -2,14 +2,15 @@
 use super::*;
 use crate::audio::{
     AudioFile,
-    piano::{PianoSettings, PianoSnapshot},
+    piano::{PianoSettings, PianoSnapshot, VoiceSource},
 };
 use elevate::{
     export::ExportOptions,
     musical::{
         clip::{ClipProps, MidiClip},
         model::{InstrumentId, Pattern},
-        time::Tick,
+        time::{PPQ, Tick},
+        track::{HiloMode, Track, TrackKind},
     },
 };
 use std::{
@@ -70,6 +71,7 @@ fn snapshot(audio: Vec<AudioClip>) -> Snapshot {
         midi: Vec::new(),
         piano: None,
         sampler: None,
+        hilo: Vec::new(),
         tracks: vec![
             TrackMix {
                 name: "Uno".into(),
@@ -337,4 +339,104 @@ fn midi_offline_uses_soundfont_settings_and_preserves_pre_roll_for_cropped_expor
         .flatten()
         .fold(0.0_f32, |peak, x| peak.max(x.abs()));
     assert!(peak < 1e-7, "master cero: pico {peak}");
+}
+
+#[test]
+fn hilo_export_routes_two_pianos_to_master_and_branch_stems() {
+    let temp = Temp::new();
+    let make = || {
+        let mut group = Track::new("Hilo", TrackKind::Group);
+        group.hilo = Some(HiloMode::RoundRobin);
+        let instruments = [InstrumentId(71), InstrumentId(72)];
+        let branches: Vec<_> = instruments
+            .iter()
+            .map(|&instrument| {
+                let mut track = Track::new("Piano", TrackKind::Synth);
+                track.parent = Some(group.id);
+                track.instrument = Some(instrument);
+                track
+            })
+            .collect();
+        let mut pattern = Pattern::new(Tick(PPQ * 4)).unwrap();
+        for index in 0..4 {
+            pattern
+                .add_note(
+                    instruments[0],
+                    Tick(index * PPQ),
+                    Tick(PPQ / 2),
+                    60 + index as u8,
+                    100,
+                )
+                .unwrap();
+        }
+        let piano = PianoSnapshot {
+            path: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("assets/soundfonts/UprightPianoKW-20220221.sf2"),
+            settings: PianoSettings {
+                maximum_polyphony: 64,
+                reverb_and_chorus: false,
+            },
+            midi: vec![(0xB0, 7, 100), (0xC0, 0, 0)],
+            master_volume: 0.7,
+            filter: Default::default(),
+        };
+        let mut snap = snapshot(Vec::new());
+        snap.tracks = ["Hilo", "A", "B"]
+            .map(|name| TrackMix {
+                name: name.into(),
+                gain: 1.0,
+                fx_gain: 1.0,
+                pan: 0.0,
+            })
+            .to_vec();
+        snap.midi.push(MidiClip::new("Notas", 0, 0.0, pattern));
+        snap.hilo = branches
+            .into_iter()
+            .enumerate()
+            .map(|(branch_index, track)| HiloExportBranch {
+                track_index: branch_index + 1,
+                group_index: 0,
+                branch_index,
+                instruments: instruments.to_vec(),
+                mode: HiloMode::RoundRobin,
+                weave: None,
+                track,
+                source: VoiceSource::Piano(PianoSnapshot {
+                    master_volume: if branch_index == 0 { 0.7 } else { 0.3 },
+                    ..piano.clone()
+                }),
+            })
+            .collect();
+        snap
+    };
+    let master = run(make(), temp.options("export -n HiloMaster.wav -bits 32f"));
+    let master = AudioFile::decode(&master.paths[0]).unwrap();
+    let stems = run(
+        make(),
+        temp.options("export -n HiloStems.wav -individuals -bits 32f"),
+    );
+    assert_eq!(stems.paths.len(), 2);
+    let a = AudioFile::decode(&stems.paths[0]).unwrap();
+    let b = AudioFile::decode(&stems.paths[1]).unwrap();
+    assert_eq!(master.frames.len(), a.frames.len());
+    assert_eq!(a.frames.len(), b.frames.len());
+    assert!(a.frames[..6_000].iter().flatten().any(|x| x.abs() > 0.001));
+    assert!(b.frames[..6_000].iter().all(|frame| *frame == [0.0; 2]));
+    assert!(
+        b.frames[24_000..30_000]
+            .iter()
+            .flatten()
+            .any(|x| x.abs() > 0.001)
+    );
+    let only = run(
+        make(),
+        temp.options("export -n Solo.wav -tracks 2 -bits 32f"),
+    );
+    let only = AudioFile::decode(&only.paths[0]).unwrap();
+    assert_eq!(only.frames, a.frames);
+    for (master, (a, b)) in master.frames.iter().zip(a.frames.iter().zip(&b.frames)) {
+        for channel in 0..2 {
+            assert!((master[channel] - a[channel] - b[channel]).abs() < 2e-5);
+        }
+    }
 }

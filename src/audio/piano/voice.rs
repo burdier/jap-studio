@@ -229,6 +229,23 @@ impl PreparedArrangementVoice {
             filter.process(output);
         }
     }
+
+    /// Continúa las colas de exportación sin leer eventos posteriores al rango elegido.
+    pub fn render_tail(&mut self, output: &mut [[f32; 2]]) {
+        self.voices.render(output);
+        if let Some(filter) = &mut self.filter {
+            filter.process(output);
+        }
+    }
+
+    pub fn finish_input(&mut self) {
+        for (_, voice, _) in &mut self.voices.voices {
+            for channel in 0..16 {
+                voice.synth.midi(0xb0 | channel, 64, 0);
+            }
+            voice.synth.note_off_all();
+        }
+    }
 }
 
 impl PreparedVoices {
