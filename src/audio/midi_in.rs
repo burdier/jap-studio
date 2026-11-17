@@ -1,6 +1,6 @@
 //! Adaptador aislado de entrada MIDI hardware (ALSA/PipeWire vía `midir`) + cola `rtrb`.
 //! No importa GPUI. Convierte bytes MIDI entrantes en `MidiMessage` sin bloquear el hilo MIDI.
-use elevate::musical::midi::MidiMessage;
+use elevate::musical::midi::{MidiInputEvent, MidiMessage};
 use midir::{Ignore, MidiInput, MidiInputConnection};
 use rtrb::{Consumer, RingBuffer};
 
@@ -9,7 +9,7 @@ const QUEUE_CAPACITY: usize = 512;
 struct PortStream {
     name: String,
     _connection: MidiInputConnection<()>,
-    consumer: Consumer<MidiMessage>,
+    consumer: Consumer<MidiInputEvent>,
 }
 
 pub(crate) struct MidiHardwareIn {
@@ -53,7 +53,7 @@ impl MidiHardwareIn {
                 &port,
                 "hay-midi-port",
                 move |_timestamp, bytes, ()| {
-                    if let Some(msg) = MidiMessage::from_bytes(bytes) {
+                    if let Some(msg) = MidiMessage::input_from_bytes(bytes) {
                         let _ = producer.push(msg);
                     }
                 },
@@ -76,7 +76,7 @@ impl MidiHardwareIn {
         !self.streams.is_empty()
     }
 
-    pub fn drain(&mut self) -> Vec<MidiMessage> {
+    pub fn drain(&mut self) -> Vec<MidiInputEvent> {
         let mut out = Vec::new();
         for stream in &mut self.streams {
             while let Ok(msg) = stream.consumer.pop() {

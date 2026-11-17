@@ -49,5 +49,7 @@ reiniciar la aplicación para cargar cambios del archivo.
 
 **Alcance actual:** se carga una regla global para los Hilos. Todavía no hay
 editor ni persistencia de reglas por Hilo; tampoco se ejecuta Lua en el callback.
-El MIDI físico sin ID sigue emparejando notas repetidas por tono; la expresión,
+El MIDI físico sin ID empareja notas por canal y tono; si se repiten dentro de
+esa pareja, usa orden inverso. NoteOff conserva la rama elegida aunque cambie
+el turno o se retire otra rama. El registro acotado, la expresión por voz,
 el sustain y las colas al retirar ramas requieren el cierre restante de PR-09.

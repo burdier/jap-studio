@@ -71,6 +71,23 @@ impl MidiMessage {
             _ => None,
         }
     }
+
+    /// Conserva el canal de origen para emparejar notas MIDI físicas repetidas.
+    pub fn input_from_bytes(bytes: &[u8]) -> Option<MidiInputEvent> {
+        let message = Self::from_bytes(bytes)?;
+        let channel = bytes
+            .first()
+            .copied()
+            .filter(|status| (0x80..=0xef).contains(status))
+            .map_or(0, |status| status & 0x0f);
+        Some(MidiInputEvent { channel, message })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MidiInputEvent {
+    pub channel: u8,
+    pub message: MidiMessage,
 }
 
 /// Identidad de cualquier cliente capaz de recibir MIDI.
@@ -95,7 +112,7 @@ pub struct MidiServer {
     mode: HiloMode,
     next_branch: usize,
     weave_rule: Option<WeaveRule>,
-    round_robin_owners: HashMap<u8, Vec<Option<MidiTarget>>>,
+    round_robin_owners: HashMap<(u8, u8), Vec<Option<MidiTarget>>>,
     /// NoteOff físico pendiente después de liberar una nota al cambiar de foco.
     released_on_focus: HashSet<u8>,
 }
@@ -212,8 +229,18 @@ impl MidiServer {
     ///   evitando que el instrumento anterior se quede con la nota pegada.
     /// - `AllNotesOff` libera todos los clientes con notas activas.
     pub fn publish(&mut self, messages: impl IntoIterator<Item = MidiMessage>) -> Vec<RoutedMidi> {
+        self.publish_inputs(messages.into_iter().map(|message| MidiInputEvent {
+            channel: 0,
+            message,
+        }))
+    }
+
+    pub fn publish_inputs(
+        &mut self,
+        inputs: impl IntoIterator<Item = MidiInputEvent>,
+    ) -> Vec<RoutedMidi> {
         let mut routed = Vec::new();
-        for message in messages {
+        for MidiInputEvent { channel, message } in inputs {
             match message {
                 MidiMessage::NoteOn { note, velocity } => {
                     if !self.active_targets.is_empty() {
@@ -227,7 +254,7 @@ impl MidiServer {
                             let target = self.active_targets[index];
                             self.next_branch = self.next_branch.wrapping_add(1);
                             self.round_robin_owners
-                                .entry(note)
+                                .entry((channel.min(15), note))
                                 .or_default()
                                 .push(Some(target));
                             vec![target]
@@ -245,11 +272,18 @@ impl MidiServer {
                 }
                 MidiMessage::NoteOff { note } => {
                     if self.mode == HiloMode::RoundRobin {
-                        if let Some(owners) = self.round_robin_owners.get_mut(&note)
-                            && let Some(slot) = owners.pop()
-                        {
+                        let key = (channel.min(15), note);
+                        let slot = self.round_robin_owners.get_mut(&key).and_then(Vec::pop);
+                        if let Some(slot) = slot {
+                            if self.round_robin_owners[&key].is_empty() {
+                                self.round_robin_owners.remove(&key);
+                            }
                             if let Some(target) = slot
-                                && !owners.contains(&Some(target))
+                                && !self.round_robin_owners.iter().any(
+                                    |(&(_, owner_note), owners)| {
+                                        owner_note == note && owners.contains(&Some(target))
+                                    },
+                                )
                             {
                                 self.held.remove(&(target, note));
                                 routed.push(RoutedMidi {
@@ -471,6 +505,94 @@ mod tests {
     }
 
     #[test]
+    fn round_robin_pairs_repeated_pitch_with_its_input_channel() {
+        let a = MidiTarget::Instrument(InstrumentId(41));
+        let b = MidiTarget::Instrument(InstrumentId(42));
+        let mut server = MidiServer::new(None);
+        server.focus_targets_mode([a, b], HiloMode::RoundRobin);
+        let input = |channel, message| MidiInputEvent { channel, message };
+        assert_eq!(
+            server.publish_inputs([input(
+                0,
+                MidiMessage::NoteOn {
+                    note: 60,
+                    velocity: 100
+                }
+            )])[0]
+                .target,
+            a
+        );
+        assert_eq!(
+            server.publish_inputs([input(
+                1,
+                MidiMessage::NoteOn {
+                    note: 60,
+                    velocity: 100
+                }
+            )])[0]
+                .target,
+            b
+        );
+        assert_eq!(
+            server.publish_inputs([input(0, MidiMessage::NoteOff { note: 60 })]),
+            vec![RoutedMidi {
+                target: a,
+                message: MidiMessage::NoteOff { note: 60 }
+            }]
+        );
+        assert_eq!(
+            server.publish_inputs([input(1, MidiMessage::NoteOff { note: 60 })]),
+            vec![RoutedMidi {
+                target: b,
+                message: MidiMessage::NoteOff { note: 60 }
+            }]
+        );
+        assert!(server.release_all().is_empty());
+    }
+
+    #[test]
+    fn removed_branch_discards_its_late_release_on_the_original_channel() {
+        let a = MidiTarget::Instrument(InstrumentId(41));
+        let b = MidiTarget::Instrument(InstrumentId(42));
+        let mut server = MidiServer::new(None);
+        server.focus_targets_mode([a, b], HiloMode::RoundRobin);
+        let input = |channel, message| MidiInputEvent { channel, message };
+        server.publish_inputs([input(
+            0,
+            MidiMessage::NoteOn {
+                note: 60,
+                velocity: 100,
+            },
+        )]);
+        server.publish_inputs([input(
+            1,
+            MidiMessage::NoteOn {
+                note: 60,
+                velocity: 100,
+            },
+        )]);
+        assert_eq!(
+            server.focus_targets_mode([b], HiloMode::RoundRobin),
+            vec![RoutedMidi {
+                target: a,
+                message: MidiMessage::NoteOff { note: 60 }
+            }]
+        );
+        assert!(
+            server
+                .publish_inputs([input(0, MidiMessage::NoteOff { note: 60 })])
+                .is_empty()
+        );
+        assert_eq!(
+            server.publish_inputs([input(1, MidiMessage::NoteOff { note: 60 })]),
+            vec![RoutedMidi {
+                target: b,
+                message: MidiMessage::NoteOff { note: 60 }
+            }]
+        );
+    }
+
+    #[test]
     fn removing_one_round_robin_branch_keeps_the_other_note_held() {
         let a = MidiTarget::Instrument(InstrumentId(41));
         let b = MidiTarget::Instrument(InstrumentId(42));
@@ -658,6 +780,23 @@ mod tests {
         assert_eq!(
             MidiMessage::from_bytes(&[0xE0, 0x00, 0x40]),
             Some(MidiMessage::PitchBend { bend: 0 })
+        );
+        assert_eq!(
+            MidiMessage::input_from_bytes(&[0x91, 60, 100]),
+            Some(MidiInputEvent {
+                channel: 1,
+                message: MidiMessage::NoteOn {
+                    note: 60,
+                    velocity: 100
+                },
+            })
+        );
+        assert_eq!(
+            MidiMessage::input_from_bytes(&[0x81, 60, 0]),
+            Some(MidiInputEvent {
+                channel: 1,
+                message: MidiMessage::NoteOff { note: 60 }
+            })
         );
     }
 

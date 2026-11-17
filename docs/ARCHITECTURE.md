@@ -14,7 +14,9 @@ de salida, Stop y la eliminación de pistas recorren todas las instancias.
 `scripting/weave` evalúa una tabla Lua en el sandbox al abrir la aplicación.
 `musical/weave` conserva únicamente una lista validada y acotada de índices de
 rama; no contiene VM ni tipos de audio o UI. `MidiServer` consulta un paso por
-NoteOn en vivo y registra el destino para su NoteOff. La compilación de clips
+NoteOn en vivo y registra el destino para su NoteOff. `audio/midi_in` conserva el
+canal MIDI 1.0 y el servidor empareja liberaciones por canal y tono; dentro de
+esa pareja, las repeticiones sin ID se liberan en orden inverso. La compilación de clips
 de Hilo aplica la misma secuencia antes de audio, con orden estable por frame,
 tipo, clip y NoteId. `audio/playback/mix` recibe el plan ya preparado y el
 callback no llama a Lua. El transporte y los buses siguen siendo los de PR-07.

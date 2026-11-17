@@ -3,7 +3,7 @@ use super::{CenterView, DawApp, pattern_editor::PatternAction};
 use crate::instruments::piano_params::{self, Applies, ParamId, SPECS};
 use elevate::musical::{
     controller::DEFAULT_VELOCITY,
-    midi::{MidiMessage, MidiTarget, RoutedMidi},
+    midi::{MidiInputEvent, MidiMessage, MidiTarget, RoutedMidi},
     midi_map::{MappedEffect, MidiAction, MidiBindTarget},
     pitch::note_name,
     track::{HiloMode, TrackKind, assign_instrument, effective_mix},
@@ -206,7 +206,7 @@ impl DawApp {
     pub(super) fn poll_live_midi(&mut self) {
         let messages = self.midi_hw.drain();
         if !messages.is_empty() {
-            self.apply_midi(messages);
+            self.apply_midi_inputs(messages);
         }
     }
     pub(super) fn focus_midi_instrument(&mut self) {
@@ -222,9 +222,16 @@ impl DawApp {
     /// Publica mensajes de cualquier controlador en el servidor MIDI, evalúa mapeos/MIDI Learn
     /// y despacha cada evento enrutado a su cliente correspondiente.
     pub(super) fn apply_midi(&mut self, messages: impl IntoIterator<Item = MidiMessage>) {
+        self.apply_midi_inputs(messages.into_iter().map(|message| MidiInputEvent {
+            channel: 0,
+            message,
+        }));
+    }
+
+    fn apply_midi_inputs(&mut self, inputs: impl IntoIterator<Item = MidiInputEvent>) {
         let mut to_publish = Vec::new();
-        for msg in messages {
-            let effects = self.midi_mapper.process(msg);
+        for input in inputs {
+            let effects = self.midi_mapper.process(input.message);
             let mut learned = false;
             for effect in effects {
                 if matches!(effect, MappedEffect::Learned { .. }) {
@@ -233,10 +240,10 @@ impl DawApp {
                 self.apply_mapped_effect(effect);
             }
             if !learned {
-                to_publish.push(msg);
+                to_publish.push(input);
             }
         }
-        let routed = self.midi_server.publish(to_publish);
+        let routed = self.midi_server.publish_inputs(to_publish);
         self.dispatch_routed_midi(routed);
     }
     fn apply_mapped_effect(&mut self, effect: MappedEffect) {
