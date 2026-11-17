@@ -511,14 +511,15 @@
           <article data-pr="PR-09" data-status="progress">
             <div class="pr-head"><span class="pr-number">PR-09</span><span class="status">En progreso</span></div>
             <h3>Modo Tejer</h3>
-            <p>Seleccionar instrumentos y pulsar Tejer crea el Hilo con reparto MIDI automático. Una regla Lua opcional cambia el orden; pendientes identidad/expresión completa, sustain y colas.</p>
+            <p>Seleccionar instrumentos y pulsar Tejer crea el Hilo con reparto MIDI automático. Una regla Lua opcional cambia el orden; el MIDI físico conserva canal y tono para devolver NoteOff a su rama. Pendientes identidad/expresión completa, sustain y colas.</p>
             <div class="depends">Depende de PR-07 y 08</div>
             <details class="commit-plan">
-              <summary>5 commits · 4–8 días · Tejer desde la selección y reglas Lua opcionales</summary>
+              <summary>6 commits · 4–8 días · Tejer desde la selección y reglas Lua opcionales</summary>
               <ol>
                 <li data-status="done" data-commit="795aa5e"><strong>feat(tejer): preparar reglas Lua y distribuir notas por ramas</strong>Secuencia acotada en vivo y clips, destino de NoteOff y reinicio; <a href="docs/TEJER.md">uso y límites</a>.</li>
                 <li data-status="done" data-commit="a4ff840"><strong>feat(tejer): activar Hilo desde pistas seleccionadas</strong>Menú y buscador agrupan instrumentos, activan round robin y arman el grupo MIDI sin variable de entorno.</li>
-                <li><strong>feat(tejer): completar identidad y expresión por nota</strong>Emparejar repeticiones y acordes por voz/canal, conservar el destino de NoteOff y expresión fuera de orden.</li>
+                <li data-status="done" data-commit="e0be308"><strong>feat(tejer): conservar canal MIDI al emparejar notas live</strong>NoteOn y NoteOff físicos usan canal y tono; las repeticiones de la misma pareja usan orden inverso.</li>
+                <li><strong>feat(tejer): completar identidad y expresión por nota</strong>Registro acotado por voz/ID para acordes y repeticiones; dirigir expresión y liberaciones fuera de orden a la rama original.</li>
                 <li><strong>feat(tejer): conservar sustain, control y colas</strong>Aplicar CC/pitch bend, panic y retiros de rama; probar que no queden notas colgadas con sus cambios activos.</li>
                 <li><strong>feat(tejer): mantener el resultado independiente del bloque</strong>Probar A-B-C-A-B-C, simultaneidad y partición en varios tamaños como cierre del comportamiento musical.</li>
               </ol>
