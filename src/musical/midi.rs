@@ -8,6 +8,8 @@
 use super::{model::InstrumentId, track::HiloMode, weave::WeaveRule};
 use std::collections::{HashMap, HashSet};
 
+const MAX_PENDING_NOTES: usize = 4096;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MidiMessage {
     NoteOn {
@@ -113,6 +115,10 @@ pub struct MidiServer {
     next_branch: usize,
     weave_rule: Option<WeaveRule>,
     round_robin_owners: HashMap<(u8, u8), Vec<Option<MidiTarget>>>,
+    pending_notes: usize,
+    capacity_exceeded: bool,
+    sustain_inputs: [bool; 16],
+    sustained_targets: HashSet<MidiTarget>,
     /// NoteOff físico pendiente después de liberar una nota al cambiar de foco.
     released_on_focus: HashSet<u8>,
 }
@@ -126,6 +132,10 @@ impl MidiServer {
             next_branch: 0,
             weave_rule: None,
             round_robin_owners: HashMap::new(),
+            pending_notes: 0,
+            capacity_exceeded: false,
+            sustain_inputs: [false; 16],
+            sustained_targets: HashSet::new(),
             released_on_focus: HashSet::new(),
         }
     }
@@ -198,6 +208,7 @@ impl MidiServer {
         if self.active_targets == next {
             return Vec::new();
         }
+        self.capacity_exceeded = false;
         self.next_branch = 0;
         let mut released = Vec::new();
         for &previous in &self.active_targets.clone() {
@@ -210,6 +221,17 @@ impl MidiServer {
                 && !self.held.iter().any(|&(_, held_note)| held_note == note)
             {
                 self.released_on_focus.insert(note);
+            }
+        }
+        if self.sustain_inputs.contains(&true) {
+            for &target in &next {
+                if !self.active_targets.contains(&target) {
+                    self.sustained_targets.insert(target);
+                    released.push(RoutedMidi {
+                        target,
+                        message: MidiMessage::ControlChange { cc: 64, value: 127 },
+                    });
+                }
             }
         }
         self.active_targets = next;
@@ -243,9 +265,17 @@ impl MidiServer {
         for MidiInputEvent { channel, message } in inputs {
             match message {
                 MidiMessage::NoteOn { note, velocity } => {
+                    if self.capacity_exceeded {
+                        continue;
+                    }
                     if !self.active_targets.is_empty() {
                         self.released_on_focus.remove(&note);
                         let targets: Vec<_> = if self.mode == HiloMode::RoundRobin {
+                            if self.pending_notes == MAX_PENDING_NOTES {
+                                routed.extend(self.release_all());
+                                self.capacity_exceeded = true;
+                                continue;
+                            }
                             let index = self
                                 .weave_rule
                                 .as_ref()
@@ -257,6 +287,7 @@ impl MidiServer {
                                 .entry((channel.min(15), note))
                                 .or_default()
                                 .push(Some(target));
+                            self.pending_notes += 1;
                             vec![target]
                         } else {
                             self.active_targets.clone()
@@ -271,10 +302,14 @@ impl MidiServer {
                     }
                 }
                 MidiMessage::NoteOff { note } => {
+                    if self.capacity_exceeded {
+                        continue;
+                    }
                     if self.mode == HiloMode::RoundRobin {
                         let key = (channel.min(15), note);
                         let slot = self.round_robin_owners.get_mut(&key).and_then(Vec::pop);
                         if let Some(slot) = slot {
+                            self.pending_notes -= 1;
                             if self.round_robin_owners[&key].is_empty() {
                                 self.round_robin_owners.remove(&key);
                             }
@@ -327,6 +362,28 @@ impl MidiServer {
                     }
                 }
                 MidiMessage::ControlChange { cc, value } => {
+                    if cc == 64 {
+                        self.sustain_inputs[usize::from(channel.min(15))] = value >= 64;
+                        let held = self.sustain_inputs.contains(&true);
+                        for &target in &self.active_targets {
+                            if held == self.sustained_targets.contains(&target) {
+                                continue;
+                            }
+                            if held {
+                                self.sustained_targets.insert(target);
+                            } else {
+                                self.sustained_targets.remove(&target);
+                            }
+                            routed.push(RoutedMidi {
+                                target,
+                                message: MidiMessage::ControlChange {
+                                    cc: 64,
+                                    value: if held { 127 } else { 0 },
+                                },
+                            });
+                        }
+                        continue;
+                    }
                     for &target in &self.active_targets {
                         routed.push(RoutedMidi {
                             target,
@@ -360,6 +417,13 @@ impl MidiServer {
 
     /// Libera todas las notas sostenidas de un cliente específico.
     pub fn release_target(&mut self, target: MidiTarget) -> Vec<RoutedMidi> {
+        let mut released = Vec::new();
+        if self.sustained_targets.remove(&target) {
+            released.push(RoutedMidi {
+                target,
+                message: MidiMessage::ControlChange { cc: 64, value: 0 },
+            });
+        }
         for owners in self.round_robin_owners.values_mut() {
             for owner in owners {
                 if *owner == Some(target) {
@@ -376,36 +440,181 @@ impl MidiServer {
         for &note in &notes {
             self.held.remove(&(target, note));
         }
-        notes
-            .into_iter()
-            .map(|note| RoutedMidi {
-                target,
-                message: MidiMessage::NoteOff { note },
-            })
-            .collect()
+        released.extend(notes.into_iter().map(|note| RoutedMidi {
+            target,
+            message: MidiMessage::NoteOff { note },
+        }));
+        released
     }
 
     /// Libera todas las notas sostenidas de todos los clientes registrados.
     pub fn release_all(&mut self) -> Vec<RoutedMidi> {
         self.next_branch = 0;
         self.round_robin_owners.clear();
+        self.pending_notes = 0;
+        self.capacity_exceeded = false;
+        self.sustain_inputs.fill(false);
+        let mut released: Vec<_> = self
+            .active_targets
+            .iter()
+            .filter(|target| self.sustained_targets.contains(target))
+            .map(|&target| RoutedMidi {
+                target,
+                message: MidiMessage::ControlChange { cc: 64, value: 0 },
+            })
+            .collect();
+        self.sustained_targets.clear();
         let mut entries: Vec<(MidiTarget, u8)> = self.held.drain().collect();
         entries.sort_by_key(|&(_, note)| note);
         self.released_on_focus
             .extend(entries.iter().map(|(_, note)| *note));
-        entries
-            .into_iter()
-            .map(|(target, note)| RoutedMidi {
-                target,
-                message: MidiMessage::NoteOff { note },
-            })
-            .collect()
+        released.extend(entries.into_iter().map(|(target, note)| RoutedMidi {
+            target,
+            message: MidiMessage::NoteOff { note },
+        }));
+        released
+    }
+
+    /// Expone el estado de desbordamiento del registro de voces.
+    /// El servidor silencia y espera Stop/AllNotesOff antes de aceptar más notas.
+    pub fn capacity_exceeded(&self) -> bool {
+        self.capacity_exceeded
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn round_robin_owner_registry_is_bounded_and_fails_silent() {
+        let a = MidiTarget::Instrument(InstrumentId(41));
+        let b = MidiTarget::Instrument(InstrumentId(42));
+        let mut server = MidiServer::new(None);
+        server.focus_targets_mode([a, b], HiloMode::RoundRobin);
+        for _ in 0..MAX_PENDING_NOTES {
+            server.publish([MidiMessage::NoteOn {
+                note: 60,
+                velocity: 100,
+            }]);
+        }
+        assert_eq!(server.pending_notes, MAX_PENDING_NOTES);
+        let released = server.publish([MidiMessage::NoteOn {
+            note: 60,
+            velocity: 100,
+        }]);
+        assert_eq!(released.len(), 2);
+        assert!(
+            released
+                .iter()
+                .all(|event| matches!(event.message, MidiMessage::NoteOff { note: 60 }))
+        );
+        assert!(server.capacity_exceeded());
+        assert_eq!(server.pending_notes, 0);
+        assert!(
+            server
+                .publish([MidiMessage::NoteOn {
+                    note: 61,
+                    velocity: 100
+                }])
+                .is_empty()
+        );
+        assert!(
+            server
+                .publish([MidiMessage::NoteOff { note: 60 }])
+                .is_empty()
+        );
+        server.publish([MidiMessage::AllNotesOff]);
+        assert!(!server.capacity_exceeded());
+        assert_eq!(
+            server
+                .publish([MidiMessage::NoteOn {
+                    note: 62,
+                    velocity: 100
+                }])
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn sustain_is_released_before_retiring_a_branch_and_restored_to_new_targets() {
+        let a = MidiTarget::Instrument(InstrumentId(41));
+        let b = MidiTarget::Instrument(InstrumentId(42));
+        let c = MidiTarget::Instrument(InstrumentId(43));
+        let mut server = MidiServer::new(None);
+        server.focus_targets_mode([a, b], HiloMode::RoundRobin);
+        server.publish([MidiMessage::ControlChange { cc: 64, value: 127 }]);
+        server.publish([MidiMessage::NoteOn {
+            note: 60,
+            velocity: 100,
+        }]);
+        assert_eq!(
+            server.focus_targets([b, c]),
+            vec![
+                RoutedMidi {
+                    target: a,
+                    message: MidiMessage::ControlChange { cc: 64, value: 0 }
+                },
+                RoutedMidi {
+                    target: a,
+                    message: MidiMessage::NoteOff { note: 60 }
+                },
+                RoutedMidi {
+                    target: c,
+                    message: MidiMessage::ControlChange { cc: 64, value: 127 }
+                },
+            ]
+        );
+        assert!(
+            server
+                .publish([MidiMessage::NoteOff { note: 60 }])
+                .is_empty()
+        );
+        assert_eq!(
+            server.publish([MidiMessage::AllNotesOff]),
+            vec![
+                RoutedMidi {
+                    target: b,
+                    message: MidiMessage::ControlChange { cc: 64, value: 0 }
+                },
+                RoutedMidi {
+                    target: c,
+                    message: MidiMessage::ControlChange { cc: 64, value: 0 }
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn releasing_one_input_channel_does_not_release_another_channels_sustain() {
+        let target = MidiTarget::Instrument(InstrumentId(41));
+        let mut server = MidiServer::new(Some(target));
+        let input = |channel, message| MidiInputEvent { channel, message };
+        assert_eq!(
+            server
+                .publish_inputs([input(0, MidiMessage::ControlChange { cc: 64, value: 127 })])
+                .len(),
+            1
+        );
+        assert!(
+            server
+                .publish_inputs([input(1, MidiMessage::ControlChange { cc: 64, value: 127 })])
+                .is_empty()
+        );
+        assert!(
+            server
+                .publish_inputs([input(0, MidiMessage::ControlChange { cc: 64, value: 0 })])
+                .is_empty()
+        );
+        assert_eq!(
+            server.publish_inputs([input(1, MidiMessage::ControlChange { cc: 64, value: 0 })]),
+            vec![RoutedMidi {
+                target,
+                message: MidiMessage::ControlChange { cc: 64, value: 0 }
+            }]
+        );
+    }
 
     #[test]
     fn prepared_weave_routes_three_branches_and_releases_original_owners() {

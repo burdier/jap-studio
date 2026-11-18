@@ -243,8 +243,12 @@ impl DawApp {
                 to_publish.push(input);
             }
         }
+        let was_full = self.midi_server.capacity_exceeded();
         let routed = self.midi_server.publish_inputs(to_publish);
         self.dispatch_routed_midi(routed);
+        if !was_full && self.midi_server.capacity_exceeded() {
+            self.status_message = "Tejer: demasiadas notas activas; se liberaron las voces. Pulsa Stop para reanudar MIDI".into();
+        }
     }
     fn apply_mapped_effect(&mut self, effect: MappedEffect) {
         match effect {

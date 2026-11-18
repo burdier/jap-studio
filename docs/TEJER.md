@@ -45,6 +45,10 @@ el MIDI en vivo usa el servidor MIDI de la interfaz. Ambos usan el mismo orden
 de pasos y conservan el destino del NoteOff. El plan de clips desempata por frame,
 tipo de evento, clip e ID de nota. Stop, cambio de foco o modo y seek reinician
 el turno y liberan notas activas.
+El registro live admite hasta 4096 pulsaciones pendientes. Si se supera,
+libera las voces y suspende nuevas notas hasta Stop o AllNotesOff; la barra de
+estado lo indica. Sustain se libera antes de retirar una rama y se restaura a
+una rama nueva si el pedal sigue pulsado.
 
 Si la regla es inválida o nombra una rama que no existe, Play se rechaza y el
 enrutamiento MIDI en vivo queda sin destinos, con el error en la barra de estado.
@@ -55,8 +59,8 @@ reiniciar la aplicación para cargar cambios del archivo.
 editor ni persistencia de reglas por Hilo; tampoco se ejecuta Lua en el callback.
 El MIDI físico sin ID empareja notas por canal y tono; si se repiten dentro de
 esa pareja, usa orden inverso. NoteOff conserva la rama elegida aunque cambie
-el turno o se retire otra rama. El registro acotado, la expresión por voz,
-el sustain y las colas al retirar ramas requieren el cierre restante de PR-09.
+el turno o se retire otra rama. La expresión por voz, los demás controles de
+canal y las colas al retirar ramas requieren el cierre restante de PR-09.
 
 **Exportación:** «Exportar audio» renderiza los clips MIDI del Hilo con Hay Piano
 y Hay Sampler en sus ramas. Master suma las ramas y «archivos por pista» produce

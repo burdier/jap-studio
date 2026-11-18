@@ -23,7 +23,10 @@ NoteOn en vivo y registra el destino para su NoteOff. `audio/midi_in` conserva e
 canal MIDI 1.0 y el servidor empareja liberaciones por canal y tono; dentro de
 esa pareja, las repeticiones sin ID se liberan en orden inverso. La compilación de clips
 de Hilo aplica la misma secuencia antes de audio, con orden estable por frame,
-tipo, clip y NoteId. `audio/playback/mix` recibe el plan ya preparado y el
+tipo, clip y NoteId. El registro live limita las pulsaciones pendientes a 4096;
+al excederlo libera las voces y suspende nuevos NoteOn hasta Stop o AllNotesOff.
+CC64 conserva el estado por canal de entrada y libera sustain antes de retirar
+una rama. `audio/playback/mix` recibe el plan ya preparado y el
 callback no llama a Lua. El transporte y los buses siguen siendo los de PR-07.
 
 La acción `tejer.selection` compone la edición estructural de pistas y la
