@@ -58,6 +58,30 @@ Busca **Hay Spectrum** en `[+]` o usa `:fx.spectrum`. Arrastra sus nodos para co
 `< >` cambia entre espectro, onda, espectrogramas log/lineal y nivel estéreo. El piano
 comparte el mismo componente. [Alcance y acciones](docs/VISUAL_MODULATION.md).
 
+## Abrir y guardar proyectos
+
+En `[+]` están **Abrir proyecto…**, **Guardar proyecto** y **Guardar proyecto como…**.
+Atajos en la ventana principal: **Ctrl+O**, **Ctrl+S** y **Ctrl+Shift+S**;
+comandos `:project.open`, `:project.save` y `:project.save_as`.
+La primera vez se elige un archivo (nombre sugerido `session.loro`); Guardar reutiliza
+esa ubicación. El título muestra `*` si hay cambios pendientes. Al abrir otro proyecto
+o cerrar la ventana se puede cancelar, guardar (la ventana permanece abierta) o descartar.
+
+Este incremento recupera el Arrangement: pistas/grupos/Hilos, mute/solo, clips MIDI y
+sus controles, clips de audio con recortes, tempo/compás, niveles/panorama, cadenas
+Utility y Hay Piano (SoundFont, preset y parámetros). La apertura prepara y valida
+recursos en segundo plano antes de reemplazar la sesión. Un recurso ausente, archivo
+inválido o una edición durante la carga cancela la apertura conservando la sesión actual.
+El audio dentro de la carpeta del proyecto se referencia relativamente; el externo
+permanece referenciado y no se copia automáticamente.
+
+Sampler, VST3 y FX que requieren un procesador no tienen todavía restauración de estado.
+Guardar los rechaza explícitamente; también rechaza Pattern, MIDI Learn o Utility de
+salida modificados, para no marcar como guardado contenido que no puede recuperar.
+Distribución visual, selección, transporte/loop y ventanas no se persisten.
+La recolección sigue siendo una acción independiente y sus paquetes antiguos con
+instrumentos sin estado no equivalen a un proyecto recuperable.
+
 ## Explorador de bibliotecas
 
 Para reunir los archivos de audio usados en el Arrangement, abre `[+]` y elige
@@ -65,8 +89,8 @@ Para reunir los archivos de audio usados en el Arrangement, abre `[+]` y elige
 Hay crea `Audio/` y `session.loro` con rutas relativas dentro de una carpeta nueva;
 los archivos originales permanecen en su lugar y los clips abiertos pasan a
 referirse a las copias. Esto prepara los recursos del
-proyecto. Abrir una sesión completa y recuperar el estado de instrumentos y plugins
-sigue pendiente.
+proyecto. Abrir/Guardar admite el alcance descrito arriba; esta acción de recolección
+aún no incorpora el estado de instrumentos.
 
 El explorador de bibliotecas se abre con **e en modo Normal**, a la izquierda del Arrangement.
 Su separador permite reducirlo hasta ocultarlo; e lo recupera. «Añadir biblioteca» guarda

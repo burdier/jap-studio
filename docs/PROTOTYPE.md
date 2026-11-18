@@ -311,9 +311,12 @@ acotada de selección por NoteOn durante la reproducción.
   y notas con IDs originales; se reconstruyen con el índice de carril actual.
   Tiempo y mezcla por pista se guardan como campos opcionales e independientes;
   dos copias pueden fusionar cambios en controles distintos. La metadata de clips
-  WAV conserva ID, pista, ruta de origen y edición sin incluir muestras; falta
-  preparar los recursos al abrir y guardar estado de instrumentos;
-  por eso no hay comando de abrir/guardar proyecto en la UI. Validación: compilación.
+  WAV conserva ID, pista, ruta de origen y edición sin incluir muestras.
+  Abrir/Guardar local prepara audio en worker y restaura Hay Piano, mezcla y Utility.
+  Atajos Ctrl+O/Ctrl+S/Ctrl+Shift+S y acciones `project.open/save/save_as`.
+  Dirty y confirmación antes de abrir/cerrar; los estados aún no soportados se rechazan
+  al guardar (Sampler/VST3/FX de host, Pattern/MIDI Learn/Utility de salida modificados).
+  No persiste presentación ni transporte. Pruebas: `ui::project::tests`.
 
 - **Colectar audio:** `[+]` → **Colectar audio en carpeta…** o
   `:audio.collect '/ruta/carpeta-nueva'` copia las fuentes utilizadas a `Audio/`

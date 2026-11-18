@@ -459,10 +459,13 @@ temporal y la publica al terminar. `ui/collect` prepara un snapshot y ejecuta la
 copia fuera de la UI mediante `audio.collect`.
 
 Este esquema aún no representa parámetros de instrumentos ni colores de pista.
-Por eso no se conecta a «Abrir/Guardar proyecto» en la UI: cargarlo
-como proyecto completo descartaría material. Tampoco hay sincronización de red ni undo
-del proyecto. El siguiente incremento debe resolver/decodificar recursos relativos
-al abrir y guardar el estado de instrumentos y plugins antes de activar esos comandos.
+`ui/project/{snapshot,dialogs,install}` conecta Abrir/Guardar para el subconjunto
+recuperable: Arrangement, audio/MIDI, tiempo/mezcla, Utility por pista y Hay Piano.
+Captura en UI; validación, decodificación y escritura en worker; publicación solo si
+la sesión sigue igual. El archivo anterior alimenta la siguiente reconciliación Loro.
+Los estados no recuperables se rechazan al guardar; no se sustituyen plugins por piano.
+`project/instruments` guarda registros de piano, y `instruments/piano/persistence`
+restaura parámetros sin abrir dispositivos. README detalla las exclusiones.
 
 ## Análisis espectral para efectos
 

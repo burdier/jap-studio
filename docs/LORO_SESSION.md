@@ -49,13 +49,27 @@ El `merge` actual rechaza candidatos inválidos; antes de conectar red hay que
 resolver o aplazar esos cambios de forma determinista y probar convergencia en
 ambos órdenes. El transporte de audio, las voces y los buffers no son datos CRDT.
 
-## Orden de integración
+## Apertura y guardado local
 
-1. Completar parámetros de instrumentos y estado permitido de plugins; adaptar
-   la apertura del proyecto para resolver y decodificar los recursos relativos.
-2. Preparar una sesión candidata completa antes de **Abrir**. Un recurso ausente
-   debe producir un error recuperable, sin sustituir el sonido ni borrar material.
-3. Conectar las operaciones de la UI al documento y guardar un snapshot local
-   atómicamente. La UI actual aún no ofrece Abrir/Guardar proyecto.
-4. Probar dos copias sin red con ediciones concurrentes, conflictos y reordenación.
-   Después transportar snapshots y actualizaciones entre usuarios.
+`ui/project` captura el estado editable de la UI, conserva el documento del último
+archivo y reconcilia el siguiente guardado sobre él. No hay sincronización por gesto
+ni colaboración en red. Guardar como cambia la ubicación solo después del éxito.
+Las escrituras usan el reemplazo atómico de `ProjectDoc::save`.
+
+La apertura valida el documento, resuelve recursos relativos al archivo, deduplica
+la decodificación de audio y comprueba SoundFonts/presets antes de publicar la sesión.
+Cambios durante la carga o un recurso faltante conservan la sesión anterior. Los IDs
+restaurados reservan los contadores para futuras pistas, clips e instrumentos.
+`project/instruments` añade registros opcionales de Hay Piano con ruta, preset y
+parámetros; documentos antiguos siguen siendo legibles, pero la UI rechaza instrumentos
+sin estado recuperable. Sampler/VST3/FX de host siguen pendientes.
+
+El alcance y exclusiones de este incremento están en README, «Abrir y guardar proyectos».
+La acción `audio.collect` conserva su alcance anterior; no se convierte en un guardado
+completo ni incorpora SoundFonts automáticamente.
+
+## Siguientes incrementos
+
+1. Estado de Sampler, plugins, Pattern, MIDI Learn y Utility de salida.
+2. Integrar colectar en el proyecto activo y recuperación de recursos faltantes.
+3. Operaciones de UI sobre el documento vivo, pruebas de concurrencia y transporte de red.

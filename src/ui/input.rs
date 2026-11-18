@@ -35,6 +35,21 @@ impl DawApp {
             // Los controles Kit consumen edición/IME; ninguna tecla del formulario toca el DAW.
             return;
         }
+        if event.keystroke.modifiers.control
+            && !event.is_held
+            && (key.eq_ignore_ascii_case("s") || key.eq_ignore_ascii_case("o"))
+        {
+            let command = if key.eq_ignore_ascii_case("o") {
+                "project.open"
+            } else if event.keystroke.modifiers.shift {
+                "project.save_as"
+            } else {
+                "project.save"
+            };
+            self.project_command(command, window, cx);
+            cx.stop_propagation();
+            return;
+        }
         if self.fx.menu.is_some() {
             self.handle_fx_menu_key(event);
             return;
@@ -293,6 +308,9 @@ impl DawApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.project_command(cmd, window, cx) {
+            return;
+        }
         if matches!(
             cmd.trim().to_ascii_lowercase().as_str(),
             "note" | "note.edit"

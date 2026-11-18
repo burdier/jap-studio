@@ -31,6 +31,7 @@ mod pattern_editor;
 mod piano_instances;
 mod piano_roll;
 mod profile;
+mod project;
 mod render;
 mod sampler;
 mod scripting;
@@ -134,6 +135,7 @@ struct DawApp {
     piano_ui: views::instrument_params::PianoUi,
     import_task: Option<gpui::Task<()>>,
     collect_task: Option<gpui::Task<()>>,
+    project: project::ProjectUi,
     script_task: Option<gpui::Task<()>>,
     lua_tools: lua_tools::LuaTools,
     lua_components: lua_components::LuaComponents,

@@ -134,6 +134,7 @@ impl DawApp {
             piano_ui: Default::default(),
             import_task: None,
             collect_task: None,
+            project: Default::default(),
             script_task: None,
             lua_tools,
             lua_components: super::lua_components::LuaComponents::new(),

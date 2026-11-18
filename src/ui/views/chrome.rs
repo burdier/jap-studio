@@ -84,7 +84,16 @@ impl DawApp {
                             ),
                     )
                     .child(div().text_color(rgb(ds.muted)).child("/"))
-                    .child(div().text_color(rgb(ds.text)).child("Untitled Session"))
+                    .child(div().text_color(rgb(ds.text)).child(format!(
+                            "{}{}",
+                            self.project
+                                .path
+                                .as_ref()
+                                .and_then(|p| p.file_stem())
+                                .map(|n| n.to_string_lossy().into_owned())
+                                .unwrap_or_else(|| "Sin título".into()),
+                            if self.project.dirty { " *" } else { "" }
+                        )))
                     .child(
                         div()
                             .ml_2()

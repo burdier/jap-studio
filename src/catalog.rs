@@ -45,6 +45,30 @@ const fn piano_action(id: &'static str, name: &'static str, command: &'static st
 
 pub const CATALOG: &[CatalogEntry] = &[
     CatalogEntry {
+        id: "action.project.save_as",
+        kind: EntryKind::Action,
+        name: "Guardar proyecto como…",
+        summary: "Arrangement: pistas, audio, MIDI, mezcla, Utility y Hay Piano",
+        keywords: &["proyecto", "archivo", "guardar", "abrir", "sesión"],
+        action: CatalogAction::Invoke("project.save_as"),
+    },
+    CatalogEntry {
+        id: "action.project.save",
+        kind: EntryKind::Action,
+        name: "Guardar proyecto",
+        summary: "Arrangement: pistas, audio, MIDI, mezcla, Utility y Hay Piano",
+        keywords: &["proyecto", "archivo", "guardar", "abrir", "sesión"],
+        action: CatalogAction::Invoke("project.save"),
+    },
+    CatalogEntry {
+        id: "action.project.open",
+        kind: EntryKind::Action,
+        name: "Abrir proyecto…",
+        summary: "Arrangement: pistas, audio, MIDI, mezcla, Utility y Hay Piano",
+        keywords: &["proyecto", "archivo", "guardar", "abrir", "sesión"],
+        action: CatalogAction::Invoke("project.open"),
+    },
+    CatalogEntry {
         id: "action.midi.tools.reload",
         kind: EntryKind::Action,
         name: "Lua · recargar herramientas",
