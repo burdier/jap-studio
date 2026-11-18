@@ -617,6 +617,63 @@ mod tests {
     }
 
     #[test]
+    fn tejer_live_route_is_identical_for_batched_and_split_input() {
+        let targets = [41, 42, 43].map(|id| MidiTarget::Instrument(InstrumentId(id)));
+        let mut input = vec![MidiInputEvent {
+            channel: 2,
+            message: MidiMessage::ControlChange { cc: 64, value: 127 },
+        }];
+        for note in 60..66 {
+            input.push(MidiInputEvent {
+                channel: 2,
+                message: MidiMessage::NoteOn {
+                    note,
+                    velocity: 100,
+                },
+            });
+        }
+        input.push(MidiInputEvent {
+            channel: 2,
+            message: MidiMessage::PitchBend { bend: 2048 },
+        });
+        for note in (60..66).rev() {
+            input.push(MidiInputEvent {
+                channel: 2,
+                message: MidiMessage::NoteOff { note },
+            });
+        }
+        input.push(MidiInputEvent {
+            channel: 2,
+            message: MidiMessage::ControlChange { cc: 64, value: 0 },
+        });
+        let mut whole = MidiServer::new(None);
+        whole.focus_targets_mode(targets, HiloMode::RoundRobin);
+        let expected = whole.publish_inputs(input.iter().copied());
+        let owners: Vec<_> = expected
+            .iter()
+            .filter_map(|event| {
+                matches!(event.message, MidiMessage::NoteOn { .. }).then_some(event.target)
+            })
+            .collect();
+        assert_eq!(
+            owners,
+            [
+                targets[0], targets[1], targets[2], targets[0], targets[1], targets[2]
+            ]
+        );
+        for partition in [1, 2, 3, 5] {
+            let mut split = MidiServer::new(None);
+            split.focus_targets_mode(targets, HiloMode::RoundRobin);
+            let actual: Vec<_> = input
+                .chunks(partition)
+                .flat_map(|chunk| split.publish_inputs(chunk.iter().copied()))
+                .collect();
+            assert_eq!(actual, expected);
+            assert!(split.release_all().is_empty());
+        }
+    }
+
+    #[test]
     fn prepared_weave_routes_three_branches_and_releases_original_owners() {
         let targets = [1, 2, 3].map(|n| MidiTarget::Instrument(InstrumentId(n)));
         let mut server = MidiServer::new(None);

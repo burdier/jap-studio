@@ -113,7 +113,9 @@ impl PreparedMidiArrangement {
 mod tests {
     use super::*;
     use crate::musical::{
+        automation::ControlLane,
         model::Pattern,
+        note_expression::NoteProperty,
         time::{FrameWindow, PPQ, Tick},
         track::{TrackId, TrackKind},
         weave::WeaveRule,
@@ -268,5 +270,118 @@ mod tests {
         assert_eq!(clips[0].track, 5);
         assert_eq!(a.events_in(FrameWindow::new(0, 48_000).unwrap()).count(), 0);
         assert_eq!(b.events_in(FrameWindow::new(0, 48_000).unwrap()).count(), 2);
+    }
+
+    #[test]
+    fn tejer_keeps_expression_controls_and_note_order_across_block_sizes() {
+        let instruments = [InstrumentId(51), InstrumentId(52), InstrumentId(53)];
+        let mut branches = [
+            Track::new("A", TrackKind::Synth),
+            Track::new("B", TrackKind::Synth),
+            Track::new("C", TrackKind::Synth),
+        ];
+        for (branch, &instrument) in branches.iter_mut().zip(&instruments) {
+            branch.parent = Some(TrackId(900));
+            branch.instrument = Some(instrument);
+        }
+        let mut pattern = Pattern::new(Tick(PPQ * 4)).unwrap();
+        let expressive = pattern
+            .add_note(instruments[0], Tick(0), Tick(PPQ / 2), 60, 100)
+            .unwrap();
+        pattern
+            .set_note_property(expressive, NoteProperty::Pan, -32)
+            .unwrap();
+        pattern
+            .set_note_property(expressive, NoteProperty::ReleaseVelocity, 31)
+            .unwrap();
+        for (step, pitch) in [(0, 61), (0, 62), (1, 63), (2, 64), (3, 65)] {
+            pattern
+                .add_note(instruments[0], Tick(step * PPQ), Tick(PPQ / 2), pitch, 100)
+                .unwrap();
+        }
+        pattern
+            .set_control(ControlLane::Cc(64), Tick(0), 127)
+            .unwrap();
+        pattern
+            .set_control(ControlLane::PitchBend, Tick(PPQ), 2000)
+            .unwrap();
+        let clips = [MidiClip::new("Acorde", 0, 0.0, pattern)];
+        let plans: Vec<_> = branches
+            .iter()
+            .enumerate()
+            .map(|(index, branch)| {
+                PreparedMidiArrangement::compile_hilo_branch(
+                    &clips,
+                    0,
+                    branch,
+                    index,
+                    &instruments,
+                    HiloMode::RoundRobin,
+                    None,
+                    48_000,
+                    120.0,
+                )
+                .unwrap()
+            })
+            .collect();
+        let full_window = FrameWindow::new(0, 96_001).unwrap();
+        let signature = |absolute: u64, event: ArrangementEvent| {
+            (
+                absolute,
+                event.instrument,
+                event.event.note,
+                event.event.pitch,
+                event.event.kind,
+                event.event.expression,
+            )
+        };
+        for plan in &plans {
+            let expected: Vec<_> = plan
+                .events_in(full_window)
+                .map(|event| signature(u64::from(event.event.sample_offset), event))
+                .collect();
+            for block in [64, 257, 512] {
+                let mut actual = Vec::new();
+                let mut start = 0;
+                while start < full_window.end() {
+                    let count = block.min(full_window.end() - start) as u32;
+                    actual.extend(plan.events_in(FrameWindow::new(start, count).unwrap()).map(
+                        |event| signature(start + u64::from(event.event.sample_offset), event),
+                    ));
+                    start += u64::from(count);
+                }
+                assert_eq!(actual, expected);
+            }
+            assert_eq!(
+                expected
+                    .iter()
+                    .filter(|(_, _, _, _, kind, _)| matches!(kind, EventKind::Control { .. }))
+                    .count(),
+                2
+            );
+        }
+        let notes: Vec<Vec<_>> = plans
+            .iter()
+            .map(|plan| {
+                plan.events_in(full_window)
+                    .filter_map(|event| {
+                        matches!(event.event.kind, EventKind::NoteOn { .. })
+                            .then_some(event.event.pitch)
+                    })
+                    .collect()
+            })
+            .collect();
+        assert_eq!(notes, vec![vec![60, 63], vec![61, 64], vec![62, 65]]);
+        let expressive_events: Vec<_> = plans[0]
+            .events_in(full_window)
+            .filter(|event| event.event.pitch == 60)
+            .collect();
+        assert_eq!(expressive_events.len(), 2);
+        assert!(
+            expressive_events
+                .iter()
+                .all(|event| event.event.expression.pan == -32
+                    && event.event.expression.release_velocity == 31)
+        );
     }
 }
