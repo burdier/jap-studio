@@ -443,12 +443,16 @@ El siguiente ID de nota se guarda por patrón, el silencio de cada nota se guard
 mapa, y el siguiente ID de clip se guarda en el
 documento, incluso cuando se eliminó la última entidad creada.
 `from_session` captura pistas, FX y clips MIDI; `materialize_midi_session` los reconstruye.
+`project/session_state` agrega tempo, compás, nivel y panorama como campos
+editables independientes, con valores por defecto compatibles para snapshots
+anteriores. La prueba de dos copias confirma la fusión de ediciones en campos
+distintos. [Mapa de estado y límites de colaboración](LORO_SESSION.md).
 
-Este esquema aún no representa referencias a audio, parámetros de mezcla
+Este esquema aún no representa referencias a audio, parámetros de instrumentos
 ni colores. Por eso no se conecta a «Abrir/Guardar proyecto» en la UI: cargarlo
 como proyecto completo descartaría material. Tampoco hay sincronización de red ni undo
-del proyecto. El siguiente incremento debe adaptar los recursos de audio por ruta y
-capturar los controles de mezcla antes de activar esos comandos.
+del proyecto. El siguiente incremento debe adaptar los recursos de audio por ruta,
+ID y estado de plugin antes de activar esos comandos.
 
 ## Análisis espectral para efectos
 

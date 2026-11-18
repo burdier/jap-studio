@@ -309,7 +309,9 @@ acotada de selección por NoteOn durante la reproducción.
   esquema y la jerarquía al importar. Las cadenas FX conservan nodos, parámetros,
   bypass y contenedores anidados. Los clips MIDI guardan posición, recorte, propiedades
   y notas con IDs originales; se reconstruyen con el índice de carril actual.
-  Todavía no guarda clips de audio ni controles de mezcla;
+  Tiempo y mezcla por pista se guardan como campos opcionales e independientes;
+  dos copias pueden fusionar cambios en controles distintos. Todavía no guarda
+  clips de audio ni estado de instrumentos;
   por eso no hay comando de abrir/guardar proyecto en la UI. Validación: compilación.
 
 - Piano roll: controles de la barra registrados en catálogo y comandos, formularios de

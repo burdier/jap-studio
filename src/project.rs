@@ -13,6 +13,7 @@ use std::{
 mod fx;
 mod midi;
 mod midi_controls;
+mod session_state;
 mod track;
 use track::{
     kind_code, kind_from_code, order_id, read_bool, read_i64, read_optional_id, read_string,
@@ -97,6 +98,26 @@ impl ProjectDoc {
     ) -> Result<Self, String> {
         let project = Self::from_tracks(name, tracks)?;
         project.reconcile_midi_clips(clips)?;
+        Ok(project)
+    }
+
+    /// Captura el estado musical y los controles de mezcla editables de la sesión.
+    /// Las fuentes de audio externas e instancias de plugin se incorporarán después.
+    pub fn from_session_state(
+        name: &str,
+        tracks: &[Track],
+        clips: &[crate::musical::clip::MidiClip],
+        tempo: crate::musical::time::Tempo,
+        meter: crate::musical::time::Meter,
+        levels: &[i32],
+        pans: &[i32],
+    ) -> Result<Self, String> {
+        let snapshot = crate::musical::track::TrackSnapshot::capture(tracks, levels, pans, 0)?;
+        let project = Self::from_session(name, tracks, clips)?;
+        project.set_timing(tempo, meter)?;
+        for entry in snapshot.entries {
+            project.set_track_mix(entry.track.id, entry.mix)?;
+        }
         Ok(project)
     }
 
@@ -339,12 +360,14 @@ impl ProjectDoc {
             return Err("Versión de proyecto no compatible".into());
         }
         self.name()?;
+        self.timing()?;
         crate::musical::clip::ClipId::reserve_next_id(
             u64::try_from(read_i64(&self.doc.get_map("project"), "next_clip_id")?)
                 .map_err(|_| "ID de clip inválido")?,
         )?;
         for track in self.tracks()? {
             fx::read_chain(&self.doc, track.id)?;
+            self.track_mix(track.id)?;
         }
         self.midi_clips()?;
         Ok(())
