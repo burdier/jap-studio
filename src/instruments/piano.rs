@@ -1,6 +1,7 @@
 //! Estado de ejecución del piano/sintetizador SoundFont: bancos, presets, voces y ratón.
 //! No importa GPUI. La vista consulta este objeto; el audio vive en `audio/piano`.
 mod loading;
+mod persistence;
 use super::piano_params::{self, Applies, Control, ParamId, PianoParams};
 use crate::audio::piano::{
     PianoPlayer, PianoSettings, PresetEntry, SoundFontBank, discover_soundfonts,

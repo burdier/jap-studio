@@ -9,6 +9,12 @@ pub struct InstrumentId(pub u32);
 static NEXT_INSTRUMENT_ID: AtomicU32 = AtomicU32::new(1000);
 
 impl InstrumentId {
+    pub fn reserve_restored(id: Self) -> Result<(), String> {
+        let next = id.0.checked_add(1).ok_or("ID de instrumento agotado")?;
+        NEXT_INSTRUMENT_ID.fetch_max(next, Ordering::Relaxed);
+        Ok(())
+    }
+
     pub fn fresh() -> Self {
         Self(
             NEXT_INSTRUMENT_ID
