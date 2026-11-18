@@ -32,10 +32,12 @@ callback no llama a Lua. El transporte y los buses siguen siendo los de PR-07.
 La acción `tejer.selection` compone la edición estructural de pistas y la
 validación de `HiloPlan` antes de publicar el nuevo grupo. Arma el grupo como
 destino MIDI único para que la ruta live use su round robin. El round robin
-automático funciona sin script. La regla Lua opcional es global durante esta
-primera entrega y se configura con `HAY_WEAVE_RULE_SCRIPT` para pruebas y
-personalización avanzada. Cambiarla requiere reiniciar; no forma parte del
-documento de proyecto. [Uso y límites](TEJER.md).
+automático funciona sin script. La secuencia editada con `hilo.rule` pertenece
+a cada grupo y Loro guarda sus pasos visibles en `weave_steps`. Play,
+exportación y MIDI live consultan la misma regla del grupo. La regla Lua
+global opcional se configura con `HAY_WEAVE_RULE_SCRIPT` y se usa cuando el
+grupo no tiene secuencia propia; cambiar el archivo requiere reiniciar.
+[Uso y límites](TEJER.md).
 
 ## PR-08: transformación musical Lua preparada
 

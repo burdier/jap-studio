@@ -209,6 +209,7 @@ pub fn find(command: &str) -> Option<&'static ActionSpec> {
         "meter.set" => Some(&METER_SET),
         "track.height" => Some(&TRACK_HEIGHT),
         "track.rename" => Some(&TRACK_RENAME),
+        "hilo.rule" => Some(&HILO_RULE),
         "utility.gain" => Some(&UTILITY_GAIN),
         _ => piano_roll::find(command).or_else(|| audio::find(command)),
     }
@@ -361,6 +362,20 @@ static TRACK_RENAME: ActionSpec = ActionSpec {
         kind: ParameterKind::Text,
         default: "Pista",
         empty_value: None,
+        argument: Argument::Positional,
+    }],
+};
+
+static HILO_RULE: ActionSpec = ActionSpec {
+    command: "hilo.rule",
+    description: "Orden de ramas del Hilo. Escribe números desde 1, separados por comas; auto usa el reparto normal.",
+    parameters: &[ActionParameter {
+        key: "steps",
+        label: "Secuencia de ramas",
+        hint: "Ejemplo: 1,3,2 · auto para volver al reparto normal",
+        kind: ParameterKind::Text,
+        default: "auto",
+        empty_value: Some("auto"),
         argument: Argument::Positional,
     }],
 };

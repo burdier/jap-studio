@@ -16,6 +16,10 @@ variable de entorno ni un archivo Lua para este flujo.
 Si ya tienes un grupo, elige **Tejer · automático** en su menú; también activa
 su entrada MIDI. Sin una regla
 personalizada, el orden es A-B-C-A-B-C para tres instrumentos.
+En el menú del grupo, **Tejer · secuencia de ramas…** acepta `1,3,2` para
+repetir A-C-B. Cada Hilo guarda su propia secuencia en el proyecto. `auto`
+borra la secuencia del grupo y vuelve al orden automático, salvo que se haya
+cargado una regla Lua global al iniciar. También sirve `:hilo.rule '1,3,2'`.
 
 ## Regla Lua opcional
 
@@ -55,8 +59,9 @@ enrutamiento MIDI en vivo queda sin destinos, con el error en la barra de estado
 El archivo tiene un límite de 16 KiB y usa el sandbox Lua existente. Hay que
 reiniciar la aplicación para cargar cambios del archivo.
 
-**Alcance actual:** se carga una regla global para los Hilos. Todavía no hay
-editor ni persistencia de reglas por Hilo; tampoco se ejecuta Lua en el callback.
+**Alcance actual:** la regla de cada Hilo tiene prioridad sobre la regla Lua
+global opcional. El proyecto guarda la secuencia preparada, no el script Lua;
+no se ejecuta Lua en el callback.
 El MIDI físico sin ID empareja notas por canal y tono; si se repiten dentro de
 esa pareja, usa orden inverso. NoteOff conserva la rama elegida aunque cambie
 el turno o se retire otra rama. La expresión por voz, los demás controles de

@@ -66,6 +66,19 @@ pub(super) fn validate_tracks(tracks: &[ProjectTrack]) -> Result<(), String> {
         {
             return Err("El Hilo necesita dos instrumentos distintos".into());
         }
+        if group
+            .weave_rule
+            .as_ref()
+            .is_some_and(|rule| !rule.valid_for(instruments.len()))
+        {
+            return Err("Tejer: la regla menciona una rama inexistente".into());
+        }
+    }
+    if tracks
+        .iter()
+        .any(|track| track.weave_rule.is_some() && track.hilo.is_none())
+    {
+        return Err("Una regla Tejer requiere un Hilo activo".into());
     }
     validate_track_layout(
         tracks

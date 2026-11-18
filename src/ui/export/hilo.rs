@@ -55,7 +55,7 @@ impl DawApp {
                     return Err("Falta el instrumento de una rama del Hilo".into());
                 };
                 let weave = if mode == HiloMode::RoundRobin {
-                    self.weave_rule.as_ref().map_err(Clone::clone)?.clone()
+                    self.rule_for_hilo(group.id)?
                 } else {
                     None
                 };

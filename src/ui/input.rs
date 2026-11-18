@@ -382,6 +382,17 @@ impl DawApp {
             }
             return;
         }
+        if cmd
+            .split_whitespace()
+            .next()
+            .is_some_and(|word| word.eq_ignore_ascii_case("hilo.rule"))
+        {
+            match elevate::actions::tokenize(cmd) {
+                Ok(parts) if parts.len() == 2 => self.set_hilo_rule(&parts[1]),
+                _ => self.status_message = "Uso: hilo.rule '1,3,2' o hilo.rule auto".into(),
+            }
+            return;
+        }
         match cmd.to_lowercase().as_str() {
             "explorer.toggle" | "explorer" => self.toggle_explorer(),
             "explorer.insert" => self.request_file_import(super::explorer_host::ImportSource::ExplorerSelection),

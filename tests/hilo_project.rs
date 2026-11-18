@@ -4,6 +4,7 @@ use elevate::{
         model::{InstrumentId, Pattern},
         time::{PPQ, Tick},
         track::{HiloMode, Track, TrackKind},
+        weave::WeaveRule,
     },
     project::ProjectDoc,
 };
@@ -84,4 +85,47 @@ fn midi_route_to_one_of_multiple_hilos_survives_project_roundtrip() {
     assert_eq!(clips[0].track, 6);
     assert_eq!(clips[0].hilo_target, Some(tracks[3].id));
     assert_ne!(clips[0].hilo_target, Some(tracks[0].id));
+}
+
+#[test]
+fn independent_hilo_rules_survive_project_roundtrip() {
+    let mut first_hilo = Track::new("Uno", TrackKind::Group);
+    first_hilo.hilo = Some(HiloMode::RoundRobin);
+    first_hilo.weave_rule = WeaveRule::parse_steps("1,2,1").unwrap();
+    let mut first_a = Track::new("Uno A", TrackKind::Synth);
+    first_a.parent = Some(first_hilo.id);
+    first_a.instrument = Some(InstrumentId(51));
+    let mut first_b = Track::new("Uno B", TrackKind::Synth);
+    first_b.parent = Some(first_hilo.id);
+    first_b.instrument = Some(InstrumentId(52));
+    let mut second_hilo = Track::new("Dos", TrackKind::Group);
+    second_hilo.hilo = Some(HiloMode::RoundRobin);
+    second_hilo.weave_rule = WeaveRule::parse_steps("2,1").unwrap();
+    let mut second_a = Track::new("Dos A", TrackKind::Synth);
+    second_a.parent = Some(second_hilo.id);
+    second_a.instrument = Some(InstrumentId(53));
+    let mut second_b = Track::new("Dos B", TrackKind::Synth);
+    second_b.parent = Some(second_hilo.id);
+    second_b.instrument = Some(InstrumentId(54));
+    let snapshot = ProjectDoc::from_session(
+        "Reglas",
+        &[
+            first_hilo,
+            first_a,
+            first_b,
+            second_hilo,
+            second_a,
+            second_b,
+        ],
+        &[],
+    )
+    .unwrap()
+    .snapshot()
+    .unwrap();
+    let (tracks, _) = ProjectDoc::import(&snapshot)
+        .unwrap()
+        .materialize_midi_session()
+        .unwrap();
+    assert_eq!(tracks[0].weave_rule.as_ref().unwrap().steps(), &[0, 1, 0]);
+    assert_eq!(tracks[3].weave_rule.as_ref().unwrap().steps(), &[1, 0]);
 }

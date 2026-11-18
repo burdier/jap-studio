@@ -1,6 +1,24 @@
 //! Carga la regla Lua al abrir la sesión, lejos del callback de audio.
+use elevate::musical::track::TrackId;
 use elevate::musical::weave::WeaveRule;
 use std::io::Read;
+
+impl super::DawApp {
+    pub(super) fn rule_for_hilo(&self, id: TrackId) -> Result<Option<WeaveRule>, String> {
+        if let Some(rule) = self
+            .tracks
+            .iter()
+            .find(|track| track.id == id)
+            .and_then(|track| track.weave_rule.clone())
+        {
+            return Ok(Some(rule));
+        }
+        self.weave_rule
+            .as_ref()
+            .map(Clone::clone)
+            .map_err(Clone::clone)
+    }
+}
 
 pub(super) fn load_from_env() -> Result<Option<WeaveRule>, String> {
     let Some(path) = std::env::var_os("HAY_WEAVE_RULE_SCRIPT").map(std::path::PathBuf::from) else {

@@ -131,8 +131,8 @@ impl DawApp {
                 self.activate_vst(id);
             }
         }
-        let (targets, mode) = match self.center_view {
-            CenterView::Session => (vec![MidiTarget::Sequencer], HiloMode::Layer),
+        let (targets, mode, hilo_id) = match self.center_view {
+            CenterView::Session => (vec![MidiTarget::Sequencer], HiloMode::Layer, None),
             CenterView::Arrangement | CenterView::Mixer => {
                 let armed: Vec<_> = self
                     .tracks
@@ -145,6 +145,14 @@ impl DawApp {
                     vec![self.cursor_row]
                 } else {
                     armed
+                };
+                let hilo_id = if selected.len() == 1 {
+                    self.tracks
+                        .get(selected[0])
+                        .filter(|track| track.hilo.is_some())
+                        .map(|track| track.id)
+                } else {
+                    None
                 };
                 let mode = if selected.len() == 1 {
                     self.tracks
@@ -171,14 +179,17 @@ impl DawApp {
                         }
                     }
                 }
-                (targets, mode)
+                (targets, mode, hilo_id)
             }
         };
         let rule = if mode == HiloMode::RoundRobin {
-            match &self.weave_rule {
-                Ok(rule) => rule.clone(),
+            match hilo_id
+                .map(|id| self.rule_for_hilo(id))
+                .unwrap_or_else(|| self.weave_rule.clone())
+            {
+                Ok(rule) => rule,
                 Err(error) => {
-                    self.status_message = error.clone();
+                    self.status_message = error;
                     let released = self.midi_server.focus_targets_mode([], HiloMode::Layer);
                     self.dispatch_routed_midi(released);
                     return;

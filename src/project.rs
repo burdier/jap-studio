@@ -1,5 +1,6 @@
 //! Documento CRDT del proyecto. Solo datos editables; audio decodificado y vistas viven fuera.
 use crate::musical::track::{HiloMode, Track, TrackId, TrackKind};
+use crate::musical::weave::WeaveRule;
 use loro::{ExportMode, LoroDoc};
 use std::{
     collections::HashSet,
@@ -29,6 +30,7 @@ pub struct ProjectTrack {
     pub parent: Option<TrackId>,
     pub instrument: Option<u32>,
     pub hilo: Option<HiloMode>,
+    pub weave_rule: Option<WeaveRule>,
     pub muted: bool,
     pub solo: bool,
 }
@@ -42,6 +44,7 @@ impl From<&Track> for ProjectTrack {
             parent: track.parent,
             instrument: track.instrument.map(|id| id.0),
             hilo: track.hilo,
+            weave_rule: track.weave_rule.clone(),
             muted: track.muted,
             solo: track.solo,
         }
@@ -163,6 +166,21 @@ impl ProjectDoc {
             map.insert("hilo_mode", hilo_code)
                 .map_err(|e| e.to_string())?;
         }
+        let weave_steps = track
+            .weave_rule
+            .as_ref()
+            .map(|rule| {
+                rule.steps()
+                    .iter()
+                    .map(|step| (usize::from(*step) + 1).to_string())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            })
+            .unwrap_or_default();
+        if read_string(&map, "weave_steps").ok().as_deref() != Some(weave_steps.as_str()) {
+            map.insert("weave_steps", weave_steps.as_str())
+                .map_err(|e| e.to_string())?;
+        }
         if read_bool(&map, "muted").ok() != Some(track.muted) {
             map.insert("muted", track.muted)
                 .map_err(|e| e.to_string())?;
@@ -210,6 +228,11 @@ impl ProjectDoc {
                     0 => Some(HiloMode::Layer),
                     1 => Some(HiloMode::RoundRobin),
                     _ => return Err("Modo de Hilo inválido".into()),
+                },
+                weave_rule: if map.get("weave_steps").is_some() {
+                    WeaveRule::parse_steps(&read_string(&map, "weave_steps")?)?
+                } else {
+                    None
                 },
                 muted: read_bool(&map, "muted")?,
                 solo: read_bool(&map, "solo")?,
@@ -264,6 +287,7 @@ impl ProjectDoc {
                     kind: entry.kind,
                     instrument: entry.instrument.map(crate::musical::model::InstrumentId),
                     hilo: entry.hilo,
+                    weave_rule: entry.weave_rule,
                     midi_enabled: false,
                     muted: entry.muted,
                     solo: entry.solo,

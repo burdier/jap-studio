@@ -47,17 +47,21 @@ impl DawApp {
             .map(|_| self.pattern_editor.pattern.clone());
         let drum_gain = self.drum_gain();
         let mut hilo_plans = Vec::new();
-        let weave_rule = match &self.weave_rule {
-            Ok(rule) => rule.clone(),
-            Err(error) => {
-                self.status_message = error.clone();
-                return;
-            }
-        };
         for (index, group) in self.tracks.iter().enumerate() {
             if let Some(mode) = group.hilo {
                 match HiloPlan::compile(&self.tracks, group.id, mode) {
                     Ok(plan) => {
+                        let weave_rule = if mode == elevate::musical::track::HiloMode::RoundRobin {
+                            match self.rule_for_hilo(group.id) {
+                                Ok(rule) => rule,
+                                Err(error) => {
+                                    self.status_message = error;
+                                    return;
+                                }
+                            }
+                        } else {
+                            None
+                        };
                         if let Some(rule) = &weave_rule
                             && mode == elevate::musical::track::HiloMode::RoundRobin
                             && !rule.valid_for(plan.instruments().count())
@@ -66,7 +70,7 @@ impl DawApp {
                                 "Tejer: la regla menciona una rama inexistente".into();
                             return;
                         }
-                        hilo_plans.push((index, plan));
+                        hilo_plans.push((index, plan, weave_rule));
                     }
                     Err(error) => {
                         self.status_message = error;
@@ -90,8 +94,9 @@ impl DawApp {
                 .cloned()
                 .collect();
             let hilo = track.parent.and_then(|parent| {
-                let (group_index, plan) =
-                    hilo_plans.iter().find(|(_, plan)| plan.group == parent)?;
+                let (group_index, plan, weave_rule) = hilo_plans
+                    .iter()
+                    .find(|(_, plan, _)| plan.group == parent)?;
                 let branch_index = plan.branch_index(track.id)?;
                 let clips: Vec<_> = midi_clips
                     .iter()

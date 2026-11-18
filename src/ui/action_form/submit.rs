@@ -78,6 +78,29 @@ impl DawApp {
                 elevate::musical::time::Meter::new(numerator, denominator)
                     .map_err(|error| error.to_string())?;
                 Ok(command)
+            } else if form.spec.command == "hilo.rule" {
+                let parts = elevate::actions::tokenize(&command)?;
+                let steps = parts.get(1).ok_or("Escribe ramas como 1,3,2 o auto")?;
+                let rule = elevate::musical::weave::WeaveRule::parse_steps(steps)?;
+                let group = self
+                    .tracks
+                    .get(self.cursor_row)
+                    .ok_or("Selecciona un grupo Hilo")?;
+                if group.hilo != Some(elevate::musical::track::HiloMode::RoundRobin) {
+                    return Err("Selecciona un grupo Hilo en modo Tejer".into());
+                }
+                let plan = elevate::musical::hilo::HiloPlan::compile(
+                    &self.tracks,
+                    group.id,
+                    elevate::musical::track::HiloMode::RoundRobin,
+                )?;
+                if rule
+                    .as_ref()
+                    .is_some_and(|rule| !rule.valid_for(plan.instruments().count()))
+                {
+                    return Err("Tejer: la regla menciona una rama inexistente".into());
+                }
+                Ok(command)
             } else {
                 Ok(command)
             }

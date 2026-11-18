@@ -32,13 +32,13 @@ impl DawApp {
                     return;
                 }
             };
-        match &self.weave_rule {
+        match self.rule_for_hilo(group) {
             Ok(Some(rule)) if !rule.valid_for(plan.instruments().count()) => {
                 self.status_message = "Tejer: la regla menciona una rama inexistente".into();
                 return;
             }
             Err(error) => {
-                self.status_message = error.clone();
+                self.status_message = error;
                 return;
             }
             _ => {}
@@ -98,14 +98,14 @@ impl DawApp {
                 }
             };
             if mode == HiloMode::RoundRobin {
-                match &self.weave_rule {
+                match self.rule_for_hilo(group.id) {
                     Ok(Some(rule)) if !rule.valid_for(plan.instruments().count()) => {
                         self.status_message =
                             "Tejer: la regla menciona una rama inexistente".into();
                         return;
                     }
                     Err(error) => {
-                        self.status_message = error.clone();
+                        self.status_message = error;
                         return;
                     }
                     _ => {}
@@ -124,6 +124,9 @@ impl DawApp {
         self.stop_all();
         let group = &mut self.tracks[self.cursor_row];
         group.hilo = mode;
+        if mode.is_none() {
+            group.weave_rule = None;
+        }
         let group_id = group.id;
         let name = group.name.to_string();
         self.track_revision = self.track_revision.wrapping_add(1);
@@ -140,6 +143,49 @@ impl DawApp {
                 None => "Hilo desactivado",
             }
         );
+    }
+    pub(in crate::ui) fn set_hilo_rule(&mut self, input: &str) {
+        let Some(group) = self.tracks.get(self.cursor_row) else {
+            return;
+        };
+        if group.hilo != Some(HiloMode::RoundRobin) {
+            self.status_message = "Selecciona un grupo Hilo en modo Tejer".into();
+            return;
+        }
+        let rule = match elevate::musical::weave::WeaveRule::parse_steps(input) {
+            Ok(rule) => rule,
+            Err(error) => {
+                self.status_message = error;
+                return;
+            }
+        };
+        let plan = match elevate::musical::hilo::HiloPlan::compile(
+            &self.tracks,
+            group.id,
+            HiloMode::RoundRobin,
+        ) {
+            Ok(plan) => plan,
+            Err(error) => {
+                self.status_message = error;
+                return;
+            }
+        };
+        if rule
+            .as_ref()
+            .is_some_and(|rule| !rule.valid_for(plan.instruments().count()))
+        {
+            self.status_message = "Tejer: la regla menciona una rama inexistente".into();
+            return;
+        }
+        self.stop_all();
+        self.tracks[self.cursor_row].weave_rule = rule;
+        self.track_revision = self.track_revision.wrapping_add(1);
+        self.sync_midi_focus();
+        self.status_message = if input.eq_ignore_ascii_case("auto") || input.trim().is_empty() {
+            "Tejer: reparto automático".into()
+        } else {
+            format!("Tejer: secuencia {input}")
+        };
     }
     pub(in crate::ui) fn track_selected(&self, index: usize) -> bool {
         if self.selected_tracks.is_empty() {

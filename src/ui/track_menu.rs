@@ -51,6 +51,7 @@ impl DawApp {
                 [
                     ("Hilo · capas", "action.track.hilo.layer"),
                     ("Tejer · automático", "action.track.hilo.round_robin"),
+                    ("Tejer · secuencia de ramas…", "action.track.hilo.rule"),
                     ("Hilo · desactivar", "action.track.hilo.off"),
                 ],
             );

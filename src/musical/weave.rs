@@ -8,6 +8,27 @@ pub struct WeaveRule {
 }
 
 impl WeaveRule {
+    /// Secuencia visible con ramas numeradas desde 1; vacío vuelve al automático.
+    pub fn parse_steps(input: &str) -> Result<Option<Self>, String> {
+        let input = input.trim();
+        if input.is_empty() || input.eq_ignore_ascii_case("auto") {
+            return Ok(None);
+        }
+        let steps = input
+            .split(|c: char| c == ',' || c.is_ascii_whitespace())
+            .filter(|part| !part.is_empty())
+            .map(|part| {
+                let number = part.parse::<u8>().map_err(|_| {
+                    "Tejer: escribe números de rama separados por comas".to_string()
+                })?;
+                number
+                    .checked_sub(1)
+                    .filter(|step| usize::from(*step) < MAX_BRANCHES)
+                    .ok_or("Tejer: las ramas se numeran de 1 a 16".to_string())
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Self::new(steps).map(Some)
+    }
     /// Los pasos internos son índices de rama con base cero.
     pub fn new(steps: Vec<u8>) -> Result<Self, String> {
         if steps.is_empty()
@@ -46,5 +67,14 @@ mod tests {
             (0..6).map(|n| rule.branch_at(n)).collect::<Vec<_>>(),
             vec![0, 2, 1, 0, 2, 1]
         );
+    }
+
+    #[test]
+    fn visible_steps_parse_and_roundtrip_to_internal_indices() {
+        let rule = WeaveRule::parse_steps("1, 3, 2").unwrap().unwrap();
+        assert_eq!(rule.steps(), &[0, 2, 1]);
+        assert_eq!(WeaveRule::parse_steps("auto").unwrap(), None);
+        assert!(WeaveRule::parse_steps("0,1").is_err());
+        assert!(WeaveRule::parse_steps("1,17").is_err());
     }
 }

@@ -831,6 +831,14 @@ pub const CATALOG: &[CatalogEntry] = &[
         action: CatalogAction::Invoke("track.rename"),
     },
     CatalogEntry {
+        id: "action.track.hilo.rule",
+        kind: EntryKind::Action,
+        name: "Tejer secuencia de ramas",
+        summary: "Definir el orden de reparto de notas dentro del Hilo",
+        keywords: &["hilo", "tejer", "round robin", "secuencia", "ramas"],
+        action: CatalogAction::Invoke("hilo.rule"),
+    },
+    CatalogEntry {
         id: "action.track.mute",
         kind: EntryKind::Action,
         name: "Silenciar pista",

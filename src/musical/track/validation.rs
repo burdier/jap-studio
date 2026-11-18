@@ -21,7 +21,20 @@ pub fn validate_track_structure(tracks: &[Track]) -> Result<(), String> {
             .map(|track| (track.id, track.kind, track.parent)),
     )?;
     for group in tracks.iter().filter(|track| track.hilo.is_some()) {
-        super::super::hilo::HiloPlan::compile(tracks, group.id, group.hilo.unwrap())?;
+        let plan = super::super::hilo::HiloPlan::compile(tracks, group.id, group.hilo.unwrap())?;
+        if group
+            .weave_rule
+            .as_ref()
+            .is_some_and(|rule| !rule.valid_for(plan.instruments().count()))
+        {
+            return Err("Tejer: la regla menciona una rama inexistente".into());
+        }
+    }
+    if tracks
+        .iter()
+        .any(|track| track.weave_rule.is_some() && track.hilo.is_none())
+    {
+        return Err("Una regla Tejer requiere un Hilo activo".into());
     }
     Ok(())
 }

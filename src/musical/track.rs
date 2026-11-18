@@ -1,6 +1,6 @@
 //! Pistas del proyecto. Sin voces, dispositivos ni coordenadas de pantalla.
 //! La asignación de instrumento es estado musical; la UI solo la presenta.
-use super::{fx::FxChain, model::InstrumentId};
+use super::{fx::FxChain, model::InstrumentId, weave::WeaveRule};
 use std::{
     borrow::Cow,
     sync::atomic::{AtomicU32, Ordering},
@@ -71,6 +71,8 @@ pub struct Track {
     pub parent: Option<TrackId>,
     /// Solo los grupos pueden actuar como Hilo. Sus hijas son las ramas.
     pub hilo: Option<HiloMode>,
+    /// Secuencia de ramas para Tejer; `None` usa round robin automático.
+    pub weave_rule: Option<WeaveRule>,
     /// Topología FX recursiva; datos de proyecto, sin instancias DSP.
     pub chain: FxChain,
 }
@@ -94,6 +96,7 @@ impl Track {
             solo: false,
             parent: None,
             hilo: None,
+            weave_rule: None,
             chain: FxChain::new(),
         }
     }
@@ -138,6 +141,7 @@ const fn track(id: u32, name: &'static str, kind: TrackKind) -> Track {
         solo: false,
         parent: None,
         hilo: None,
+        weave_rule: None,
         chain: FxChain::new(),
     }
 }
