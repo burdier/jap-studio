@@ -19,7 +19,7 @@ impl DawApp {
             };
             if !midi
                 .iter()
-                .any(|clip| clip.track == group_index && !clip.props.muted)
+                .any(|clip| clip.targets_hilo(group_index, group.id) && !clip.props.muted)
             {
                 continue;
             }

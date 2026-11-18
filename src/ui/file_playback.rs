@@ -84,7 +84,9 @@ impl DawApp {
                 .collect();
             let notes: Vec<_> = midi_clips
                 .iter()
-                .filter(|clip| clip.track == index && !clip.props.muted)
+                .filter(|clip| {
+                    clip.track == index && clip.hilo_target.is_none() && !clip.props.muted
+                })
                 .cloned()
                 .collect();
             let hilo = track.parent.and_then(|parent| {
@@ -93,7 +95,7 @@ impl DawApp {
                 let branch_index = plan.branch_index(track.id)?;
                 let clips: Vec<_> = midi_clips
                     .iter()
-                    .filter(|clip| clip.track == *group_index && !clip.props.muted)
+                    .filter(|clip| clip.targets_hilo(*group_index, plan.group) && !clip.props.muted)
                     .cloned()
                     .collect();
                 Some(HiloBranchInput {

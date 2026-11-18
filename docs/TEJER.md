@@ -5,14 +5,13 @@
 Selecciona dos o más pistas con instrumentos diferentes usando Ctrl+clic o
 Shift+clic y pulsa **Tejer pistas seleccionadas** en el menú de pista o en `[+]`.
 Hay crea el Hilo, activa su entrada **MIDI** y distribuye cada NoteOn a la
-siguiente rama. Para reproducir un clip,
-insértalo en el carril del grupo y pulsa Play. No hace falta una variable de
-entorno ni un archivo Lua para este flujo.
-Un clip colocado en una pista hija toca solamente el instrumento de esa hija.
-Para repartir un clip que ya está allí, abre su menú contextual y elige
-**Enviar notas a Tejer**: el clip pasa al carril del grupo sin cambiar sus notas
-ni su posición. Al crear un clip, la barra de estado indica si quedó en el Hilo
-o en una rama.
+siguiente rama. Para reproducir un clip desde cualquier carril, haz clic derecho
+en él, abre **Salida MIDI** y elige el Hilo por nombre. Si hay varios Hilos,
+el menú los enumera. El clip conserva su carril y su posición; su título muestra
+**→ nombre del Hilo**. **Salida del carril** restaura la ruta automática: en
+el carril de un Hilo se reparte entre sus ramas, y en una pista hija suena solo
+esa pista. Play y la exportación usan la misma salida elegida. No hace falta una
+variable de entorno ni un archivo Lua para este flujo.
 
 Si ya tienes un grupo, elige **Tejer · automático** en su menú; también activa
 su entrada MIDI. Sin una regla

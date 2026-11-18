@@ -65,7 +65,9 @@ pub(super) fn run(
             options.includes_track(i)
                 && (snapshot.audio.iter().any(|c| c.track == i)
                     || snapshot.midi.iter().any(|c| {
-                        c.track == i && !snapshot.hilo.iter().any(|branch| branch.group_index == i)
+                        c.track == i
+                            && c.hilo_target.is_none()
+                            && !snapshot.hilo.iter().any(|branch| branch.group_index == i)
                     })
                     || snapshot.hilo.iter().any(|branch| branch.track_index == i))
         })

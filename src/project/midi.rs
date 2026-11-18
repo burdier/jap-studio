@@ -29,6 +29,13 @@ pub(super) fn write_clips(
             return Err("Un grupo sin Hilo no admite clips MIDI".into());
         }
         validate_clip(clip)?;
+        if let Some(target) = clip.hilo_target
+            && !tracks
+                .iter()
+                .any(|candidate| candidate.id == target && candidate.hilo.is_some())
+        {
+            return Err("Hilo de destino MIDI inexistente".into());
+        }
     }
     let order = doc.get_movable_list(CLIP_ORDER);
     reconcile_order(
@@ -39,6 +46,11 @@ pub(super) fn write_clips(
         let map = doc.get_map(clip_key(clip.id.value()));
         map.insert("track", i64::from(tracks[clip.track].id.0))
             .map_err(err)?;
+        map.insert(
+            "hilo_target",
+            clip.hilo_target.map_or(-1, |id| i64::from(id.0)),
+        )
+        .map_err(err)?;
         map.insert("name", clip.name.as_str()).map_err(err)?;
         map.insert("channel", i64::from(clip.channel))
             .map_err(err)?;
@@ -174,6 +186,21 @@ pub(super) fn read_clips(doc: &LoroDoc, tracks: &[ProjectTrack]) -> Result<Vec<M
             id: ClipId::restore(id)?,
             name: read_string(&map, "name")?,
             track,
+            hilo_target: if map.get("hilo_target").is_none() || read_i64(&map, "hilo_target")? == -1
+            {
+                None
+            } else {
+                let target = u32::try_from(read_i64(&map, "hilo_target")?)
+                    .map(TrackId)
+                    .map_err(|_| "TrackId de Hilo inválido")?;
+                if !tracks
+                    .iter()
+                    .any(|candidate| candidate.id == target && candidate.hilo.is_some())
+                {
+                    return Err("Hilo de destino MIDI inexistente".into());
+                }
+                Some(target)
+            },
             start_beat: read_f64(&map, "start")?,
             pattern,
             channel: if map.get("channel").is_none() {

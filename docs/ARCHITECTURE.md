@@ -12,6 +12,11 @@ de salida, Stop y la eliminación de pistas recorren todas las instancias.
 ## PR-09: reparto de Tejer y activación desde la selección
 
 `scripting/weave` evalúa una tabla Lua en el sandbox al abrir la aplicación.
+Cada `MidiClip` puede guardar un `hilo_target: TrackId` independiente de su
+índice de carril. Sin destino explícito conserva el comportamiento del carril;
+un destino explícito alimenta solamente ese Hilo durante Play y exportación.
+El menú lista los Hilos activos, el título del clip muestra el nombre elegido y
+una edición estructural que retire el destino devuelve el clip a su carril.
 `musical/weave` conserva únicamente una lista validada y acotada de índices de
 rama; no contiene VM ni tipos de audio o UI. `MidiServer` consulta un paso por
 NoteOn en vivo y registra el destino para su NoteOff. `audio/midi_in` conserva el

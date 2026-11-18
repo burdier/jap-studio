@@ -152,12 +152,16 @@ impl Sources {
                 .get(clip.track)
                 .ok_or("Clip MIDI en pista inexistente")?;
             if selected.contains(&clip.track)
+                && clip.hilo_target.is_none()
                 && track.gain != 0.0
                 && !clip.props.muted
-                && !snapshot
-                    .hilo
-                    .iter()
-                    .any(|branch| branch.group_index == clip.track)
+                && !snapshot.hilo.iter().any(|branch| {
+                    branch.group_index == clip.track
+                        && branch
+                            .track
+                            .parent
+                            .is_some_and(|group| clip.targets_hilo(branch.group_index, group))
+                })
             {
                 let sampler = snapshot
                     .sampler

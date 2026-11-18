@@ -14,6 +14,7 @@ pub(super) enum MenuPage {
     Main,
     Gain,
     Rename,
+    Route,
 }
 
 #[derive(Clone, Copy)]
@@ -28,7 +29,7 @@ pub(super) enum ClipAction {
     Color(Option<u8>),
     Gain(Option<f32>),
     Move(isize),
-    SendToHilo,
+    RouteMidi(Option<elevate::musical::track::TrackId>),
     Delete,
     Page(MenuPage),
     Rename,

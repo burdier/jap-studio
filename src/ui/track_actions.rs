@@ -77,7 +77,7 @@ impl DawApp {
                 .midi_clip
                 .iter()
                 .chain(&self.timeline.other_midi_clips)
-                .any(|clip| clip.track == self.cursor_row)
+                .any(|clip| clip.track == self.cursor_row || clip.hilo_target == Some(group.id))
                 || self
                     .timeline
                     .clip

@@ -60,7 +60,7 @@ impl DawApp {
                 .iter()
                 .any(|group| group.id == parent && group.hilo.is_some())
         }) {
-            "Clip en rama: suena solo aquí · menú del clip → Enviar notas a Tejer".into()
+            "Clip en rama: suena solo aquí · menú del clip → Salida MIDI para elegir Hilo".into()
         } else {
             "Clip MIDI insertado".into()
         };

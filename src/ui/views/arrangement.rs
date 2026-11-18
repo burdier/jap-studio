@@ -428,6 +428,11 @@ impl DawApp {
                 track_count,
                 (0..track_count).map(|i| self.track_selected(i)).collect(),
                 track_visual,
+                self.tracks
+                    .iter()
+                    .filter(|track| track.hilo.is_some())
+                    .map(|track| (track.id, track.name.to_string()))
+                    .collect(),
                 &self.ds,
             ))
     }

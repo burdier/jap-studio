@@ -411,6 +411,19 @@ fn hilo_export_routes_two_pianos_to_master_and_branch_stems() {
     };
     let master = run(make(), temp.options("export -n HiloMaster.wav -bits 32f"));
     let master = AudioFile::decode(&master.paths[0]).unwrap();
+    let mut routed = make();
+    let target = routed.hilo[0].track.parent.unwrap();
+    routed.tracks.push(TrackMix {
+        name: "Secuencia".into(),
+        gain: 1.0,
+        fx_gain: 1.0,
+        pan: 0.0,
+    });
+    routed.midi[0].track = 3;
+    routed.midi[0].hilo_target = Some(target);
+    let routed = run(routed, temp.options("export -n HiloEnviado.wav -bits 32f"));
+    let routed = AudioFile::decode(&routed.paths[0]).unwrap();
+    assert_eq!(routed.frames, master.frames);
     let stems = run(
         make(),
         temp.options("export -n HiloStems.wav -individuals -bits 32f"),

@@ -75,6 +75,25 @@ impl DawApp {
             })
             .collect();
         self.tracks = tracks;
+        let live_hilos: std::collections::HashSet<_> = self
+            .tracks
+            .iter()
+            .filter(|track| track.hilo.is_some())
+            .map(|track| track.id)
+            .collect();
+        for clip in self
+            .timeline
+            .midi_clip
+            .iter_mut()
+            .chain(&mut self.timeline.other_midi_clips)
+        {
+            if clip
+                .hilo_target
+                .is_some_and(|target| !live_hilos.contains(&target))
+            {
+                clip.hilo_target = None;
+            }
+        }
         let live_pianos: std::collections::HashSet<_> = self
             .tracks
             .iter()

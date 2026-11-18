@@ -34,10 +34,13 @@ pub(super) fn range(snapshot: &Snapshot, options: &ExportOptions) -> Result<Rend
                 .midi
                 .iter()
                 .filter(|c| {
-                    options.includes_track(c.track)
+                    (options.includes_track(c.track) && c.hilo_target.is_none())
                         || snapshot.hilo.iter().any(|branch| {
-                            branch.group_index == c.track
-                                && options.includes_track(branch.track_index)
+                            options.includes_track(branch.track_index)
+                                && branch
+                                    .track
+                                    .parent
+                                    .is_some_and(|group| c.targets_hilo(branch.group_index, group))
                         })
                 })
                 .map(|c| c.end_beat()),

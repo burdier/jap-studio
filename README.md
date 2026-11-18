@@ -80,10 +80,11 @@ desde el menú de pista o el buscador `[+]`. Hay crea el grupo, activa su entrad
 MIDI y alterna una nota
 por instrumento automáticamente. También puedes agrupar primero y elegir
 **Tejer · automático** en el menú del grupo; **Hilo · capas** toca todos los
-instrumentos con cada nota. Coloca el clip MIDI
-en el carril del grupo o activa el botón **MIDI** del grupo para tocar en vivo.
-Un clip en una pista hija suena solo en esa hija; su menú ofrece **Enviar notas a Tejer**
-para moverlo al grupo.
+instrumentos con cada nota. Activa el botón **MIDI** del grupo para tocar en vivo.
+Para un clip, abre su menú contextual → **Salida MIDI** y elige el Hilo por nombre.
+El clip permanece en su carril y muestra **→ nombre del Hilo**. Puedes elegir entre
+varios Hilos o volver a **Salida del carril**. Sin una salida elegida, un clip en
+el carril del Hilo se reparte allí y uno en una pista hija toca solo esa hija.
 Cada hija conserva su volumen, panorama y FX. `track.script` admite
 `{ op="hilo.mode", track=<TrackId o handle>, mode="round_robin" }`.
 En la barra de comandos: `:track.group` agrupa la selección, `:hilo.rr` cambia

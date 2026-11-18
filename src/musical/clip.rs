@@ -5,6 +5,7 @@ use super::{
     midi::MidiMessage,
     model::{InstrumentId, NoteEvent, Pattern},
     time::{Meter, PPQ, Tick},
+    track::TrackId,
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -87,6 +88,9 @@ pub struct MidiClip {
     pub id: ClipId,
     pub name: String,
     pub track: usize,
+    /// Destino musical explícito; el carril visual sigue siendo `track`.
+    /// `None` usa el instrumento del carril o el Hilo de su propia cabecera.
+    pub hilo_target: Option<TrackId>,
     pub start_beat: f64,
     pub pattern: Pattern,
     /// Canal de salida del clip, numerado 1–16.
@@ -105,6 +109,7 @@ impl MidiClip {
             id: ClipId::fresh(),
             name: name.into(),
             track,
+            hilo_target: None,
             start_beat: start_beat.max(0.0),
             pattern,
             channel: 1,
@@ -120,6 +125,12 @@ impl MidiClip {
         let mut copy = self.clone();
         copy.id = ClipId::fresh();
         copy
+    }
+
+    /// Un clip de la cabecera usa ese Hilo por defecto; el destino explícito
+    /// permite enviar clips desde cualquier otro carril sin moverlos.
+    pub fn targets_hilo(&self, group_index: usize, group: TrackId) -> bool {
+        self.hilo_target == Some(group) || (self.hilo_target.is_none() && self.track == group_index)
     }
 
     /// Longitud completa del patrón, sin recorte.

@@ -46,6 +46,33 @@ impl DawApp {
         };
         let back = MenuItem::new("‹ Volver", A::Page(MenuPage::Main));
         match menu.page {
+            MenuPage::Route => {
+                let selected = self
+                    .timeline
+                    .midi_clip
+                    .as_ref()
+                    .and_then(|clip| clip.hilo_target);
+                let mut items = vec![
+                    back,
+                    MenuItem::new("Salida del carril", A::RouteMidi(None))
+                        .checked(selected.is_none()),
+                ];
+                for (index, group) in self
+                    .tracks
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, track)| track.hilo.is_some())
+                {
+                    items.push(
+                        MenuItem::new(
+                            format!("Hilo {} · {}", index + 1, group.name),
+                            A::RouteMidi(Some(group.id)),
+                        )
+                        .checked(selected == Some(group.id)),
+                    );
+                }
+                items
+            }
             MenuPage::Rename => vec![
                 MenuItem::new("Guardar nombre · Enter", A::Rename)
                     .enabled(!menu.rename.trim().is_empty()),
@@ -61,26 +88,19 @@ impl DawApp {
                 let mut items = Vec::new();
                 if kind == DragKind::Midi {
                     items.push(MenuItem::new("Editar en Piano Roll", A::EditMidi));
-                    if let Some(group) = self
-                        .tracks
-                        .get(menu.track)
-                        .and_then(|track| track.parent)
-                        .and_then(|parent| self.tracks.iter().find(|track| track.id == parent))
-                        .filter(|group| group.hilo.is_some())
-                    {
-                        items.push(
-                            MenuItem::new(
-                                if group.hilo == Some(elevate::musical::track::HiloMode::RoundRobin)
-                                {
-                                    "Enviar notas a Tejer"
-                                } else {
-                                    "Enviar clip al Hilo"
-                                },
-                                A::SendToHilo,
-                            )
-                            .enabled(!props.locked),
-                        );
-                    }
+                    let destination = self
+                        .timeline
+                        .midi_clip
+                        .as_ref()
+                        .and_then(|clip| clip.hilo_target)
+                        .and_then(|id| self.tracks.iter().find(|track| track.id == id));
+                    items.push(MenuItem::new(
+                        format!(
+                            "Salida MIDI · {}  ›",
+                            destination.map_or("Carril", |track| track.name.as_ref())
+                        ),
+                        A::Page(MenuPage::Route),
+                    ));
                     items.push(
                         MenuItem::new(
                             format!("Materialize · {} MIDI", self.timeline.selected_midi.len()),

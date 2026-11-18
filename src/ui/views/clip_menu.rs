@@ -28,6 +28,7 @@ impl DawApp {
                     .gain_db
             ),
             MenuPage::Rename => "Renombrar clip".into(),
+            MenuPage::Route => "Salida MIDI · el clip no se mueve".into(),
         };
         let mut panel = menu_panel(ds, MENU_WIDTH)
             .id("arrangement-context-menu")

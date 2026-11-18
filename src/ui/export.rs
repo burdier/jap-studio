@@ -78,7 +78,11 @@ impl DawApp {
             let hilo = self.capture_hilo_export(&midi, &options)?;
             let piano_ids: std::collections::HashSet<_> = midi
                 .iter()
-                .filter(|clip| options.includes_track(clip.track) && !clip.props.muted)
+                .filter(|clip| {
+                    options.includes_track(clip.track)
+                        && clip.hilo_target.is_none()
+                        && !clip.props.muted
+                })
                 .filter(|clip| self.tracks[clip.track].hilo.is_none())
                 .filter_map(|clip| self.tracks[clip.track].instrument)
                 .filter(|id| self.is_piano_id(*id))
@@ -91,6 +95,7 @@ impl DawApp {
             let needs_piano = midi.iter().any(|c| {
                 options.includes_track(c.track)
                     && !c.props.muted
+                    && c.hilo_target.is_none()
                     && self.tracks[c.track].hilo.is_none()
                     && self.track_gain(c.track) > 0.0
                     && !self.tracks[c.track]
@@ -100,6 +105,7 @@ impl DawApp {
             if midi.iter().any(|clip| {
                 options.includes_track(clip.track)
                     && !clip.props.muted
+                    && clip.hilo_target.is_none()
                     && self.tracks[clip.track].hilo.is_none()
                     && self.track_gain(clip.track) > 0.
                     && self.tracks[clip.track]
@@ -132,6 +138,7 @@ impl DawApp {
                 sampler_tracks.contains(&c.track)
                     && options.includes_track(c.track)
                     && !c.props.muted
+                    && c.hilo_target.is_none()
                     && self.track_gain(c.track) > 0.
             });
             let sampler = if needs_sampler {

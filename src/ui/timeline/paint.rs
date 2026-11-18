@@ -13,6 +13,7 @@ impl Timeline {
         track_count: usize,
         selected_tracks: Vec<bool>,
         track_visual: Option<&TrackReorderVisual>,
+        hilo_names: Vec<(elevate::musical::track::TrackId, String)>,
         design: &DesignSystem,
     ) -> impl IntoElement {
         if area == TimelineArea::TimeRuler {
@@ -249,6 +250,7 @@ impl Timeline {
                                     viewport,
                                     bounds,
                                     clip_layout,
+                                    &hilo_names,
                                     &design,
                                     window,
                                     cx,
@@ -267,6 +269,7 @@ impl Timeline {
                                     viewport,
                                     bounds,
                                     clip_layout,
+                                    &hilo_names,
                                     &design,
                                     window,
                                     cx,

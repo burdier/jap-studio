@@ -58,7 +58,7 @@ impl PreparedMidiArrangement {
     ) -> Result<Self, String> {
         let local: Vec<_> = clips
             .iter()
-            .filter(|clip| clip.track == index)
+            .filter(|clip| clip.track == index && clip.hilo_target.is_none())
             .map(|clip| {
                 let mut copy = clip.clone();
                 copy.track = 0;

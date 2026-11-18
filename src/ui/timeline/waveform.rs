@@ -280,6 +280,7 @@ pub(super) fn paint_midi(
     viewport: Viewport,
     bounds: Bounds<Pixels>,
     layout: &crate::ui::track_layout::TrackLayout,
+    hilo_names: &[(elevate::musical::track::TrackId, String)],
     design: &DesignSystem,
     window: &mut Window,
     cx: &mut App,
@@ -351,6 +352,13 @@ pub(super) fn paint_midi(
                 );
             }
             let mut title = format!("🎹 {} ({})", clip.name, notes.len());
+            if let Some(target) = clip.hilo_target {
+                let name = hilo_names
+                    .iter()
+                    .find(|(id, _)| *id == target)
+                    .map_or("Hilo", |(_, name)| name.as_str());
+                title.push_str(&format!(" → {name}"));
+            }
             if clip.props.gain_db.abs() >= 0.1 {
                 title.push_str(&format!(" {:+.1}dB", clip.props.gain_db));
             }

@@ -40,12 +40,13 @@ impl PreparedMidiArrangement {
         if weave.is_some_and(|rule| !rule.valid_for(instruments.len())) {
             return Err("Tejer: la regla menciona una rama inexistente".into());
         }
+        let group = branch.parent.ok_or("Rama de Hilo sin grupo")?;
         let base = TimeBase::new(rate, bpm).map_err(|error| error.to_string())?;
         let mut source = Vec::new();
         let mut end_frame = 0;
         for clip in clips
             .iter()
-            .filter(|clip| clip.track == group_index && !clip.props.muted)
+            .filter(|clip| clip.targets_hilo(group_index, group) && !clip.props.muted)
         {
             let start = beat_frame(clip.start_beat, rate, bpm)?;
             let pattern = PreparedPattern::compile(&clip.playback_pattern(), base)
@@ -114,7 +115,7 @@ mod tests {
     use crate::musical::{
         model::Pattern,
         time::{FrameWindow, PPQ, Tick},
-        track::TrackKind,
+        track::{TrackId, TrackKind},
         weave::WeaveRule,
     };
 
@@ -128,6 +129,7 @@ mod tests {
         ];
         for (branch, &id) in branches.iter_mut().zip(&instruments) {
             branch.instrument = Some(id);
+            branch.parent = Some(TrackId(900));
         }
         let mut pattern = Pattern::new(Tick(PPQ * 4)).unwrap();
         for i in 0..6 {
@@ -170,6 +172,8 @@ mod tests {
         let mut b = Track::new("B", TrackKind::Synth);
         a.instrument = Some(InstrumentId(41));
         b.instrument = Some(InstrumentId(42));
+        a.parent = Some(TrackId(900));
+        b.parent = Some(TrackId(900));
         let instruments = [InstrumentId(41), InstrumentId(42)];
         let mut pattern = Pattern::new(Tick(4 * PPQ)).unwrap();
         pattern
@@ -220,5 +224,49 @@ mod tests {
         assert_eq!(a_events.iter().filter(|(pitch, _)| *pitch == 60).count(), 2);
         assert_eq!(a_events.iter().filter(|(pitch, _)| *pitch == 64).count(), 2);
         assert_eq!(b_events.iter().filter(|(pitch, _)| *pitch == 62).count(), 2);
+    }
+
+    #[test]
+    fn routed_clip_stays_on_its_lane_and_only_sounds_in_selected_hilo() {
+        let mut branch_a = Track::new("A", TrackKind::Synth);
+        branch_a.parent = Some(TrackId(900));
+        branch_a.instrument = Some(InstrumentId(41));
+        let mut branch_b = Track::new("B", TrackKind::Synth);
+        branch_b.parent = Some(TrackId(901));
+        branch_b.instrument = Some(InstrumentId(42));
+        let mut pattern = Pattern::new(Tick(PPQ)).unwrap();
+        pattern
+            .add_note(InstrumentId(41), Tick(0), Tick(PPQ / 2), 60, 100)
+            .unwrap();
+        let mut clip = MidiClip::new("Enviado", 5, 0.0, pattern);
+        clip.hilo_target = Some(TrackId(901));
+        let clips = [clip];
+        let a = PreparedMidiArrangement::compile_hilo_branch(
+            &clips,
+            0,
+            &branch_a,
+            0,
+            &[InstrumentId(41)],
+            HiloMode::Layer,
+            None,
+            48_000,
+            120.0,
+        )
+        .unwrap();
+        let b = PreparedMidiArrangement::compile_hilo_branch(
+            &clips,
+            1,
+            &branch_b,
+            0,
+            &[InstrumentId(42)],
+            HiloMode::Layer,
+            None,
+            48_000,
+            120.0,
+        )
+        .unwrap();
+        assert_eq!(clips[0].track, 5);
+        assert_eq!(a.events_in(FrameWindow::new(0, 48_000).unwrap()).count(), 0);
+        assert_eq!(b.events_in(FrameWindow::new(0, 48_000).unwrap()).count(), 2);
     }
 }
