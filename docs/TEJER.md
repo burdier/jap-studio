@@ -65,7 +65,9 @@ no se ejecuta Lua en el callback.
 El MIDI físico sin ID empareja notas por canal y tono tanto en capas como en
 round robin; si se repiten dentro de esa pareja, usa orden inverso. NoteOff conserva la rama elegida aunque cambie
 el turno o se retire otra rama. La expresión por voz, los demás controles de
-canal y las colas al retirar ramas requieren el cierre restante de PR-09.
+canal y las colas al editar la estructura requieren el cierre restante de
+PR-09. Quitar una rama de los destinos MIDI durante Play envía NoteOff y deja
+procesar la voz existente; borrar la pista o cambiar su estructura detiene Play.
 
 **Exportación:** «Exportar audio» renderiza los clips MIDI del Hilo con Hay Piano
 y Hay Sampler en sus ramas. Master suma las ramas y «archivos por pista» produce

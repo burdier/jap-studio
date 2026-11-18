@@ -514,7 +514,7 @@
             <p>Seleccionar instrumentos y pulsar Tejer crea el Hilo con reparto MIDI automático. Cada clip puede elegir un Hilo por nombre como salida MIDI sin moverse de carril; Play y exportación usan ese destino. Cada Hilo puede guardar su propia secuencia de ramas; una regla Lua global sigue siendo opcional. El MIDI físico conserva canal y tono para devolver NoteOff a su rama. Registro live acotado, retiro con sustain y partición estable probados; quedan identidad/expresión completa y colas.</p>
             <div class="depends">Depende de PR-07 y 08</div>
             <details class="commit-plan">
-              <summary>8 commits · Tejer desde la selección y reglas por Hilo</summary>
+              <summary>9 incrementos · Tejer desde la selección y reglas por Hilo</summary>
               <ol>
                 <li data-status="done" data-commit="795aa5e"><strong>feat(tejer): preparar reglas Lua y distribuir notas por ramas</strong>Secuencia acotada en vivo y clips, destino de NoteOff y reinicio; <a href="docs/TEJER.md">uso y límites</a>.</li>
                 <li data-status="done" data-commit="a4ff840"><strong>feat(tejer): activar Hilo desde pistas seleccionadas</strong>Menú y buscador agrupan instrumentos, activan round robin y arman el grupo MIDI sin variable de entorno.</li>
@@ -522,7 +522,8 @@
                 <li data-status="done"><strong>feat(tejer): elegir salida de clip por Hilo</strong>Menú con todos los Hilos activos, destino estable por TrackId y clip en su carril; Play, exportación y documento usan la misma ruta.</li>
                 <li data-status="done"><strong>feat(tejer): guardar una secuencia por Hilo</strong>Menú de grupo y comando <code>hilo.rule</code> editan pasos visibles; proyecto, MIDI live, Play y exportación usan la regla de ese grupo.</li>
                 <li data-status="done"><strong>feat(tejer): completar identidad de notas y expresión de clips</strong>Registro live acotado por canal/tono, con repeticiones y retiro de rama en capas y round robin; NoteId y expresión de cada nota de clip conservan su rama.</li>
-                <li><strong>feat(tejer): conservar sustain, control y colas</strong>Aplicar CC/pitch bend, panic y retiros de rama; probar que no queden notas colgadas con sus cambios activos.</li>
+                <li data-status="done"><strong>feat(tejer): conservar sustain y controles al cambiar ramas</strong>CC64 por canal, CC y pitch bend a las ramas, panic acotado y liberación al retirar destinos MIDI.</li>
+                <li><strong>feat(tejer): conservar colas al editar la estructura</strong>Una edición estructural detiene Play; falta un motor que retire una rama sin cortar su cola de audio.</li>
                 <li data-status="done"><strong>feat(tejer): mantener el resultado independiente del bloque</strong>A-B-C-A-B-C, notas simultáneas, expresión, controles y partición en varios tamaños comprobados en la ruta musical.</li>
               </ol>
             </details>
