@@ -28,6 +28,7 @@ fn timeline_with_clips() -> Timeline {
             peaks: vec![[0.0, 0.25]],
             max_peak: 0.25,
         }),
+        source_path_override: None,
         track: 0,
         start_beat: 4.0,
         props: Default::default(),

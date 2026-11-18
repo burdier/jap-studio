@@ -133,6 +133,7 @@ impl DawApp {
             fx,
             piano_ui: Default::default(),
             import_task: None,
+            collect_task: None,
             script_task: None,
             lua_tools,
             lua_components: super::lua_components::LuaComponents::new(),

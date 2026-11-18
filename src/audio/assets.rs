@@ -124,6 +124,8 @@ pub(crate) struct AudioClip {
     /// Nombre de la instancia, independiente del archivo compartido.
     pub name: String,
     pub file: Arc<AudioFile>,
+    /// Ubicación elegida para este clip después de colectar recursos.
+    pub source_path_override: Option<PathBuf>,
     pub track: usize,
     pub start_beat: f64,
     pub props: ClipProps,
@@ -136,9 +138,9 @@ pub(crate) struct AudioClip {
 impl AudioClip {
     pub fn project_metadata(&self, track: TrackId) -> Result<ProjectAudioClip, String> {
         let path = self
-            .file
-            .source_path
+            .source_path_override
             .as_ref()
+            .or(self.file.source_path.as_ref())
             .ok_or("El clip de audio no tiene archivo de origen")?;
         let source = path
             .to_str()

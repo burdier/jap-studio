@@ -60,6 +60,7 @@ fn clip(frames: Vec<[f32; 2]>, rate: u32) -> AudioClip {
             peaks: Vec::new(),
             max_peak: 1.0,
         }),
+        source_path_override: None,
         track: 0,
         start_beat: 0.0,
         props: ClipProps::default(),

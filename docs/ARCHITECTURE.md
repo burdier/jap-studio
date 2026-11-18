@@ -453,12 +453,16 @@ distintos. [Mapa de estado y límites de colaboración](LORO_SESSION.md).
 origen, posición, recorte y propiedades. `audio/assets` guarda la ruta canónica al
 decodificar; el snapshot Loro no incorpora muestras. Dividir o duplicar un clip
 asigna un ID nuevo, mientras los snapshots de render conservan el mismo ID.
+`project/collect` copia recursos en una carpeta nueva `Audio/`, deduplica fuentes
+compartidas y guarda `session.loro` con rutas relativas. Trabaja en una carpeta
+temporal y la publica al terminar. `ui/collect` prepara un snapshot y ejecuta la
+copia fuera de la UI mediante `audio.collect`.
 
 Este esquema aún no representa parámetros de instrumentos ni colores de pista.
 Por eso no se conecta a «Abrir/Guardar proyecto» en la UI: cargarlo
 como proyecto completo descartaría material. Tampoco hay sincronización de red ni undo
-del proyecto. El siguiente incremento debe preparar/relocalizar recursos y guardar
-el estado de instrumentos y plugins antes de activar esos comandos.
+del proyecto. El siguiente incremento debe resolver/decodificar recursos relativos
+al abrir y guardar el estado de instrumentos y plugins antes de activar esos comandos.
 
 ## Análisis espectral para efectos
 

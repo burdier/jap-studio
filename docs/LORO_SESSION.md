@@ -33,8 +33,11 @@ lista movible. `AudioFile::decode` conserva la ruta canónica del recurso y los
 clips duplicados reciben ID nuevo, aunque compartan la misma fuente. El documento
 admite leer metadata aun cuando el archivo ya no exista: la resolución y
 decodificación deben hacerse al preparar una sesión candidata para Abrir. Las
-rutas son UTF-8; aún no se copian archivos al directorio de sesión ni se hace
-relocalización portable. Una fuente generada solo en memoria no puede guardarse
+rutas son UTF-8. `audio.collect` copia las fuentes a una carpeta nueva `Audio/`
+y guarda `session.loro` con rutas relativas; si varios clips comparten archivo,
+se copia una sola vez. La carpeta se publica después de completar todas las copias
+y el snapshot. Los clips de la sesión abierta se redirigen a las copias si
+conservan su fuente; los originales permanecen donde estaban. Una fuente generada solo en memoria no puede guardarse
 como referencia de archivo.
 La posición y la ganancia disponen de ediciones por campo para fusionar cambios
 independientes de dos copias; todavía no se conectan a gestos de la UI.
@@ -48,8 +51,8 @@ ambos órdenes. El transporte de audio, las voces y los buffers no son datos CRD
 
 ## Orden de integración
 
-1. Completar parámetros de instrumentos y estado permitido de plugins; definir
-   copia/relocalización de recursos de audio para un proyecto portable.
+1. Completar parámetros de instrumentos y estado permitido de plugins; adaptar
+   la apertura del proyecto para resolver y decodificar los recursos relativos.
 2. Preparar una sesión candidata completa antes de **Abrir**. Un recurso ausente
    debe producir un error recuperable, sin sustituir el sonido ni borrar material.
 3. Conectar las operaciones de la UI al documento y guardar un snapshot local

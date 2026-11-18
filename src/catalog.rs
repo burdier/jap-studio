@@ -599,6 +599,21 @@ pub const CATALOG: &[CatalogEntry] = &[
         action: CatalogAction::Invoke("file.import"),
     },
     CatalogEntry {
+        id: "action.audio.collect",
+        kind: EntryKind::Action,
+        name: "Colectar audio en carpeta…",
+        summary: "Copiar fuentes del Arrangement y guardar referencias relativas en una carpeta nueva",
+        keywords: &[
+            "colectar",
+            "reunir",
+            "consolidar",
+            "audio",
+            "proyecto",
+            "carpeta",
+        ],
+        action: CatalogAction::Invoke("audio.collect"),
+    },
+    CatalogEntry {
         id: "action.midi.script",
         kind: EntryKind::Action,
         name: "Ejecutar script MIDI…",

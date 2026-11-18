@@ -11,12 +11,14 @@ use std::{
 };
 
 mod audio;
+mod collect;
 mod fx;
 mod midi;
 mod midi_controls;
 mod session_state;
 mod track;
 pub use audio::ProjectAudioClip;
+pub use collect::CollectedAudio;
 use track::{
     kind_code, kind_from_code, order_id, read_bool, read_i64, read_optional_id, read_string,
     validate_tracks,

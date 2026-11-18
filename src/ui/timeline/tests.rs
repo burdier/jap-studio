@@ -95,6 +95,7 @@ fn trimming_audio_keeps_the_decoded_source_and_limits_the_visible_region() {
         id: elevate::musical::clip::ClipId::fresh(),
         name: source.name.clone(),
         file: source.clone(),
+        source_path_override: None,
         track: 0,
         start_beat: 4.0,
         props: elevate::musical::clip::ClipProps::default(),

@@ -16,6 +16,7 @@ fn clip(value: [f32; 2], start_beat: f64, frames: usize) -> AudioClip {
             peaks: vec![],
             max_peak: 1.,
         }),
+        source_path_override: None,
         track: 0,
         start_beat,
         props: ClipProps::default(),

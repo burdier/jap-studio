@@ -5,6 +5,7 @@ mod audio_actions;
 mod audio_preferences;
 mod clip_actions;
 mod clip_menu;
+mod collect;
 mod command_suggestions;
 mod components;
 mod cursor_fx;
@@ -132,6 +133,7 @@ struct DawApp {
     fx: fx::FxDock,
     piano_ui: views::instrument_params::PianoUi,
     import_task: Option<gpui::Task<()>>,
+    collect_task: Option<gpui::Task<()>>,
     script_task: Option<gpui::Task<()>>,
     lua_tools: lua_tools::LuaTools,
     lua_components: lua_components::LuaComponents,

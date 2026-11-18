@@ -315,6 +315,12 @@ acotada de selección por NoteOn durante la reproducción.
   preparar los recursos al abrir y guardar estado de instrumentos;
   por eso no hay comando de abrir/guardar proyecto en la UI. Validación: compilación.
 
+- **Colectar audio:** `[+]` → **Colectar audio en carpeta…** o
+  `:audio.collect '/ruta/carpeta-nueva'` copia las fuentes utilizadas a `Audio/`
+  y escribe `session.loro` con rutas relativas. Una fuente compartida se copia
+  una vez; si falta un archivo, la carpeta de destino no aparece. Los originales
+  no se mueven. Aún no abre la sesión completa ni guarda estado de instrumentos.
+
 - Piano roll: controles de la barra registrados en catálogo y comandos, formularios de
   parámetros musicales y transformaciones Lua (Q/H/Subdividir/Gate/Swing/Velocity/Random/Clamp).
   Selector real de clip, longitud no destructiva, canal MIDI 1–16, escala/tónica, duración,

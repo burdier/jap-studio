@@ -60,6 +60,14 @@ comparte el mismo componente. [Alcance y acciones](docs/VISUAL_MODULATION.md).
 
 ## Explorador de bibliotecas
 
+Para reunir los archivos de audio usados en el Arrangement, abre `[+]` y elige
+**Colectar audio en carpeta…**, o usa `:audio.collect '/ruta/carpeta-nueva'`.
+Hay crea `Audio/` y `session.loro` con rutas relativas dentro de una carpeta nueva;
+los archivos originales permanecen en su lugar y los clips abiertos pasan a
+referirse a las copias. Esto prepara los recursos del
+proyecto. Abrir una sesión completa y recuperar el estado de instrumentos y plugins
+sigue pendiente.
+
 El explorador de bibliotecas se abre con **e en modo Normal**, a la izquierda del Arrangement.
 Su separador permite reducirlo hasta ocultarlo; e lo recupera. «Añadir biblioteca» guarda
 accesos a carpetas hasta quitarlos explícitamente. Doble clic o Enter sobre audio/MIDI lo

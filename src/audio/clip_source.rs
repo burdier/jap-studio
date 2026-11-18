@@ -64,6 +64,7 @@ mod tests {
                 peaks: vec![],
                 max_peak: 11.,
             }),
+            source_path_override: None,
             name: "recorte".into(),
             track: 0,
             start_beat: 2.,

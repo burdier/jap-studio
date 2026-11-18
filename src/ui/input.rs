@@ -308,6 +308,19 @@ impl DawApp {
             self.reload_lua_components(cx);
             return;
         }
+        if cmd
+            .split_whitespace()
+            .next()
+            .is_some_and(|word| word.eq_ignore_ascii_case("audio.collect"))
+        {
+            match elevate::actions::tokenize(cmd) {
+                Ok(parts) if parts.len() == 2 && !parts[1].trim().is_empty() => {
+                    self.start_audio_collect(parts[1].clone().into(), cx);
+                }
+                _ => self.status_message = "Uso: audio.collect '/ruta/carpeta-nueva'".into(),
+            }
+            return;
+        }
         if let Some(id) = cmd.trim().strip_prefix("fx.component ") {
             self.status_message = self
                 .selected_fx_target()

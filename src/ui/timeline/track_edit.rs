@@ -118,6 +118,7 @@ mod tests {
                 peaks: vec![[0.0, 0.0]],
                 max_peak: 0.0,
             }),
+            source_path_override: None,
             track: 0,
             start_beat: 0.0,
             props: Default::default(),

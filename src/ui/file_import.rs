@@ -98,6 +98,7 @@ impl DawApp {
                                     id: elevate::musical::clip::ClipId::fresh(),
                                     name: file.name.clone(),
                                     file: Arc::new(file),
+                                    source_path_override: None,
                                     track,
                                     start_beat,
                                     props: Default::default(),

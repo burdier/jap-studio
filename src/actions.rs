@@ -191,6 +191,7 @@ pub fn find(command: &str) -> Option<&'static ActionSpec> {
         "fx.parameters" => Some(&fx::PARAMETERS),
         "export" => Some(&crate::export::action::SPEC),
         "file.import" => Some(&FILE_IMPORT),
+        "audio.collect" => Some(&AUDIO_COLLECT),
         "midi.script" => Some(&MIDI_SCRIPT),
         "track.script" => Some(&TRACK_SCRIPT),
         "vst3.script" => Some(&VST3_SCRIPT),
@@ -324,6 +325,20 @@ static FILE_IMPORT: ActionSpec = ActionSpec {
         key: "path",
         label: "Archivo",
         hint: "Ruta completa de un archivo MIDI, WAV, FLAC, MP3, Ogg, AAC o M4A",
+        kind: ParameterKind::Text,
+        default: "",
+        empty_value: None,
+        argument: Argument::Positional,
+    }],
+};
+
+static AUDIO_COLLECT: ActionSpec = ActionSpec {
+    command: "audio.collect",
+    description: "Copia el audio del Arrangement a una carpeta nueva con metadata Loro relativa.",
+    parameters: &[ActionParameter {
+        key: "directory",
+        label: "Carpeta nueva",
+        hint: "Ruta de la carpeta que contendrá Audio/ y session.loro; no debe existir",
         kind: ParameterKind::Text,
         default: "",
         empty_value: None,
