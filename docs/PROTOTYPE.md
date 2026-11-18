@@ -22,7 +22,8 @@ acotada de selección por NoteOn durante la reproducción.
   al MIDI en vivo como a clips del grupo preparados para Play. El archivo de
   ejemplo y los límites están en [Tejer](TEJER.md); faltan los contratos
   restantes de expresión/colas. La entrada
-  MIDI física conserva el canal para devolver NoteOff a la rama de cada pulsación.
+  MIDI física conserva el canal para devolver NoteOff a la rama de cada pulsación,
+  incluso en capas con varios canales que tocan la misma nota.
   El registro live tiene un límite de 4096 notas pendientes, libera sustain al
   retirar una rama y reanuda tras Stop o AllNotesOff si se alcanza el límite.
   Las pruebas comprueban reparto y controles idénticos al cambiar los bloques.

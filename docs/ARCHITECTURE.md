@@ -20,7 +20,8 @@ una edición estructural que retire el destino devuelve el clip a su carril.
 `musical/weave` conserva únicamente una lista validada y acotada de índices de
 rama; no contiene VM ni tipos de audio o UI. `MidiServer` consulta un paso por
 NoteOn en vivo y registra el destino para su NoteOff. `audio/midi_in` conserva el
-canal MIDI 1.0 y el servidor empareja liberaciones por canal y tono; dentro de
+canal MIDI 1.0 y el servidor empareja liberaciones por canal y tono en capas y
+round robin; dentro de
 esa pareja, las repeticiones sin ID se liberan en orden inverso. La compilación de clips
 de Hilo aplica la misma secuencia antes de audio, con orden estable por frame,
 tipo, clip y NoteId. El registro live limita las pulsaciones pendientes a 4096;

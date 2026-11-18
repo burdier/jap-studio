@@ -62,8 +62,8 @@ reiniciar la aplicación para cargar cambios del archivo.
 **Alcance actual:** la regla de cada Hilo tiene prioridad sobre la regla Lua
 global opcional. El proyecto guarda la secuencia preparada, no el script Lua;
 no se ejecuta Lua en el callback.
-El MIDI físico sin ID empareja notas por canal y tono; si se repiten dentro de
-esa pareja, usa orden inverso. NoteOff conserva la rama elegida aunque cambie
+El MIDI físico sin ID empareja notas por canal y tono tanto en capas como en
+round robin; si se repiten dentro de esa pareja, usa orden inverso. NoteOff conserva la rama elegida aunque cambie
 el turno o se retire otra rama. La expresión por voz, los demás controles de
 canal y las colas al retirar ramas requieren el cierre restante de PR-09.
 

@@ -114,13 +114,11 @@ pub struct MidiServer {
     mode: HiloMode,
     next_branch: usize,
     weave_rule: Option<WeaveRule>,
-    round_robin_owners: HashMap<(u8, u8), Vec<Option<MidiTarget>>>,
+    note_owners: HashMap<(u8, u8), Vec<Vec<MidiTarget>>>,
     pending_notes: usize,
     capacity_exceeded: bool,
     sustain_inputs: [bool; 16],
     sustained_targets: HashSet<MidiTarget>,
-    /// NoteOff físico pendiente después de liberar una nota al cambiar de foco.
-    released_on_focus: HashSet<u8>,
 }
 
 impl MidiServer {
@@ -131,12 +129,11 @@ impl MidiServer {
             mode: HiloMode::Layer,
             next_branch: 0,
             weave_rule: None,
-            round_robin_owners: HashMap::new(),
+            note_owners: HashMap::new(),
             pending_notes: 0,
             capacity_exceeded: false,
             sustain_inputs: [false; 16],
             sustained_targets: HashSet::new(),
-            released_on_focus: HashSet::new(),
         }
     }
 
@@ -216,13 +213,6 @@ impl MidiServer {
                 released.extend(self.release_target(previous));
             }
         }
-        for event in &released {
-            if let MidiMessage::NoteOff { note } = event.message
-                && !self.held.iter().any(|&(_, held_note)| held_note == note)
-            {
-                self.released_on_focus.insert(note);
-            }
-        }
         if self.sustain_inputs.contains(&true) {
             for &target in &next {
                 if !self.active_targets.contains(&target) {
@@ -269,13 +259,12 @@ impl MidiServer {
                         continue;
                     }
                     if !self.active_targets.is_empty() {
-                        self.released_on_focus.remove(&note);
+                        if self.pending_notes == MAX_PENDING_NOTES {
+                            routed.extend(self.release_all());
+                            self.capacity_exceeded = true;
+                            continue;
+                        }
                         let targets: Vec<_> = if self.mode == HiloMode::RoundRobin {
-                            if self.pending_notes == MAX_PENDING_NOTES {
-                                routed.extend(self.release_all());
-                                self.capacity_exceeded = true;
-                                continue;
-                            }
                             let index = self
                                 .weave_rule
                                 .as_ref()
@@ -283,15 +272,15 @@ impl MidiServer {
                                 .unwrap_or(self.next_branch % self.active_targets.len());
                             let target = self.active_targets[index];
                             self.next_branch = self.next_branch.wrapping_add(1);
-                            self.round_robin_owners
-                                .entry((channel.min(15), note))
-                                .or_default()
-                                .push(Some(target));
-                            self.pending_notes += 1;
                             vec![target]
                         } else {
                             self.active_targets.clone()
                         };
+                        self.note_owners
+                            .entry((channel.min(15), note))
+                            .or_default()
+                            .push(targets.clone());
+                        self.pending_notes += 1;
                         for target in targets {
                             self.held.insert((target, note));
                             routed.push(RoutedMidi {
@@ -305,54 +294,21 @@ impl MidiServer {
                     if self.capacity_exceeded {
                         continue;
                     }
-                    if self.mode == HiloMode::RoundRobin {
-                        let key = (channel.min(15), note);
-                        let slot = self.round_robin_owners.get_mut(&key).and_then(Vec::pop);
-                        if let Some(slot) = slot {
-                            self.pending_notes -= 1;
-                            if self.round_robin_owners[&key].is_empty() {
-                                self.round_robin_owners.remove(&key);
-                            }
-                            if let Some(target) = slot
-                                && !self.round_robin_owners.iter().any(
-                                    |(&(_, owner_note), owners)| {
-                                        owner_note == note && owners.contains(&Some(target))
-                                    },
-                                )
-                            {
-                                self.held.remove(&(target, note));
-                                routed.push(RoutedMidi {
-                                    target,
-                                    message: MidiMessage::NoteOff { note },
-                                });
-                            }
-                            continue;
+                    let key = (channel.min(15), note);
+                    if let Some(owners) = self.note_owners.get_mut(&key).and_then(Vec::pop) {
+                        self.pending_notes -= 1;
+                        if self.note_owners[&key].is_empty() {
+                            self.note_owners.remove(&key);
                         }
-                        continue;
-                    }
-                    let mut owners: Vec<MidiTarget> = self
-                        .held
-                        .iter()
-                        .filter_map(|&(target, held_note)| (held_note == note).then_some(target))
-                        .collect();
-                    owners.sort_by_key(|target| {
-                        self.active_targets
-                            .iter()
-                            .position(|t| t == target)
-                            .unwrap_or(usize::MAX)
-                    });
-                    if owners.is_empty() {
-                        if self.released_on_focus.remove(&note) {
-                            continue;
-                        }
-                        for &target in &self.active_targets {
-                            routed.push(RoutedMidi {
-                                target,
-                                message: MidiMessage::NoteOff { note },
-                            });
-                        }
-                    } else {
                         for target in owners {
+                            let still_owned =
+                                self.note_owners.iter().any(|(&(_, held_note), slots)| {
+                                    held_note == note
+                                        && slots.iter().any(|slot| slot.contains(&target))
+                                });
+                            if still_owned {
+                                continue;
+                            }
                             self.held.remove(&(target, note));
                             routed.push(RoutedMidi {
                                 target,
@@ -424,11 +380,9 @@ impl MidiServer {
                 message: MidiMessage::ControlChange { cc: 64, value: 0 },
             });
         }
-        for owners in self.round_robin_owners.values_mut() {
-            for owner in owners {
-                if *owner == Some(target) {
-                    *owner = None;
-                }
+        for owners in self.note_owners.values_mut() {
+            for slot in owners {
+                slot.retain(|owner| *owner != target);
             }
         }
         let mut notes: Vec<u8> = self
@@ -450,7 +404,7 @@ impl MidiServer {
     /// Libera todas las notas sostenidas de todos los clientes registrados.
     pub fn release_all(&mut self) -> Vec<RoutedMidi> {
         self.next_branch = 0;
-        self.round_robin_owners.clear();
+        self.note_owners.clear();
         self.pending_notes = 0;
         self.capacity_exceeded = false;
         self.sustain_inputs.fill(false);
@@ -465,9 +419,15 @@ impl MidiServer {
             .collect();
         self.sustained_targets.clear();
         let mut entries: Vec<(MidiTarget, u8)> = self.held.drain().collect();
-        entries.sort_by_key(|&(_, note)| note);
-        self.released_on_focus
-            .extend(entries.iter().map(|(_, note)| *note));
+        entries.sort_by_key(|&(target, note)| {
+            (
+                note,
+                self.active_targets
+                    .iter()
+                    .position(|candidate| *candidate == target)
+                    .unwrap_or(usize::MAX),
+            )
+        });
         released.extend(entries.into_iter().map(|(target, note)| RoutedMidi {
             target,
             message: MidiMessage::NoteOff { note },
@@ -485,6 +445,45 @@ impl MidiServer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn layer_keeps_channel_owners_when_one_target_leaves() {
+        let a = MidiTarget::Instrument(InstrumentId(41));
+        let b = MidiTarget::Instrument(InstrumentId(42));
+        let mut server = MidiServer::new(None);
+        server.focus_targets([a, b]);
+        let input = |channel, message| MidiInputEvent { channel, message };
+        for channel in [0, 1] {
+            let on = server.publish_inputs([input(
+                channel,
+                MidiMessage::NoteOn {
+                    note: 60,
+                    velocity: 100,
+                },
+            )]);
+            assert_eq!(on.len(), 2);
+        }
+        assert_eq!(
+            server.focus_targets([b]),
+            vec![RoutedMidi {
+                target: a,
+                message: MidiMessage::NoteOff { note: 60 }
+            }]
+        );
+        assert!(
+            server
+                .publish_inputs([input(0, MidiMessage::NoteOff { note: 60 })])
+                .is_empty()
+        );
+        assert_eq!(
+            server.publish_inputs([input(1, MidiMessage::NoteOff { note: 60 })]),
+            vec![RoutedMidi {
+                target: b,
+                message: MidiMessage::NoteOff { note: 60 }
+            }]
+        );
+        assert!(server.release_all().is_empty());
+    }
 
     #[test]
     fn round_robin_owner_registry_is_bounded_and_fails_silent() {
