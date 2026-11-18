@@ -99,7 +99,8 @@ completa al salir. [Estado y límites](docs/ARCHITECTURE.md#pr-07-primer-recorri
 No hace falta configurar Lua para usar Tejer. Un archivo Lua puede cambiar el
 orden de ramas como opción avanzada. Para editar cada grupo desde la interfaz,
 usa **Tejer · secuencia de ramas…** (`1,3,2` alterna A-C-B); el proyecto guarda
-esa secuencia. [Contrato y prueba](docs/TEJER.md).
+esa secuencia en el documento musical; guardar la sesión completa desde la UI
+sigue pendiente. [Contrato y prueba](docs/TEJER.md).
 Puedes insertar **Hay Piano** en varias pistas: cada inserción crea una instancia
 independiente, con sus propios controles y voces.
 

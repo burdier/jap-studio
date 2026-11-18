@@ -17,7 +17,8 @@ Si ya tienes un grupo, elige **Tejer · automático** en su menú; también acti
 su entrada MIDI. Sin una regla
 personalizada, el orden es A-B-C-A-B-C para tres instrumentos.
 En el menú del grupo, **Tejer · secuencia de ramas…** acepta `1,3,2` para
-repetir A-C-B. Cada Hilo guarda su propia secuencia en el proyecto. `auto`
+repetir A-C-B. El documento musical guarda una secuencia por Hilo; la interfaz
+todavía no ofrece guardar la sesión completa en un archivo. `auto`
 borra la secuencia del grupo y vuelve al orden automático, salvo que se haya
 cargado una regla Lua global al iniciar. También sirve `:hilo.rule '1,3,2'`.
 
