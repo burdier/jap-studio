@@ -16,7 +16,7 @@ pub struct ClipId(u64);
 static NEXT_CLIP_ID: AtomicU64 = AtomicU64::new(1);
 
 impl ClipId {
-    fn fresh() -> Self {
+    pub fn fresh() -> Self {
         Self(NEXT_CLIP_ID.fetch_add(1, Ordering::Relaxed))
     }
 
@@ -39,7 +39,7 @@ impl ClipId {
     /// Recupera una identidad persistida sin permitir que futuras inserciones la reutilicen.
     pub fn restore(value: u64) -> Result<Self, String> {
         if value == 0 || value >= i64::MAX as u64 {
-            return Err("ID de clip MIDI inválido".into());
+            return Err("ID de clip inválido".into());
         }
         NEXT_CLIP_ID.fetch_max(value + 1, Ordering::Relaxed);
         Ok(Self(value))

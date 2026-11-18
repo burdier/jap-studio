@@ -18,9 +18,11 @@ fn timeline_with_clips() -> Timeline {
     midi.trim_len = Some(6.0);
     timeline.insert_midi_clip(midi);
     timeline.insert_audio_clip(AudioClip {
+        id: elevate::musical::clip::ClipId::fresh(),
         name: "Audio".into(),
         file: Arc::new(AudioFile {
             name: "source.wav".into(),
+            source_path: None,
             sample_rate: 100,
             frames: vec![[0.25, -0.25]; 400],
             peaks: vec![[0.0, 0.25]],
@@ -61,6 +63,7 @@ fn split_trimmed_audio_and_midi_preserves_source_alignment_and_total_length() {
         right.start_beat
     );
     assert_eq!(left.length_seconds() + right.length_seconds(), 3.0);
+    assert_ne!(left.id, right.id);
     assert!(Arc::ptr_eq(&left.file, &source));
     assert!(Arc::ptr_eq(&right.file, &source));
 }

@@ -157,7 +157,7 @@ impl DawApp {
                 }
             }
             DragKind::Audio => {
-                if let Some(mut copy) = self.timeline.clip.clone() {
+                if let Some(mut copy) = self.timeline.clip.as_ref().map(|clip| clip.duplicate()) {
                     copy.start_beat = copy.end_beat(self.timeline.tempo.bpm());
                     self.status_message = format!(
                         "Clip de audio «{}» duplicado en {:.2} beats",

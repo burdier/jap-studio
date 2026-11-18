@@ -50,9 +50,11 @@ impl Drop for Temp {
 
 fn clip(frames: Vec<[f32; 2]>, rate: u32) -> AudioClip {
     AudioClip {
+        id: elevate::musical::clip::ClipId::fresh(),
         name: "Fuente".into(),
         file: Arc::new(AudioFile {
             name: "Fuente".into(),
+            source_path: None,
             sample_rate: rate,
             frames,
             peaks: Vec::new(),

@@ -227,8 +227,8 @@ de acciones `tempo.set`/`meter.set`, comandos `:tempo`/`:meter`, la regla en seg
 rejillas, captura e importación MIDI, reproducción y exportación leen ese estado.
 El audio se coloca en negras; modificar BPM altera su longitud visual en negras sin
 alterar los segundos de la fuente. El compás modifica divisiones y etiquetas sin
-mover eventos. El documento Loro aún no guarda tempo ni compás porque la UI todavía
-no expone guardado completo del proyecto.
+mover eventos. El documento Loro guarda tempo y compás; la UI todavía no expone
+guardado completo del proyecto.
 
 `ui/time_grid/musical` calcula una secuencia de marcas en ticks enteros para las
 reglas y rejillas del Arrangement y piano roll. El zoom determina la separación visual
@@ -264,13 +264,15 @@ descarta el candidato completo.
 el arreglo devuelto en operaciones Rust; las tablas de snapshot no son mutables
 para la sesión. `ui/track_scripts` lee archivos en un worker. `ui/track_batch`
 compara el snapshot vigente, valida la compilación de las cadenas Hay Utility modificadas y
-valida una proyección candidata `ProjectDoc::from_session` con pistas, FX y MIDI.
+valida una proyección candidata `ProjectDoc::from_session` con pistas, FX, MIDI y
+metadata de audio.
 Después `ui/track_commit` publica filas, mezcla, clips, selección y MIDI Learn
 mediante el mismo remapeo que las acciones normales. La revisión de sesión
 avanza en ambas rutas. La plantilla incluida se invoca desde el catálogo.
 
-El documento Loro de esquema 4 conserva identidad y orden de pistas, FX y MIDI,
-pero aún no está conectado en vivo a la UI ni representa mezcla, audio o colores.
+El documento Loro de esquema 4 conserva identidad y orden de pistas, FX, MIDI,
+metadata de audio, tiempo y mezcla, pero aún no está conectado en vivo a la UI
+ni representa colores de pista.
 La proyección candidata verifica compatibilidad antes del commit local; no crea
 una transacción distribuida ni sincronización de red. Las futuras importaciones
 remotas deberán avanzar la revisión de sesión y añadir una frontera causal al
@@ -447,12 +449,16 @@ documento, incluso cuando se eliminó la última entidad creada.
 editables independientes, con valores por defecto compatibles para snapshots
 anteriores. La prueba de dos copias confirma la fusión de ediciones en campos
 distintos. [Mapa de estado y límites de colaboración](LORO_SESSION.md).
+`project/audio` conserva referencias de clips WAV por ID y TrackId, con ruta de
+origen, posición, recorte y propiedades. `audio/assets` guarda la ruta canónica al
+decodificar; el snapshot Loro no incorpora muestras. Dividir o duplicar un clip
+asigna un ID nuevo, mientras los snapshots de render conservan el mismo ID.
 
-Este esquema aún no representa referencias a audio, parámetros de instrumentos
-ni colores. Por eso no se conecta a «Abrir/Guardar proyecto» en la UI: cargarlo
+Este esquema aún no representa parámetros de instrumentos ni colores de pista.
+Por eso no se conecta a «Abrir/Guardar proyecto» en la UI: cargarlo
 como proyecto completo descartaría material. Tampoco hay sincronización de red ni undo
-del proyecto. El siguiente incremento debe adaptar los recursos de audio por ruta,
-ID y estado de plugin antes de activar esos comandos.
+del proyecto. El siguiente incremento debe preparar/relocalizar recursos y guardar
+el estado de instrumentos y plugins antes de activar esos comandos.
 
 ## Análisis espectral para efectos
 

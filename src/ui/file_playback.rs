@@ -314,7 +314,8 @@ fn same_midi_sources(a: &[MidiClip], b: &[MidiClip]) -> bool {
 fn same_sources(a: &[AudioClip], b: &[AudioClip]) -> bool {
     a.len() == b.len()
         && a.iter().zip(b).all(|(a, b)| {
-            std::sync::Arc::ptr_eq(&a.file, &b.file)
+            a.id == b.id
+                && std::sync::Arc::ptr_eq(&a.file, &b.file)
                 && a.track == b.track
                 && a.start_beat == b.start_beat
                 && a.trim_start == b.trim_start

@@ -269,7 +269,7 @@ fn validate_clip(clip: &MidiClip) -> Result<(), String> {
 pub(super) fn reconcile_order(order: &LoroMovableList, desired: &[u64]) -> Result<(), String> {
     let keep: HashSet<_> = desired.iter().copied().collect();
     if keep.len() != desired.len() {
-        return Err("IDs MIDI duplicados".into());
+        return Err("IDs duplicados".into());
     }
     for index in (0..order.len()).rev() {
         if !order_id(order, index).is_some_and(|id| keep.contains(&id)) {
@@ -278,7 +278,7 @@ pub(super) fn reconcile_order(order: &LoroMovableList, desired: &[u64]) -> Resul
     }
     for &id in desired {
         if id == 0 || id >= i64::MAX as u64 {
-            return Err("ID MIDI fuera de rango".into());
+            return Err("ID fuera de rango".into());
         }
         if !(0..order.len()).any(|index| order_id(order, index) == Some(id)) {
             order.insert(order.len(), id as i64).map_err(err)?;
@@ -287,7 +287,7 @@ pub(super) fn reconcile_order(order: &LoroMovableList, desired: &[u64]) -> Resul
     for (target, &id) in desired.iter().enumerate() {
         let source = (target..order.len())
             .find(|&index| order_id(order, index) == Some(id))
-            .ok_or("Orden MIDI incompleto")?;
+            .ok_or("Orden incompleto")?;
         if source != target {
             order.mov(source, target).map_err(err)?;
         }
@@ -295,7 +295,7 @@ pub(super) fn reconcile_order(order: &LoroMovableList, desired: &[u64]) -> Resul
     Ok(())
 }
 
-fn read_f64(map: &LoroMap, key: &str) -> Result<f64, String> {
+pub(super) fn read_f64(map: &LoroMap, key: &str) -> Result<f64, String> {
     map.get(key)
         .and_then(|value| value.get_deep_value().to_json_value().as_f64())
         .filter(|value| value.is_finite())

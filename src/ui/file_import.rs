@@ -95,6 +95,7 @@ impl DawApp {
                                     file.sample_rate
                                 );
                                 this.timeline.insert_audio_clip(AudioClip {
+                                    id: elevate::musical::clip::ClipId::fresh(),
                                     name: file.name.clone(),
                                     file: Arc::new(file),
                                     track,

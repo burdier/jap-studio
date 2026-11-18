@@ -54,7 +54,7 @@ impl Timeline {
                 let Some(left) = self.clip.as_mut().filter(|c| !c.props.locked) else {
                     return false;
                 };
-                let mut right = left.clone();
+                let mut right = left.duplicate();
                 let length = (beat - left.start_beat) / beats_per_second;
                 right.trim_start += length;
                 right.trim_len = Some(left.length_seconds() - length);

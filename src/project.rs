@@ -10,11 +10,13 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
+mod audio;
 mod fx;
 mod midi;
 mod midi_controls;
 mod session_state;
 mod track;
+pub use audio::ProjectAudioClip;
 use track::{
     kind_code, kind_from_code, order_id, read_bool, read_i64, read_optional_id, read_string,
     validate_tracks,
@@ -90,7 +92,7 @@ impl ProjectDoc {
         Ok(project)
     }
 
-    /// Captura pistas, FX y clips MIDI. El audio externo aún no pertenece al documento.
+    /// Captura pistas, FX y clips MIDI; los WAV se añaden con `reconcile_audio_clips`.
     pub fn from_session(
         name: &str,
         tracks: &[Track],
@@ -102,7 +104,7 @@ impl ProjectDoc {
     }
 
     /// Captura el estado musical y los controles de mezcla editables de la sesión.
-    /// Las fuentes de audio externas e instancias de plugin se incorporarán después.
+    /// Esta captura aún no incluye clips WAV ni estado de instrumentos o plugins.
     pub fn from_session_state(
         name: &str,
         tracks: &[Track],
@@ -122,7 +124,7 @@ impl ProjectDoc {
     }
 
     /// Sincroniza la estructura de pistas existente sin recrear las entradas de la lista CRDT.
-    /// Las instancias de audio todavía no forman parte de este esquema.
+    /// La metadata de clips de audio se reconcilia por separado.
     pub fn reconcile_tracks(&self, tracks: &[Track]) -> Result<(), String> {
         let desired: Vec<_> = tracks.iter().map(ProjectTrack::from).collect();
         validate_tracks(&desired)?;
@@ -276,6 +278,17 @@ impl ProjectDoc {
         &self,
         clips: &[crate::musical::clip::MidiClip],
     ) -> Result<(), String> {
+        let audio_ids: HashSet<_> = self
+            .audio_clips()?
+            .iter()
+            .map(|clip| clip.id.value())
+            .collect();
+        if clips
+            .iter()
+            .any(|clip| audio_ids.contains(&clip.id.value()))
+        {
+            return Err("ID compartido entre clips MIDI y audio".into());
+        }
         midi::write_clips(&self.doc, &self.tracks()?, clips)?;
         let meta = self.doc.get_map("project");
         let next = crate::musical::clip::ClipId::next_id().max(
@@ -290,6 +303,32 @@ impl ProjectDoc {
 
     pub fn midi_clips(&self) -> Result<Vec<crate::musical::clip::MidiClip>, String> {
         midi::read_clips(&self.doc, &self.tracks()?)
+    }
+
+    /// Guarda referencias a archivos y edición de clips WAV, sin muestras decodificadas.
+    pub fn reconcile_audio_clips(&self, clips: &[ProjectAudioClip]) -> Result<(), String> {
+        let midi_ids: HashSet<_> = self
+            .midi_clips()?
+            .iter()
+            .map(|clip| clip.id.value())
+            .collect();
+        if clips.iter().any(|clip| midi_ids.contains(&clip.id.value())) {
+            return Err("ID compartido entre clips MIDI y audio".into());
+        }
+        audio::write_clips(&self.doc, &self.tracks()?, clips)?;
+        let meta = self.doc.get_map("project");
+        let next = crate::musical::clip::ClipId::next_id().max(
+            u64::try_from(read_i64(&meta, "next_clip_id")?).map_err(|_| "ID de clip inválido")?,
+        );
+        meta.insert(
+            "next_clip_id",
+            i64::try_from(next).map_err(|_| "ID de clip agotado")?,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    pub fn audio_clips(&self) -> Result<Vec<ProjectAudioClip>, String> {
+        audio::read_clips(&self.doc, &self.tracks()?)
     }
 
     /// Reconstruye una sesión musical sin recursos de audio externo ni estado visual.
@@ -369,7 +408,18 @@ impl ProjectDoc {
             fx::read_chain(&self.doc, track.id)?;
             self.track_mix(track.id)?;
         }
-        self.midi_clips()?;
+        let midi_ids: HashSet<_> = self
+            .midi_clips()?
+            .iter()
+            .map(|clip| clip.id.value())
+            .collect();
+        if self
+            .audio_clips()?
+            .iter()
+            .any(|clip| midi_ids.contains(&clip.id.value()))
+        {
+            return Err("ID compartido entre clips MIDI y audio".into());
+        }
         Ok(())
     }
 

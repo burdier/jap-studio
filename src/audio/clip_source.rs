@@ -55,8 +55,10 @@ mod tests {
     use elevate::musical::clip::ClipProps;
     fn clip() -> AudioClip {
         AudioClip {
+            id: elevate::musical::clip::ClipId::fresh(),
             file: Arc::new(AudioFile {
                 name: "fixture".into(),
+                source_path: None,
                 sample_rate: 4,
                 frames: (0..12).map(|i| [i as f32, -(i as f32)]).collect(),
                 peaks: vec![],

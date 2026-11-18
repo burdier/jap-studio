@@ -6,9 +6,11 @@ use crate::audio::{
 use elevate::musical::clip::ClipProps;
 fn clip(value: [f32; 2], start_beat: f64, frames: usize) -> AudioClip {
     AudioClip {
+        id: elevate::musical::clip::ClipId::fresh(),
         name: "fixture".into(),
         file: Arc::new(AudioFile {
             name: "fixture".into(),
+            source_path: None,
             sample_rate: 48000,
             frames: vec![value; frames],
             peaks: vec![],

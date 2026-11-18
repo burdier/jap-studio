@@ -85,12 +85,14 @@ fn trimming_audio_keeps_the_decoded_source_and_limits_the_visible_region() {
     let mut timeline = timeline_with_lanes();
     let source = Arc::new(AudioFile {
         name: "source.wav".into(),
+        source_path: None,
         sample_rate: 100,
         frames: vec![[0.25, -0.25]; 800],
         peaks: vec![[0.0, 0.25]],
         max_peak: 0.25,
     });
     timeline.clip = Some(AudioClip {
+        id: elevate::musical::clip::ClipId::fresh(),
         name: source.name.clone(),
         file: source.clone(),
         track: 0,

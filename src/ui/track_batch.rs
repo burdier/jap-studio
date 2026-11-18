@@ -87,7 +87,23 @@ impl DawApp {
                 .ok_or("Lote: un clip MIDI perdió su pista")?;
             midi.push(clip);
         }
-        ProjectDoc::from_session("Sesión", &tracks, &midi)?.snapshot()?;
+        let project = ProjectDoc::from_session("Sesión", &tracks, &midi)?;
+        let mut audio = Vec::new();
+        for clip in self
+            .timeline
+            .clip
+            .iter()
+            .chain(&self.timeline.other_audio_clips)
+        {
+            let new_track = original
+                .get(clip.track)
+                .copied()
+                .flatten()
+                .ok_or("Lote: un clip de audio perdió su pista")?;
+            audio.push(clip.project_metadata(tracks[new_track].id)?);
+        }
+        project.reconcile_audio_clips(&audio)?;
+        project.snapshot()?;
 
         let levels = result
             .snapshot

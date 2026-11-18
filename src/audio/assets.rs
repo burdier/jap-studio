@@ -1,6 +1,15 @@
 //! Carga offline de archivos y picos para la waveform. Nunca llamar desde el callback.
-use elevate::{StereoFrame, musical::clip::ClipProps};
-use std::{fs::File, path::Path, sync::Arc};
+use elevate::{
+    StereoFrame,
+    musical::clip::{ClipId, ClipProps},
+    musical::track::TrackId,
+    project::ProjectAudioClip,
+};
+use std::{
+    fs::File,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 use symphonia::core::{
     formats::{TrackType, probe::Hint},
     io::MediaSourceStream,
@@ -10,6 +19,8 @@ pub(crate) const PEAK_FRAMES: usize = 64;
 
 pub(crate) struct AudioFile {
     pub name: String,
+    /// Ruta del recurso original; `None` solo para audio generado en memoria.
+    pub source_path: Option<PathBuf>,
     pub sample_rate: u32,
     pub frames: Vec<StereoFrame>,
     pub peaks: Vec<[f32; 2]>,
@@ -93,6 +104,7 @@ impl AudioFile {
             acc.max(low.abs()).max(high.abs())
         });
         Ok(Self {
+            source_path: Some(std::fs::canonicalize(path).map_err(|error| error.to_string())?),
             name: path
                 .file_name()
                 .unwrap_or_default()
@@ -108,6 +120,7 @@ impl AudioFile {
 
 #[derive(Clone)]
 pub(crate) struct AudioClip {
+    pub id: ClipId,
     /// Nombre de la instancia, independiente del archivo compartido.
     pub name: String,
     pub file: Arc<AudioFile>,
@@ -121,6 +134,34 @@ pub(crate) struct AudioClip {
 }
 
 impl AudioClip {
+    pub fn project_metadata(&self, track: TrackId) -> Result<ProjectAudioClip, String> {
+        let path = self
+            .file
+            .source_path
+            .as_ref()
+            .ok_or("El clip de audio no tiene archivo de origen")?;
+        let source = path
+            .to_str()
+            .ok_or("La ruta de audio no es UTF-8")?
+            .to_owned();
+        Ok(ProjectAudioClip {
+            id: self.id,
+            track,
+            source,
+            name: self.name.clone(),
+            start_beat: self.start_beat,
+            trim_start: self.trim_start,
+            trim_len: self.trim_len,
+            props: self.props,
+        })
+    }
+
+    /// Copia editable; el snapshot de render usa `Clone` y conserva la identidad.
+    pub fn duplicate(&self) -> Self {
+        let mut copy = self.clone();
+        copy.id = ClipId::fresh();
+        copy
+    }
     pub fn length_seconds(&self) -> f64 {
         let available = (self.file.duration() - self.trim_start).max(0.0);
         self.trim_len.map_or(available, |len| len.min(available))

@@ -17,16 +17,27 @@ Referencias: [sesiones de Ardour](https://manual.ardour.org/introducing-ardour/u
 | Pistas, Hilos, FX y notas MIDI | IDs estables, listas y mapas por entidad | Planes y voces preparados fuera del callback |
 | Tempo y compás | Campos de proyecto separados | Transporte común en frames |
 | Nivel y panorama | Campos por `TrackId` | Controles de mezcla publicados al motor |
-| Clips de audio | Pendiente: ID de clip y referencia de recurso | Archivo decodificado y buffers fuera del callback |
+| Clips de audio | ID, `TrackId`, ruta UTF-8, posición, recorte y propiedades | Archivo decodificado y buffers fuera del callback |
 | Plugins y samples | Pendiente: tipo, recurso y estado serializable | Instancias y editores con ciclo de vida propio |
 
-El esquema 4 acepta opcionalmente tempo, compás, nivel y panorama; un snapshot
+El esquema 4 acepta opcionalmente tempo, compás, nivel, panorama y clips de audio; un snapshot
 anterior recupera 120 BPM, 4/4, nivel 75 y panorama 50. `set_tempo`, `set_meter`,
 `set_track_level` y `set_track_pan` escriben campos independientes. Así, dos
 copias que editan controles distintos pueden fusionar sus operaciones sin que
 un guardado completo pise el otro. El compás se escribe como un valor único
 (`7/8`), para evitar mezclar partes de dos cambios concurrentes; todo
 merge se aplica a un candidato antes de publicar el documento.
+
+`project/audio` guarda metadata de cada clip WAV en mapas por ID y el orden en una
+lista movible. `AudioFile::decode` conserva la ruta canónica del recurso y los
+clips duplicados reciben ID nuevo, aunque compartan la misma fuente. El documento
+admite leer metadata aun cuando el archivo ya no exista: la resolución y
+decodificación deben hacerse al preparar una sesión candidata para Abrir. Las
+rutas son UTF-8; aún no se copian archivos al directorio de sesión ni se hace
+relocalización portable. Una fuente generada solo en memoria no puede guardarse
+como referencia de archivo.
+La posición y la ganancia disponen de ediciones por campo para fusionar cambios
+independientes de dos copias; todavía no se conectan a gestos de la UI.
 
 Loro hace converger las operaciones que reciban las copias. Hay debe definir
 la respuesta musical a cambios concurrentes que puedan dejar referencias
@@ -37,8 +48,8 @@ ambos órdenes. El transporte de audio, las voces y los buffers no son datos CRD
 
 ## Orden de integración
 
-1. Añadir IDs y referencias verificables a clips de audio y recursos; completar
-   parámetros de instrumentos y estado permitido de plugins.
+1. Completar parámetros de instrumentos y estado permitido de plugins; definir
+   copia/relocalización de recursos de audio para un proyecto portable.
 2. Preparar una sesión candidata completa antes de **Abrir**. Un recurso ausente
    debe producir un error recuperable, sin sustituir el sonido ni borrar material.
 3. Conectar las operaciones de la UI al documento y guardar un snapshot local
