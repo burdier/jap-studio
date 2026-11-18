@@ -54,6 +54,12 @@ pub(crate) fn run() {
                     cx.new(|cx| {
                         let app = DawApp::new(cx);
                         window.focus(&app.focus_handle, cx);
+                        let entity = cx.weak_entity();
+                        window.on_window_should_close(cx, move |window, cx| {
+                            entity
+                                .update(cx, |this, cx| this.guard_project_close(window, cx))
+                                .unwrap_or(true)
+                        });
                         app
                     })
                 },

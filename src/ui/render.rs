@@ -11,12 +11,6 @@ use gpui::{
 impl Render for DawApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.refresh_project_dirty();
-        let entity = cx.weak_entity();
-        window.on_window_should_close(cx, move |window, cx| {
-            entity
-                .update(cx, |this, cx| this.guard_project_close(window, cx))
-                .unwrap_or(true)
-        });
         super::kit::sync_theme(&self.ds, cx);
         self.validate_workspace_focus();
         self.sync_explorer(window, cx);
