@@ -1,6 +1,7 @@
 //! Gestión local de proyectos: guardar, preparar candidato y publicar sin perder la sesión actual.
 mod dialogs;
 mod install;
+mod location;
 mod snapshot;
 #[cfg(test)]
 mod tests;
@@ -112,7 +113,7 @@ impl DawApp {
             || self.midi_capture.is_recording()
     }
 
-    fn save_project_to(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+    fn save_project_to(&mut self, path: PathBuf, create_folder: bool, cx: &mut Context<Self>) {
         if self.project_busy() {
             self.status_message = "Espera a que termine la operación en curso".into();
             return;
@@ -142,31 +143,41 @@ impl DawApp {
         let previous = self.project.document.clone();
         self.status_message = "Guardando proyecto…".into();
         let job = cx.background_spawn(async move {
-            let name = target.file_stem().unwrap_or_default().to_string_lossy();
             let mut snapshot = snapshot;
             snapshot.resolve_piano_sources()?;
-            let root = target.parent().ok_or("Proyecto sin carpeta")?;
-            for clip in &mut snapshot.audio {
-                if let Ok(relative) = std::path::Path::new(&clip.source).strip_prefix(root) {
-                    clip.source = relative.to_str().ok_or("Ruta no UTF-8")?.into();
+            let save = |file: &std::path::Path| {
+                let name = file.file_stem().unwrap_or_default().to_string_lossy();
+                let root = file.parent().ok_or("Proyecto sin carpeta")?;
+                for clip in &mut snapshot.audio {
+                    if let Ok(relative) = std::path::Path::new(&clip.source).strip_prefix(root) {
+                        clip.source = relative.to_str().ok_or("Ruta no UTF-8")?.into();
+                    }
                 }
+                let doc = snapshot.document_from(&name, previous.as_deref())?;
+                let bytes = doc.snapshot()?;
+                doc.save(file)?;
+                Ok(bytes)
+            };
+            if create_folder {
+                location::save_in_new_folder(&target, save)
+            } else {
+                let mut save = save;
+                let bytes = save(&target)?;
+                Ok((target, bytes))
             }
-            let doc = snapshot.document_from(&name, previous.as_deref())?;
-            doc.save(&target)?;
-            doc.snapshot()
         });
         self.project.task = Some(cx.spawn(async move |this, cx| {
             let result = job.await;
             let _ = this.update(cx, |this, cx| {
                 this.project.task = None;
                 match result {
-                    Ok(document) => {
+                    Ok((path, document)) => {
+                        this.status_message = format!("Proyecto guardado en {}", path.display());
                         this.project.document = Some(document);
                         this.project.path = Some(path);
                         this.project.saved = Some(signature);
                         this.project.checked = None;
                         this.refresh_project_dirty();
-                        this.status_message = "Proyecto guardado".into();
                     }
                     Err(e) => this.status_message = format!("No se pudo guardar: {e}"),
                 }

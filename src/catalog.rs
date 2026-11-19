@@ -45,6 +45,14 @@ const fn piano_action(id: &'static str, name: &'static str, command: &'static st
 
 pub const CATALOG: &[CatalogEntry] = &[
     CatalogEntry {
+        id: "action.project.reveal",
+        kind: EntryKind::Action,
+        name: "Mostrar carpeta del proyecto",
+        summary: "Abre el explorador de archivos en la ubicación del proyecto activo",
+        keywords: &["proyecto", "carpeta", "ubicación", "archivo"],
+        action: CatalogAction::Invoke("project.reveal"),
+    },
+    CatalogEntry {
         id: "action.project.save_as",
         kind: EntryKind::Action,
         name: "Guardar proyecto como…",

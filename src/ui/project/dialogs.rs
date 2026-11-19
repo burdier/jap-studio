@@ -11,6 +11,14 @@ impl DawApp {
         match command.trim() {
             "project.save" => self.choose_project_save(false, cx),
             "project.save_as" => self.choose_project_save(true, cx),
+            "project.reveal" => {
+                if let Some(path) = &self.project.path {
+                    cx.reveal_path(path);
+                    self.status_message = path.display().to_string();
+                } else {
+                    self.status_message = "Guarda el proyecto para crear su carpeta".into();
+                }
+            }
             "project.open" => self.confirm_project_open(window, cx),
             _ => return false,
         }
@@ -24,7 +32,7 @@ impl DawApp {
         }
         if !save_as {
             if let Some(path) = self.project.path.clone() {
-                self.save_project_to(path, cx);
+                self.save_project_to(path, false, cx);
                 return;
             }
         }
@@ -32,18 +40,27 @@ impl DawApp {
             .project
             .path
             .as_ref()
-            .and_then(|p| p.parent())
+            .and_then(|p| {
+                p.parent().and_then(|folder| {
+                    if folder.file_name() == p.file_stem() {
+                        folder.parent()
+                    } else {
+                        Some(folder)
+                    }
+                })
+            })
             .map(ToOwned::to_owned)
+            .or_else(dirs::document_dir)
             .or_else(dirs::home_dir)
             .unwrap_or_else(|| PathBuf::from("."));
-        let prompt = cx.prompt_for_new_path(&directory, Some("session.loro"));
+        let prompt = cx.prompt_for_new_path(&directory, Some("Mi proyecto.loro"));
         self.project.dialog = Some(cx.spawn(async move |this, cx| {
             let result = prompt.await;
             let _ = this.update(cx, |this, cx| {
                 this.project.dialog = None;
                 match result {
                     Ok(Ok(Some(path))) => {
-                        this.save_project_to(path, cx);
+                        this.save_project_to(path, true, cx);
                     }
                     Ok(Ok(None)) => {}
                     _ => this.status_message = "No se pudo abrir el selector de guardado".into(),
