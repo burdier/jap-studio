@@ -135,7 +135,13 @@ pub(super) fn paint_time(
         size(px(width as f32), grid.all.size.height - px(10.0)),
     );
     if bar_length * grid.axis().pixels_per_beat >= 8.0 {
-        bar_grid::paint_bands(time_bounds, grid.axis(), bar_length, ds, window);
+        bar_grid::paint_bands(
+            time_bounds,
+            grid.axis(),
+            bar_length,
+            (ds.text << 8) | 0x18,
+            window,
+        );
     }
     let marks = musical::marks(
         grid.axis(),

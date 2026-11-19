@@ -1,4 +1,5 @@
 //! Estado de navegación del Arrangement. El canvas está en paint.rs.
+mod appearance;
 mod clip_edit;
 #[cfg(test)]
 mod clip_edit_tests;

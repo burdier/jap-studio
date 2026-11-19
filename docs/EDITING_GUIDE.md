@@ -132,7 +132,7 @@
 | Estado del piano | `src/instruments/piano.rs` | `audio/piano/`, `views/instrument.rs` |
 | Editar pasos/velocity | `src/ui/pattern_editor.rs` | `src/musical/model.rs` |
 | Dibujar pasos | `src/ui/views/pattern.rs` | Controlador anterior |
-| Layout Arrangement | `src/ui/views/arrangement.rs` | `views/tracks.rs` |
+| Layout y contraste del Arrangement | `src/ui/views/arrangement.rs` | `views/tracks.rs`, `timeline/{appearance,paint}.rs`; la superficie y la selección se derivan del tema activo |
 | Track Headers configurables (TCP estilo REAPER) | `src/ui/views/tracks.rs` | `components/button.rs`, `views/settings_tracks.rs`, `design.rs`; identidad, mezcla, estado e instrumentos/FX comparten agrupación visual y opciones |
 | Estado M/S/R y audibilidad de pistas | `src/musical/track/mix.rs`, `src/ui/audio_actions.rs` | `src/musical/track.rs`, `views/tracks.rs` |
 | Workspace Arrangement + piano roll acoplado/separado | `src/ui/views/workspace.rs` | `src/ui/piano_roll/window.rs`, `views/piano_roll/` |

@@ -65,7 +65,7 @@ pub(in crate::ui) fn paint_bands(
     bounds: Bounds<Pixels>,
     axis: TimeGrid,
     beats_per_bar: f64,
-    design: &DesignSystem,
+    color: u32,
     window: &mut Window,
 ) {
     let width = f64::from(f32::from(bounds.size.width));
@@ -74,15 +74,13 @@ pub(in crate::ui) fn paint_bands(
         let end = axis.x_at((bar as f64 + 1.0) * beats_per_bar);
         let left = start.max(0.0);
         let right = end.min(width);
-        // Texto del tema: aclara en temas oscuros y oscurece en temas claros.
-        // Transparencia para mantener filas de notas, escala y selección visibles.
         if bar % 2 == 1 && right > left {
             window.paint_quad(fill(
                 Bounds::new(
                     point(bounds.left() + px(left as f32), bounds.top()),
                     size(px((right - left) as f32), bounds.size.height),
                 ),
-                rgba((design.text << 8) | 0x18),
+                rgba(color),
             ));
         }
     }

@@ -1,7 +1,10 @@
 //! Regla, carriles, rejilla y cursores. La waveform se dibuja en waveform.rs.
 use super::{DesignSystem, DragKind, Timeline, TimelineArea, waveform};
 use crate::ui::track_drag::TrackReorderVisual;
-use crate::ui::{components::bar_grid, time_grid::musical};
+use crate::ui::{
+    components::bar_grid,
+    time_grid::musical::{self, MarkKind},
+};
 use gpui::{
     Bounds, ContentMask, IntoElement, Styled, TextAlign, canvas, fill, point, px, rgb, rgba, size,
 };
@@ -88,16 +91,18 @@ impl Timeline {
                 (marks, labels)
             },
             move |bounds, (marks, labels), window, cx| {
+                let surface = design.arrangement_surface();
+                let lanes = area == TimelineArea::Lanes;
                 window.with_content_mask(Some(ContentMask { bounds }), |window| {
                     window.paint_quad(fill(
                         bounds,
-                        rgb(if area == TimelineArea::Ruler {
-                            design.panel
+                        rgb(if lanes {
+                            surface
                         } else {
-                            design.panel_dark
+                            design.arrangement_header()
                         }),
                     ));
-                    if area == TimelineArea::Lanes {
+                    if lanes {
                         for row in &layout.rows {
                             let track = row.track;
                             let top = bounds.top() + px(row.top);
@@ -106,15 +111,15 @@ impl Timeline {
                                 size(bounds.size.width, px(row.height)),
                             );
                             let color = if dragged_rows.contains(&track) {
-                                design.panel_dark
+                                Some(design.arrangement_header())
                             } else if selected_tracks.get(track).copied().unwrap_or(false) {
-                                design.selection_background()
-                            } else if track % 2 == 0 {
-                                design.bg
+                                Some(design.arrangement_selection(surface))
                             } else {
-                                design.panel_dark
+                                None
                             };
-                            window.paint_quad(fill(lane, rgb(color)));
+                            if let Some(color) = color {
+                                window.paint_quad(fill(lane, rgb(color)));
+                            }
                             if hover_track == Some(track) {
                                 let t_color = design.track_color(track);
                                 let alpha = if hover_dragging { 0x32 } else { 0x12 };
@@ -141,7 +146,7 @@ impl Timeline {
                                     point(lane.left(), lane.bottom() - px(1.0)),
                                     size(lane.size.width, px(1.0)),
                                 ),
-                                rgb(design.border),
+                                rgba((design.text << 8) | 0x23),
                             ));
                         }
                     }
@@ -151,16 +156,24 @@ impl Timeline {
                             bounds,
                             viewport.grid(),
                             beats_per_bar,
-                            &design,
+                            (design.text << 8) | 0x0b,
                             window,
                         );
                     }
                     let width = f64::from(f32::from(bounds.size.width));
                     for mark in marks {
-                        let (thickness, tick_height, color) =
-                            bar_grid::mark_style(mark.kind, &design);
+                        let (thickness, tick_height, color) = if lanes {
+                            let alpha = match mark.kind {
+                                MarkKind::Bar => 0x49,
+                                MarkKind::Beat => 0x17,
+                                MarkKind::Subdivision => 0x0a,
+                            };
+                            (1.0, 0.0, (design.text << 8) | alpha)
+                        } else {
+                            bar_grid::mark_style(mark.kind, &design)
+                        };
                         let x = bounds.left() + px(viewport.x_at(mark.beat).round() as f32);
-                        let height = if area == TimelineArea::Lanes {
+                        let height = if lanes {
                             bounds.size.height
                         } else {
                             px(tick_height)

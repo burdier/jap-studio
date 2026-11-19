@@ -402,24 +402,18 @@ impl DawApp {
         let hovered = self.timeline.hover_track() == Some(i);
         let drag_glow = hovered && self.timeline.hover_dragging();
         // El color de pista identifica la cabecera sin colorear todos sus controles.
-        let track_tint = if self
-            .ds
-            .track_color_override
-            .get(i)
-            .copied()
-            .flatten()
-            .is_some()
-        {
-            let base = if selected {
-                ds.selection_background()
-            } else if hovered {
-                ds.panel_hover
-            } else {
-                ds.panel
-            };
-            Some(blend_color(base, color, 10))
+        let header = ds.arrangement_header();
+        let base = if selected {
+            ds.arrangement_selection(header)
+        } else if hovered {
+            blend_color(header, ds.text, 8)
         } else {
-            None
+            header
+        };
+        let background = if ds.track_color_override.get(i).copied().flatten().is_some() {
+            blend_color(base, color, 10)
+        } else {
+            base
         };
         let stripe = if selected || drag_glow {
             color
@@ -440,23 +434,17 @@ impl DawApp {
                 header.pl(px(24.0))
             })
             .py(px(ds.padding_xs))
-            .bg(rgb(track_tint.unwrap_or(if selected {
-                ds.selection_background()
-            } else if hovered {
-                ds.panel_hover
-            } else {
-                ds.panel
-            })))
+            .bg(rgb(background))
             .border_b_1()
-            .border_color(rgb(ds.frame_border()))
+            .border_color(gpui::rgba((ds.text << 8) | 0x23))
             .child(
                 div()
                     .absolute()
                     .left_0()
                     .right_0()
                     .bottom_0()
-                    .h(px(2.0))
-                    .bg(rgb(ds.gutter_color())),
+                    .h(px(1.0))
+                    .bg(rgb(header)),
             )
             .child(
                 div()
