@@ -164,8 +164,8 @@ impl Timeline {
                     for mark in marks {
                         let (thickness, tick_height, color) = if lanes {
                             let alpha = match mark.kind {
-                                MarkKind::Bar => 0x49,
-                                MarkKind::Beat => 0x17,
+                                MarkKind::Bar => 0x53,
+                                MarkKind::Beat => 0x22,
                                 MarkKind::Subdivision => 0x0a,
                             };
                             (1.0, 0.0, (design.text << 8) | alpha)

@@ -418,7 +418,7 @@ impl DawApp {
         let stripe = if selected || drag_glow {
             color
         } else {
-            blend_color(ds.panel, color, 42)
+            blend_color(header, color, 62)
         };
         let mut track_box = div()
             .relative()
