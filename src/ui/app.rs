@@ -106,6 +106,7 @@ impl DawApp {
             track_revision: 0,
             selected_tracks: vec![],
             track_anchor: None,
+            bar_menu: None,
             track_menu: None,
             track_presentation: Default::default(),
             track_delete_pending: false,

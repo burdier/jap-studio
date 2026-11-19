@@ -16,6 +16,37 @@ const ICON_ACTION: &[u8] = include_bytes!("../../../assets/icons/toolbar/bolt.sv
 const ICON_LUA: &[u8] = include_bytes!("../../../assets/icons/toolbar/code.svg");
 const ICON_SEARCH: &[u8] = include_bytes!("../../../assets/icons/toolbar/word-search.svg");
 
+pub(super) fn palette_card(ds: &DesignSystem, color: u32, active: bool) -> Div {
+    div()
+        .flex()
+        .items_center()
+        .gap_2()
+        .px_2()
+        .py(px(6.0))
+        .border_1()
+        .border_color(rgb(if active { color } else { ds.border }))
+        .bg(rgb(if active { ds.panel_hover } else { ds.panel }))
+        .cursor_pointer()
+}
+
+pub(super) fn palette_icon(
+    ds: &DesignSystem,
+    icon: &'static [u8],
+    color: u32,
+    active: bool,
+) -> Div {
+    div()
+        .size(px(28.0))
+        .flex_shrink_0()
+        .flex()
+        .items_center()
+        .justify_center()
+        .border_1()
+        .border_color(rgb(if active { color } else { ds.border }))
+        .bg(rgb(ds.bg))
+        .child(render_svg_icon(icon, 15.0, color))
+}
+
 impl DawApp {
     pub(in crate::ui) fn render_palette(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let ds = &self.ds;
@@ -88,16 +119,7 @@ impl DawApp {
                         "+ Añadir"
                     };
 
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .px_2()
-                        .py(px(6.0))
-                        .border_1()
-                        .border_color(rgb(if active { kind_color } else { ds.border }))
-                        .bg(rgb(if active { ds.panel_hover } else { ds.panel }))
-                        .cursor_pointer()
+                    palette_card(ds, kind_color, active)
                         .on_mouse_move(cx.listener(move |this, _, _, cx| {
                             if this.palette.selected() != index {
                                 this.palette.select(index);
@@ -112,18 +134,7 @@ impl DawApp {
                                 cx.notify();
                             }),
                         )
-                        .child(
-                            div()
-                                .size(px(28.0))
-                                .flex_shrink_0()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .border_1()
-                                .border_color(rgb(if active { kind_color } else { ds.border }))
-                                .bg(rgb(ds.bg))
-                                .child(render_svg_icon(icon_bytes, 15.0, kind_color)),
-                        )
+                        .child(palette_icon(ds, icon_bytes, kind_color, active))
                         .child(
                             div()
                                 .flex_1()

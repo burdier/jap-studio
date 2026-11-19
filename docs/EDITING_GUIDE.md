@@ -4,6 +4,7 @@
 
 | Tarea | Archivo principal | Revisar también |
 |---|---|---|
+| Menús Archivo y Vista | `src/ui/views/menu_bar.rs` | `views/{chrome,palette}.rs`, `render.rs`; usan las tarjetas de Add y llaman a las acciones de proyecto, vista y barra existentes |
 | Ampliar panel / preferencia Vim | `src/ui/{workspace_focus,keyboard_preferences}.rs` | `views/{workspace_focus,workspace,piano_roll/mod,settings_shortcuts}.rs`, `input.rs`, `render.rs`, `detached.rs`; acciones `view.maximize` y `vim.toggle`, perfil `VIM_ENABLED`, conserva geometría y foco |
 | Spectrum insertable y vistas de análisis | `src/audio/analyzer{,/tap}.rs` | `audio/effects/plan.rs`, `devices/spectrum.rs`, `ui/fx/analyzers.rs`, `ui/spectrum.rs`, `ui/components/spectrum{,/plot}.rs`, `ui/views/fx_analyzers.rs`; mismo componente en piano y Track FX, captura acotada, sin FFT en RT |
 | Interfaz y preferencias de audio | `src/audio/{device,output,device_probe}.rs` | `audio/device/{inventory,aliases}.rs`, `ui/audio_preferences{,/commands,/profile,/probe}.rs`, `views/settings_audio.rs`, `actions/audio.rs`; `:list device`, `:use device`, IDs CPAL, PipeWire compartido, rutas por nombre/canales locales, Hz, buffer, pruebas y perfil |

@@ -156,6 +156,7 @@ struct DawApp {
     track_revision: u64,
     selected_tracks: Vec<TrackId>,
     track_anchor: Option<TrackId>,
+    bar_menu: Option<views::menu_bar::BarMenu>,
     track_menu: Option<track_menu::TrackMenu>,
     track_presentation: std::collections::HashMap<TrackId, track_layout::TrackPresentation>,
     track_delete_pending: bool,

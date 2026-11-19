@@ -3,6 +3,7 @@ use super::super::{
     CenterView, DawApp, VimMode,
     components::button::{MAMEY_LOGO_COLOR, brand_logo},
 };
+use super::menu_bar::MenuGroup;
 use gpui::{Context, IntoElement, MouseButton, SharedString, div, prelude::*, px, rgb};
 
 impl DawApp {
@@ -68,6 +69,7 @@ impl DawApp {
                             .on_mouse_down(
                                 MouseButton::Left,
                                 cx.listener(|this, _, window, cx| {
+                                    this.bar_menu = None;
                                     this.open_settings();
                                     window.focus(&this.focus_handle, cx);
                                     cx.stop_propagation();
@@ -82,6 +84,14 @@ impl DawApp {
                                     .font_weight(gpui::FontWeight::BOLD)
                                     .child("Hay"),
                             ),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .h_full()
+                            .items_center()
+                            .child(self.render_bar_button(MenuGroup::File, cx))
+                            .child(self.render_bar_button(MenuGroup::View, cx)),
                     )
                     .child(div().text_color(rgb(ds.muted)).child("/"))
                     .child(div().text_color(rgb(ds.text)).child(format!(

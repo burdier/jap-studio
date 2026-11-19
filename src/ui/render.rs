@@ -232,6 +232,10 @@ impl Render for DawApp {
             .clip_menu
             .is_some()
             .then(|| self.render_clip_menu(cx).into_any_element());
+        let bar_menu = self
+            .bar_menu
+            .is_some()
+            .then(|| self.render_bar_menu(window, cx));
         let track_menu = self
             .track_menu
             .as_ref()
@@ -277,13 +281,14 @@ impl Render for DawApp {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, _: &gpui::MouseDownEvent, window, cx| {
+                    this.bar_menu = None;
                     this.track_delete_pending = false;
                     window.focus(&this.focus_handle, cx);
                     cx.notify();
                 }),
             )
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                if this.workspace_key(event, window, cx) {
+                if this.bar_menu_key(event, window, cx) || this.workspace_key(event, window, cx) {
                     cx.stop_propagation();
                     cx.notify();
                     return;
@@ -513,6 +518,7 @@ impl Render for DawApp {
             .when_some(track_menu, |root, menu| root.child(menu))
             .when_some(track_color_menu, |root, menu| root.child(menu))
             .when_some(fx_menu, |root, menu| root.child(menu))
+            .when_some(bar_menu, |root, menu| root.child(menu))
             .when_some(palette, |root, palette| root.child(palette))
             .when_some(settings_overlay, |root, overlay| root.child(overlay))
             .when_some(icon_picker_overlay, |root, overlay| root.child(overlay))
