@@ -232,7 +232,11 @@ impl PreparedArrangementVoice {
 
     /// Continúa las colas de exportación sin leer eventos posteriores al rango elegido.
     pub fn render_tail(&mut self, output: &mut [[f32; 2]]) {
-        self.voices.render(output);
+        self.render_tail_timed(output, None);
+    }
+
+    pub fn render_tail_timed(&mut self, output: &mut [[f32; 2]], time: Option<TransportContext>) {
+        self.voices.render_timed(output, time);
         if let Some(filter) = &mut self.filter {
             filter.process(output);
         }

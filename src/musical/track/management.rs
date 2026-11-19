@@ -39,7 +39,10 @@ pub fn edit_tracks(
             });
             output.insert((cursor + 1).min(output.len()), track);
         }
-        TrackEdit::Delete => output.retain(|t| !selected.contains(&t.id)),
+        TrackEdit::Delete => {
+            output.retain(|t| !selected.contains(&t.id));
+            remap_removed_weave_steps(tracks, &mut output)?;
+        }
         TrackEdit::Duplicate => {
             let mut copies = Vec::new();
             let mut groups = Vec::new();
@@ -167,4 +170,43 @@ pub fn edit_tracks(
         .collect();
     validate_track_structure(&ordered)?;
     Ok((ordered, sources))
+}
+
+/// Una secuencia local sigue a la identidad de la rama al borrar una hija.
+fn remap_removed_weave_steps(before: &[Track], after: &mut [Track]) -> Result<(), String> {
+    for index in 0..after.len() {
+        let group = &after[index];
+        let Some(rule) = group.weave_rule.as_ref() else {
+            continue;
+        };
+        let instrument_branches = |tracks: &[Track]| {
+            tracks
+                .iter()
+                .filter(|branch| branch.parent == Some(group.id) && branch.instrument.is_some())
+                .map(|branch| branch.id)
+                .collect::<Vec<_>>()
+        };
+        let original = instrument_branches(before);
+        let surviving = instrument_branches(after);
+        if surviving.len() == original.len() {
+            continue;
+        }
+        let steps = rule
+            .steps()
+            .iter()
+            .filter_map(|&step| {
+                let id = original.get(usize::from(step))?;
+                surviving
+                    .iter()
+                    .position(|branch| branch == id)
+                    .map(|position| position as u8)
+            })
+            .collect::<Vec<_>>();
+        after[index].weave_rule = if steps.is_empty() {
+            None
+        } else {
+            Some(super::super::weave::WeaveRule::new(steps)?)
+        };
+    }
+    Ok(())
 }

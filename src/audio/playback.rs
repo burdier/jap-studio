@@ -24,10 +24,13 @@ use std::sync::{
 };
 use transport::{Cursor, Request, beat_frame, loop_frames};
 
+const MAX_TRACKS: usize = 256;
+
 struct PlaybackState {
     request: Publication<Request>,
     applied_request: AtomicU64,
     tracks: Vec<Arc<TrackControl>>,
+    retire: Publication<[bool; MAX_TRACKS]>,
     drums: Option<Arc<AtomicU32>>,
     utility: UtilitySlot,
     position: AtomicU64,
@@ -39,7 +42,6 @@ pub(crate) struct Player {
     stream: Option<cpal::Stream>,
     vsts: Vec<Arc<super::vst3::SharedInstrument>>,
     live_midi: Mutex<Producer<(InstrumentId, MidiMessage)>>,
-    instruments: Vec<InstrumentId>,
     all_off: Arc<AtomicBool>,
     state: Arc<PlaybackState>,
     pub sample_rate: u32,
@@ -84,7 +86,6 @@ impl PreparedPlayback {
     ) -> Result<Player, String> {
         let Self { device, setup, mix } = self;
         let vsts = mix.vsts.clone();
-        let instruments = mix.instrument_ids();
         let (live_midi, live_rx) = RingBuffer::new(512);
         let all_off = Arc::new(AtomicBool::new(false));
         let beats_per_second = Tempo::new(bpm)
@@ -100,6 +101,7 @@ impl PreparedPlayback {
             request: Publication::new(request),
             applied_request: AtomicU64::new(0),
             tracks: mix.tracks.iter().map(|t| t.control.clone()).collect(),
+            retire: Publication::new([false; MAX_TRACKS]),
             drums: mix.drum_control(),
             utility,
             position: AtomicU64::new(start),
@@ -164,7 +166,6 @@ impl PreparedPlayback {
             stream: Some(stream),
             vsts,
             live_midi: Mutex::new(live_midi),
-            instruments,
             all_off,
             state,
             sample_rate: rate,
@@ -186,7 +187,21 @@ impl Drop for Player {
 
 impl Player {
     pub fn has_instrument(&self, id: InstrumentId) -> bool {
-        self.instruments.contains(&id)
+        self.state.retire.read(|retired| {
+            self.state
+                .tracks
+                .iter()
+                .zip(retired)
+                .any(|(track, retired)| !*retired && track.instrument == Some(id))
+        })
+    }
+    /// Publica en bloque las ramas retiradas. El audio conserva sus recursos hasta Stop.
+    pub fn retire_tracks(&self, ids: &[TrackId]) {
+        let mut retired = self.state.retire.read(|mask| *mask);
+        for (track, removed) in self.state.tracks.iter().zip(&mut retired) {
+            *removed |= ids.contains(&track.id);
+        }
+        self.state.retire.publish(retired);
     }
     pub fn send_live_midi(&self, id: InstrumentId, message: MidiMessage) -> bool {
         if !self.has_instrument(id) {
@@ -239,6 +254,8 @@ impl Player {
                     let request = state.request.read(|r| *r);
                     let mut block = [[0.0_f32; 2]; 256];
                     for output_block in output.chunks_mut(256 * channels) {
+                        let retire = state.retire.read(|mask| *mask);
+                        let tail = mix.begin_retirements(&retire);
                         for _ in 0..512 {
                             let Ok((id, message)) = live_midi.pop() else {
                                 break;
@@ -249,9 +266,12 @@ impl Player {
                             mix.all_live_notes_off();
                         }
                         let count = output_block.len() / channels;
-                        cursor.render(request, &mut block[..count], |at, frames| {
-                            mix.render_timed(at, frames, request.loop_range)
-                        });
+                        cursor.render_with_tail(
+                            request,
+                            tail,
+                            &mut block[..count],
+                            |at, frames| mix.render_timed(at, frames, request.loop_range),
+                        );
                         utility.process(&mut block[..count]);
                         super::output::write_stereo(output_block, &block[..count], channels, first);
                     }

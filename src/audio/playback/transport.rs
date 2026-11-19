@@ -29,9 +29,19 @@ impl Cursor {
     pub fn finished(&self) -> bool {
         !self.clock.is_playing()
     }
+    #[cfg(test)]
     pub fn render(
         &mut self,
         request: Request,
+        output: &mut [StereoFrame],
+        source: impl FnMut(u64, &mut [StereoFrame]),
+    ) {
+        self.render_with_tail(request, 0, output, source);
+    }
+    pub fn render_with_tail(
+        &mut self,
+        request: Request,
+        tail_frames: u64,
         output: &mut [StereoFrame],
         mut source: impl FnMut(u64, &mut [StereoFrame]),
     ) {
@@ -40,6 +50,7 @@ impl Cursor {
             self.clock.play();
             self.generation = request.generation;
         }
+        let end = self.end.max(self.clock.frame().saturating_add(tail_frames));
         let mut written = 0;
         while written < output.len() {
             let limit = if let Some((start, end)) = request.loop_range {
@@ -49,7 +60,7 @@ impl Cursor {
                 }
                 end
             } else {
-                self.end
+                end
             };
             if self.clock.frame() >= limit {
                 self.clock.stop();
@@ -144,6 +155,18 @@ mod tests {
         one.render(tiny, &mut a, paint);
         assert!(a.iter().all(|f| f[0] == 5.));
     }
+    #[test]
+    fn a_draining_branch_can_finish_after_the_arrangement_ends() {
+        let mut cursor = Cursor::new(6, 8);
+        let mut block = [[0.; 2]; 4];
+        cursor.render_with_tail(Request::default(), 6, &mut block, paint);
+        assert_eq!(block.map(|f| f[0]), [6., 7., 8., 9.]);
+        assert!(!cursor.finished());
+        cursor.render_with_tail(Request::default(), 2, &mut block, paint);
+        assert_eq!(block.map(|f| f[0]), [10., 11., 0., 0.]);
+        assert!(cursor.finished());
+    }
+
     #[test]
     fn seek_is_consumed_once_and_loop_changes_do_not_replay_the_last_seek() {
         let mut cursor = Cursor::new(0, 30);

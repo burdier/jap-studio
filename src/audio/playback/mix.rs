@@ -1,4 +1,7 @@
 //! Suma por pista y master: recursos preparados y trabajo acotado por bloque.
+mod retirement;
+use retirement::Retirement;
+
 use super::super::drums::{DrumInput, PreparedDrums};
 use super::super::piano::{PreparedArrangementVoice, VoiceSource};
 use super::super::vst3::TransportContext;
@@ -42,6 +45,7 @@ pub(crate) struct TrackInput {
 }
 pub(super) struct TrackControl {
     pub id: TrackId,
+    pub instrument: Option<InstrumentId>,
     pub gain: AtomicU32,
     pub pan: StereoPan,
     pub fx: super::super::fx_gain::FxGain,
@@ -49,6 +53,7 @@ pub(super) struct TrackControl {
 pub(super) struct PreparedTrack {
     sources: Vec<(ClipSource, f32)>,
     midi: Option<(PreparedMidiArrangement, PreparedArrangementVoice)>,
+    retirement: Retirement,
     pub control: Arc<TrackControl>,
     volume: Volume,
     fx: super::super::fx_gain::PreparedFxGain,
@@ -61,16 +66,32 @@ pub(super) struct Mix {
     timing: TransportContext,
 }
 impl Mix {
+    #[cfg(test)]
     pub fn instrument_ids(&self) -> Vec<InstrumentId> {
         self.tracks
             .iter()
-            .filter_map(|track| track.midi.as_ref().map(|(_, voice)| voice.id()))
+            .filter_map(|track| track.control.instrument)
             .collect()
+    }
+
+    pub fn begin_retirements(&mut self, retire: &[bool; MAX_TRACKS]) -> u64 {
+        let mut longest = 0;
+        for (track, &retire) in self.tracks.iter_mut().zip(retire) {
+            if retire
+                && track.retirement.begin(self.timing.rate)
+                && let Some((_, voice)) = &mut track.midi
+            {
+                voice.finish_input();
+            }
+            longest = longest.max(track.retirement.remaining().unwrap_or(0));
+        }
+        longest
     }
 
     pub fn live_midi(&mut self, id: InstrumentId, message: MidiMessage) {
         for track in &mut self.tracks {
-            if let Some((_, voice)) = &mut track.midi
+            if track.retirement.remaining().is_none()
+                && let Some((_, voice)) = &mut track.midi
                 && voice.id() == id
             {
                 voice.live_midi(message);
@@ -80,7 +101,9 @@ impl Mix {
     }
     pub fn all_live_notes_off(&mut self) {
         for track in &mut self.tracks {
-            if let Some((_, voice)) = &mut track.midi {
+            if track.retirement.remaining().is_none()
+                && let Some((_, voice)) = &mut track.midi
+            {
                 voice.live_midi(MidiMessage::AllNotesOff);
             }
         }
@@ -96,7 +119,7 @@ impl Mix {
         meter: Meter,
     ) -> Result<Self, String> {
         if (inputs.is_empty() && drums.is_none())
-            || inputs.len() > 256
+            || inputs.len() > MAX_TRACKS
             || inputs.iter().map(|t| t.clips.len()).sum::<usize>() > 4096
         {
             return Err("Mezcla requiere una fuente, hasta 256 pistas y 4096 clips".into());
@@ -128,6 +151,7 @@ impl Mix {
             }
             let control = Arc::new(TrackControl {
                 id: input.id,
+                instrument: input.midi.as_ref().map(|source| source.instrument),
                 gain: AtomicU32::new(input.gain.to_bits()),
                 pan: StereoPan::new(input.pan),
                 fx: super::super::fx_gain::FxGain::new(input.fx_gain),
@@ -196,6 +220,7 @@ impl Mix {
             tracks.push(PreparedTrack {
                 sources,
                 midi,
+                retirement: Retirement::default(),
                 control,
                 volume,
                 fx,
@@ -230,13 +255,20 @@ impl Mix {
             block.fill([0.; 2]);
             let at = position.saturating_add(index as u64 * 256);
             for track in &mut self.tracks {
+                let remaining = track.retirement.remaining();
+                let frames = remaining.map_or(block.len(), |tail| block.len().min(tail as usize));
+                if frames == 0 {
+                    continue;
+                }
                 let mut bus = [[0.; 2]; 256];
                 let mut scratch = [[0.; 2]; 256];
-                for (source, gain) in &track.sources {
-                    source.render(at, &mut scratch[..block.len()]);
-                    for (sum, frame) in bus.iter_mut().zip(&scratch).take(block.len()) {
-                        sum[0] += frame[0] * gain;
-                        sum[1] += frame[1] * gain;
+                if remaining.is_none() {
+                    for (source, gain) in &track.sources {
+                        source.render(at, &mut scratch[..frames]);
+                        for (sum, frame) in bus.iter_mut().zip(&scratch).take(frames) {
+                            sum[0] += frame[0] * gain;
+                            sum[1] += frame[1] * gain;
+                        }
                     }
                 }
                 let time = TransportContext {
@@ -245,8 +277,12 @@ impl Mix {
                     ..self.timing
                 };
                 if let Some((plan, voice)) = &mut track.midi {
-                    voice.render_timed(plan, at, &mut scratch[..block.len()], Some(time));
-                    for (sum, frame) in bus.iter_mut().zip(&scratch).take(block.len()) {
+                    if remaining.is_some() {
+                        voice.render_tail_timed(&mut scratch[..frames], Some(time));
+                    } else {
+                        voice.render_timed(plan, at, &mut scratch[..frames], Some(time));
+                    }
+                    for (sum, frame) in bus.iter_mut().zip(&scratch).take(frames) {
                         sum[0] += frame[0];
                         sum[1] += frame[1];
                     }
@@ -255,10 +291,11 @@ impl Mix {
                 if track.volume.gain() != gain {
                     let _ = track.volume.set_gain(gain);
                 }
-                let bus = &mut bus[..block.len()];
+                let bus = &mut bus[..frames];
                 track.fx.process_timed(&track.control.fx, bus, Some(time));
                 track.volume.process(bus);
                 track.control.pan.apply(bus);
+                track.retirement.finish_block(bus);
                 for (sum, frame) in block.iter_mut().zip(bus) {
                     sum[0] += frame[0];
                     sum[1] += frame[1];

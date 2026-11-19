@@ -713,7 +713,33 @@ fn round_robin_group_clip_alternates_audible_branches_on_play() {
     let mut second = [[0.0; 2]; 2048];
     mix.render(24_000, &mut second);
     assert!(second.iter().any(|frame| frame[1].abs() > 0.001));
-    // La primera voz puede conservar una cola de release tras su NoteOff.
+    // Retirar la voz derecha durante su nota conserva su release, sin cortar el bus común.
+    let mut removed = [false; MAX_TRACKS];
+    removed[1] = true;
+    assert_eq!(mix.begin_retirements(&removed), 480_000);
+    let mut tail = [[0.; 2]; 1024];
+    mix.render(26_048, &mut tail);
+    assert!(tail.iter().any(|frame| frame[1].abs() > 0.0001));
+    assert_eq!(mix.begin_retirements(&removed), 480_000 - 1024);
+
+    // Una vuelta del loop sigue tocando la rama izquierda. La derecha no se reactiva
+    // al llegar a su próximo NoteOn del clip ni al recibir MIDI directo.
+    mix.render(0, &mut first);
+    assert!(first.iter().any(|frame| frame[0].abs() > 0.001));
+    mix.live_midi(
+        ids[1],
+        MidiMessage::NoteOn {
+            note: 72,
+            velocity: 127,
+        },
+    );
+    let mut rest = vec![[0.; 2]; 480_000 - 1024 - first.len() + 64];
+    mix.render(24_000, &mut rest);
+    assert!(
+        rest[rest.len() - 64..]
+            .iter()
+            .all(|frame| frame[1].abs() < 1e-6)
+    );
 }
 
 #[test]

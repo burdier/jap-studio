@@ -2,6 +2,36 @@
 use super::DawApp;
 use elevate::musical::track::{Track, TrackId};
 
+/// Solo retiros de hijas: los carriles y procesadores de las pistas que quedan
+/// siguen usando el mismo snapshot que arrancó el transporte.
+fn removed_hilo_branches(
+    old: &[Track],
+    new: &[Track],
+    sources: &[Option<usize>],
+) -> Option<Vec<TrackId>> {
+    if new.len() >= old.len() || new.len() != sources.len() {
+        return None;
+    }
+    let mut next_kept = sources.iter().zip(new).peekable();
+    let mut removed = Vec::new();
+    for (index, track) in old.iter().enumerate() {
+        if next_kept
+            .peek()
+            .is_some_and(|(source, kept)| **source == Some(index) && kept.id == track.id)
+        {
+            next_kept.next();
+        } else if track
+            .parent
+            .is_some_and(|parent| new.iter().any(|p| p.id == parent && p.hilo.is_some()))
+        {
+            removed.push(track.id);
+        } else {
+            return None;
+        }
+    }
+    (next_kept.next().is_none()).then_some(removed)
+}
+
 impl DawApp {
     pub(in crate::ui) fn commit_track_plan(
         &mut self,
@@ -14,7 +44,19 @@ impl DawApp {
         select_new: bool,
         revision: Option<u64>,
     ) {
-        self.stop_all();
+        let retired = if revision.is_none()
+            && self.pattern_loop_beats.is_none()
+            && let Some(player) = &self.player
+            && !player.finished()
+            && !player.failed()
+            && let Some(removed) = removed_hilo_branches(&self.tracks, &tracks, &sources)
+        {
+            player.retire_tracks(&removed);
+            removed.len()
+        } else {
+            self.stop_all();
+            0
+        };
         if self.midi_capture.is_recording() {
             self.midi_capture.stop_recording(
                 self.session_epoch
@@ -113,8 +155,8 @@ impl DawApp {
                 track.id == *id && (track.instrument.is_some() || track.hilo.is_some())
             })
         });
-        // El borrado de una pista retira su instancia; los NoteOff pendientes ya
-        // fueron liberados por stop_all antes de publicar el nuevo plan.
+        // El mezclador conserva su voz preparada mientras procesa la cola;
+        // los recursos de audición de la pista salen de la UI aquí.
         let live_samplers: std::collections::HashSet<_> = self
             .tracks
             .iter()
@@ -165,9 +207,15 @@ impl DawApp {
         self.sync_midi_focus();
         self.apply_track_gains();
         self.track_revision = revision.unwrap_or_else(|| self.track_revision.wrapping_add(1));
-        self.status_message = format!(
-            "{} pistas · Ctrl+clic: selección múltiple · Shift+clic: rango",
-            self.tracks.len()
-        );
+        self.status_message = if retired > 0 {
+            format!(
+                "Ramas retiradas: {retired} · Play continúa · el reparto de clips se actualiza al volver a pulsar Play"
+            )
+        } else {
+            format!(
+                "{} pistas · Ctrl+clic: selección múltiple · Shift+clic: rango",
+                self.tracks.len()
+            )
+        };
     }
 }

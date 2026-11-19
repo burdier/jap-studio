@@ -126,6 +126,24 @@ mod tests {
     }
 
     #[test]
+    fn removing_a_branch_keeps_the_rule_targeting_the_other_instruments() {
+        let mut group = Track::new("Hilo", TrackKind::Group);
+        group.hilo = Some(HiloMode::RoundRobin);
+        group.weave_rule = crate::musical::weave::WeaveRule::parse_steps("1,3,2,3").unwrap();
+        let group_id = group.id;
+        let mut tracks = vec![group];
+        for n in 1..=3 {
+            let mut child = Track::new(format!("Rama {n}"), TrackKind::Synth);
+            child.parent = Some(group_id);
+            child.instrument = Some(InstrumentId(n));
+            tracks.push(child);
+        }
+        let (after, _) = edit_tracks(&tracks, &[tracks[2].id], TrackEdit::Delete, 2).unwrap();
+        assert_eq!(after[0].weave_rule.as_ref().unwrap().steps(), &[0, 1, 1]);
+        assert_eq!(after[2].id, tracks[3].id);
+    }
+
+    #[test]
     fn removing_a_required_branch_rejects_the_edit_and_preserves_the_route() {
         let mut group = Track::new("Hilo", TrackKind::Group);
         group.hilo = Some(HiloMode::Layer);

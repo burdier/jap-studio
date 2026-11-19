@@ -70,9 +70,14 @@ con el grupo seleccionado o su botón MIDI activado. Cambiar el modo libera nota
 antes de cambiar destinos. Loro guarda el modo del Hilo junto a la pista.
 
 Track FX muestra las ramas del grupo y permite seleccionar cada hija, cambiar su
-nivel y silenciarla con los controladores de pista existentes. Al quitar una rama,
-la edición estructural detiene Play y libera sus notas antes de retirar el motor;
-silenciarla mantiene su voz y cola en proceso con ganancia cero. La topología de
+nivel y silenciarla con los controladores de pista existentes. Al borrar ramas sin
+desactivar su Hilo, `track_commit` publica sus TrackId al reproductor, que aplica
+el retiro al empezar el siguiente bloque. Mantiene la voz y el rack preparados,
+libera notas y sustain y deja de leer eventos y muestras. La cola cuenta hasta diez
+segundos en frames de salida, también durante un loop, y se desvanece al final.
+Los recursos se liberan al cerrar el stream. El resto sigue con el plan de clips
+preparado, y la próxima reproducción prepara el nuevo reparto. Silenciar una pista
+mantiene su voz y cola en proceso con ganancia cero. La topología de
 un nivel de grupos no admite ciclos ni conexiones de tipo incompatible.
 
 Este recorrido reutiliza grupos y cadenas FX de sus hijas. Aún faltan

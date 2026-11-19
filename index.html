@@ -498,7 +498,7 @@
                 <li data-status="done" data-commit="bffd84f"><strong>docs(hilos): fijar identidad y tipos de rama</strong>Contrato de <a href="docs/HILOS.md">Hilos</a>: contenedor musical, instancia, puertos tipados y threads del sistema.<br><small>bffd84f · contrato documentado; implementación en los siguientes commits.</small></li>
                 <li data-status="done"><strong>feat(hilos): representar capas y serie existentes</strong>Ramas tipadas, capas y round robin preparados por frame; el NoteOff conserva su rama.<br><small>Modelo y persistencia listos; audio y UI en los siguientes commits.</small></li>
                 <li data-status="done"><strong>feat(audio): procesar y sumar ramas del Hilo</strong>Play prepara las voces por rama fuera del callback y suma sus salidas con WAV en el transporte común.<br><small>Capa audible y niveles independientes verificados; edición desde UI pendiente.</small></li>
-                <li data-status="done"><strong>feat(lua): declarar una plantilla de Hilo</strong><code>track.template.hilo</code> agrupa dos instrumentos existentes, inserta Utility por rama y activa round robin; menú y Track FX editan el mismo grupo.<br><small>Probados bypass y liberación MIDI por rama. Crear instancias desde Lua y conservar colas al retirar ramas siguen pendientes.</small></li>
+                <li data-status="done"><strong>feat(lua): declarar una plantilla de Hilo</strong><code>track.template.hilo</code> agrupa dos instrumentos existentes, inserta Utility por rama y activa round robin; menú y Track FX editan el mismo grupo.<br><small>Probados bypass y liberación MIDI por rama. Crear instancias desde Lua sigue pendiente. El retiro con cola se aborda en PR-09.</small></li>
               </ol>
             </details>
           </article>
@@ -518,10 +518,10 @@
               </ol>
             </details>
           </article>
-          <article data-pr="PR-09" data-status="progress">
-            <div class="pr-head"><span class="pr-number">PR-09</span><span class="status">En progreso</span></div>
+          <article data-pr="PR-09" data-status="done">
+            <div class="pr-head"><span class="pr-number">PR-09</span><span class="status">Completado</span></div>
             <h3>Modo Tejer</h3>
-            <p>Seleccionar instrumentos y pulsar Tejer crea el Hilo con reparto MIDI automático. Cada clip puede elegir un Hilo por nombre como salida MIDI sin moverse de carril; Play y exportación usan ese destino. Cada Hilo puede guardar su propia secuencia de ramas; una regla Lua global sigue siendo opcional. El MIDI físico conserva canal y tono para devolver NoteOff a su rama. Registro live acotado, retiro con sustain y partición estable probados; quedan identidad/expresión completa y colas.</p>
+            <p>Seleccionar instrumentos y pulsar Tejer crea el Hilo con reparto MIDI automático. Cada clip puede elegir un Hilo por nombre como salida MIDI sin moverse de carril; Play y exportación usan ese destino. Cada Hilo puede guardar su propia secuencia de ramas; una regla Lua global sigue siendo opcional. El MIDI físico conserva canal y tono para devolver NoteOff a su rama. El retiro de una rama conserva su cola sin detener el transporte. El reparto preparado de clips se renueva al volver a pulsar Play.</p>
             <div class="depends">Depende de PR-07 y 08</div>
             <details class="commit-plan">
               <summary>9 incrementos · Tejer desde la selección y reglas por Hilo</summary>
@@ -533,7 +533,7 @@
                 <li data-status="done"><strong>feat(tejer): guardar una secuencia por Hilo</strong>Menú de grupo y comando <code>hilo.rule</code> editan pasos visibles; proyecto, MIDI live, Play y exportación usan la regla de ese grupo.</li>
                 <li data-status="done"><strong>feat(tejer): completar identidad de notas y expresión de clips</strong>Registro live acotado por canal/tono, con repeticiones y retiro de rama en capas y round robin; NoteId y expresión de cada nota de clip conservan su rama.</li>
                 <li data-status="done"><strong>feat(tejer): conservar sustain y controles al cambiar ramas</strong>CC64 por canal, CC y pitch bend a las ramas, panic acotado y liberación al retirar destinos MIDI.</li>
-                <li><strong>feat(tejer): conservar colas al editar la estructura</strong>Una edición estructural detiene Play; falta un motor que retire una rama sin cortar su cola de audio.</li>
+                <li data-status="done"><strong>feat(tejer): conservar colas al retirar ramas</strong>Una hija borrada deja de leer clips y eventos mientras procesa la cola. Las demás ramas conservan el transporte.</li>
                 <li data-status="done"><strong>feat(tejer): mantener el resultado independiente del bloque</strong>A-B-C-A-B-C, notas simultáneas, expresión, controles y partición en varios tamaños comprobados en la ruta musical.</li>
               </ol>
             </details>
@@ -640,7 +640,7 @@
       </section>
 
       <footer>
-        <span>Estimación inicial total: 68–127 jornadas-persona (aprox. 14–26 semanas a tiempo completo). PR-01 a PR-07 completados; PR-08 cerrado con transformación previa a Play; PR-09 y PR-10 en progreso local. Lua en audio sigue pendiente.</span>
+        <span>Estimación inicial total: 68–127 jornadas-persona (aprox. 14–26 semanas a tiempo completo). PR-01 a PR-07 completados; PR-08 cerrado con transformación previa a Play; PR-09 cerrado y PR-10 en progreso local. Lua en audio sigue pendiente.</span>
         <a href="docs/PLAN_LUA_MULTITRACK_HILOS.md">Ver tareas y criterios completos</a>
       </footer>
     </main>

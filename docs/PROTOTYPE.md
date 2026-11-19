@@ -15,18 +15,18 @@ acotada de selección por NoteOn durante la reproducción.
 
 ## Disponible
 
-- **PR-09 en progreso:** **Tejer pistas seleccionadas** agrupa los
+- **PR-09, Tejer:** **Tejer pistas seleccionadas** agrupa los
   instrumentos elegidos y activa el reparto de notas desde la interfaz. Una
   secuencia por Hilo, editada desde su menú y representada en el documento musical, cambia
   el orden entre 2–16 ramas. Una regla Lua global cargada al abrir sigue siendo opcional. Se aplica tanto
   al MIDI en vivo como a clips del grupo preparados para Play. El archivo de
-  ejemplo y los límites están en [Tejer](TEJER.md); faltan los contratos
-  restantes de expresión/colas. La entrada
+  ejemplo y los límites están en [Tejer](TEJER.md). La entrada
   MIDI física conserva el canal para devolver NoteOff a la rama de cada pulsación,
   incluso en capas con varios canales que tocan la misma nota.
   El registro live tiene un límite de 4096 notas pendientes, libera sustain al
   retirar una rama y reanuda tras Stop o AllNotesOff si se alcanza el límite.
-  Las pruebas comprueban reparto y controles idénticos al cambiar los bloques.
+  Borrar una rama durante Play conserva su cola sin detener el resto. El
+  reparto de clips cambia al volver a pulsar Play.
   Un clip puede elegir **Salida MIDI → Hilo** desde su menú; conserva su carril
   y puede dirigirse a cualquiera de varios Hilos. El destino se guarda por
   TrackId en el documento y se aplica en Play y exportación.

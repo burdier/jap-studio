@@ -17,8 +17,8 @@ Si ya tienes un grupo, elige **Tejer · automático** en su menú; también acti
 su entrada MIDI. Sin una regla
 personalizada, el orden es A-B-C-A-B-C para tres instrumentos.
 En el menú del grupo, **Tejer · secuencia de ramas…** acepta `1,3,2` para
-repetir A-C-B. El documento musical guarda una secuencia por Hilo; la interfaz
-todavía no ofrece guardar la sesión completa en un archivo. `auto`
+repetir A-C-B. El proyecto guarda la secuencia por Hilo. Si borras una rama,
+sus pasos se eliminan y los demás siguen apuntando al mismo instrumento. `auto`
 borra la secuencia del grupo y vuelve al orden automático, salvo que se haya
 cargado una regla Lua global al iniciar. También sirve `:hilo.rule '1,3,2'`.
 
@@ -64,11 +64,20 @@ reiniciar la aplicación para cargar cambios del archivo.
 global opcional. El proyecto guarda la secuencia preparada, no el script Lua;
 no se ejecuta Lua en el callback.
 El MIDI físico sin ID empareja notas por canal y tono tanto en capas como en
-round robin; si se repiten dentro de esa pareja, usa orden inverso. NoteOff conserva la rama elegida aunque cambie
-el turno o se retire otra rama. La expresión por voz, los demás controles de
-canal y las colas al editar la estructura requieren el cierre restante de
-PR-09. Quitar una rama de los destinos MIDI durante Play envía NoteOff y deja
-procesar la voz existente; borrar la pista o cambiar su estructura detiene Play.
+round robin. Las repeticiones de la misma pareja se liberan en orden inverso.
+NoteOff conserva la rama elegida aunque cambie el turno o se retire otra rama.
+Los clips conservan la identidad y expresión de las notas en su ruta preparada.
+
+Puedes borrar durante Play una pista hija si el Hilo conserva al menos dos
+instrumentos. En el bloque de audio siguiente, esa pista deja de leer clips,
+libera las notas y el pedal, y conserva el instrumento y sus efectos para
+procesar la cola. La cola tiene un límite de diez segundos con un desvanecimiento
+al final. Stop cierra la reproducción y libera los recursos; las demás ediciones
+estructurales requieren detener el transporte.
+
+El MIDI en vivo se dirige a las ramas restantes enseguida. Los clips que ya estaban
+reproduciéndose conservan el reparto preparado: los turnos de una rama borrada
+quedan en silencio. Pulsa Stop y Play para aplicar el nuevo reparto a los clips.
 
 **Exportación:** «Exportar audio» renderiza los clips MIDI del Hilo con Hay Piano
 y Hay Sampler en sus ramas. Master suma las ramas y «archivos por pista» produce
