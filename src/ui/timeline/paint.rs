@@ -156,7 +156,8 @@ impl Timeline {
                             bounds,
                             viewport.grid(),
                             beats_per_bar,
-                            (design.text << 8) | 0x0b,
+                            // El velo alterno aporta unos pocos puntos de luminosidad.
+                            (design.text << 8) | 0x0d,
                             window,
                         );
                     }

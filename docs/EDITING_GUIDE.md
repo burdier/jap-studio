@@ -133,6 +133,7 @@
 | Editar pasos/velocity | `src/ui/pattern_editor.rs` | `src/musical/model.rs` |
 | Dibujar pasos | `src/ui/views/pattern.rs` | Controlador anterior |
 | Layout y contraste del Arrangement | `src/ui/views/arrangement.rs` | `views/tracks.rs`, `timeline/{appearance,paint}.rs`; la superficie y la selección se derivan del tema activo |
+| Fader, paneo y pico por pista | `src/ui/views/tracks/mix_controls.rs` | `views/tracks.rs`, `components/meter.rs`, `audio/playback{,/mix}.rs`: valores de mezcla compartidos, pico post-fader publicado al render sin procesar audio en la UI |
 | Track Headers configurables (TCP estilo REAPER) | `src/ui/views/tracks.rs` | `components/button.rs`, `views/settings_tracks.rs`, `design.rs`; identidad, mezcla, estado e instrumentos/FX comparten agrupación visual y opciones |
 | Estado M/S/R y audibilidad de pistas | `src/musical/track/mix.rs`, `src/ui/audio_actions.rs` | `src/musical/track.rs`, `views/tracks.rs` |
 | Workspace Arrangement + piano roll acoplado/separado | `src/ui/views/workspace.rs` | `src/ui/piano_roll/window.rs`, `views/piano_roll/` |

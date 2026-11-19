@@ -1,16 +1,14 @@
 //! Headers del Arrangement configurables estilo REAPER TCP (con perillas rotatorias o barras).
-use super::super::{
+mod mix_controls;
+pub(in crate::ui) use mix_controls::TrackControlDrag;
+
+use crate::ui::{
     DawApp,
-    components::{
-        button::{badge_tag, toggle_badge},
-        knob::{KnobSpec, rotary_knob},
-        meter::horizontal_bar,
-    },
+    components::{button::toggle_badge, meter::track_peak_meter},
     design::blend_color,
 };
 use gpui::{
-    AnyElement, Context, IntoElement, MouseButton, MouseDownEvent, Pixels, Point, div, prelude::*,
-    px, rgb,
+    AnyElement, Context, IntoElement, MouseButton, MouseDownEvent, div, prelude::*, px, rgb,
 };
 
 /// Nivel de fader (0–100) que equivale a ganancia 1.0x.
@@ -22,8 +20,8 @@ const MAX_COLS: usize = 6;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(in crate::ui) enum TcpControlStyle {
-    #[default]
     Knobs,
+    #[default]
     Bars,
 }
 
@@ -205,7 +203,7 @@ impl TrackHeaderConfig {
         let rows = match preset {
             TcpLayoutPreset::Standard => [
                 [Some(Name), Some(Type), None, None, None, None],
-                [Some(Pan), Some(Vol), Some(Pct), None, None, None],
+                [Some(Vol), Some(Pan), None, None, None, None],
                 [
                     Some(Mute),
                     Some(Solo),
@@ -242,7 +240,7 @@ impl TrackHeaderConfig {
             rows,
             hidden_mask: 0,
             preset: Some(preset),
-            control_style: TcpControlStyle::Knobs,
+            control_style: TcpControlStyle::default(),
         }
     }
 
@@ -295,7 +293,7 @@ impl TrackHeaderConfig {
             rows,
             hidden_mask: 0,
             preset: None,
-            control_style: TcpControlStyle::Knobs,
+            control_style: TcpControlStyle::default(),
         }
     }
 
@@ -332,60 +330,6 @@ impl TrackHeaderConfig {
 }
 
 impl DawApp {
-    pub(super) fn begin_track_control_drag(
-        &mut self,
-        track: usize,
-        pan: bool,
-        position: Point<Pixels>,
-    ) {
-        self.cursor_row = track;
-        let value = if pan {
-            self.track_pans.get(track)
-        } else {
-            self.track_levels.get(track)
-        };
-        if let Some(value) = value {
-            self.track_control_drag = Some((track, pan, position.y, *value, false));
-        }
-    }
-
-    pub(in crate::ui) fn update_track_control_drag(
-        &mut self,
-        position: Point<Pixels>,
-        dragging: bool,
-    ) {
-        let Some((track, pan, start_y, initial, _)) = self.track_control_drag else {
-            return;
-        };
-        if !dragging {
-            self.end_track_control_drag();
-            return;
-        }
-        let delta = f32::from(start_y - position.y);
-        let next = (initial + (delta * 0.8).round() as i32).clamp(0, 100);
-        if pan {
-            self.set_track_pan(track, next);
-        } else {
-            self.set_track_level(track, next);
-        }
-        self.track_control_drag = Some((track, pan, start_y, initial, next != initial));
-    }
-
-    pub(in crate::ui) fn end_track_control_drag(&mut self) {
-        let Some((track, pan, _, _, moved)) = self.track_control_drag.take() else {
-            return;
-        };
-        if moved {
-            return;
-        }
-        if pan {
-            let value = self.track_pans.get(track).copied().unwrap_or(50);
-            self.set_track_pan(track, (value + 5).clamp(0, 100));
-        } else if let Some(level) = self.track_levels.get(track).copied() {
-            self.set_track_level(track, level + 4);
-        }
-    }
-
     pub(super) fn render_track_header(
         &self,
         i: usize,
@@ -429,11 +373,12 @@ impl DawApp {
             .flex()
             .flex_col()
             .justify_between()
-            .px_3()
+            .pl(px(9.0))
+            .pr(px(13.0))
             .when(self.tracks[i].parent.is_some(), |header| {
-                header.pl(px(24.0))
+                header.pl(px(18.0))
             })
-            .py(px(ds.padding_xs))
+            .py(px(if height < 47.0 { 2.0 } else { 4.0 }))
             .bg(rgb(background))
             .border_b_1()
             .border_color(gpui::rgba((ds.text << 8) | 0x23))
@@ -441,20 +386,17 @@ impl DawApp {
                 div()
                     .absolute()
                     .left_0()
-                    .right_0()
-                    .bottom_0()
-                    .h(px(1.0))
-                    .bg(rgb(header)),
-            )
-            .child(
-                div()
-                    .absolute()
-                    .left_0()
                     .top_0()
-                    .bottom(px(2.0))
+                    .bottom_0()
                     .w(px(if selected { 3.0 } else { 2.0 }))
                     .bg(rgb(stripe)),
             )
+            .child(track_peak_meter(
+                ds,
+                self.player
+                    .as_ref()
+                    .map_or(0.0, |player| player.track_peak(self.tracks[i].id)),
+            ))
             .when(dragged, |header| header.opacity(0.25))
             .drag_over::<gpui::ExternalPaths>(move |style, _, _, _| {
                 style
@@ -489,39 +431,10 @@ impl DawApp {
                     cx.notify();
                 }),
             );
-        let rows = if height < 56.0 {
-            [
-                [
-                    Some(TcpWidget::Name),
-                    Some(TcpWidget::Mute),
-                    Some(TcpWidget::Solo),
-                    Some(TcpWidget::Midi),
-                    Some(TcpWidget::Add),
-                    None,
-                ],
-                [None; MAX_COLS],
-                [None; MAX_COLS],
-            ]
-        } else if height < 72.0 {
-            [
-                [
-                    Some(TcpWidget::Name),
-                    Some(TcpWidget::Type),
-                    None,
-                    None,
-                    None,
-                    None,
-                ],
-                [
-                    Some(TcpWidget::Mute),
-                    Some(TcpWidget::Solo),
-                    Some(TcpWidget::Midi),
-                    Some(TcpWidget::Rec),
-                    Some(TcpWidget::Add),
-                    None,
-                ],
-                [None; MAX_COLS],
-            ]
+        // La altura normal de 58 px admite las tres filas. Las pistas muy bajas
+        // priorizan identidad y estados sin recortar botones.
+        let rows = if height < 54.0 && cfg.preset() == Some(TcpLayoutPreset::Standard) {
+            TrackHeaderConfig::from_preset(TcpLayoutPreset::Compact).rows
         } else {
             cfg.rows
         };
@@ -537,11 +450,15 @@ impl DawApp {
                 continue;
             }
             let is_title_pair = active.as_slice() == [TcpWidget::Name, TcpWidget::Type];
-            let mut row_el = div().flex().items_center();
+            let mut row_el = div()
+                .h(px(if height < 36.0 { 13.0 } else { 15.0 }))
+                .flex()
+                .items_center()
+                .min_w_0();
             row_el = if is_title_pair {
                 row_el.justify_between()
             } else {
-                row_el.gap_2()
+                row_el.gap(px(5.0))
             };
             let mut start = 0;
             while start < active.len() {
@@ -550,17 +467,9 @@ impl DawApp {
                 while end < active.len() && active[end].group() == group {
                     end += 1;
                 }
-                let mut group_el = div().flex().items_center().gap_1();
-                if group == TcpGroup::Identity {
-                    if active[start..end].contains(&TcpWidget::Name) {
-                        group_el = group_el.flex_1().min_w_0();
-                    }
-                } else {
-                    group_el = group_el
-                        .px(px(3.0))
-                        .py(px(2.0))
-                        .rounded(px(ds.radius_sm))
-                        .bg(rgb(blend_color(ds.panel, ds.panel_dark, 35)));
+                let mut group_el = div().flex().items_center().min_w_0().gap(px(2.0));
+                if active[start..end].contains(&TcpWidget::Name) {
+                    group_el = group_el.flex_1();
                 }
                 if !is_title_pair && end == active.len() && start > 0 && group == TcpGroup::Fx {
                     group_el = group_el.ml_auto();
@@ -579,13 +488,11 @@ impl DawApp {
     fn render_tcp_widget(&self, i: usize, widget: TcpWidget, cx: &mut Context<Self>) -> AnyElement {
         let ds = &self.ds;
         let track = &self.tracks[i];
-        let color = ds.track_color(i);
         let has_audio = self
             .timeline
             .clip
             .as_ref()
             .is_some_and(|clip| clip.track == i);
-        let style = ds.track_header.control_style();
         match widget {
             TcpWidget::Name => div()
                 .flex()
@@ -621,8 +528,7 @@ impl DawApp {
                 .child(
                     div()
                         .min_w_0()
-                        .overflow_hidden()
-                        .whitespace_nowrap()
+                        .truncate()
                         .text_xs()
                         .font_weight(gpui::FontWeight::BOLD)
                         .text_color(rgb(ds.text))
@@ -655,7 +561,10 @@ impl DawApp {
                     track.kind.label().to_string()
                 };
                 let el = div()
-                    .text_xs()
+                    .max_w(px(74.0))
+                    .min_w_0()
+                    .truncate()
+                    .text_size(px(9.0))
                     .text_color(rgb(if track.instrument.is_some() {
                         blend_color(ds.muted, ds.accent, 45)
                     } else {
@@ -664,128 +573,14 @@ impl DawApp {
                     .child(label);
                 el.into_any_element()
             }
-            TcpWidget::Pan => {
-                let pan_val = self.track_pans[i];
-                let pan_frac = (pan_val as f32 / 100.0).clamp(0.0, 1.0);
-                let control = match style {
-                    TcpControlStyle::Knobs => rotary_knob(
-                        ds,
-                        KnobSpec {
-                            fraction: pan_frac,
-                            bipolar: true,
-                            color,
-                            diameter: ds.knob_size,
-                        },
-                    )
-                    .into_any_element(),
-                    TcpControlStyle::Bars => {
-                        horizontal_bar(ds, pan_frac, ds.pan_bar_width, color).into_any_element()
-                    }
-                };
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    .cursor_ns_resize()
-                    .on_scroll(cx.listener(move |this, event: &gpui::ScrollEvent, _, cx| {
-                        let delta = f32::from(event.delta.pixel_delta(px(24.0)).y);
-                        let step = if delta > 0.0 { 5 } else { -5 };
-                        let value = (this.track_pans[i] + step).clamp(0, 100);
-                        this.set_track_pan(i, value);
-                        cx.stop_propagation();
-                        cx.notify();
-                    }))
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |this, event: &MouseDownEvent, _, cx| {
-                            if this.midi_mapper.learn_mode() {
-                                this.arm_midi_learn(
-                                    elevate::musical::midi_map::MidiBindTarget::TrackPan(i),
-                                );
-                                cx.stop_propagation();
-                                cx.notify();
-                            } else {
-                                this.begin_track_control_drag(i, true, event.position);
-                                cx.stop_propagation();
-                            }
-                        }),
-                    )
-                    .on_mouse_down(
-                        MouseButton::Right,
-                        cx.listener(move |this, _, _, cx| {
-                            this.set_track_pan(i, 50);
-                            cx.stop_propagation();
-                            cx.notify();
-                        }),
-                    )
-                    .child(div().text_xs().text_color(rgb(ds.muted)).child("P"))
-                    .child(control)
-                    .into_any_element()
-            }
-            TcpWidget::Vol => {
-                let vol_frac = (self.track_levels[i] as f32 / 100.0).clamp(0.0, 1.0);
-                let control = match style {
-                    TcpControlStyle::Knobs => rotary_knob(
-                        ds,
-                        KnobSpec {
-                            fraction: vol_frac,
-                            bipolar: false,
-                            color: ds.success,
-                            diameter: ds.knob_size,
-                        },
-                    )
-                    .into_any_element(),
-                    TcpControlStyle::Bars => {
-                        horizontal_bar(ds, vol_frac, ds.vol_bar_width, ds.success)
-                            .into_any_element()
-                    }
-                };
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    .cursor_ns_resize()
-                    .on_scroll(cx.listener(move |this, event: &gpui::ScrollEvent, _, cx| {
-                        let delta = f32::from(event.delta.pixel_delta(px(24.0)).y);
-                        let step = if delta > 0.0 { 4 } else { -4 };
-                        this.set_track_level(i, this.track_levels[i] + step);
-                        this.status_message =
-                            format!("{}: {}%", this.tracks[i].name, this.track_levels[i]);
-                        cx.stop_propagation();
-                        cx.notify();
-                    }))
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |this, event: &MouseDownEvent, _, cx| {
-                            if this.midi_mapper.learn_mode() {
-                                this.arm_midi_learn(
-                                    elevate::musical::midi_map::MidiBindTarget::TrackVolume(i),
-                                );
-                                cx.stop_propagation();
-                                cx.notify();
-                            } else {
-                                this.begin_track_control_drag(i, false, event.position);
-                                cx.stop_propagation();
-                            }
-                        }),
-                    )
-                    .on_mouse_down(
-                        MouseButton::Right,
-                        cx.listener(move |this, _, _, cx| {
-                            this.set_track_level(i, TRACK_UNITY_LEVEL);
-                            cx.stop_propagation();
-                            cx.notify();
-                        }),
-                    )
-                    .child(div().text_xs().text_color(rgb(ds.muted)).child("V"))
-                    .child(control)
-                    .into_any_element()
-            }
+            TcpWidget::Pan => self.render_track_mix_control(i, true, cx),
+            TcpWidget::Vol => self.render_track_mix_control(i, false, cx),
             TcpWidget::Pct => {
                 let volume_percent = self.track_levels[i];
                 div()
                     .text_xs()
                     .text_color(rgb(ds.muted))
+                    .font_family("monospace")
                     .child(format!("{volume_percent}%"))
                     .into_any_element()
             }
@@ -838,34 +633,36 @@ impl DawApp {
             )
             .into_any_element(),
             TcpWidget::Add => {
-                let add = badge_tag(ds, "[+]", ds.accent)
-                    .cursor_pointer()
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |this, _, _, cx| {
-                            this.open_palette_for_track(i);
-                            cx.stop_propagation();
-                            cx.notify();
-                        }),
-                    );
+                let add = toggle_badge(ds, "+", false, ds.accent).on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, _, _, cx| {
+                        this.open_palette_for_track(i);
+                        cx.stop_propagation();
+                        cx.notify();
+                    }),
+                );
                 div()
                     .flex()
                     .items_center()
-                    .gap_1()
+                    .gap(px(2.0))
                     .child(add)
                     .child(
-                        badge_tag(ds, "FX", ds.muted)
-                            .cursor_pointer()
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(move |this, _, window, cx| {
-                                    this.select_track(i, false, false);
-                                    this.show_fx();
-                                    window.focus(&this.fx.view.read(cx).focus.clone(), cx);
-                                    cx.stop_propagation();
-                                    cx.notify();
-                                }),
-                            ),
+                        toggle_badge(
+                            ds,
+                            "FX",
+                            i == self.cursor_row && self.fx.width > 0.0,
+                            ds.cyan,
+                        )
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, _, window, cx| {
+                                this.select_track(i, false, false);
+                                this.show_fx();
+                                window.focus(&this.fx.view.read(cx).focus.clone(), cx);
+                                cx.stop_propagation();
+                                cx.notify();
+                            }),
+                        ),
                     )
                     .into_any_element()
             }

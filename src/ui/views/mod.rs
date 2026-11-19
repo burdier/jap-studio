@@ -44,10 +44,7 @@ impl DawApp {
         }
         let ds = &self.ds;
         let (label, help) = match self.center_view {
-            CenterView::Arrangement => (
-                "ARRANGEMENT",
-                "Touchpad: 2 dedos desplazar · pellizcar zoom | Ctrl+rueda: zoom",
-            ),
+            CenterView::Arrangement => ("ARRANGEMENT", ""),
             CenterView::Session => (
                 "PATTERN / PROTOTIPO",
                 "Click/Enter: nota | rueda: velocity | Space: play/stop",
@@ -80,7 +77,9 @@ impl DawApp {
                             .flex()
                             .items_center()
                             .gap_2()
-                            .child(div().text_xs().text_color(rgb(ds.muted)).child(help))
+                            .when(!help.is_empty(), |strip| {
+                                strip.child(div().text_xs().text_color(rgb(ds.muted)).child(help))
+                            })
                             .child(self.workspace_zoom_button(cx)),
                     ),
             )

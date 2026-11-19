@@ -67,13 +67,7 @@ impl DawApp {
                             .rounded_tl(px(ds.radius_lg))
                             .border_1()
                             .border_color(rgb(ds.frame_border()))
-                            .child(div().text_xs().text_color(rgb(ds.muted)).child("TRACK"))
-                            .child(
-                                div()
-                                    .text_size(px(9.0))
-                                    .text_color(rgb(ds.muted))
-                                    .child(format!("{:.0}px", ds.track_header_width)),
-                            ),
+                            .child(div().text_xs().text_color(rgb(ds.muted)).child("TRACK")),
                     )
                     .child(div().w(px(7.0)).h_full().flex_shrink_0().bg(rgb(ds.gutter_color())))
                     .child(

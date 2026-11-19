@@ -1,9 +1,10 @@
 //! Iconos asignados a las barras: ejecución y acceso al selector.
 use crate::ui::{
     DawApp,
+    components::button::flat_control,
     icons::{ToolbarAction, ToolbarScope, render_svg_icon, toolbar_icon_button},
 };
-use gpui::{Context, Div, MouseButton, div, prelude::*, px, rgb};
+use gpui::{Context, Div, MouseButton, component::tooltip::Tooltip, div, prelude::*, px, rgb};
 
 impl DawApp {
     pub(in crate::ui) fn render_toolbar_bound_buttons(
@@ -30,6 +31,12 @@ impl DawApp {
             .flex()
             .items_center()
             .px_1()
+            .when(scope == ToolbarScope::Transport, |strip| {
+                strip
+                    .h(px(ds.transport_btn_size + 4.0))
+                    .bg(rgb(ds.panel_dark))
+                    .rounded(px(ds.radius_md))
+            })
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(move |this, _, window, cx| {
@@ -50,7 +57,7 @@ impl DawApp {
                     .h_full()
                     .flex()
                     .items_center()
-                    .gap(px(4.0))
+                    .gap(px(2.0))
                     .overflow_x_scroll()
                     .children(list.iter().enumerate().map(|(idx, bound)| {
                         let icon = self.toolbar_icons.icon_by_id(&bound.icon_id);
@@ -62,15 +69,23 @@ impl DawApp {
                                 matches!(command.trim().trim_start_matches(':'), "midi" | "kbd")
                             },
                         );
-                        let active = controller && self.controller.enabled();
+                        let active = (controller && self.controller.enabled())
+                            || (command.is_none()
+                                && action == ToolbarAction::Catalog("action.vim.toggle")
+                                && self.vim_enabled);
                         let tag = if controller {
-                            if active { "MIDI ON" } else { "MIDI OFF" }
+                            if self.controller.enabled() {
+                                "MIDI ON"
+                            } else {
+                                "MIDI OFF"
+                            }
                         } else {
                             bound
                                 .custom_command
                                 .as_deref()
                                 .unwrap_or(action.short_tag())
                         };
+                        let hint = command.clone().unwrap_or_else(|| action.label().into());
                         toolbar_icon_button(
                             ds,
                             icon.svg_bytes,
@@ -79,6 +94,8 @@ impl DawApp {
                             compact,
                             active,
                         )
+                        .id(("bound-toolbar-action", idx))
+                        .tooltip(move |window, cx| Tooltip::new(hint.clone()).build(window, cx))
                         .on_mouse_down(
                             MouseButton::Left,
                             cx.listener(move |this, _, window, cx| {
@@ -109,17 +126,12 @@ impl DawApp {
                         )
                     }))
                     .child(
-                        div()
+                        flat_control(ds, false, ds.accent)
                             .size(px(add_size))
-                            .flex_shrink_0()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .cursor_pointer()
-                            .bg(rgb(ds.panel_dark))
-                            .border_1()
-                            .border_color(rgb(ds.border))
-                            .rounded(px(ds.radius_sm))
+                            .id("add-toolbar-action")
+                            .tooltip(|window, cx| {
+                                Tooltip::new("Añadir herramienta").build(window, cx)
+                            })
                             .child(render_svg_icon(
                                 include_bytes!("../../../assets/icons/toolbar/plus.svg"),
                                 if compact { 13.0 } else { 14.0 },

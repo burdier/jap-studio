@@ -68,7 +68,7 @@ use elevate::musical::{
     midi_map::MidiMapper,
     track::{Track, TrackId},
 };
-use gpui::{FocusHandle, Pixels, ScrollHandle, WindowHandle};
+use gpui::{FocusHandle, ScrollHandle, WindowHandle};
 use palette::Palette;
 use pattern_editor::PatternEditor;
 use piano_roll::PianoRoll;
@@ -162,7 +162,7 @@ struct DawApp {
     track_delete_pending: bool,
     track_levels: Vec<i32>,
     track_pans: Vec<i32>,
-    track_control_drag: Option<(usize, bool, Pixels, i32, bool)>,
+    track_control_drag: Option<views::tracks::TrackControlDrag>,
     track_reorder_drag: Option<track_drag::TrackReorderDrag>,
     track_scroll: ScrollHandle,
     mode: VimMode,

@@ -452,14 +452,14 @@ impl Render for DawApp {
                     let tempo_dragged = this.end_tempo_drag(window, cx);
                     let track_dragged = this.track_reorder_drag.is_some();
                     this.finish_track_reorder_drag(event.position);
-                    this.end_track_control_drag();
+                    let control_dragged = this.end_track_control_drag();
                     this.finish_sample_drag(cx);
                     this.piano_ui.drag = None;
                     this.release_mouse_note();
                     this.release_chord_audition();
                     this.timeline.end_clip_drag();
                     let split_dragged = this.split_drag.take().is_some();
-                    if tempo_dragged || track_dragged || split_dragged {
+                    if tempo_dragged || track_dragged || split_dragged || control_dragged {
                         cx.notify();
                     }
                 }),
@@ -470,14 +470,14 @@ impl Render for DawApp {
                     let tempo_dragged = this.end_tempo_drag(window, cx);
                     let track_dragged = this.track_reorder_drag.is_some();
                     this.finish_track_reorder_drag(event.position);
-                    this.end_track_control_drag();
+                    let control_dragged = this.end_track_control_drag();
                     this.finish_sample_drag(cx);
                     this.piano_ui.drag = None;
                     this.release_mouse_note();
                     this.release_chord_audition();
                     this.timeline.end_clip_drag();
                     let split_dragged = this.split_drag.take().is_some();
-                    if tempo_dragged || track_dragged || split_dragged {
+                    if tempo_dragged || track_dragged || split_dragged || control_dragged {
                         cx.notify();
                     }
                 }),

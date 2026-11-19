@@ -1,5 +1,5 @@
 //! Botones, píldoras (pills) y etiquetas (badges) reutilizables para toda la UI.
-use crate::ui::DesignSystem;
+use crate::ui::{DesignSystem, design::blend_color};
 use gpui::{Div, SharedString, Svg, div, prelude::*, px, rgb, svg};
 
 pub(in crate::ui) const MAMEY_LOGO_COLOR: u32 = 0xff6b35;
@@ -11,27 +11,6 @@ pub(in crate::ui) fn brand_logo(size_px: f32) -> Svg {
         .data(HAY_LOGO_SVG)
         .size(px(size_px))
         .text_color(rgb(MAMEY_LOGO_COLOR))
-}
-
-/// Botón cuadrado de icono (usado en transporte y controles de incremento).
-pub(in crate::ui) fn icon_button(
-    ds: &DesignSystem,
-    icon: impl Into<SharedString>,
-    color: u32,
-) -> Div {
-    div()
-        .w(px(ds.transport_btn_size))
-        .h(px(ds.transport_btn_size))
-        .flex()
-        .items_center()
-        .justify_center()
-        .bg(rgb(ds.panel_dark))
-        .border_1()
-        .border_color(rgb(ds.border))
-        .rounded(px(ds.radius_sm))
-        .text_color(rgb(color))
-        .cursor_pointer()
-        .child(icon.into())
 }
 
 /// Botón tipo píldora con estado activo/inactivo (para toggles de barra, bancos, acciones).
@@ -93,25 +72,40 @@ pub(in crate::ui) fn badge_tag(
         .child(label.into())
 }
 
+/// Superficie mate para controles densos, con indicación de estado por relleno.
+pub(in crate::ui) fn flat_control(ds: &DesignSystem, active: bool, color: u32) -> Div {
+    let rest = if active {
+        blend_color(ds.panel_dark, color, 24)
+    } else {
+        ds.panel_dark
+    };
+    let hover = if active {
+        blend_color(ds.panel_hover, color, 30)
+    } else {
+        ds.panel_hover
+    };
+    div()
+        .flex()
+        .items_center()
+        .justify_center()
+        .flex_shrink_0()
+        .rounded(px(ds.radius_sm))
+        .bg(rgb(rest))
+        .hover(move |style| style.bg(rgb(hover)))
+        .cursor_pointer()
+}
+
 pub(in crate::ui) fn toggle_badge(
     ds: &DesignSystem,
     label: impl Into<SharedString>,
     active: bool,
     color: u32,
 ) -> Div {
-    div()
-        .w(px(22.0))
-        .h(px(18.0))
-        .flex()
-        .items_center()
-        .justify_center()
-        .px_1()
-        .rounded(px(ds.radius_sm))
-        .bg(rgb(if active { color } else { ds.panel }))
-        .text_xs()
-        .text_color(rgb(if active { ds.panel_dark } else { ds.muted }))
-        .when(active, |button| button.border_1().border_color(rgb(color)))
-        .text_size(px(11.0))
-        .cursor_pointer()
+    flat_control(ds, active, color)
+        .min_w(px(16.0))
+        .h(px(14.0))
+        .px(px(3.0))
+        .text_color(rgb(if active { color } else { ds.muted }))
+        .text_size(px(10.0))
         .child(label.into())
 }

@@ -1,9 +1,5 @@
 //! Barra principal (transporte, display LCD de tiempo/tempo/compás, iconos y salida Utility).
-use super::super::{
-    DawApp, DesignSystem,
-    components::button::{icon_button, pill_button},
-    icons::ToolbarScope,
-};
+use super::super::{DawApp, DesignSystem, components::button::flat_control, icons::ToolbarScope};
 use gpui::{
     Context, CursorStyle, Div, FontWeight, IntoElement, MouseButton, MouseDownEvent, ScrollEvent,
     SharedString, div, prelude::*, px, rgb,
@@ -18,9 +14,8 @@ impl DawApp {
             .flex_shrink_0()
             .flex()
             .items_center()
-            .justify_between()
-            .gap_2()
-            .px_3()
+            .gap(px(6.0))
+            .px(px(6.0))
             .bg(rgb(ds.panel))
             .rounded(px(ds.radius_lg))
             .border_1()
@@ -30,22 +25,12 @@ impl DawApp {
                     .flex_shrink_0()
                     .flex()
                     .items_center()
-                    .gap_2()
+                    .gap(px(5.0))
                     .child(self.render_transport_cluster(cx))
-                    .child(bar_separator(ds.border))
-                    .child(self.render_timing_lcd(cx))
-                    .child(bar_separator(ds.border)),
+                    .child(self.render_timing_lcd(cx)),
             )
             .child(self.render_toolbar_bound_buttons(ToolbarScope::Transport, false, cx))
-            .child(
-                div()
-                    .flex_shrink_0()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .child(bar_separator(ds.border))
-                    .child(self.render_utility_capsule(cx)),
-            )
+            .child(self.render_utility_capsule(cx))
     }
 
     fn render_transport_cluster(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
@@ -104,7 +89,6 @@ impl DawApp {
                         }),
                     ),
             )
-            .child(inner_divider(ds.border))
             .child(
                 capsule_toggle(ds, "↻ Loop", self.audio_loop.is_some(), ds.accent, btn_h)
                     .on_mouse_down(
@@ -238,7 +222,6 @@ impl DawApp {
             .px(px(6.0))
             .gap(px(5.0))
             .child(pos_readout)
-            .child(inner_divider(ds.border))
             .child(lcd_step_button(ds, "−").on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, ev: &MouseDownEvent, _, cx| {
@@ -256,7 +239,6 @@ impl DawApp {
                     cx.notify();
                 }),
             ))
-            .child(inner_divider(ds.border))
             .child(meter_readout)
     }
 
@@ -331,7 +313,6 @@ impl DawApp {
                     cx.notify();
                 }),
             ))
-            .child(inner_divider(ds.border))
             .child(
                 capsule_toggle(ds, fx_label, false, fx_color, 20.0)
                     .px(px(5.0))
@@ -356,19 +337,16 @@ fn capsule_frame(ds: &DesignSystem) -> Div {
         .items_center()
         .gap(px(3.0))
         .bg(rgb(ds.panel_dark))
-        .border_1()
-        .border_color(rgb(ds.border))
         .rounded(px(ds.radius_md))
 }
 
 fn transport_action_btn(ds: &DesignSystem, icon: &'static str, on: bool, c: u32, sz: f32) -> Div {
-    icon_button(ds, icon, if on { ds.bg } else { c })
+    flat_control(ds, on, c)
         .w(px(sz))
         .h(px(sz))
-        .flex_shrink_0()
-        .bg(rgb(if on { c } else { ds.panel }))
-        .border_color(rgb(if on { c } else { ds.border }))
         .text_size(px(12.0))
+        .text_color(rgb(c))
+        .child(icon)
 }
 
 fn capsule_toggle(
@@ -378,7 +356,7 @@ fn capsule_toggle(
     color: u32,
     height: f32,
 ) -> Div {
-    pill_button(ds, label, active, color)
+    flat_control(ds, active, color)
         .h(px(height))
         .py_0()
         .px(px(7.0))
@@ -388,15 +366,17 @@ fn capsule_toggle(
         .rounded(px(ds.radius_sm))
         .text_size(px(10.5))
         .font_weight(FontWeight::BOLD)
+        .text_color(rgb(color))
+        .child(label.into())
 }
 
 fn lcd_step_button(ds: &DesignSystem, symbol: &'static str) -> Div {
-    icon_button(ds, symbol, ds.text)
-        .w(px(18.0))
-        .h(px(20.0))
-        .flex_shrink_0()
-        .bg(rgb(ds.panel))
+    flat_control(ds, false, ds.text)
+        .w(px(17.0))
+        .h(px(19.0))
+        .text_color(rgb(ds.text))
         .text_size(px(11.0))
+        .child(symbol.to_owned())
 }
 
 fn lcd_unit(ds: &DesignSystem, text: &'static str) -> Div {
@@ -408,22 +388,10 @@ fn lcd_unit(ds: &DesignSystem, text: &'static str) -> Div {
 
 fn lcd_value(color: u32, min_w: f32, text: impl Into<SharedString>) -> Div {
     div()
+        .font_family("monospace")
         .min_w(px(min_w))
         .text_size(px(11.5))
         .font_weight(FontWeight::BOLD)
         .text_color(rgb(color))
         .child(text.into())
-}
-
-fn inner_divider(color: u32) -> Div {
-    div()
-        .w(px(1.0))
-        .h(px(16.0))
-        .mx(px(2.0))
-        .flex_shrink_0()
-        .bg(rgb(color))
-}
-
-fn bar_separator(color: u32) -> Div {
-    div().w(px(1.0)).h(px(22.0)).flex_shrink_0().bg(rgb(color))
 }
