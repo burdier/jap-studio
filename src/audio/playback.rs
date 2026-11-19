@@ -18,6 +18,7 @@ use elevate::{Primitive, ProcessSpec, primitives::amplitude::Volume};
 pub(crate) use mix::{HiloBranchInput, MidiTrackInput, TrackInput};
 use mix::{Mix, TrackControl};
 use rtrb::{Producer, RingBuffer};
+use std::collections::HashMap;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
@@ -44,6 +45,7 @@ pub(crate) struct Player {
     live_midi: Mutex<Producer<(InstrumentId, MidiMessage)>>,
     all_off: Arc<AtomicBool>,
     state: Arc<PlaybackState>,
+    track_indices: HashMap<TrackId, usize>,
     pub sample_rate: u32,
     beats_per_second: f64,
     request: Request,
@@ -86,6 +88,12 @@ impl PreparedPlayback {
     ) -> Result<Player, String> {
         let Self { device, setup, mix } = self;
         let vsts = mix.vsts.clone();
+        let track_indices = mix
+            .tracks
+            .iter()
+            .enumerate()
+            .map(|(index, track)| (track.control.id, index))
+            .collect();
         let (live_midi, live_rx) = RingBuffer::new(512);
         let all_off = Arc::new(AtomicBool::new(false));
         let beats_per_second = Tempo::new(bpm)
@@ -168,6 +176,7 @@ impl PreparedPlayback {
             live_midi: Mutex::new(live_midi),
             all_off,
             state,
+            track_indices,
             sample_rate: rate,
             beats_per_second,
             request,
@@ -304,24 +313,37 @@ impl Player {
         self.state.request.publish(self.request);
         Ok(())
     }
+    fn track_control(&self, track: TrackId) -> Option<&TrackControl> {
+        self.track_indices
+            .get(&track)
+            .map(|&index| self.state.tracks[index].as_ref())
+    }
+
+    /// Pico real del bus tras FX, fader y paneo, antes de sumar al master.
+    pub fn track_peak(&self, track: TrackId) -> f32 {
+        self.track_control(track).map_or(0.0, |control| {
+            f32::from_bits(control.peak.load(Ordering::Relaxed))
+        })
+    }
+
     pub fn set_fx_rack(&self, track: TrackId, rack: Option<Arc<super::effects::Rack>>) {
-        if let Some(t) = self.state.tracks.iter().find(|t| t.id == track) {
+        if let Some(t) = self.track_control(track) {
             t.fx.set_rack(rack, self.sample_rate);
         }
     }
     pub fn set_fx_gain(&self, track: TrackId, gain: f32) {
-        if let Some(t) = self.state.tracks.iter().find(|t| t.id == track) {
+        if let Some(t) = self.track_control(track) {
             t.fx.set(gain);
         }
     }
     pub fn set_gain(&self, track: TrackId, gain: f32) {
-        if let Some(t) = self.state.tracks.iter().find(|t| t.id == track) {
+        if let Some(t) = self.track_control(track) {
             t.gain
                 .store(gain.clamp(0., 2.).to_bits(), Ordering::Relaxed);
         }
     }
     pub fn set_pan(&self, track: TrackId, pan: f32) {
-        if let Some(t) = self.state.tracks.iter().find(|t| t.id == track) {
+        if let Some(t) = self.track_control(track) {
             t.pan.set(pan);
         }
     }

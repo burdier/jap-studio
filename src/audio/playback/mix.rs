@@ -47,6 +47,7 @@ pub(super) struct TrackControl {
     pub id: TrackId,
     pub instrument: Option<InstrumentId>,
     pub gain: AtomicU32,
+    pub peak: AtomicU32,
     pub pan: StereoPan,
     pub fx: super::super::fx_gain::FxGain,
 }
@@ -64,6 +65,7 @@ pub(super) struct Mix {
     drums: Option<PreparedDrums>,
     pub end: u64,
     timing: TransportContext,
+    peak_decay: f32,
 }
 impl Mix {
     #[cfg(test)]
@@ -153,6 +155,7 @@ impl Mix {
                 id: input.id,
                 instrument: input.midi.as_ref().map(|source| source.instrument),
                 gain: AtomicU32::new(input.gain.to_bits()),
+                peak: AtomicU32::new(0),
                 pan: StereoPan::new(input.pan),
                 fx: super::super::fx_gain::FxGain::new(input.fx_gain),
             });
@@ -238,6 +241,7 @@ impl Mix {
             drums,
             end,
             timing,
+            peak_decay: 1.0 / (0.24 * rate as f32),
         })
     }
     /// Sobrescribe sin limitar amplitud; protección solo al escribir el master físico.
@@ -258,6 +262,7 @@ impl Mix {
                 let remaining = track.retirement.remaining();
                 let frames = remaining.map_or(block.len(), |tail| block.len().min(tail as usize));
                 if frames == 0 {
+                    track.control.peak.store(0, Ordering::Relaxed);
                     continue;
                 }
                 let mut bus = [[0.; 2]; 256];
@@ -296,10 +301,18 @@ impl Mix {
                 track.volume.process(bus);
                 track.control.pan.apply(bus);
                 track.retirement.finish_block(bus);
+                let mut peak = 0.0_f32;
                 for (sum, frame) in block.iter_mut().zip(bus) {
                     sum[0] += frame[0];
                     sum[1] += frame[1];
+                    peak = peak.max(frame[0].abs()).max(frame[1].abs());
                 }
+                let previous = f32::from_bits(track.control.peak.load(Ordering::Relaxed));
+                let decay = (1.0 - self.peak_decay * frames as f32).max(0.0);
+                track
+                    .control
+                    .peak
+                    .store(peak.max(previous * decay).to_bits(), Ordering::Relaxed);
             }
             if let Some(drums) = &mut self.drums {
                 drums.render(at, block);

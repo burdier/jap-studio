@@ -36,6 +36,31 @@ fn track(id: u32, clips: Vec<AudioClip>) -> TrackInput {
     }
 }
 #[test]
+fn track_meter_measures_post_fader_signal_before_the_master_sum() {
+    let mut attenuated = track(1, vec![clip([0.8, -0.6], 0.0, 256)]);
+    attenuated.gain = 0.5;
+    let mut muted = track(2, vec![clip([1.0, 1.0], 0.0, 256)]);
+    muted.gain = 0.0;
+    let mut mix = Mix::prepare(
+        vec![attenuated, muted],
+        None,
+        48_000,
+        120.0,
+        Meter::default(),
+    )
+    .unwrap();
+    let mut frames = [[0.0; 2]; 256];
+    mix.render(0, &mut frames);
+    let peak = |mix: &Mix, track: usize| {
+        f32::from_bits(mix.tracks[track].control.peak.load(Ordering::Relaxed))
+    };
+    assert!((peak(&mix, 0) - 0.4).abs() < 1e-6);
+    assert_eq!(peak(&mix, 1), 0.0);
+    mix.render(256, &mut frames);
+    assert!((0.0..0.4).contains(&peak(&mix, 0)));
+}
+
+#[test]
 fn shared_mix_sums_tracks_with_headroom_and_clamps_only_at_output() {
     let mut mix = Mix::prepare(
         vec![
