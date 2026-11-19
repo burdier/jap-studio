@@ -97,7 +97,7 @@ impl DawApp {
             .child(
                 div()
                     .id("arrangement-tracks")
-                    .bg(rgb(ds.arrangement_empty()))
+                    .bg(rgb(ds.arrangement_surface()))
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()

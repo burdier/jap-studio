@@ -8,18 +8,15 @@ impl DesignSystem {
         };
         if brightness(self.text) > brightness(self.panel) {
             let base = blend_color(self.panel, self.text, 17);
-            blend_color(base, self.accent, 12)
+            let slate = blend_color(base, self.accent, 12);
+            blend_color(self.bg, slate, 56)
         } else {
             self.bg
         }
     }
 
     pub(in crate::ui) fn arrangement_header(&self) -> u32 {
-        blend_color(self.panel, self.arrangement_surface(), 20)
-    }
-
-    pub(in crate::ui) fn arrangement_empty(&self) -> u32 {
-        blend_color(self.bg, self.arrangement_surface(), 56)
+        blend_color(self.panel, self.arrangement_surface(), 40)
     }
 
     pub(in crate::ui) fn arrangement_selection(&self, base: u32) -> u32 {

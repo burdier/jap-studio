@@ -163,12 +163,12 @@ impl Timeline {
                     let width = f64::from(f32::from(bounds.size.width));
                     for mark in marks {
                         let (thickness, tick_height, color) = if lanes {
-                            let alpha = match mark.kind {
-                                MarkKind::Bar => 0x53,
-                                MarkKind::Beat => 0x22,
-                                MarkKind::Subdivision => 0x0a,
+                            let (width, alpha) = match mark.kind {
+                                MarkKind::Bar => (1.5, 0x4d),
+                                MarkKind::Beat => (1.25, 0x27),
+                                MarkKind::Subdivision => (1.0, 0x12),
                             };
-                            (1.0, 0.0, (design.text << 8) | alpha)
+                            (width, 0.0, (design.text << 8) | alpha)
                         } else {
                             bar_grid::mark_style(mark.kind, &design)
                         };
