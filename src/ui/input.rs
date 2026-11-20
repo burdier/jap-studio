@@ -210,7 +210,7 @@ impl DawApp {
             }
             "j" | "down" => {
                 let last = if self.center_view == CenterView::Session {
-                    self.pattern_editor.lanes.len() - 1
+                    self.pattern_editor.session.kit.pieces.len() - 1
                 } else {
                     self.tracks.len().saturating_sub(1)
                 };

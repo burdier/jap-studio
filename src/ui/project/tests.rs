@@ -50,6 +50,7 @@ fn snapshot() -> Snapshot {
         midi: vec![MidiClip::new("Melodía", 1, 3.0, pattern)],
         audio: vec![],
         pianos: vec![],
+        drums: Default::default(),
         tempo: Tempo::new(97.5).unwrap(),
         meter: Meter::new(7, 8).unwrap(),
         levels: vec![63, 82],

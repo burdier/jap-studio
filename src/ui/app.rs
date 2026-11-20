@@ -213,7 +213,9 @@ impl DawApp {
             self.timeline.end_clip_drag();
         }
         if view == CenterView::Session {
-            self.cursor_row = self.cursor_row.min(self.pattern_editor.lanes.len() - 1);
+            self.cursor_row = self
+                .cursor_row
+                .min(self.pattern_editor.session.kit.pieces.len() - 1);
             self.cursor_col = self.cursor_col.min(self.pattern_editor.step_count() - 1);
         }
         if view != CenterView::Session {

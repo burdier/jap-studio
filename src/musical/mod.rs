@@ -5,6 +5,7 @@ pub mod automation;
 pub mod chord;
 pub mod clip;
 pub mod controller;
+pub mod drums;
 pub mod fx;
 pub mod grid;
 pub mod hilo;

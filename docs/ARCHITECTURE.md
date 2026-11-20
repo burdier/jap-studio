@@ -465,12 +465,27 @@ copia fuera de la UI mediante `audio.collect`.
 
 Este esquema aún no representa parámetros de instrumentos ni colores de pista.
 `ui/project/{snapshot,dialogs,install}` conecta Abrir/Guardar para el subconjunto
-recuperable: Arrangement, audio/MIDI, tiempo/mezcla, Utility por pista y Hay Piano.
+recuperable: Arrangement, audio/MIDI, tiempo/mezcla, Utility por pista, Hay Piano y Drums Latex.
 Captura en UI; validación, decodificación y escritura en worker; publicación solo si
 la sesión sigue igual. El archivo anterior alimenta la siguiente reconciliación Loro.
 Los estados no recuperables se rechazan al guardar; no se sustituyen plugins por piano.
 `project/instruments` guarda registros de piano, y `instruments/piano/persistence`
 restaura parámetros sin abrir dispositivos. README detalla las exclusiones.
+
+## Drums Latex: modelo y guardado
+
+`musical/drums::DrumSession` agrupa kit, piezas, patrones y ocurrencias de Canción.
+Cada pieza usa el `InstrumentId` de sus notas. Cada patrón reutiliza `Pattern` con
+IDs de nota locales y un ID de patrón estable. Duplicar mantiene el contenido y crea
+un patrón independiente. Una ocurrencia de Canción apunta al patrón por ID y a su
+posición absoluta en ticks. Los controles del sampler se comparten con Hay Sampler.
+
+`project/drums` guarda estos datos y las referencias a capas en una sección opcional
+de Loro. Los documentos que carecen de esa sección abren con el kit inicial y un patrón
+vacío. `project/pattern` comparte la persistencia de notas y controles con los clips MIDI
+del Arrangement. La vista Pattern conecta el patrón activo y Canción a la audición
+sintetizada existente, que recompila el plan al pulsar Play. Las capas, la mezcla
+dedicada y el enlace de clips del Arrangement se conectarán en PR-17 y PR-18.
 
 ## Análisis espectral para efectos
 
@@ -690,7 +705,7 @@ El descriptor que pinta la vista procede de `elevate::catalog`.
 
 | Estado | Propietario actual | Restricción |
 |---|---|---|
-| Notas del patrón | `Pattern`, contenido en `ui::PatternEditor` | Sin coordenadas visuales ni voces |
+| Kit, patrones y Canción | `DrumSession`, contenido en `ui::PatternEditor` | Persistido en Loro, sin coordenadas, buffers ni voces |
 | Selección, modo, vista | `DawApp` | Estado de workspace, no proyecto musical |
 | Bibliotecas y árbol de archivos | `elevate::explorer::LibraryTree`, dentro de `ui::explorer::Explorer` | Persistencia independiente del proyecto; no observa transporte ni toca audio |
 | Ancho y visibilidad del explorador | `ui::explorer_host::ExplorerDock` | Estado de sesión; e recupera el panel oculto por arrastre |

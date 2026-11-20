@@ -65,6 +65,7 @@ impl DawApp {
             midi,
             audio,
             pianos,
+            drums: self.pattern_editor.session.clone(),
             tempo: self.timeline.tempo,
             meter: self.timeline.meter,
             levels: self.track_levels.clone(),
@@ -75,9 +76,8 @@ impl DawApp {
     fn session_signature(&self) -> Result<String, String> {
         // Incluye el estado excluido para advertir antes de abandonar ediciones.
         Ok(format!(
-            "{}|{:?}|{:?}",
+            "{}|{:?}",
             self.session_snapshot()?.signature(),
-            self.pattern_editor.pattern,
             (self.utility.state(), self.midi_mapper.bindings())
         ))
     }
@@ -119,12 +119,11 @@ impl DawApp {
             return;
         }
         let result = (|| {
-            if self.pattern_editor.pattern != super::pattern_editor::PatternEditor::new().pattern
-                || self.utility.state() != Default::default()
+            if self.utility.state() != Default::default()
                 || self.midi_mapper.bindings()
                     != elevate::musical::midi_map::MidiMapper::new().bindings()
             {
-                return Err("No se puede guardar aún el estado de Pattern, Utility de salida o MIDI Learn modificado. El archivo anterior se conserva".into());
+                return Err("No se puede guardar aún el estado de Utility de salida o MIDI Learn modificado. El archivo anterior se conserva".into());
             }
             let snapshot = self.session_snapshot()?;
             snapshot.validate_support()?;
@@ -151,6 +150,14 @@ impl DawApp {
                 for clip in &mut snapshot.audio {
                     if let Ok(relative) = std::path::Path::new(&clip.source).strip_prefix(root) {
                         clip.source = relative.to_str().ok_or("Ruta no UTF-8")?.into();
+                    }
+                }
+                for piece in &mut snapshot.drums.kit.pieces {
+                    for layer in &mut piece.layers {
+                        if let Ok(relative) = std::path::Path::new(&layer.source).strip_prefix(root)
+                        {
+                            layer.source = relative.to_str().ok_or("Ruta no UTF-8")?.into();
+                        }
                     }
                 }
                 let doc = snapshot.document_from(&name, previous.as_deref())?;

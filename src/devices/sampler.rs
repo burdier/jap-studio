@@ -7,7 +7,7 @@ pub enum PlayMode {
     OneShot,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SamplerParams {
     values: [f32; 19],
     pub mode: PlayMode,

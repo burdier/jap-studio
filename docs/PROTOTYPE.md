@@ -312,10 +312,11 @@ acotada de selección por NoteOn durante la reproducción.
   Tiempo y mezcla por pista se guardan como campos opcionales e independientes;
   dos copias pueden fusionar cambios en controles distintos. La metadata de clips
   WAV conserva ID, pista, ruta de origen y edición sin incluir muestras.
-  Abrir/Guardar local prepara audio en worker y restaura Hay Piano, mezcla y Utility.
+  Abrir/Guardar local prepara audio en worker y restaura Hay Piano, mezcla, Utility
+  y la sesión Drums Latex.
   Atajos Ctrl+O/Ctrl+S/Ctrl+Shift+S y acciones `project.open/save/save_as`.
   Dirty y confirmación antes de abrir/cerrar; los estados aún no soportados se rechazan
-  al guardar (Sampler/VST3/FX de host, Pattern/MIDI Learn/Utility de salida modificados).
+  al guardar (Sampler/VST3/FX de host, MIDI Learn/Utility de salida modificados).
   No persiste presentación ni transporte. Pruebas: `ui::project::tests`.
 
 - **Colectar audio:** `[+]` → **Colectar audio en carpeta…** o
@@ -580,7 +581,9 @@ acotada de selección por NoteOn durante la reproducción.
   Loop y transposición no se ofrecen en el menú mientras su reproducción siga pendiente.
 - Efecto de partículas del playhead aislado en UI, con particula-rs y fastrand.
 - Vista `2` / `:pattern`: cuatro slots, 16 pasos iniciales, click/Enter para alternar
-  notas y rueda para velocity. Modelo real en ticks, conservado al cambiar de vista.
+  notas y rueda para velocity. **+ Compás** extiende el patrón, **Duplicar** crea una
+  variación y **+ A Canción** añade una ocurrencia del patrón activo. La sesión se
+  conserva al guardar y abrir el proyecto.
 - Audición del patrón en loop con cuatro percusiones sintetizadas (sin samples externos),
   plan compilado al pulsar Play, offsets por frame y transporte por frames. Space
   inicia/detiene desde la vista Pattern; el paso que suena se resalta.

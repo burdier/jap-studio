@@ -1,5 +1,6 @@
 //! Vista de pasos del modelo de notas común. La audición usa percusión sintetizada.
-use super::super::{DawApp, pattern_editor::PatternAction};
+use super::super::{DawApp, components::button::chip_option, pattern_editor::PatternAction};
+use elevate::musical::drums::DrumPlaybackSource;
 use gpui::{Context, IntoElement, MouseButton, div, prelude::*, px, rgb};
 
 impl DawApp {
@@ -38,7 +39,7 @@ impl DawApp {
             .min_h_0()
             .overflow_y_scroll()
             .children(
-                (0..self.pattern_editor.lanes.len())
+                (0..self.pattern_editor.session.kit.pieces.len())
                     .map(|lane| self.render_pattern_lane(lane, playing_step, cx)),
             );
         let playback = if self.pattern_loop_beats.is_some() && self.player.is_some() {
@@ -51,6 +52,7 @@ impl DawApp {
             .flex_col()
             .flex_1()
             .min_h_0()
+            .child(self.render_pattern_controls(cx))
             .child(ruler)
             .child(lanes)
             .child(
@@ -60,9 +62,61 @@ impl DawApp {
                     .text_color(rgb(ds.muted))
                     .child(format!(
                         "{} notas · {playback} · Space: play/stop · Enter: alternar paso · editar no cambia el plan activo",
-                        self.pattern_editor.pattern.notes().len(),
+                        self.pattern_editor.pattern().notes().len(),
                     )),
             )
+    }
+
+    fn render_pattern_controls(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let ds = &self.ds;
+        let session = &self.pattern_editor.session;
+        let controls = [
+            (
+                "Patrón",
+                session.source == DrumPlaybackSource::Pattern,
+                PatternAction::UseSource(DrumPlaybackSource::Pattern),
+            ),
+            (
+                "Canción",
+                session.source == DrumPlaybackSource::Song,
+                PatternAction::UseSource(DrumPlaybackSource::Song),
+            ),
+            ("+ Compás", false, PatternAction::ExtendBar),
+            ("Duplicar", false, PatternAction::Duplicate),
+            ("+ A Canción", false, PatternAction::AppendToSong),
+        ];
+        div()
+            .id("pattern-controls")
+            .h(px(ds.timeline_bar_height + 10.0))
+            .flex()
+            .flex_shrink_0()
+            .overflow_x_scroll()
+            .items_center()
+            .gap_1()
+            .px_2()
+            .children(controls.into_iter().map(|(label, selected, action)| {
+                chip_option(ds, label, selected, ds.accent)
+                    .flex_shrink_0()
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, _, cx| {
+                            this.apply_pattern_action(action);
+                            cx.notify();
+                        }),
+                    )
+            }))
+            .children(session.patterns.iter().map(|pattern| {
+                let id = pattern.id;
+                chip_option(ds, pattern.name.clone(), id == session.active, ds.accent)
+                    .flex_shrink_0()
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, _, cx| {
+                            this.apply_pattern_action(PatternAction::Select(id));
+                            cx.notify();
+                        }),
+                    )
+            }))
     }
 
     fn render_pattern_lane(
@@ -74,7 +128,7 @@ impl DawApp {
         let ds = &self.ds;
         let colors = [ds.accent, ds.danger, ds.cyan, ds.warning];
         let color = colors[lane % colors.len()];
-        let instrument = &self.pattern_editor.lanes[lane];
+        let instrument = &self.pattern_editor.session.kit.pieces[lane];
         let header = div()
             .w(px(ds.track_header_width))
             .flex_shrink_0()
@@ -83,7 +137,7 @@ impl DawApp {
             .justify_center()
             .px_3()
             .bg(rgb(ds.panel))
-            .child(div().text_color(rgb(color)).child(instrument.name))
+            .child(div().text_color(rgb(color)).child(instrument.name.clone()))
             .child(
                 div()
                     .text_xs()

@@ -16,7 +16,11 @@ impl DawApp {
         }
         self.stop_all();
         self.audio_loop = None;
-        self.pattern_editor = crate::ui::pattern_editor::PatternEditor::new();
+        self.pattern_editor.session = snapshot.drums;
+        self.cursor_row = self
+            .cursor_row
+            .min(self.pattern_editor.session.kit.pieces.len() - 1);
+        self.cursor_col = self.cursor_col.min(self.pattern_editor.step_count() - 1);
         self.utility = Default::default();
         self.vst.close_editor();
         for vst in self.vst_instances.values() {

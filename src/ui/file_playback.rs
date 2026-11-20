@@ -42,9 +42,14 @@ impl DawApp {
         let midi_clips = self.midi_snapshot();
         let bpm = self.timeline.tempo.bpm();
         let meter = self.timeline.meter;
-        let pattern = self
-            .pattern_loop_beats
-            .map(|_| self.pattern_editor.pattern.clone());
+        let pattern = match self.drum_playback_pattern() {
+            Ok(pattern) => pattern.map(std::borrow::Cow::into_owned),
+            Err(error) => {
+                self.status_message = error;
+                self.pattern_loop_beats = None;
+                return;
+            }
+        };
         let drum_gain = self.drum_gain();
         let mut hilo_plans = Vec::new();
         for (index, group) in self.tracks.iter().enumerate() {
@@ -254,10 +259,11 @@ impl DawApp {
             || pending.meter != self.timeline.meter
             || !same_sources(&pending.clips, &self.audio_snapshot())
             || !same_midi_sources(&pending.midi_clips, &self.midi_snapshot())
-            || pending.pattern.as_ref()
-                != self
-                    .pattern_loop_beats
-                    .map(|_| &self.pattern_editor.pattern)
+            || self
+                .drum_playback_pattern()
+                .as_ref()
+                .map(|pattern| pattern.as_deref())
+                != Ok(pending.pattern.as_ref())
         {
             self.status_message =
                 "Preparación cancelada: cambió la mezcla o la salida; pulsa Play de nuevo".into();

@@ -793,10 +793,17 @@ impl DawApp {
     }
     /// Audición en loop del patrón. El plan se compila al pulsar Play.
     pub(super) fn play_pattern(&mut self) {
+        let length = match self.pattern_editor.session.playback_length() {
+            Ok(Some(length)) => length,
+            Ok(None) => return self.play_audio(),
+            Err(error) => {
+                self.status_message = error;
+                return;
+            }
+        };
         self.stop_audio();
         self.stop_instrument();
-        self.stop_pattern();
-        self.pattern_loop_beats = Some(self.pattern_editor.length_beats());
+        self.pattern_loop_beats = Some(length.0 as f64 / elevate::musical::time::PPQ as f64);
         self.request_file_playback(0.0);
     }
     pub(super) fn stop_pattern(&mut self) {

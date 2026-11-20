@@ -12,11 +12,13 @@ use std::{
 
 mod audio;
 mod collect;
+mod drums;
 mod instruments;
 pub use instruments::ProjectPiano;
 mod fx;
 mod midi;
 mod midi_controls;
+mod pattern;
 mod session_state;
 mod track;
 pub use audio::ProjectAudioClip;
@@ -410,6 +412,7 @@ impl ProjectDoc {
         self.name()?;
         self.timing()?;
         self.pianos()?;
+        self.drum_session()?;
         crate::musical::clip::ClipId::reserve_next_id(
             u64::try_from(read_i64(&self.doc.get_map("project"), "next_clip_id")?)
                 .map_err(|_| "ID de clip inválido")?,

@@ -172,6 +172,7 @@
 | Elegir formato CPAL | `src/audio/output.rs` | Frecuencia, buffer y pareja física de salida; todos los reproductores usan `AudioConfig` |
 | Paneo estéreo sin asignaciones en callback | `src/audio/stereo_pan.rs` | `audio/playback.rs`, `audio/piano/render.rs` |
 | Reproducir clips | `src/audio/playback.rs` | Varias pistas; remuestreo SoXR preparado en worker, ruteo estéreo a interfaz multicanal |
+| Kit, patrones y Canción de batería | `src/musical/drums.rs` | `musical/drums/kit.rs`, `project/drums.rs`, `ui/pattern_editor.rs`, `ui/project/`: IDs persistentes, patrones en ticks y selector de audición |
 | Reproducir patrón | `src/audio/drums/mix.rs` | Fuente provisional del Mix; loop por frames en la misma salida |
 | Sintetizar percusión | `src/audio/drums/voice.rs` | Mapeo instrumento → voz |
 | Resaltar paso sonando | `src/ui/pattern_editor.rs` | `views/pattern.rs` |

@@ -3,6 +3,7 @@ use crate::audio::{AudioClip, AudioFile};
 use elevate::{
     musical::{
         clip::MidiClip,
+        drums::DrumSession,
         time::{Meter, Tempo},
         track::Track,
     },
@@ -16,6 +17,7 @@ pub(super) struct Snapshot {
     pub midi: Vec<MidiClip>,
     pub audio: Vec<ProjectAudioClip>,
     pub pianos: Vec<ProjectPiano>,
+    pub drums: DrumSession,
     pub tempo: Tempo,
     pub meter: Meter,
     pub levels: Vec<i32>,
@@ -97,6 +99,7 @@ impl Snapshot {
         };
         doc.reconcile_audio_clips(&self.audio)?;
         doc.set_pianos(&self.pianos)?;
+        doc.set_drum_session(&self.drums)?;
         Ok(doc)
     }
 
@@ -113,6 +116,7 @@ impl Snapshot {
             midi,
             audio: doc.audio_clips()?,
             pianos: doc.pianos()?,
+            drums: doc.drum_session()?.unwrap_or_default(),
             tempo,
             meter,
             levels: mix.iter().map(|m| m.level).collect(),
@@ -131,6 +135,15 @@ impl Snapshot {
             crate::instruments::Piano::restore_project(piano)?;
         }
         snapshot.resolve_piano_sources()?;
+        for piece in &mut snapshot.drums.kit.pieces {
+            for layer in &mut piece.layers {
+                layer.source = root
+                    .join(&layer.source)
+                    .to_str()
+                    .ok_or("Ruta no UTF-8")?
+                    .into();
+            }
+        }
         let mut files = HashMap::new();
         let mut audio = Vec::new();
         for clip in &mut snapshot.audio {
