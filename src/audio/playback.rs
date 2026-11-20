@@ -1,7 +1,7 @@
 //! Mezclador de clips: un stream y posición compartida en frames.
 mod mix;
 mod transport;
-use super::drums::DrumInput;
+use super::drums::{DrumBlock, DrumInput, DrumPreview, LiveDrums};
 use super::publication::Publication;
 use super::{
     AudioClip, clip_source::ClipSource, output::choose_output_config, stereo_pan::StereoPan,
@@ -13,7 +13,11 @@ use cpal::{
 use elevate::devices::utility_slot::UtilitySlot;
 use elevate::musical::time::{Meter, Tempo};
 use elevate::musical::track::TrackId;
-use elevate::musical::{midi::MidiMessage, model::InstrumentId};
+use elevate::musical::{
+    drums::DrumKit,
+    midi::MidiMessage,
+    model::{InstrumentId, Pattern},
+};
 use elevate::{Primitive, ProcessSpec, primitives::amplitude::Volume};
 pub(crate) use mix::{HiloBranchInput, MidiTrackInput, TrackInput};
 use mix::{Mix, TrackControl};
@@ -32,7 +36,7 @@ struct PlaybackState {
     applied_request: AtomicU64,
     tracks: Vec<Arc<TrackControl>>,
     retire: Publication<[bool; MAX_TRACKS]>,
-    drums: Option<Arc<AtomicU32>>,
+    drums: Option<Arc<Publication<DrumBlock>>>,
     utility: UtilitySlot,
     position: AtomicU64,
     finished: AtomicBool,
@@ -49,6 +53,7 @@ pub(crate) struct Player {
     pub sample_rate: u32,
     beats_per_second: f64,
     request: Request,
+    drums: Option<(LiveDrums, Producer<DrumPreview>)>,
 }
 
 pub(crate) struct PreparedPlayback {
@@ -79,6 +84,13 @@ impl PreparedPlayback {
         }
         Ok(Self { device, setup, mix })
     }
+    pub fn update_drums(&mut self, kit: &DrumKit, pattern: Option<&Pattern>) -> Result<(), String> {
+        if let Some(drums) = self.mix.live_drums() {
+            drums.edit(kit, pattern)?;
+        }
+        Ok(())
+    }
+
     pub fn start(
         self,
         start_beat: f64,
@@ -86,7 +98,11 @@ impl PreparedPlayback {
         utility: UtilitySlot,
         loop_range: Option<(f64, f64)>,
     ) -> Result<Player, String> {
-        let Self { device, setup, mix } = self;
+        let Self {
+            device,
+            setup,
+            mut mix,
+        } = self;
         let vsts = mix.vsts.clone();
         let track_indices = mix
             .tracks
@@ -105,12 +121,13 @@ impl PreparedPlayback {
             ..Default::default()
         };
         let start = beat_frame(start_beat, rate, beats_per_second)?;
+        let drums = mix.take_drum_io();
         let state = Arc::new(PlaybackState {
             request: Publication::new(request),
             applied_request: AtomicU64::new(0),
             tracks: mix.tracks.iter().map(|t| t.control.clone()).collect(),
             retire: Publication::new([false; MAX_TRACKS]),
-            drums: mix.drum_control(),
+            drums: drums.as_ref().map(|(drums, _)| drums.state.clone()),
             utility,
             position: AtomicU64::new(start),
             finished: AtomicBool::new(false),
@@ -180,6 +197,7 @@ impl PreparedPlayback {
             sample_rate: rate,
             beats_per_second,
             request,
+            drums,
         })
     }
 }
@@ -233,11 +251,37 @@ impl Player {
     pub fn all_live_notes_off(&self) {
         self.all_off.store(true, Ordering::Release);
     }
-    pub fn set_drum_gain(&self, gain: f32) {
-        if let Some(control) = &self.state.drums {
-            control.store(gain.clamp(0., 2.).to_bits(), Ordering::Relaxed);
+    pub fn update_drums(&mut self, kit: &DrumKit, pattern: Option<&Pattern>) -> Result<(), String> {
+        if let Some((drums, _)) = &mut self.drums {
+            drums.edit(kit, pattern)?;
         }
+        Ok(())
     }
+
+    pub fn poll_drums(&mut self) -> Result<(), String> {
+        self.drums
+            .as_mut()
+            .map_or(Ok(()), |(drums, _)| drums.poll())
+    }
+
+    pub fn preview_drum(&mut self, note: DrumPreview) -> bool {
+        self.drums
+            .as_mut()
+            .is_some_and(|(_, previews)| previews.push(note).is_ok())
+    }
+
+    pub fn drum_piece_peak(&self, id: InstrumentId) -> f32 {
+        self.drums
+            .as_ref()
+            .map_or(0.0, |(drums, _)| drums.peak(Some(id)))
+    }
+
+    pub fn drum_bus_peak(&self) -> f32 {
+        self.drums
+            .as_ref()
+            .map_or(0.0, |(drums, _)| drums.peak(None))
+    }
+
     fn stream<T: SizedSample + FromSample<f32>>(
         device: &cpal::Device,
         config: cpal::StreamConfig,
@@ -275,12 +319,27 @@ impl Player {
                             mix.all_live_notes_off();
                         }
                         let count = output_block.len() / channels;
-                        cursor.render_with_tail(
-                            request,
-                            tail,
-                            &mut block[..count],
-                            |at, frames| mix.render_timed(at, frames, request.loop_range),
-                        );
+                        let mut render = |drums: Option<&DrumBlock>| {
+                            let end = if drums.is_some_and(DrumBlock::loops) {
+                                u64::MAX
+                            } else {
+                                clip_end
+                            };
+                            cursor.set_end(end);
+                            cursor.render_with_tail(
+                                request,
+                                tail,
+                                &mut block[..count],
+                                |at, frames| {
+                                    mix.render_with_drums(at, frames, request.loop_range, drums)
+                                },
+                            );
+                        };
+                        if let Some(drums) = &state.drums {
+                            drums.read(|drums| render(Some(drums)));
+                        } else {
+                            render(None);
+                        }
                         utility.process(&mut block[..count]);
                         super::output::write_stereo(output_block, &block[..count], channels, first);
                     }

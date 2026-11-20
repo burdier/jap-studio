@@ -28,10 +28,10 @@
     El buscador `[+]` tampoco es todavía un host de plugins.
 12. No usar temporizadores de GPUI para programar notas. El audio avanza por frames.
 13. No hacer E/S, reservas/destrucciones costosas o trabajo sin límite en el futuro
-    motor RT. `audio/drums/stream.rs` no debe asignar memoria por bloque ni por nota.
+    motor RT. `audio/drums/` reutiliza buffers y entrega las voces retiradas al hilo de control.
     El adaptador `audio/piano` aún usa mpsc: su sustitución está pendiente.
-14. El plan de percusión es inmutable. Editar el patrón no actualiza el audio activo;
-    para escucharlo hay que detener y volver a pulsar Play. No ocultar esa limitación.
+14. Compilar y publicar las ediciones de percusión fuera del callback. Un plan de notas
+    nuevo conserva el reloj y las voces que están sonando.
 15. Actualizar el mapa de archivos y el estado si cambia una frontera o una capacidad.
 
 ## Verificación

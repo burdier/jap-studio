@@ -1,9 +1,9 @@
 use super::{
-    SamplerSnapshot,
+    SampleAsset, SamplerSnapshot,
     native::{Api, Synth},
     sfz,
 };
-use elevate::devices::sampler::VOICES;
+use elevate::devices::sampler::{PARAMS, SamplerParams, VOICES, live_control};
 use std::{ffi::CString, sync::Arc};
 
 pub(crate) struct SfizzEngine {
@@ -11,23 +11,40 @@ pub(crate) struct SfizzEngine {
     synth: *mut Synth,
     held: [bool; 128],
     // Mantiene el WAV temporal hasta después de liberar el motor y sus lectores.
-    _snapshot: SamplerSnapshot,
+    _assets: Vec<Arc<SampleAsset>>,
+    params: SamplerParams,
 }
 // Se transfiere a un único hilo; nunca comparte el synth ni permite llamadas simultáneas.
 unsafe impl Send for SfizzEngine {}
 impl SfizzEngine {
     pub fn prepare(snapshot: SamplerSnapshot, rate: u32) -> Result<Self, String> {
+        Self::prepare_layers(vec![(snapshot.asset, 1, 127)], snapshot.params, rate)
+    }
+
+    pub fn prepare_layers(
+        layers: Vec<(Arc<SampleAsset>, u8, u8)>,
+        params: SamplerParams,
+        rate: u32,
+    ) -> Result<Self, String> {
         let api = Api::open()?;
-        let text = CString::new(sfz::instrument(&snapshot)).map_err(|e| e.to_string())?;
+        let first = layers
+            .first()
+            .ok_or("Un instrumento necesita una muestra")?;
         let path = CString::new(
-            snapshot
-                .asset
+            first
+                .0
                 .wave
                 .with_extension("sfz")
                 .to_string_lossy()
                 .as_bytes(),
         )
         .map_err(|e| e.to_string())?;
+        let text = layers
+            .iter()
+            .map(|(asset, lo, hi)| sfz::region(asset, &params, (*lo, *hi)))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let text = CString::new(text).map_err(|e| e.to_string())?;
         let synth = unsafe { (api.create)() };
         if synth.is_null() {
             return Err("sfizz no pudo crear el sampler".into());
@@ -36,17 +53,18 @@ impl SfizzEngine {
             api,
             synth,
             held: [false; 128],
-            _snapshot: snapshot,
+            _assets: layers.into_iter().map(|(asset, _, _)| asset).collect(),
+            params,
         };
         unsafe {
             (result.api.block)(synth, 512);
             (result.api.rate)(synth, rate as f32);
-            (result.api.voices)(synth, result._snapshot.params.get(VOICES) as i32);
+            (result.api.voices)(synth, result.params.get(VOICES) as i32);
             if !(result.api.load)(synth, path.as_ptr(), text.as_ptr()) {
                 return Err("sfizz no pudo cargar el sample".into());
             }
         }
-        let params = result._snapshot.params.clone();
+        let params = result.params.clone();
         result.parameters(&params);
         Ok(result)
     }
@@ -55,7 +73,7 @@ impl SfizzEngine {
         unsafe {
             (self.api.rate)(self.synth, rate as f32);
         }
-        let params = self._snapshot.params.clone();
+        let params = self.params.clone();
         self.parameters(&params);
     }
     pub fn control(&mut self, cc: u8, value: f32) {
@@ -63,14 +81,30 @@ impl SfizzEngine {
             (self.api.hdcc)(self.synth, 0, cc as i32, value.clamp(0., 1.));
         }
     }
-    pub fn parameters(&mut self, params: &elevate::devices::sampler::SamplerParams) {
-        self._snapshot.params = params.clone();
-        for id in 0..elevate::devices::sampler::PARAMS.len() {
-            if let Some((cc, v)) = elevate::devices::sampler::live_control(params, id) {
+    pub fn parameters(&mut self, params: &SamplerParams) {
+        self.params = params.clone();
+        for id in 0..PARAMS.len() {
+            if let Some((cc, v)) = live_control(params, id) {
                 self.control(cc, v);
             }
         }
     }
+    pub fn update_live(&mut self, params: &SamplerParams) {
+        for id in 0..PARAMS.len() {
+            if self.params.get(id) != params.get(id)
+                && let Some((cc, value)) = live_control(params, id)
+            {
+                self.control(cc, value);
+            }
+        }
+        self.params = params.clone();
+    }
+
+    pub fn cut(&mut self) {
+        unsafe { (self.api.cut)(self.synth) };
+        self.held.fill(false);
+    }
+
     pub fn note_on(&mut self, note: u8, velocity: u8) {
         if note > 127 {
             return;

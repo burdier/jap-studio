@@ -6,7 +6,7 @@ use elevate::musical::{
     midi::{MidiInputEvent, MidiMessage, MidiTarget, RoutedMidi},
     midi_map::{MappedEffect, MidiAction, MidiBindTarget},
     pitch::note_name,
-    track::{HiloMode, TrackKind, assign_instrument, effective_mix},
+    track::{HiloMode, assign_instrument, effective_mix},
 };
 
 impl DawApp {
@@ -791,7 +791,7 @@ impl DawApp {
             piano.stop();
         }
     }
-    /// Audición en loop del patrón. El plan se compila al pulsar Play.
+    /// Audición en loop de la fuente elegida. Las ediciones publican un plan en vivo.
     pub(super) fn play_pattern(&mut self) {
         let length = match self.pattern_editor.session.playback_length() {
             Ok(Some(length)) => length,
@@ -872,16 +872,6 @@ impl DawApp {
             .or_else(|| self.timeline.midi_clip.as_ref().map(|c| c.track));
         track.map_or(1.0, |t| self.track_gain(t))
     }
-    /// El plan de percusión es único: usa la media de los faders de pistas Drum.
-    pub(super) fn drum_gain(&self) -> f32 {
-        let drums: Vec<usize> = (0..self.tracks.len())
-            .filter(|&i| self.tracks[i].kind == TrackKind::Drum)
-            .collect();
-        if drums.is_empty() {
-            return 1.0;
-        }
-        drums.iter().map(|&i| self.track_gain(i)).sum::<f32>() / drums.len() as f32
-    }
     /// Empuja a los streams activos la ganancia de su pista (el `Volume` lee el atómico por bloque).
     pub(super) fn apply_track_gains(&mut self) {
         if let Some(track) = self.sampler_track() {
@@ -896,9 +886,6 @@ impl DawApp {
                 player.set_gain(track.id, self.track_gain(index));
                 player.set_pan(track.id, self.track_pan(index));
             }
-        }
-        if let Some(player) = &self.player {
-            player.set_drum_gain(self.drum_gain());
         }
         self.instrument.set_gain(self.piano_gain());
         self.instrument.set_pan(self.piano_pan());

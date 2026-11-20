@@ -26,6 +26,9 @@ impl Cursor {
     pub fn frame(&self) -> u64 {
         self.clock.frame()
     }
+    pub fn set_end(&mut self, end: u64) {
+        self.end = end;
+    }
     pub fn finished(&self) -> bool {
         !self.clock.is_playing()
     }

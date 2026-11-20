@@ -1,10 +1,9 @@
 //! Traducción del contrato musical a SFZ; el usuario no edita archivos intermedios.
-use super::SamplerSnapshot;
+use super::SampleAsset;
 use elevate::devices::{filter::FilterMode, sampler::*};
 
-pub(super) fn instrument(snapshot: &SamplerSnapshot) -> String {
-    let p = &snapshot.params;
-    let frames = snapshot.asset.file.frames.len();
+pub(super) fn region(asset: &SampleAsset, p: &SamplerParams, velocity: (u8, u8)) -> String {
+    let frames = asset.file.frames.len();
     let offset = ((p.get(START) as f64 / 100.) * frames as f64) as usize;
     let end = (((p.get(END) as f64 / 100.) * frames as f64) as usize)
         .max(offset + 1)
@@ -38,9 +37,10 @@ pub(super) fn instrument(snapshot: &SamplerSnapshot) -> String {
         String::new()
     };
     // sfizz resuelve sample.wav respecto a la ruta virtual de la misma carpeta.
-    let name = snapshot.asset.wave.file_name().unwrap().to_string_lossy();
+    let name = asset.wave.file_name().unwrap().to_string_lossy();
+    let (lo, hi) = velocity;
     format!(
-        "<region> sample={name}{direction}{choke}\n offset={offset} end={end} loop_start={loop_start} loop_end={end} loop_mode={mode}\n pitch_keycenter={} pitch_keytrack={keytrack} tune=-2400 pitch_oncc83=4800 volume=-60 volume_oncc92=66 amp_veltrack={:.1} pan=-100 pan_oncc93=200\n ampeg_attack=0 ampeg_attack_oncc88=10 ampeg_hold=0 ampeg_hold_oncc94=5 ampeg_decay=0 ampeg_decay_oncc89=10 ampeg_sustain=0 ampeg_sustain_oncc90=100 ampeg_release=0.001 ampeg_release_oncc91=9.999\n pitcheg_depth=-2400 pitcheg_depth_oncc95=4800 pitcheg_decay=0.001 pitcheg_decay_oncc96=1.999 pitcheg_sustain=0\n{filter_line}",
+        "<region> sample={name}{direction}{choke} lovel={lo} hivel={hi}\n offset={offset} end={end} loop_start={loop_start} loop_end={end} loop_mode={mode}\n pitch_keycenter={} pitch_keytrack={keytrack} tune=-2400 pitch_oncc83=4800 volume=-60 volume_oncc92=66 amp_veltrack={:.1} pan=-100 pan_oncc93=200\n ampeg_attack=0 ampeg_attack_oncc88=10 ampeg_hold=0 ampeg_hold_oncc94=5 ampeg_decay=0 ampeg_decay_oncc89=10 ampeg_sustain=0 ampeg_sustain_oncc90=100 ampeg_release=0.001 ampeg_release_oncc91=9.999\n pitcheg_depth=-2400 pitcheg_depth_oncc95=4800 pitcheg_decay=0.001 pitcheg_decay_oncc96=1.999 pitcheg_sustain=0\n{filter_line}",
         p.get(ROOT) as u8,
         p.get(VEL_VOLUME),
     )

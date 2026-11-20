@@ -2,7 +2,7 @@
 mod retirement;
 use retirement::Retirement;
 
-use super::super::drums::{DrumInput, PreparedDrums};
+use super::super::drums::{DrumBlock, DrumInput, DrumPreview, LiveDrums, PreparedDrums};
 use super::super::piano::{PreparedArrangementVoice, VoiceSource};
 use super::super::vst3::TransportContext;
 use super::*;
@@ -63,6 +63,7 @@ pub(super) struct Mix {
     pub tracks: Vec<PreparedTrack>,
     pub vsts: Vec<Arc<super::super::vst3::SharedInstrument>>,
     drums: Option<PreparedDrums>,
+    drum_io: Option<(LiveDrums, Producer<DrumPreview>)>,
     pub end: u64,
     timing: TransportContext,
     peak_decay: f32,
@@ -110,8 +111,12 @@ impl Mix {
             }
         }
     }
-    pub fn drum_control(&self) -> Option<Arc<AtomicU32>> {
-        self.drums.as_ref().map(|drums| drums.control.clone())
+    pub fn take_drum_io(&mut self) -> Option<(LiveDrums, Producer<DrumPreview>)> {
+        self.drum_io.take()
+    }
+
+    pub fn live_drums(&mut self) -> Option<&mut LiveDrums> {
+        self.drum_io.as_mut().map(|(drums, _)| drums)
     }
     pub fn prepare(
         inputs: Vec<TrackInput>,
@@ -229,16 +234,18 @@ impl Mix {
                 fx,
             });
         }
-        let drums = drums
-            .map(|input| PreparedDrums::prepare(input, rate, bpm))
-            .transpose()?;
-        if drums.is_some() {
-            end = u64::MAX;
-        }
+        let (drums, drum_io) = match drums {
+            Some(input) => {
+                let (prepared, live, previews) = PreparedDrums::prepare(input, rate, bpm)?;
+                (Some(prepared), Some((live, previews)))
+            }
+            None => (None, None),
+        };
         Ok(Self {
             tracks,
             vsts,
             drums,
+            drum_io,
             end,
             timing,
             peak_decay: 1.0 / (0.24 * rate as f32),
@@ -249,11 +256,26 @@ impl Mix {
     pub fn render(&mut self, position: u64, output: &mut [StereoFrame]) {
         self.render_timed(position, output, None);
     }
+    #[cfg(test)]
     pub fn render_timed(
         &mut self,
         position: u64,
         output: &mut [StereoFrame],
         loop_range: Option<(u64, u64)>,
+    ) {
+        if let Some(state) = self.drum_io.as_ref().map(|(live, _)| live.state.clone()) {
+            state.read(|block| self.render_with_drums(position, output, loop_range, Some(block)));
+        } else {
+            self.render_with_drums(position, output, loop_range, None);
+        }
+    }
+
+    pub fn render_with_drums(
+        &mut self,
+        position: u64,
+        output: &mut [StereoFrame],
+        loop_range: Option<(u64, u64)>,
+        drum_block: Option<&DrumBlock>,
     ) {
         for (index, block) in output.chunks_mut(256).enumerate() {
             block.fill([0.; 2]);
@@ -314,8 +336,8 @@ impl Mix {
                     .peak
                     .store(peak.max(previous * decay).to_bits(), Ordering::Relaxed);
             }
-            if let Some(drums) = &mut self.drums {
-                drums.render(at, block);
+            if let (Some(drums), Some(drum_block)) = (&mut self.drums, drum_block) {
+                drums.render(at, block, drum_block);
             }
         }
     }

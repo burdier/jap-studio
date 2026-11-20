@@ -58,6 +58,7 @@ struct Voice {
     noise: u32,
     filter: f64,
     amplitude: f64,
+    pitch: f64,
 }
 
 impl Voice {
@@ -68,9 +69,10 @@ impl Voice {
         noise: 1,
         filter: 0.0,
         amplitude: 0.0,
+        pitch: 1.0,
     };
 
-    fn trigger(&mut self, instrument: InstrumentId, velocity: u8, seed: u64) {
+    fn trigger(&mut self, instrument: InstrumentId, velocity: u8, seed: u64, pitch: f64) {
         let kind = Kind::from_instrument(instrument);
         let normalized = f64::from(velocity) / 127.0;
         self.kind = Some(kind);
@@ -79,6 +81,7 @@ impl Voice {
         self.noise = (seed as u32) | 1;
         self.filter = 0.0;
         self.amplitude = kind.level() * normalized.sqrt();
+        self.pitch = pitch;
     }
 
     fn next(&mut self, dt: f64) -> [f32; 2] {
@@ -90,13 +93,13 @@ impl Voice {
         let sample = match kind {
             Kind::Kick => {
                 let frequency = 45.0 + 95.0 * (-age * 32.0).exp();
-                self.phase = (self.phase + TAU * frequency * dt) % TAU;
+                self.phase = (self.phase + TAU * frequency * dt * self.pitch) % TAU;
                 let body = self.phase.sin() * (-age * 9.0).exp();
                 let click = if age < 0.004 { noise * 0.35 } else { 0.0 };
                 (body + click) * self.amplitude
             }
             Kind::Snare => {
-                let tone = (TAU * 185.0 * age).sin();
+                let tone = (TAU * 185.0 * age * self.pitch).sin();
                 (noise * 0.75 + tone * 0.25) * (-age * 22.0).exp() * self.amplitude
             }
             Kind::Hat => {
@@ -151,7 +154,18 @@ impl DrumKit {
         }
     }
 
+    #[cfg(test)]
     pub fn trigger(&mut self, instrument: InstrumentId, velocity: u8, note: u64) {
+        self.trigger_pitched(instrument, velocity, note, 1.0);
+    }
+
+    pub fn trigger_pitched(
+        &mut self,
+        instrument: InstrumentId,
+        velocity: u8,
+        note: u64,
+        pitch: f64,
+    ) {
         if velocity == 0 {
             return;
         }
@@ -174,19 +188,21 @@ impl DrumKit {
                 oldest
             });
         self.seed = self.seed.wrapping_add(0x9e37_79b9);
-        self.voices[index].trigger(instrument, velocity, note ^ u64::from(self.seed));
+        self.voices[index].trigger(instrument, velocity, note ^ u64::from(self.seed), pitch);
     }
 
     /// Escribe el mix en `frames`. `dt` es 1/sample_rate; no usa tiempo de pared.
     pub fn render(&mut self, frames: &mut [[f32; 2]], dt: f64) {
-        for frame in frames {
-            let mut mix = [0.0_f32; 2];
-            for voice in &mut self.voices {
+        frames.fill([0.0; 2]);
+        for voice in self.voices.iter_mut().filter(|voice| voice.kind.is_some()) {
+            for frame in &mut *frames {
                 let sample = voice.next(dt);
-                mix[0] += sample[0];
-                mix[1] += sample[1];
+                frame[0] += sample[0];
+                frame[1] += sample[1];
+                if voice.kind.is_none() {
+                    break;
+                }
             }
-            *frame = mix;
         }
     }
 }

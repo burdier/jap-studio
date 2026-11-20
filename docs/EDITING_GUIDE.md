@@ -173,8 +173,8 @@
 | Paneo estéreo sin asignaciones en callback | `src/audio/stereo_pan.rs` | `audio/playback.rs`, `audio/piano/render.rs` |
 | Reproducir clips | `src/audio/playback.rs` | Varias pistas; remuestreo SoXR preparado en worker, ruteo estéreo a interfaz multicanal |
 | Kit, patrones y Canción de batería | `src/musical/drums.rs` | `musical/drums/kit.rs`, `project/drums.rs`, `ui/pattern_editor.rs`, `ui/project/`: IDs persistentes, patrones en ticks y selector de audición |
-| Reproducir patrón | `src/audio/drums/mix.rs` | Fuente provisional del Mix; loop por frames en la misma salida |
-| Sintetizar percusión | `src/audio/drums/voice.rs` | Mapeo instrumento → voz |
+| Reproducir patrón o Canción | `src/audio/drums/mix.rs` | Loop por frames en el mezclador común; `live.rs` publica ediciones durante Play |
+| Muestras, mezcla y picos de batería | `src/audio/drums/kit.rs` | Sampler sfizz con capas, cortes entre piezas y bus Drums; `voice.rs` aporta la síntesis de respaldo |
 | Resaltar paso sonando | `src/ui/pattern_editor.rs` | `views/pattern.rs` |
 | Ejecutar la app | `scripts/run.sh` | `scripts/check.sh` |
 | Descargar bancos FreePats | `scripts/fetch_soundfonts.sh` | `scripts/soundfonts.txt`, `assets/soundfonts/freepats/` |
@@ -210,9 +210,10 @@ La vista del piano no debe importar `audio::piano` ni `rustysynth`. El estado de
 presenta el descriptor del catálogo y llama al controlador. Al añadir un instrumento,
 registra su entrada en `src/catalog.rs` y evita duplicar comandos entre teclado y ratón.
 
-La percusión usa un plan inmutable y síntesis provisional. Si cambias el modelo de notas,
-detén y vuelve a pulsar Play para escuchar el plan nuevo. No añadas asignaciones,
-reservas ni liberaciones costosas al callback de `playback.rs`.
+La percusión publica un plan inmutable por bloque. Las notas, la mezcla y los controles
+de sampler en vivo se actualizan durante Play. Un worker prepara cambios de capas y el
+hilo de control retira recursos. Mantén las asignaciones, reservas y liberaciones costosas
+fuera del callback de `playback.rs`.
 
 ## Comandos (desde la raíz)
 

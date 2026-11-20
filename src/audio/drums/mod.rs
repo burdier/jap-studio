@@ -1,5 +1,10 @@
-//! Audición provisional de percusión; comparte el Mix y su transporte por frames.
+//! Kit, sampler y bus de percusión para el mezclador de clips.
+mod controls;
+mod kit;
+mod live;
 mod mix;
 mod voice;
 
-pub(crate) use mix::{DrumInput, PreparedDrums};
+pub(crate) use controls::DrumBlock;
+pub(crate) use live::LiveDrums;
+pub(crate) use mix::{DrumInput, DrumPreview, PreparedDrums};

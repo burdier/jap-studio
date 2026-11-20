@@ -779,13 +779,16 @@ fn drums_and_wav_use_the_same_frame_clock() {
         .unwrap();
     let mut mix = Mix::prepare(
         vec![track(1, vec![clip([0.1, 0.1], 0.0, 48_000)])],
-        Some(DrumInput { pattern, gain: 1.0 }),
+        Some(DrumInput {
+            pattern: Some(pattern),
+            kit: Default::default(),
+        }),
         48_000,
         120.0,
         elevate::musical::time::Meter::default(),
     )
     .unwrap();
-    assert_eq!(mix.end, u64::MAX);
+    assert!(mix.drum_io.as_ref().unwrap().0.state.read(DrumBlock::loops));
     let mut frames = vec![[0.0; 2]; 1024];
     mix.render(0, &mut frames);
     assert!(frames.iter().any(|f| (f[0] - 0.1).abs() > 0.001));

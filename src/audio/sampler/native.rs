@@ -6,6 +6,7 @@ pub(super) type Synth = c_void;
 pub(super) struct Api {
     handle: *mut c_void,
     pub create: unsafe extern "C" fn() -> *mut Synth,
+    pub cut: unsafe extern "C" fn(*mut Synth),
     pub free: unsafe extern "C" fn(*mut Synth),
     pub load: unsafe extern "C" fn(*mut Synth, *const c_char, *const c_char) -> bool,
     pub rate: unsafe extern "C" fn(*mut Synth, f32),
@@ -78,6 +79,7 @@ impl Api {
             Ok(Self {
                 handle,
                 create: symbol(handle, c"sfizz_create_synth")?,
+                cut: symbol(handle, c"sfizz_all_sound_off")?,
                 free: symbol(handle, c"sfizz_free")?,
                 load: symbol(handle, c"sfizz_load_string")?,
                 rate: symbol(handle, c"sfizz_set_sample_rate")?,

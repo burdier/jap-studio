@@ -1,11 +1,11 @@
 //! Preparación de mezcla cancelable; fuentes y remuestreo fuera del callback.
 mod lua;
 use super::DawApp;
-use crate::audio::drums::DrumInput;
+use crate::audio::drums::{DrumInput, DrumPreview};
 use crate::audio::piano::VoiceSource;
 use crate::audio::{AudioClip, HiloBranchInput, MidiTrackInput, PreparedPlayback, TrackInput};
 use elevate::musical::clip::MidiClip;
-use elevate::musical::hilo::HiloPlan;
+use elevate::musical::{hilo::HiloPlan, model::InstrumentId, time::PPQ};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 pub(super) struct PendingPlayback {
     result: Receiver<Result<PreparedPlayback, String>>,
@@ -14,7 +14,6 @@ pub(super) struct PendingPlayback {
     meter: elevate::musical::time::Meter,
     clips: Vec<AudioClip>,
     midi_clips: Vec<MidiClip>,
-    pattern: Option<elevate::musical::model::Pattern>,
     revision: u64,
     audio: crate::audio::device::AudioConfig,
     lua_preplay: bool,
@@ -42,7 +41,7 @@ impl DawApp {
         let midi_clips = self.midi_snapshot();
         let bpm = self.timeline.tempo.bpm();
         let meter = self.timeline.meter;
-        let pattern = match self.drum_playback_pattern() {
+        let mut pattern = match self.drum_playback_pattern() {
             Ok(pattern) => pattern.map(std::borrow::Cow::into_owned),
             Err(error) => {
                 self.status_message = error;
@@ -50,7 +49,7 @@ impl DawApp {
                 return;
             }
         };
-        let drum_gain = self.drum_gain();
+
         let mut hilo_plans = Vec::new();
         for (index, group) in self.tracks.iter().enumerate() {
             if let Some(mode) = group.hilo {
@@ -204,6 +203,10 @@ impl DawApp {
             self.status_message = "No hay clips de audio o MIDI para reproducir".into();
             return;
         }
+        let drums = self.pattern_loop_beats.map(|_| DrumInput {
+            pattern: pattern.take(),
+            kit: self.pattern_editor.session.kit.clone(),
+        });
         let (tx, rx) = mpsc::sync_channel(1);
         let audio = self.settings.audio.saved.clone();
         let lua_script = std::env::var_os("HAY_LUA_PREPLAY_SCRIPT").map(std::path::PathBuf::from);
@@ -218,17 +221,12 @@ impl DawApp {
             meter,
             clips,
             midi_clips,
-            pattern: pattern.clone(),
             revision: self.track_revision,
             audio: audio.clone(),
             lua_preplay: lua_script.is_some(),
         });
         self.status_message = "Preparando mezcla de clips…".into();
         std::thread::spawn(move || {
-            let drums = pattern.map(|pattern| DrumInput {
-                pattern,
-                gain: drum_gain,
-            });
             let result = (|| {
                 let mut inputs = inputs;
                 if let Some(path) = lua_script {
@@ -242,6 +240,11 @@ impl DawApp {
         });
     }
     pub(super) fn poll_file_playback(&mut self) {
+        if let Some(player) = &mut self.player
+            && let Err(error) = player.poll_drums()
+        {
+            self.status_message = error;
+        }
         let Some(pending) = self.file_playback.as_ref() else {
             return;
         };
@@ -259,17 +262,22 @@ impl DawApp {
             || pending.meter != self.timeline.meter
             || !same_sources(&pending.clips, &self.audio_snapshot())
             || !same_midi_sources(&pending.midi_clips, &self.midi_snapshot())
-            || self
-                .drum_playback_pattern()
-                .as_ref()
-                .map(|pattern| pattern.as_deref())
-                != Ok(pending.pattern.as_ref())
         {
+            self.pattern_loop_beats = None;
             self.status_message =
                 "Preparación cancelada: cambió la mezcla o la salida; pulsa Play de nuevo".into();
             return;
         }
-        match result.and_then(|prepared| {
+        match result.and_then(|mut prepared| {
+            if self.pattern_loop_beats.is_some() {
+                let pattern = self.drum_playback_pattern()?;
+                prepared.update_drums(&self.pattern_editor.session.kit, pattern.as_deref())?;
+                self.pattern_loop_beats = Some(
+                    pattern
+                        .as_deref()
+                        .map_or(0.0, |pattern| pattern.length().0 as f64 / PPQ as f64),
+                );
+            }
             prepared.start(
                 pending.beat,
                 pending.bpm,
@@ -278,7 +286,6 @@ impl DawApp {
             )
         }) {
             Ok(player) => {
-                player.set_drum_gain(self.drum_gain());
                 self.player = Some(player);
                 self.status_message = if self.pattern_loop_beats.is_some() {
                     if pending.lua_preplay {
@@ -301,6 +308,44 @@ impl DawApp {
                 };
             }
         }
+    }
+    /// Los editores publican una vez por acción confirmada. El callback solo ve el plan compilado.
+    pub(in crate::ui) fn publish_drum_edit(&mut self) {
+        if self.pattern_loop_beats.is_none() {
+            return;
+        }
+        let session = &self.pattern_editor.session;
+        let (pattern, error) = match session.playback_pattern() {
+            Ok(pattern) => (pattern, None),
+            Err(error) => (None, Some(error)),
+        };
+        self.pattern_loop_beats = Some(
+            pattern
+                .as_deref()
+                .map_or(0.0, |pattern| pattern.length().0 as f64 / PPQ as f64),
+        );
+        if let Some(player) = &mut self.player
+            && let Err(error) = player.update_drums(&session.kit, pattern.as_deref())
+        {
+            self.status_message = error;
+        } else if let Some(error) = error {
+            self.status_message = error;
+        }
+    }
+
+    pub(in crate::ui) fn preview_drum_piece(
+        &mut self,
+        id: InstrumentId,
+        pitch: u8,
+        velocity: u8,
+    ) -> bool {
+        self.player.as_mut().is_some_and(|player| {
+            player.preview_drum(DrumPreview {
+                piece: id,
+                pitch,
+                velocity,
+            })
+        })
     }
 }
 fn same_midi_sources(a: &[MidiClip], b: &[MidiClip]) -> bool {

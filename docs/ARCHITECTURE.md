@@ -113,8 +113,8 @@ los motores por `InstrumentId`; `musical/arrangement_midi` compila clips a event
 absolutos con TrackId, canal y offset de frame. `audio/playback/mix.rs` prepara una voz
 por pista con MIDI y suma su salida con los WAV de esa pista antes de FX, nivel y pan.
 La preparación de SoundFont, sfizz, recursos y plan ocurre en el worker, fuera del
-callback. Session añade `audio/drums/mix.rs` al mismo reloj y salida. El plan de
-percusión activo sigue inmutable hasta detener y volver a pulsar Play.
+callback. Session añade `audio/drums/mix.rs` al mismo reloj y salida. Durante Play,
+el hilo de control publica las ediciones de notas para el siguiente bloque disponible.
 Play también prepara las voces internas asignadas a pistas sin clip MIDI. Una cola
 acotada lleva sus notas en vivo al mismo `Mix`; tocar piano o sampler durante un
 WAV no detiene el transporte. Fuera de Play, la audición usa su adaptador CPAL.
@@ -695,7 +695,8 @@ Transport::advance(frames) → FrameWindow → events_in()
                                          Volume → CPAL
 ```
 
-Session y Arrangement comparten el Mix de audio, MIDI y percusión provisional.
+Session y Arrangement comparten el mezclador y el reloj de audio y MIDI. El kit de
+percusión usa el mismo mezclador cuando la fuente es Patrón o Canción.
 La audición live del piano conserva un adaptador separado. `examples/sequencer.rs`
 sigue mostrando el plan sin abrir audio. La vista del piano no conoce RustySynth ni CPAL:
 pide notas a `instruments::Piano`, que posee el reproductor y las notas sostenidas.
@@ -724,8 +725,8 @@ El descriptor que pinta la vista procede de `elevate::catalog`.
 | Clips del Arrangement | `Timeline::{clip,other_*_clips}`, provisional | Se conservan al insertar, mover y solapar; aún no hay modelo de proyecto |
 | Archivo decodificado | `Arc<AudioFile>` | Preparado fuera del callback |
 | Voces del piano | RustySynth dentro del callback | No pasan por GPUI |
-| Voces de percusión | `DrumKit` en `audio/drums/voice.rs` | Banco fijo; sin asignaciones por nota |
-| Plan de notas | `PreparedPattern` | Inmutable; percusión lo compila en Play |
+| Voces de percusión | `PreparedKit` en `audio/drums/kit.rs` | sfizz por pieza con capas, síntesis de respaldo y buffers preparados |
+| Plan de notas | `PreparedPattern` | Inmutable y reemplazable por bloque mediante `Publication` |
 | Posición de transporte | `Transport` en cada callback / demo headless | Avanzar con frames procesados |
 | Posición del patrón | `AtomicU64` en `DrumState` | Snapshot de solo lectura para la UI |
 | Partículas | `ParticleTrail` | Tiempo visual; no afecta al scheduler |
@@ -795,16 +796,15 @@ pertenece al futuro host de plugins y al sistema de acciones, no a esta paleta.
   de percusión divide cada bloque en tramos que no cruzan el final del loop.
 - `events_in([start, end))` no reserva memoria: búsqueda binaria + eventos del bloque.
 - Los NoteOff preceden a NoteOn coincidentes. Un NoteOff justo al final del patrón
-  pertenece a la siguiente ventana: el consumidor debe procesarlo antes de cerrar voces.
-  La percusión los ignora porque cada voz es un one-shot con envolvente propia.
+  se entrega antes de los NoteOn de la vuelta siguiente. Las voces de respaldo son
+  one-shot. Las capas en sfizz aplican el comportamiento del modo del sampler.
 - El transporte usa frames, no reloj de pared. Stop conserva posición; seek es explícito.
 - La audición del patrón mapea `frame_global % length_frames` a tiempo local. Los eventos
   se consultan por segmento, así que el offset dentro del buffer sigue siendo exacto.
-- No hay chase de notas sostenidas. Ante stop/seek/cambio de plan, el futuro host
-  deberá liberar voces y definir la política de reanudación.
-- El plan activo de percusión es inmutable: editar notas no lo actualiza. Detener y
-  volver a pulsar Play recompila. Loop configurable y cambios de tempo necesitan
-  segmentación y una política de reemplazo; no implementar un segundo reloj.
+- El seek libera las voces de percusión al detectar una discontinuidad. Las ediciones de
+  notas se aplican en el siguiente bloque sin interrumpir las voces en curso.
+- El plan usa el tempo y la frecuencia efectivos al iniciar Play. La duración del patrón
+  o de Canción se actualiza con el plan en el mismo transporte.
 - Hay límites de representación explícitos y errores; comprobarlos antes de publicar un plan.
 
 ## Audio existente y siguiente frontera
@@ -876,12 +876,16 @@ Dividir conserva la alineación de las dos ventanas; restaurar recupera el inici
 hasta el límite del beat cero. Silenciar, cambiar ganancia y editar ventanas detienen
 la reproducción actual; no representan edición de planes en caliente.
 
-`drums/mix.rs` compila el plan fuera del callback, segmenta el loop por frames y
-entrega offsets exactos a `DrumKit`; `audio/playback` suma el bloque con MIDI/WAV
-antes de Utility master y CPAL. La síntesis es provisional (sin samples) y el
-plan se recompila solo al iniciar Play. La audición live y el reemplazo de plan en
-caliente siguen pendientes. Los planes y samples retirados deben destruirse fuera
-del callback.
+`drums/mix.rs` segmenta el loop por frames. `drums/kit.rs` prepara capas por velocidad
+en un motor sfizz por pieza y usa la voz sintetizada cuando la pieza carece de capas.
+Afina respecto a la nota base, resuelve grupos de corte entre piezas y mide los picos
+después de sus faders. El bus Drums se suma con MIDI/WAV antes de Utility master y CPAL.
+
+`drums/live.rs` publica planes de notas y controles mediante el RCU existente. El worker
+prepara cambios de capas y ajustes que cambian la configuración de las voces. Dos colas
+acotadas separan el traspaso al callback del retiro en el hilo de control, con una revisión
+para descartar preparaciones obsoletas. Los clips de batería del Arrangement conectan
+con ese mismo kit en DL-4.
 
 ## Extensibilidad
 
