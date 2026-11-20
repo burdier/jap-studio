@@ -307,8 +307,8 @@
           </p>
         </div>
         <div class="score" aria-label="Avance total">
-          <strong><span id="done-count">11</span> / <span id="total-count">19</span></strong>
-          <span>PR completados · <span id="percent">58%</span></span>
+          <strong><span id="done-count">13</span> / <span id="total-count">19</span></strong>
+          <span>PR completados · <span id="percent">68%</span></span>
           <span class="commit-score"><span id="commit-done">58</span>/<span id="commit-total">83</span> commits · <span id="commit-percent">70%</span></span>
           <div class="bar" aria-hidden="true"><span id="bar-fill"></span></div>
         </div>
@@ -391,15 +391,15 @@
             </details>
           </article>
 
-          <article id="pr-17" data-pr="PR-17" data-status="progress">
-            <div class="pr-head"><span class="pr-number">PR-17</span><span class="status">En progreso</span></div>
+          <article id="pr-17" data-pr="PR-17" data-status="done">
+            <div class="pr-head"><span class="pr-number">PR-17</span><span class="status">Completado</span></div>
             <h3>Programar y escuchar el kit</h3>
             <p>Editar pasos o notas y ajustar el sonido de una pieza sin salir de Drums Latex. Escuchar los cambios de notas con Play activo.</p>
-            <div class="depends">2 commits integrados · Audición y gestos en la pasada final</div>
+            <div class="depends">2 commits integrados · Piano Roll Light comprobado en el DAW</div>
             <details class="commit-plan" open>
               <summary>Editor embebido y audio del kit</summary>
               <ol>
-                <li id="drums-latex-editor" data-task="DL-2" data-owner="editor" data-status="done">
+                <li id="drums-latex-editor" data-task="DL-2" data-owner="editor" data-status="done" data-commit="b8b3552">
                   <strong>feat(ui): editar patrones y notas de batería en el mismo espacio</strong>
                   <p>El agente de editor construye la matriz Canción, los pads y el Piano Roll ligero con las herramientas existentes. Clic en una pieza reemplaza la cuadrícula completa de pasos. El roll muestra nota base, afinación por nota, snap y velocidad debajo. Al volver, una pieza con notas afinadas o fuera de paso muestra una miniatura fiel. El icono de tambor abre el inspector plegable para la pieza activa en cualquiera de las dos vistas.</p>
                   <small><b>Área:</b> <code>src/ui/pattern_editor.rs</code>, <code>src/ui/views/pattern.rs</code> y adaptador del Piano Roll. <b>Entrega:</b> editar tono y velocidad dentro del roll y ver el cambio al volver a Pasos. El panel muestra los parámetros conectados por DL-3.</small>
@@ -413,15 +413,15 @@
             </details>
           </article>
 
-          <article id="pr-18" data-pr="PR-18" data-status="progress">
-            <div class="pr-head"><span class="pr-number">PR-18</span><span class="status">En progreso</span></div>
+          <article id="pr-18" data-pr="PR-18" data-status="done">
+            <div class="pr-head"><span class="pr-number">PR-18</span><span class="status">Completado</span></div>
             <h3>Una batería en las dos vistas</h3>
             <p>Enviar el groove al Arrangement, editar un fill por pieza y mezclar el mismo kit con la misma tira de canal que el mixer general.</p>
-            <div class="depends">2 commits integrados sobre PR-17 · Pasada visual y de audio al final</div>
+            <div class="depends">2 commits integrados · Canción, Arrangement y mixer comprobados en el DAW</div>
             <details class="commit-plan" open>
               <summary>MIDI por pieza y tiras de canal compartidas</summary>
               <ol>
-                <li id="drums-latex-midi" data-task="DL-4" data-owner="arrangement" data-status="done">
+                <li id="drums-latex-midi" data-task="DL-4" data-owner="arrangement" data-status="done" data-commit="87b2209">
                   <strong>feat(arrangement): enviar MIDI por pieza al kit compartido</strong>
                   <p>El agente de Arrangement lleva patrones o una secuencia de Canción al timeline como clips por pieza. Conserva posición, duración, nota y velocidad, y habilita edición local sin cambiar el patrón fuente. Al tocar esos clips se usa la ruta de DL-3 y el proyecto conserva sus referencias al volver a abrirlo.</p>
                   <small><b>Área:</b> acciones de Arrangement, <code>src/ui/timeline/</code> y persistencia de referencias en <code>src/project/midi.rs</code>. <b>Entrega:</b> quitar un Kick de un compás sin cambiar Groove A; afinar el instrumento y oírlo desde ambos orígenes.</small>
@@ -435,7 +435,7 @@
             </details>
           </article>
         </div>
-        <p class="phase-note"><strong>Pasada final:</strong> crear Groove A y un fill, editar un golpe fantasma sin parar Play, enviar las piezas al Arrangement, quitar un Kick en una sola ocurrencia, mover el fader del bus y reabrir el proyecto.</p>
+        <p class="phase-note"><strong>Verificación final en Hay DAW.</strong> Drums Latex abre con el arreglo <code>67593c3</code> y el Piano Roll Light muestra las notas y su velocidad al elegir Kick. Tras enviar Canción al Arrangement, el kick conserva su posición y su forma de onda en ambas fuentes. El fader del bus redujo la salida grabada 6,14 dB en ambas fuentes. Mute dejó la salida en silencio, Solo de Kick silenció la caja y los medidores respondieron a la señal. Una prueba focalizada de guardado y reapertura comprobó que una edición local conserva el patrón fuente y los vínculos de los otros clips.</p>
         <details class="commit-plan" open>
           <summary>Swap · 1 commit futuro después de PR-18</summary>
           <ol>
