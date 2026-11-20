@@ -491,8 +491,10 @@ del Arrangement.
 La vista Drums Latex comparte el espacio con Arrangement. En su panel, Canción
 referencia patrones y los pasos muestran las notas de la pieza. El Piano Roll Light
 reemplaza los pasos al elegir una pieza y edita las mismas notas por ID. El inspector
-edita las capas y parámetros del kit. Arrastrar desde el Explorador y pulsar
-**+ Muestra** comparten la carga de una pieza y validan el audio fuera del hilo de UI.
+edita las capas y parámetros del kit. Arrastrar desde el Explorador permite crear
+una pieza en el espacio vacío o cambiar la primera capa de una pieza por su ID.
+El cambio conserva las notas, la mezcla y los vínculos de la pieza. El arrastre
+y los selectores de archivo validan el audio fuera del hilo de UI.
 El reproductor prepara los cambios del kit en su worker y usa sfizz para las capas.
 Los kits guardados con las antiguas voces sintetizadas conservan su sonido. Las piezas
 suman al bus Drums. Los clips del Arrangement conservan kit y pieza. Mientras tengan vínculo, sus notas siguen el patrón. Una edición de

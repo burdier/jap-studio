@@ -97,12 +97,7 @@ impl DawApp {
                     })
                     .on_drop(
                         cx.listener(|this, sample: &ExplorerSampleDrag, window, cx| {
-                            this.workspace_focus.active = Panel::Center;
-                            window.focus(&this.focus_handle, cx);
-                            this.sync_midi_focus();
-                            this.drop_drum_sample(sample.path.clone(), cx);
-                            cx.stop_propagation();
-                            cx.notify();
+                            this.drop_drum_sample(sample.path.clone(), None, window, cx);
                         }),
                     )
                     .child(if editor.mixer_open {

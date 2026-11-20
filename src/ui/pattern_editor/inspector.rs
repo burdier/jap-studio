@@ -1,11 +1,14 @@
 //! Ajustes de la pieza activa; el sampler de pistas conserva su propio estado.
 use super::{PatternAction, PatternEditor};
-use crate::{audio::AudioFile, ui::DawApp};
+use crate::{
+    audio::AudioFile,
+    ui::{DawApp, workspace_focus::Panel},
+};
 use elevate::{
     devices::sampler::PARAMS,
     musical::{drums::DrumLayer, model::InstrumentId},
 };
-use gpui::{Context, PathPromptOptions};
+use gpui::{Context, PathPromptOptions, Window};
 use std::{
     future::{Future, ready},
     path::PathBuf,
@@ -153,13 +156,45 @@ impl DawApp {
         );
     }
 
-    pub(in crate::ui) fn drop_drum_sample(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+    pub(in crate::ui) fn drop_drum_sample(
+        &mut self,
+        path: PathBuf,
+        piece: Option<InstrumentId>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.pattern_editor.sample_task.is_some() {
             self.status_message = "Espera a que termine la carga de la muestra".into();
+            cx.notify();
             return;
         }
+        let target = match piece {
+            Some(id) => {
+                let Some(piece) = self
+                    .pattern_editor
+                    .session
+                    .kit
+                    .pieces
+                    .iter()
+                    .find(|piece| piece.id == id)
+                else {
+                    self.status_message = "La pieza ya no existe".into();
+                    cx.notify();
+                    return;
+                };
+                match piece.layers.first() {
+                    Some(layer) => DrumSampleTarget::ReplaceLayer(id, 0, layer.source.clone()),
+                    None => DrumSampleTarget::AddLayer(id),
+                }
+            }
+            None => DrumSampleTarget::NewPiece,
+        };
+        self.workspace_focus.active = Panel::Center;
+        window.focus(&self.focus_handle, cx);
+        self.sync_midi_focus();
         self.status_message = format!("Cargando {}…", path.display());
-        self.prepare_drum_sample(DrumSampleTarget::NewPiece, ready(Ok(Some(path))), cx);
+        self.prepare_drum_sample(target, ready(Ok(Some(path))), cx);
+        cx.notify();
     }
 
     fn prepare_drum_sample(

@@ -585,8 +585,9 @@ acotada de selección por NoteOn durante la reproducción.
   los pasos con el Piano Roll Light para editar tono, duración y velocidad.
   **+ Patrón** crea un compás vacío con el compás y la subdivisión del patrón activo.
   La rejilla distingue compases, pulsos y pasos. El secuenciador arranca sin piezas.
-  Arrastrar audio desde el Explorador o pulsar **+ Muestra** crea una fila del kit.
-  **Ajustes** abre los controles de la pieza y permite cargar, cambiar o añadir capas.
+  Suelta audio del Explorador en el espacio vacío para crear una fila. Suéltalo
+  sobre una fila para cambiar su primera capa y conservar sus notas y ajustes.
+  **+ Muestra** también crea una fila. **Ajustes** permite elegir qué capa cambiar.
   El proyecto guarda el kit, los patrones y sus ajustes de rejilla.
 - **Audio de Drums Latex:** Patrón y Canción publican sus notas durante Play y usan el
   transporte compartido. Una pieza con muestras usa sfizz y sus capas por velocidad.

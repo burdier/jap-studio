@@ -3,6 +3,7 @@ use crate::ui::{
     DawApp, DesignSystem,
     components::{button::flat_control, meter::track_peak_meter},
     design::blend_color,
+    explorer::ExplorerSampleDrag,
     pattern_editor::PatternAction,
 };
 use elevate::musical::{
@@ -168,10 +169,12 @@ impl DawApp {
         lane: usize,
         playing: Option<usize>,
         cx: &mut Context<Self>,
-    ) -> Div {
+    ) -> Stateful<Div> {
         let ds = &self.ds;
         let editor = &self.pattern_editor;
         let piece = &editor.session.kit.pieces[lane];
+        let piece_id = piece.id;
+        let cyan = ds.cyan;
         let palette = [ds.accent, ds.orange, ds.cyan, ds.warning];
         let color = palette[lane % palette.len()];
         let root = piece.base_note();
@@ -196,12 +199,20 @@ impl DawApp {
         let cursor = (editor.cursor_lane == lane).then_some(editor.cursor_step);
 
         div()
+            .id(("drum-step-lane", piece_id.0 as usize))
             .flex()
             .items_center()
+            .w(px(NAME_WIDTH + STEP_WIDTH * steps as f32))
             .h(px(36.0))
             .flex_shrink_0()
             .border_b_1()
             .border_color(rgb(blend_color(ds.panel_dark, ds.border, 45)))
+            .drag_over::<ExplorerSampleDrag>(move |style, _, _, _| style.border_color(rgb(cyan)))
+            .on_drop(
+                cx.listener(move |this, sample: &ExplorerSampleDrag, window, cx| {
+                    this.drop_drum_sample(sample.path.clone(), Some(piece_id), window, cx);
+                }),
+            )
             .child(
                 flat_control(ds, cursor.is_some(), color)
                     .relative()
