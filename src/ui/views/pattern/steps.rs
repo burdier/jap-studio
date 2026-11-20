@@ -208,7 +208,6 @@ impl DawApp {
                 .w_full()
                 .h(px(26.0))
                 .bg(rgb(surface))
-                .hover(|style| style.bg(rgb(if occupied { color } else { ds.panel_hover })))
                 .when(selected || playing, |pad| {
                     pad.border_b_1()
                         .border_color(rgb(if playing { ds.cyan } else { color }))
