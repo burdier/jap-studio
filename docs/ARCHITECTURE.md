@@ -483,18 +483,19 @@ ocurrencia de Canción apunta al patrón por ID y a su
 posición absoluta en ticks. Los controles del sampler se comparten con Hay Sampler.
 
 `project/drums` guarda estos datos y las referencias a capas en una sección opcional
-de Loro. Los documentos que carecen de esa sección abren con el kit inicial y un patrón
-vacío. Los patrones guardados sin ajustes de rejilla conservan su duración original
+de Loro. Los documentos que carecen de esa sección abren con un kit sin piezas
+y un patrón vacío. Los patrones guardados sin ajustes de rejilla conservan su duración original
 y usan el compás del proyecto con pasos de 1/16. `project/pattern` comparte la persistencia de notas y controles con los clips MIDI
 del Arrangement.
 
 La vista Drums Latex comparte el espacio con Arrangement. En su panel, Canción
 referencia patrones y los pasos muestran las notas de la pieza. El Piano Roll Light
 reemplaza los pasos al elegir una pieza y edita las mismas notas por ID. El inspector
-edita las capas y parámetros del kit. Las muestras se validan fuera del hilo de UI.
+edita las capas y parámetros del kit. Arrastrar desde el Explorador y pulsar
+**+ Muestra** comparten la carga de una pieza y validan el audio fuera del hilo de UI.
 El reproductor prepara los cambios del kit en su worker y usa sfizz para las capas.
-Las piezas iniciales ofrecen síntesis si no se les ha cargado una muestra. Las piezas suman al bus Drums. Los clips del Arrangement conservan
-kit y pieza. Mientras tengan vínculo, sus notas siguen el patrón. Una edición de
+Los kits guardados con las antiguas voces sintetizadas conservan su sonido. Las piezas
+suman al bus Drums. Los clips del Arrangement conservan kit y pieza. Mientras tengan vínculo, sus notas siguen el patrón. Una edición de
 notas convierte solo el clip editado en una copia local. Las tiras de ambos mixers
 consultan los picos del Player y editan los controles de sus respectivos canales.
 

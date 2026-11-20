@@ -584,12 +584,13 @@ acotada de selección por NoteOn durante la reproducción.
   Arrangement. La matriz organiza ocurrencias por compás. Clic en una pieza reemplaza
   los pasos con el Piano Roll Light para editar tono, duración y velocidad.
   **+ Patrón** crea un compás vacío con el compás y la subdivisión del patrón activo.
-  La rejilla distingue compases, pulsos y pasos. **+ Muestra** añade una pieza al kit.
+  La rejilla distingue compases, pulsos y pasos. El secuenciador arranca sin piezas.
+  Arrastrar audio desde el Explorador o pulsar **+ Muestra** crea una fila del kit.
   **Ajustes** abre los controles de la pieza y permite cargar, cambiar o añadir capas.
   El proyecto guarda el kit, los patrones y sus ajustes de rejilla.
 - **Audio de Drums Latex:** Patrón y Canción publican sus notas durante Play y usan el
   transporte compartido. Una pieza con muestras usa sfizz y sus capas por velocidad.
-  El kit inicial se puede escuchar con síntesis de respaldo. Los picos de pieza y bus
+  Los kits anteriores conservan sus voces sintetizadas. Los picos de pieza y bus
   se miden después de sus faders.
 - **Mixers reales:** la mesa del proyecto y el panel Mixer de Drums Latex comparten
   tiras con mute, solo, paneo y fader vertical con lectura en dB. Los medidores

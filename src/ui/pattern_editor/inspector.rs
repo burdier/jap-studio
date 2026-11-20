@@ -6,6 +6,10 @@ use elevate::{
     musical::{drums::DrumLayer, model::InstrumentId},
 };
 use gpui::{Context, PathPromptOptions};
+use std::{
+    future::{Future, ready},
+    path::PathBuf,
+};
 
 pub(in crate::ui) enum DrumSampleTarget {
     NewPiece,
@@ -122,7 +126,8 @@ impl DawApp {
         target: DrumSampleTarget,
         cx: &mut Context<Self>,
     ) {
-        if self.pattern_editor.sample_picker.is_some() {
+        if self.pattern_editor.sample_task.is_some() {
+            self.status_message = "Espera a que termine la carga de la muestra".into();
             return;
         }
         let title = match target {
@@ -136,31 +141,54 @@ impl DawApp {
             multiple: false,
             prompt: Some(title.into()),
         });
-        let background = cx.background_executor().clone();
-        self.pattern_editor.sample_picker = Some(cx.spawn(async move |this, cx| {
-            let result = match prompt.await {
-                Ok(Ok(Some(paths))) => {
-                    if let Some(path) = paths.into_iter().next() {
-                        background
-                            .spawn(async move {
-                                let source = path
-                                    .to_str()
-                                    .ok_or("La ruta de la muestra debe ser UTF-8")?;
-                                AudioFile::decode(&path).map_err(|error| {
-                                    format!("No se pudo cargar {} · {error}", path.display())
-                                })?;
-                                Ok(Some(source.to_owned()))
-                            })
-                            .await
-                    } else {
-                        Ok(None)
-                    }
+        self.prepare_drum_sample(
+            target,
+            async move {
+                match prompt.await {
+                    Ok(Ok(paths)) => Ok(paths.and_then(|paths| paths.into_iter().next())),
+                    _ => Err("No se pudo abrir el selector de muestras".into()),
                 }
-                Ok(Ok(None)) => Ok(None),
-                _ => Err("No se pudo abrir el selector de muestras".into()),
+            },
+            cx,
+        );
+    }
+
+    pub(in crate::ui) fn drop_drum_sample(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        if self.pattern_editor.sample_task.is_some() {
+            self.status_message = "Espera a que termine la carga de la muestra".into();
+            return;
+        }
+        self.status_message = format!("Cargando {}…", path.display());
+        self.prepare_drum_sample(DrumSampleTarget::NewPiece, ready(Ok(Some(path))), cx);
+    }
+
+    fn prepare_drum_sample(
+        &mut self,
+        target: DrumSampleTarget,
+        selection: impl Future<Output = Result<Option<PathBuf>, String>> + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        let background = cx.background_executor().clone();
+        self.pattern_editor.sample_task = Some(cx.spawn(async move |this, cx| {
+            let result = match selection.await {
+                Ok(Some(path)) => {
+                    background
+                        .spawn(async move {
+                            let source = path
+                                .to_str()
+                                .ok_or("La ruta de la muestra debe ser UTF-8")?;
+                            AudioFile::decode(&path).map_err(|error| {
+                                format!("No se pudo cargar {} · {error}", path.display())
+                            })?;
+                            Ok(Some(source.to_owned()))
+                        })
+                        .await
+                }
+                Ok(None) => Ok(None),
+                Err(error) => Err(error),
             };
             let _ = this.update(cx, |this, cx| {
-                this.pattern_editor.sample_picker = None;
+                this.pattern_editor.sample_task = None;
                 match result {
                     Ok(Some(path)) => {
                         let action = match target {

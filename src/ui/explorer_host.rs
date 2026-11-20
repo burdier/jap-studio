@@ -3,6 +3,7 @@ use super::{
     CenterView, DawApp, DesignSystem,
     components::tree::TreeStyle as ExplorerStyle,
     explorer::{Explorer, ExplorerEvent},
+    workspace_focus::Panel,
 };
 use elevate::{explorer::EntryKind, musical::track::TrackId};
 use gpui::{AppContext, Context, Entity, Subscription, Window};
@@ -58,16 +59,26 @@ impl ExplorerDock {
 }
 
 impl DawApp {
+    pub(super) fn explorer_visible(&self) -> bool {
+        self.explorer.width > 0.0
+            && match self.workspace_focus.expanded {
+                Some(panel) => panel == Panel::Explorer,
+                None => self.center_view != CenterView::Mixer,
+            }
+    }
+
     pub(super) fn toggle_explorer(&mut self) {
-        if self.explorer.width > 0.0 && self.center_view == CenterView::Arrangement {
+        if self.explorer_visible() {
             self.hide_explorer();
-        } else {
-            self.workspace_focus.expanded = None;
-            self.set_center_view(CenterView::Arrangement);
-            self.release_explorer_keyboard();
-            self.explorer.width = self.explorer.last_width;
-            self.explorer.focus_request = Some(true);
+            return;
         }
+        self.workspace_focus.expanded = None;
+        if self.center_view == CenterView::Mixer {
+            self.set_center_view(CenterView::Arrangement);
+        }
+        self.release_explorer_keyboard();
+        self.explorer.width = self.explorer.last_width;
+        self.explorer.focus_request = Some(true);
     }
 
     fn hide_explorer(&mut self) {
@@ -76,6 +87,17 @@ impl DawApp {
         }
         self.explorer.width = 0.0;
         self.explorer.focus_request = Some(false);
+        if self.workspace_focus.expanded == Some(Panel::Explorer) {
+            self.workspace_focus.expanded = None;
+        }
+        if self.workspace_focus.active == Panel::Explorer {
+            self.workspace_focus.active = if self.center_view == CenterView::Session {
+                Panel::Center
+            } else {
+                Panel::Arrangement
+            };
+            self.sync_midi_focus();
+        }
     }
 
     fn release_explorer_keyboard(&mut self) {

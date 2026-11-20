@@ -3,6 +3,8 @@ mod input;
 mod io;
 mod view;
 
+pub(super) use view::ExplorerSampleDrag;
+
 use super::components::tree::TreeStyle as ExplorerStyle;
 use elevate::explorer::LibraryTree;
 use gpui::{Context, EventEmitter, FocusHandle, Task, UniformListScrollHandle};

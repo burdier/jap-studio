@@ -237,9 +237,7 @@ impl DawApp {
             Command("arrangement") => self.center_view == CenterView::Arrangement,
             Command("pattern") => self.center_view == CenterView::Session,
             Command("mixer") => self.center_view == CenterView::Mixer,
-            Command("explorer.toggle") => {
-                self.explorer.width > 0.0 && self.arrangement_panel_visible(Panel::Explorer)
-            }
+            Command("explorer.toggle") => self.explorer_visible(),
             Command("view.maximize") => self.workspace_focus.expanded.is_some(),
             Fx => self.fx.width > 0.0 && self.arrangement_panel_visible(Panel::Fx),
             PianoRoll => {
@@ -256,13 +254,6 @@ impl DawApp {
         self.bar_menu = None;
         let checked = self.bar_action_checked(action);
         match action {
-            Command("explorer.toggle")
-                if !checked
-                    && self.center_view == CenterView::Arrangement
-                    && self.explorer.width > 0.0 =>
-            {
-                self.workspace_focus.expanded = None;
-            }
             Command(command) => self.execute_command_with_context(command, window, cx),
             Fx if checked => self.resize_fx(0.0),
             Fx => self.show_fx(),

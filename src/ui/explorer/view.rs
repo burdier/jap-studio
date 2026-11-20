@@ -1,4 +1,4 @@
-use super::{Explorer, ExplorerEvent};
+use super::{Explorer, ExplorerEvent, ExplorerStyle};
 use crate::ui::{
     components::tree::{self, ADD as ADD_FOLDER, AUDIO, CLOSE, FILE, FOLDER, TreeRow},
     icons::render_svg_icon,
@@ -6,10 +6,44 @@ use crate::ui::{
 use elevate::explorer::EntryKind;
 use gpui::{
     Context, Div, IntoElement, MouseButton, MouseDownEvent, Render, Stateful, Window, div,
-    prelude::*, rgb,
+    prelude::*, px, rgb,
 };
 
+use std::path::PathBuf;
+
 const MIDI: &[u8] = include_bytes!("../../../assets/icons/toolbar/piano.svg");
+
+#[derive(Clone)]
+pub(in crate::ui) struct ExplorerSampleDrag {
+    pub path: PathBuf,
+    style: ExplorerStyle,
+}
+
+impl Render for ExplorerSampleDrag {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .max_w(px(260.0))
+            .px_2()
+            .py_1()
+            .text_xs()
+            .rounded(px(3.0))
+            .bg(rgb(self.style.selected))
+            .text_color(rgb(self.style.text))
+            .child(render_svg_icon(AUDIO, 13.0, self.style.accent))
+            .child(
+                div().truncate().child(
+                    self.path
+                        .file_name()
+                        .unwrap_or(self.path.as_os_str())
+                        .to_string_lossy()
+                        .into_owned(),
+                ),
+            )
+    }
+}
 
 impl Render for Explorer {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -73,6 +107,7 @@ impl Render for Explorer {
                     .when_some(self.selected.as_ref(), |footer, path| footer.child(
                         div().truncate().child(path.to_string_lossy().into_owned()),
                     ))
+                    .child("Arrastra audio a Drums Latex")
                     .child("Doble clic / Enter: insertar en pista activa")
                     .child("En el cursor · e / Esc: cerrar"),
             )
@@ -114,6 +149,13 @@ impl Explorer {
                 status: row.status.as_deref(),
             },
         )
+        .when(row.entry.kind == EntryKind::Audio, |line| {
+            let drag = ExplorerSampleDrag {
+                path: row.entry.path.clone(),
+                style,
+            };
+            line.on_drag(drag, |drag, _, _, cx| cx.new(|_| drag.clone()))
+        })
         .when(row.root, |line| {
             line.child(
                 div()

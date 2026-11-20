@@ -41,6 +41,9 @@ impl DawApp {
 
     fn place_drum_clips(&mut self) -> Result<usize, String> {
         let session = &self.pattern_editor.session;
+        if session.kit.pieces.is_empty() {
+            return Err("Añade una muestra al secuenciador antes de enviarla".into());
+        }
         let mut tracks = self.tracks.clone();
         let mut used = Vec::with_capacity(session.kit.pieces.len());
         for piece in &session.kit.pieces {

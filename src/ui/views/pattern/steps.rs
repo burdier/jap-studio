@@ -125,6 +125,36 @@ impl DawApp {
                             .min_h_0()
                             .overflow_y_scroll()
                             .track_scroll(&editor.steps_scroll)
+                            .when(editor.session.kit.pieces.is_empty(), |lanes| {
+                                lanes.child(
+                                    div()
+                                        .flex()
+                                        .flex_col()
+                                        .items_center()
+                                        .self_start()
+                                        .w_full()
+                                        .gap_2()
+                                        .p_4()
+                                        .text_color(rgb(ds.muted))
+                                        .child("Arrastra una muestra desde el Explorador")
+                                        .when(!self.explorer_visible(), |hint| {
+                                            hint.child(
+                                                flat_control(ds, false, ds.cyan)
+                                                    .h(px(22.0))
+                                                    .px_2()
+                                                    .text_color(rgb(ds.cyan))
+                                                    .child("Abrir explorador")
+                                                    .on_mouse_down(
+                                                        MouseButton::Left,
+                                                        cx.listener(|this, _, _, cx| {
+                                                            this.toggle_explorer();
+                                                            cx.notify();
+                                                        }),
+                                                    ),
+                                            )
+                                        }),
+                                )
+                            })
                             .children(
                                 (0..editor.session.kit.pieces.len())
                                     .map(|lane| self.render_drum_step_lane(lane, playing, cx)),

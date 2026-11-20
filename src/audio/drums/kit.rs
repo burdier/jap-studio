@@ -8,7 +8,7 @@ use elevate::{
     Primitive, ProcessSpec, StereoFrame,
     devices::sampler::TUNE,
     musical::{
-        drums::{DrumKit, DrumPiece, MAX_DRUM_PIECES},
+        drums::{DrumKit, DrumPiece, LAST_LEGACY_DRUM_ID, MAX_DRUM_PIECES},
         model::InstrumentId,
     },
     primitives::amplitude::Volume,
@@ -40,7 +40,7 @@ impl Piece {
         rate: u32,
     ) -> Result<Self, String> {
         let sound = if piece.layers.is_empty() {
-            if (1..=4).contains(&piece.id.0) {
+            if (1..=LAST_LEGACY_DRUM_ID).contains(&piece.id.0) {
                 Sound::Builtin(Box::new(BuiltinDrums::new()))
             } else {
                 Sound::Silent

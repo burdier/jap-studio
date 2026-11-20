@@ -34,7 +34,7 @@ pub(super) struct PatternEditor {
     pub inspector_open: bool,
     pub mixer_open: bool,
     pub roll: roll::DrumRoll,
-    sample_picker: Option<Task<()>>,
+    sample_task: Option<Task<()>>,
 }
 
 impl PatternEditor {
@@ -161,6 +161,12 @@ impl DawApp {
             return self.handle_drum_roll_key(key);
         }
         let editor = &mut self.pattern_editor;
+        if editor.session.kit.pieces.is_empty() {
+            return matches!(
+                key,
+                "enter" | "h" | "left" | "l" | "right" | "k" | "up" | "j" | "down"
+            );
+        }
         match key {
             "enter" => {
                 let lane = editor.cursor_lane;

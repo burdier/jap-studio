@@ -2,7 +2,9 @@
 mod arrangement;
 mod kit;
 pub use arrangement::{DrumClipTarget, arrangement_pattern, piece_pattern};
-pub use kit::{DrumKit, DrumKitId, DrumLayer, DrumMix, DrumPiece, MAX_DRUM_PIECES};
+pub use kit::{
+    DrumKit, DrumKitId, DrumLayer, DrumMix, DrumPiece, LAST_LEGACY_DRUM_ID, MAX_DRUM_PIECES,
+};
 
 use super::{
     grid::NoteGrid,

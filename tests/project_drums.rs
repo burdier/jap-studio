@@ -1,7 +1,7 @@
 use elevate::{
     devices::sampler::TUNE,
     musical::{
-        drums::{DrumLayer, DrumPlaybackSource, DrumSession, DrumSongCell},
+        drums::{DrumPlaybackSource, DrumSession, DrumSongCell},
         grid::NoteGrid,
         note_expression::NoteProperty,
         time::{Meter, PPQ, Tick},
@@ -17,14 +17,11 @@ fn drum_session_round_trip_keeps_two_bars_variation_and_linked_occurrences() {
 
     let mut drums = DrumSession::default();
     drums.kit.bus.fader.level = 70;
-    let kick = &mut drums.kit.pieces[0];
-    kick.sampler.set(TUNE, -2.0);
-    kick.layers.push(DrumLayer {
-        source: "Audio/Kick.wav".into(),
-        velocity_min: 32,
-        velocity_max: 100,
-    });
-    let kick = kick.id;
+    let kick = drums.kit.add_sample("Audio/Kick.wav".into()).unwrap();
+    let piece = &mut drums.kit.pieces[0];
+    piece.sampler.set(TUNE, -2.0);
+    piece.layers[0].velocity_min = 32;
+    piece.layers[0].velocity_max = 100;
     let first = drums.active;
     drums.resize_active(Tick(8 * PPQ)).unwrap();
     let pattern = &mut drums.active_pattern_mut().notes;
@@ -71,7 +68,7 @@ fn linked_drum_clip_refreshes_but_its_local_copy_keeps_note_edits() {
         track::DEMO_TRACKS,
     };
     let mut drums = DrumSession::default();
-    let kick = drums.kit.pieces[0].id;
+    let kick = drums.kit.add_sample("Audio/Kick.wav".into()).unwrap();
     let notes = &mut drums.active_pattern_mut().notes;
     notes
         .add_note(kick, Tick(PPQ / 2), Tick(PPQ / 2), 36, 90)
@@ -121,6 +118,12 @@ fn linked_drum_clip_refreshes_but_its_local_copy_keeps_note_edits() {
 #[test]
 fn custom_drum_pattern_and_sample_survive_reopen() {
     let mut drums = DrumSession::default();
+    assert!(drums.kit.pieces.is_empty());
+    let empty = ProjectDoc::new("Sin muestras").unwrap();
+    empty.set_drum_session(&drums).unwrap();
+    let reopened = ProjectDoc::import(&empty.snapshot().unwrap()).unwrap();
+    assert_eq!(reopened.drum_session().unwrap().unwrap(), drums);
+
     let original = drums.active;
     let piece = drums.kit.add_sample("Audio/Rim seco.wav".into()).unwrap();
 

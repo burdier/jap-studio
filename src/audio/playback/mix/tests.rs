@@ -770,12 +770,23 @@ fn round_robin_group_clip_alternates_audible_branches_on_play() {
 #[test]
 fn drums_and_wav_use_the_same_frame_clock() {
     use elevate::musical::{
+        drums::{DrumKit, DrumPiece},
         model::{InstrumentId, Pattern},
         time::{PPQ, Tick},
     };
+    let piece = InstrumentId(1);
+    let mut kit = DrumKit::default();
+    kit.pieces.push(DrumPiece {
+        id: piece,
+        name: "Kick".into(),
+        layers: Vec::new(),
+        sampler: Default::default(),
+        choke_group: None,
+        mix: Default::default(),
+    });
     let mut pattern = Pattern::new(Tick(PPQ)).unwrap();
     pattern
-        .add_note(InstrumentId(1), Tick(0), Tick(PPQ / 2), 60, 100)
+        .add_note(piece, Tick(0), Tick(PPQ / 2), 60, 100)
         .unwrap();
     let mut mix = Mix::prepare(
         vec![track(1, vec![clip([0.1, 0.1], 0.0, 48_000)])],
@@ -784,7 +795,7 @@ fn drums_and_wav_use_the_same_frame_clock() {
                 pattern,
                 repeat: true,
             }),
-            kit: Default::default(),
+            kit,
         }),
         48_000,
         120.0,

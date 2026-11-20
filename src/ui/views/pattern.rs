@@ -10,6 +10,7 @@ use crate::ui::{
         button::{flat_control, toggle_badge},
         meter::track_peak_meter,
     },
+    explorer::ExplorerSampleDrag,
     pattern_editor::{DrumSampleTarget, PatternAction, PatternOptions},
     workspace_focus::Panel,
 };
@@ -81,13 +82,37 @@ impl DawApp {
                 instrument.filter(|_| editor.inspector_open && !editor.mixer_open),
                 |panel, piece| panel.child(self.render_drum_inspector(piece, cx)),
             )
-            .child(if editor.mixer_open {
-                self.render_drum_mixer(cx)
-            } else if let Some(piece) = selected {
-                self.render_drum_roll(piece, cx)
-            } else {
-                self.render_drum_steps(cx)
-            })
+            .child(
+                div()
+                    .id("drum-sample-drop")
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_h_0()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .drag_over::<ExplorerSampleDrag>({
+                        let cyan = self.ds.cyan;
+                        move |style, _, _, _| style.border_1().border_color(rgb(cyan))
+                    })
+                    .on_drop(
+                        cx.listener(|this, sample: &ExplorerSampleDrag, window, cx| {
+                            this.workspace_focus.active = Panel::Center;
+                            window.focus(&this.focus_handle, cx);
+                            this.sync_midi_focus();
+                            this.drop_drum_sample(sample.path.clone(), cx);
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    )
+                    .child(if editor.mixer_open {
+                        self.render_drum_mixer(cx)
+                    } else if let Some(piece) = selected {
+                        self.render_drum_roll(piece, cx)
+                    } else {
+                        self.render_drum_steps(cx)
+                    }),
+            )
     }
 
     fn render_pattern_controls(&self, cx: &mut Context<Self>) -> Stateful<Div> {
