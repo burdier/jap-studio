@@ -10,7 +10,7 @@ use gpui::{
 };
 
 impl DawApp {
-    pub(super) fn render_arrangement_workspace(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn workspace_with_explorer(&self, cx: &mut Context<Self>) -> gpui::Div {
         let resizing = matches!(self.split_drag, Some(SplitDrag::Explorer { .. }));
         div()
             .flex_1()
@@ -48,6 +48,10 @@ impl DawApp {
                     }),
                 ))
             })
+    }
+
+    pub(super) fn render_arrangement_workspace(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        self.workspace_with_explorer(cx)
             .when(self.fx.width > 0.0, |workspace| {
                 workspace.child(
                     div()

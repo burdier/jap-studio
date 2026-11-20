@@ -86,16 +86,21 @@ impl DawApp {
             .child(match self.center_view {
                 CenterView::Arrangement => self.render_arrangement_workspace(cx).into_any_element(),
                 CenterView::Session => self.render_drum_workspace(cx).into_any_element(),
-                CenterView::Mixer => div()
-                    .flex_1()
-                    .min_h_0()
-                    .flex()
-                    .flex_col()
-                    .rounded(px(ds.radius_lg))
-                    .border_1()
-                    .border_color(rgb(ds.frame_border()))
-                    .overflow_hidden()
-                    .child(self.render_mixer(cx))
+                CenterView::Mixer => self
+                    .workspace_with_explorer(cx)
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_h_0()
+                            .min_w_0()
+                            .flex()
+                            .flex_col()
+                            .rounded(px(ds.radius_lg))
+                            .border_1()
+                            .border_color(rgb(ds.frame_border()))
+                            .overflow_hidden()
+                            .child(self.render_mixer(cx)),
+                    )
                     .into_any_element(),
             })
             .into_any_element()

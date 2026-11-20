@@ -415,10 +415,10 @@ acotada de selección por NoteOn durante la reproducción.
   Este historial de texto no implementa undo/redo del proyecto. Validación: compilación,
   sin ejecutar tests ni comprobación interactiva de la UI.
 
-- Explorador de bibliotecas independiente a la izquierda del Arrangement y su editor, con
-  separación visual y ancho arrastrable hasta ocultarse. `e` en modo Normal lo abre/cierra
-  y recupera el panel reducido a cero; con foco dentro, `e`/Esc lo ocultan. En el piano roll,
-  Borrar queda disponible con Shift+E. Árbol con sangría y guías, carpetas primero, iconos
+- Explorador de bibliotecas disponible junto a Arrangement, Drums Latex y Mixer.
+  El separador permite ajustar el ancho hasta ocultarlo. `e` en modo Normal abre
+  y cierra el Explorador en la vista actual. Con el foco en el árbol, Esc también
+  lo cierra. En el piano roll, Borrar queda disponible con Shift+E. Árbol con sangría y guías, carpetas primero, iconos
   audio/MIDI y selección con el contraste del perfil. Flechas/j/k/h/l navegan el árbol.
   «Añadir biblioteca» permite elegir carpetas; sus accesos sobreviven al reinicio en
   `~/.config/hay-daw/libraries` (o la carpeta de configuración del sistema). «Quitar» olvida

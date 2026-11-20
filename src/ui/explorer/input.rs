@@ -27,7 +27,15 @@ impl Explorer {
             .as_deref()
             .unwrap_or(&event.keystroke.key);
         let modifiers = event.keystroke.modifiers;
-        if !modifiers.control && !modifiers.alt && !modifiers.platform {
+        let unmodified = !modifiers.control && !modifiers.alt && !modifiers.platform;
+        if unmodified {
+            if key == "escape" || (self.vim_enabled && key == "e") {
+                cx.stop_propagation();
+                if !event.is_held {
+                    cx.emit(ExplorerEvent::Close);
+                }
+                return;
+            }
             if key == "backspace" {
                 self.search.pop();
                 self.selected = None;
@@ -52,13 +60,7 @@ impl Explorer {
         if !self.vim_enabled && matches!(key, "h" | "j" | "k" | "l" | "e") {
             return;
         }
-        if modifiers.control || modifiers.alt || modifiers.platform {
-            return;
-        }
-        if matches!(key, "escape" | "e") {
-            if !event.is_held {
-                cx.emit(ExplorerEvent::Close);
-            }
+        if !unmodified {
             return;
         }
         let current = self

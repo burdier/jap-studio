@@ -61,10 +61,10 @@ impl ExplorerDock {
 impl DawApp {
     pub(super) fn explorer_visible(&self) -> bool {
         self.explorer.width > 0.0
-            && match self.workspace_focus.expanded {
-                Some(panel) => panel == Panel::Explorer,
-                None => self.center_view != CenterView::Mixer,
-            }
+            && self
+                .workspace_focus
+                .expanded
+                .is_none_or(|panel| panel == Panel::Explorer)
     }
 
     pub(super) fn toggle_explorer(&mut self) {
@@ -73,9 +73,6 @@ impl DawApp {
             return;
         }
         self.workspace_focus.expanded = None;
-        if self.center_view == CenterView::Mixer {
-            self.set_center_view(CenterView::Arrangement);
-        }
         self.release_explorer_keyboard();
         self.explorer.width = self.explorer.last_width;
         self.explorer.focus_request = Some(true);
@@ -91,10 +88,9 @@ impl DawApp {
             self.workspace_focus.expanded = None;
         }
         if self.workspace_focus.active == Panel::Explorer {
-            self.workspace_focus.active = if self.center_view == CenterView::Session {
-                Panel::Center
-            } else {
-                Panel::Arrangement
+            self.workspace_focus.active = match self.center_view {
+                CenterView::Arrangement => Panel::Arrangement,
+                CenterView::Session | CenterView::Mixer => Panel::Center,
             };
             self.sync_midi_focus();
         }
