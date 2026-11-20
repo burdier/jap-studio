@@ -41,10 +41,17 @@ pub(super) struct PieceControl {
     pub peak: Arc<Peak>,
 }
 
+pub(super) struct DrumPlan {
+    pub pattern: PreparedPattern,
+    pub repeat: bool,
+    pub end: u64,
+}
+
 pub(crate) struct DrumBlock {
     pub(super) voice_revision: u64,
-    pub(super) plan: Option<Arc<PreparedPattern>>,
+    pub(super) plan: Option<Arc<DrumPlan>>,
     pieces: Vec<PieceControl>,
+    pub bus_solo: bool,
     pub(super) bus_gain: f32,
     pub(super) bus_pan: f32,
     pub(super) bus_peak: Arc<Peak>,
@@ -53,7 +60,7 @@ pub(crate) struct DrumBlock {
 impl DrumBlock {
     pub(super) fn new(
         kit: &DrumKit,
-        plan: Option<Arc<PreparedPattern>>,
+        plan: Option<Arc<DrumPlan>>,
         previous: Option<&Self>,
         voice_revision: u64,
     ) -> Self {
@@ -63,7 +70,7 @@ impl DrumBlock {
             .iter()
             .map(|piece| PieceControl {
                 id: piece.id,
-                gain: gain(piece.mix, !solo || piece.mix.solo || kit.bus.solo),
+                gain: gain(piece.mix, !solo || piece.mix.solo),
                 pan: pan(piece.mix),
                 base_note: piece.base_note(),
                 params: piece.sampler.clone(),
@@ -77,6 +84,7 @@ impl DrumBlock {
             voice_revision,
             plan,
             pieces,
+            bus_solo: kit.bus.solo,
             bus_gain: gain(kit.bus, true),
             bus_pan: pan(kit.bus),
             bus_peak: previous.map_or_else(Arc::default, |block| block.bus_peak.clone()),
@@ -84,7 +92,11 @@ impl DrumBlock {
     }
 
     pub fn loops(&self) -> bool {
-        self.plan.is_some()
+        self.plan.as_ref().is_some_and(|plan| plan.repeat)
+    }
+
+    pub fn arrangement_end(&self) -> u64 {
+        self.plan.as_ref().map_or(0, |plan| plan.end)
     }
 
     pub(super) fn piece(&self, id: InstrumentId) -> Option<&PieceControl> {

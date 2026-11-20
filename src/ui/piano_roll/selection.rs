@@ -64,7 +64,7 @@ impl DawApp {
         };
         self.stop_audio();
         if let Some(clip) = self.timeline.midi_clip.as_mut() {
-            clip.pattern = pattern;
+            clip.replace_pattern(pattern);
             clip.muted_notes.retain(|id| !ids.contains(id));
         }
         self.piano_roll

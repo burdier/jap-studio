@@ -146,7 +146,7 @@
 | Copiar/cortar/pegar notas | `src/ui/piano_roll/clipboard.rs` | Reutiliza selección; conserva expresión, offsets y mute |
 | Puntero GPU / efectos de cursor (`Fueguito`, etc.) | `src/ui/cursor_fx.rs` | `render.rs`, `views/settings.rs`, `views/chrome.rs` |
 | Piano clicable | `src/ui/views/instrument.rs` | `instruments/piano.rs` |
-| Mixer de ejemplo | `src/ui/views/mixer.rs` | Es mock, no medidores reales |
+| Mixers del proyecto y del kit | `src/ui/views/mixer.rs` | Tiras compartidas y picos del Player |
 | Título/estado | `src/ui/views/chrome.rs` | `views/transport.rs` para botones |
 | Zoom y conversión visual | `src/ui/timeline/viewport.rs` | `timeline/mod.rs` |
 | Drag/scroll/picking | `src/ui/timeline/interaction.rs` | `timeline/tests.rs` |
@@ -175,7 +175,8 @@
 | Paneo estéreo sin asignaciones en callback | `src/audio/stereo_pan.rs` | `audio/playback.rs`, `audio/piano/render.rs` |
 | Reproducir clips | `src/audio/playback.rs` | Varias pistas; remuestreo SoXR preparado en worker, ruteo estéreo a interfaz multicanal |
 | Kit, patrones y Canción de batería | `src/musical/drums.rs` | `musical/drums/kit.rs`, `project/drums.rs`, `ui/pattern_editor.rs`, `ui/project/`: IDs persistentes, patrones en ticks y selector de audición |
-| Reproducir patrón o Canción | `src/audio/drums/mix.rs` | Loop por frames en el mezclador común; `live.rs` publica ediciones durante Play |
+| Enviar y editar clips de Drums en Arrangement | `src/ui/timeline/drum_clips.rs` | `musical/drums/arrangement.rs`, `project/midi.rs` y `ui/file_playback.rs`: enlace por pieza, desacople al editar notas y plan absoluto en el bus del kit |
+| Reproducir el kit | `src/audio/drums/mix.rs` | Loop por frames en el mezclador común; `live.rs` publica ediciones durante Play |
 | Muestras, mezcla y picos de batería | `src/audio/drums/kit.rs` | Sampler sfizz con capas, cortes entre piezas y bus Drums; `voice.rs` aporta la síntesis de respaldo |
 | Resaltar paso sonando | `src/ui/pattern_editor.rs` | `views/pattern.rs` |
 | Ejecutar la app | `scripts/run.sh` | `scripts/check.sh` |

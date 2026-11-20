@@ -1,14 +1,12 @@
 //! El hilo de control publica notas y mezcla. Las voces nuevas se entregan a RT por cola.
 use super::{
-    controls::{DrumBlock, same_voice_config},
+    controls::{DrumBlock, DrumPlan, same_voice_config},
     kit::PreparedKit,
+    mix::DrumScore,
 };
 use crate::audio::{publication::Publication, sampler::SampleAsset};
 use elevate::musical::{
-    drums::DrumKit,
-    model::{InstrumentId, Pattern},
-    scheduler::PreparedPattern,
-    time::TimeBase,
+    drums::DrumKit, model::InstrumentId, scheduler::PreparedPattern, time::TimeBase,
 };
 use rtrb::{Consumer, Producer, RingBuffer};
 use std::{
@@ -28,7 +26,7 @@ pub(crate) struct LiveDrums {
     time: TimeBase,
     rate: u32,
     kit: DrumKit,
-    pattern: Option<Pattern>,
+    score: Option<DrumScore>,
     revision: Arc<AtomicU64>,
     requested: u64,
     started: u64,
@@ -69,13 +67,13 @@ impl VoiceHandoff {
 impl LiveDrums {
     pub(super) fn prepare(
         kit: DrumKit,
-        pattern: Option<Pattern>,
+        score: Option<DrumScore>,
         asset_bank: Arc<HashMap<String, Arc<SampleAsset>>>,
         rate: u32,
         bpm: f64,
     ) -> Result<(Self, VoiceHandoff), String> {
         let time = TimeBase::new(rate, bpm).map_err(|error| error.to_string())?;
-        let plan = compile(pattern.as_ref(), time)?;
+        let plan = compile(score.as_ref(), time)?;
         let state = Arc::new(Publication::new(DrumBlock::new(&kit, plan, None, 0)));
         let (incoming, next) = RingBuffer::new(1);
         let (garbage, retired) = RingBuffer::new(1);
@@ -91,7 +89,7 @@ impl LiveDrums {
                 time,
                 rate,
                 kit,
-                pattern,
+                score,
                 revision,
                 requested: 0,
                 started: 0,
@@ -105,16 +103,25 @@ impl LiveDrums {
         ))
     }
 
-    pub fn edit(&mut self, kit: &DrumKit, pattern: Option<&Pattern>) -> Result<(), String> {
-        let pattern_changed = self.pattern.as_ref() != pattern;
-        if !pattern_changed && self.kit == *kit {
-            return Ok(());
-        }
-        let plan = if pattern_changed {
-            compile(pattern, self.time)?
+    pub fn edit(&mut self, kit: &DrumKit, score: Option<&DrumScore>) -> Result<(), String> {
+        if self.score.as_ref() != score {
+            let plan = compile(score, self.time)?;
+            self.score = score.cloned();
+            self.publish(kit, plan);
         } else {
-            self.state.read(|block| block.plan.clone())
-        };
+            self.edit_kit(kit);
+        }
+        Ok(())
+    }
+
+    pub fn edit_kit(&mut self, kit: &DrumKit) {
+        if self.kit != *kit {
+            let plan = self.state.read(|block| block.plan.clone());
+            self.publish(kit, plan);
+        }
+    }
+
+    fn publish(&mut self, kit: &DrumKit, plan: Option<Arc<DrumPlan>>) {
         if !same_voice_config(&self.kit, kit) {
             self.requested = self.requested.wrapping_add(1);
             self.revision.store(self.requested, Ordering::Release);
@@ -124,12 +131,10 @@ impl LiveDrums {
             .state
             .read(|previous| DrumBlock::new(kit, plan, Some(previous), self.requested));
         self.state.publish(block);
-        self.kit = kit.clone();
-        if pattern_changed {
-            self.pattern = pattern.cloned();
+        if self.kit != *kit {
+            self.kit = kit.clone();
         }
         self.start_worker();
-        Ok(())
     }
 
     pub fn poll(&mut self) -> Result<(), String> {
@@ -192,15 +197,25 @@ impl LiveDrums {
     }
 }
 
-fn compile(
-    pattern: Option<&Pattern>,
-    time: TimeBase,
-) -> Result<Option<Arc<PreparedPattern>>, String> {
-    pattern
-        .map(|pattern| {
-            PreparedPattern::compile(pattern, time)
-                .map(Arc::new)
-                .map_err(|error| error.to_string())
+fn compile(score: Option<&DrumScore>, time: TimeBase) -> Result<Option<Arc<DrumPlan>>, String> {
+    score
+        .map(|score| {
+            let pattern = PreparedPattern::compile(&score.pattern, time)
+                .map_err(|error| error.to_string())?;
+            // El Arrangement termina después de la última ventana visible o la cola
+            // acotada del último golpe. El loop conserva la longitud del patrón.
+            let mut end = pattern.length_frames().saturating_add(1);
+            if !score.repeat
+                && let Some((last, _)) = pattern.all_events().last()
+            {
+                let tail = u64::from(time.sample_rate()) * 2;
+                end = end.max(last.saturating_add(tail));
+            }
+            Ok(Arc::new(DrumPlan {
+                pattern,
+                repeat: score.repeat,
+                end,
+            }))
         })
         .transpose()
 }

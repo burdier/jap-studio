@@ -309,7 +309,7 @@
         <div class="score" aria-label="Avance total">
           <strong><span id="done-count">11</span> / <span id="total-count">19</span></strong>
           <span>PR completados · <span id="percent">58%</span></span>
-          <span class="commit-score"><span id="commit-done">56</span>/<span id="commit-total">83</span> commits · <span id="commit-percent">67%</span></span>
+          <span class="commit-score"><span id="commit-done">58</span>/<span id="commit-total">83</span> commits · <span id="commit-percent">70%</span></span>
           <div class="bar" aria-hidden="true"><span id="bar-fill"></span></div>
         </div>
       </header>
@@ -413,20 +413,20 @@
             </details>
           </article>
 
-          <article id="pr-18" data-pr="PR-18" data-status="pending">
-            <div class="pr-head"><span class="pr-number">PR-18</span><span class="status">Pendiente</span></div>
+          <article id="pr-18" data-pr="PR-18" data-status="progress">
+            <div class="pr-head"><span class="pr-number">PR-18</span><span class="status">En progreso</span></div>
             <h3>Una batería en las dos vistas</h3>
             <p>Enviar el groove al Arrangement, editar un fill por pieza y mezclar el mismo kit con la misma tira de canal que el mixer general.</p>
-            <div class="depends">DL-4 y DL-5 arrancan tras DL-1 · Cierre tras PR-17</div>
+            <div class="depends">2 commits integrados sobre PR-17 · Pasada visual y de audio al final</div>
             <details class="commit-plan" open>
               <summary>MIDI por pieza y tiras de canal compartidas</summary>
               <ol>
-                <li id="drums-latex-midi" data-task="DL-4" data-owner="arrangement">
+                <li id="drums-latex-midi" data-task="DL-4" data-owner="arrangement" data-status="done">
                   <strong>feat(arrangement): enviar MIDI por pieza al kit compartido</strong>
                   <p>El agente de Arrangement lleva patrones o una secuencia de Canción al timeline como clips por pieza. Conserva posición, duración, nota y velocidad, y habilita edición local sin cambiar el patrón fuente. Al tocar esos clips se usa la ruta de DL-3 y el proyecto conserva sus referencias al volver a abrirlo.</p>
                   <small><b>Área:</b> acciones de Arrangement, <code>src/ui/timeline/</code> y persistencia de referencias en <code>src/project/midi.rs</code>. <b>Entrega:</b> quitar un Kick de un compás sin cambiar Groove A; afinar el instrumento y oírlo desde ambos orígenes.</small>
                 </li>
-                <li id="drums-latex-mixer" data-task="DL-5" data-owner="mixer">
+                <li id="drums-latex-mixer" data-task="DL-5" data-owner="mixer" data-status="done" data-commit="8e83fe3">
                   <strong>feat(ui): compartir tiras entre el mixer de batería y el general</strong>
                   <p>El agente de mixer reutiliza una tira con mute, solo, paneo, valor en dB, fader vertical y medidor. En Drums Latex muestra piezas y bus Drums. En el mixer general muestra pistas del proyecto y usa los controles y picos disponibles. Las dos vistas comparten los widgets y el controlador de cada canal real.</p>
                   <small><b>Área:</b> <code>src/ui/views/mixer.rs</code>, componente de tira y adaptación del mixer de batería. <b>Entrega:</b> silenciar y subir una pieza en el mixer de batería y comprobar que el cambio se oye al reproducir sus clips del Arrangement.</small>

@@ -280,6 +280,7 @@ impl Mix {
         for (index, block) in output.chunks_mut(256).enumerate() {
             block.fill([0.; 2]);
             let at = position.saturating_add(index as u64 * 256);
+            let drum_solo = drum_block.is_some_and(|state| state.bus_solo);
             for track in &mut self.tracks {
                 let remaining = track.retirement.remaining();
                 let frames = remaining.map_or(block.len(), |tail| block.len().min(tail as usize));
@@ -325,9 +326,11 @@ impl Mix {
                 track.retirement.finish_block(bus);
                 let mut peak = 0.0_f32;
                 for (sum, frame) in block.iter_mut().zip(bus) {
-                    sum[0] += frame[0];
-                    sum[1] += frame[1];
-                    peak = peak.max(frame[0].abs()).max(frame[1].abs());
+                    if !drum_solo {
+                        sum[0] += frame[0];
+                        sum[1] += frame[1];
+                        peak = peak.max(frame[0].abs()).max(frame[1].abs());
+                    }
                 }
                 let previous = f32::from_bits(track.control.peak.load(Ordering::Relaxed));
                 let decay = (1.0 - self.peak_decay * frames as f32).max(0.0);

@@ -1,7 +1,7 @@
 //! Mezclador de clips: un stream y posición compartida en frames.
 mod mix;
 mod transport;
-use super::drums::{DrumBlock, DrumInput, DrumPreview, LiveDrums};
+use super::drums::{DrumBlock, DrumInput, DrumPreview, DrumScore, LiveDrums};
 use super::publication::Publication;
 use super::{
     AudioClip, clip_source::ClipSource, output::choose_output_config, stereo_pan::StereoPan,
@@ -13,11 +13,7 @@ use cpal::{
 use elevate::devices::utility_slot::UtilitySlot;
 use elevate::musical::time::{Meter, Tempo};
 use elevate::musical::track::TrackId;
-use elevate::musical::{
-    drums::DrumKit,
-    midi::MidiMessage,
-    model::{InstrumentId, Pattern},
-};
+use elevate::musical::{drums::DrumKit, midi::MidiMessage, model::InstrumentId};
 use elevate::{Primitive, ProcessSpec, primitives::amplitude::Volume};
 pub(crate) use mix::{HiloBranchInput, MidiTrackInput, TrackInput};
 use mix::{Mix, TrackControl};
@@ -84,9 +80,9 @@ impl PreparedPlayback {
         }
         Ok(Self { device, setup, mix })
     }
-    pub fn update_drums(&mut self, kit: &DrumKit, pattern: Option<&Pattern>) -> Result<(), String> {
+    pub fn update_drums(&mut self, kit: &DrumKit, score: Option<&DrumScore>) -> Result<(), String> {
         if let Some(drums) = self.mix.live_drums() {
-            drums.edit(kit, pattern)?;
+            drums.edit(kit, score)?;
         }
         Ok(())
     }
@@ -251,11 +247,28 @@ impl Player {
     pub fn all_live_notes_off(&self) {
         self.all_off.store(true, Ordering::Release);
     }
-    pub fn update_drums(&mut self, kit: &DrumKit, pattern: Option<&Pattern>) -> Result<(), String> {
+    pub fn update_drums(&mut self, kit: &DrumKit, score: Option<&DrumScore>) -> Result<(), String> {
         if let Some((drums, _)) = &mut self.drums {
-            drums.edit(kit, pattern)?;
+            drums.edit(kit, score)?;
         }
         Ok(())
+    }
+
+    pub fn update_drum_kit(&mut self, kit: &DrumKit) {
+        if let Some((drums, _)) = &mut self.drums {
+            drums.edit_kit(kit);
+        }
+    }
+
+    pub fn drum_bus_solo(&self) -> bool {
+        self.state
+            .drums
+            .as_ref()
+            .is_some_and(|state| state.read(|block| block.bus_solo))
+    }
+
+    pub fn has_drum_kit(&self) -> bool {
+        self.drums.is_some()
     }
 
     pub fn poll_drums(&mut self) -> Result<(), String> {
@@ -323,7 +336,7 @@ impl Player {
                             let end = if drums.is_some_and(DrumBlock::loops) {
                                 u64::MAX
                             } else {
-                                clip_end
+                                clip_end.max(drums.map_or(0, DrumBlock::arrangement_end))
                             };
                             cursor.set_end(end);
                             cursor.render_with_tail(

@@ -308,7 +308,23 @@ impl ProjectDoc {
     }
 
     pub fn midi_clips(&self) -> Result<Vec<crate::musical::clip::MidiClip>, String> {
-        midi::read_clips(&self.doc, &self.tracks()?)
+        self.read_midi_with_drum_links(&self.tracks()?)
+    }
+
+    fn read_midi_with_drum_links(
+        &self,
+        tracks: &[ProjectTrack],
+    ) -> Result<Vec<crate::musical::clip::MidiClip>, String> {
+        let mut clips = midi::read_clips(&self.doc, tracks)?;
+        if clips.iter().any(|clip| clip.drum_target.is_some()) {
+            let session = self
+                .drum_session()?
+                .ok_or("Falta el kit de los clips de batería")?;
+            for clip in &mut clips {
+                clip.refresh_drum_link(&session)?;
+            }
+        }
+        Ok(clips)
     }
 
     /// Guarda referencias a archivos y edición de clips WAV, sin muestras decodificadas.
@@ -342,7 +358,7 @@ impl ProjectDoc {
         &self,
     ) -> Result<(Vec<Track>, Vec<crate::musical::clip::MidiClip>), String> {
         let tracks = self.tracks()?;
-        let clips = midi::read_clips(&self.doc, &tracks)?;
+        let clips = self.read_midi_with_drum_links(&tracks)?;
         let restored = tracks
             .into_iter()
             .map(|entry| {

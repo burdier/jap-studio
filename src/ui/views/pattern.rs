@@ -131,6 +131,28 @@ impl DawApp {
             .child(self.drum_action_chip("+ Compás", false, PatternAction::ExtendBar, cx))
             .child(self.drum_action_chip("Duplicar", false, PatternAction::Duplicate, cx))
             .child(
+                flat_control(ds, false, ds.accent)
+                    .id("send-drums-to-arrangement")
+                    .h(px(22.0))
+                    .px_2()
+                    .text_xs()
+                    .text_color(rgb(ds.text))
+                    .child("→ Arrangement")
+                    .tooltip(|window, cx| {
+                        gpui::component::tooltip::Tooltip::new(
+                            "Enviar las piezas al cursor del Arrangement",
+                        )
+                        .build(window, cx)
+                    })
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, cx| {
+                            this.send_drums_to_arrangement();
+                            cx.notify();
+                        }),
+                    ),
+            )
+            .child(
                 div()
                     .relative()
                     .id("drums-bus-peak")

@@ -86,6 +86,14 @@ impl DawApp {
             ],
             MenuPage::Main => {
                 let mut items = Vec::new();
+                let drum = (kind == DragKind::Midi)
+                    .then(|| {
+                        self.timeline
+                            .midi_clip
+                            .as_ref()
+                            .and_then(|clip| clip.drum_target)
+                    })
+                    .flatten();
                 if kind == DragKind::Midi {
                     items.push(MenuItem::new("Editar en Piano Roll", A::EditMidi));
                     let destination = self
@@ -94,13 +102,27 @@ impl DawApp {
                         .as_ref()
                         .and_then(|clip| clip.hilo_target)
                         .and_then(|id| self.tracks.iter().find(|track| track.id == id));
-                    items.push(MenuItem::new(
-                        format!(
-                            "Salida MIDI · {}  ›",
-                            destination.map_or("Carril", |track| track.name.as_ref())
-                        ),
-                        A::Page(MenuPage::Route),
-                    ));
+                    if let Some(target) = drum {
+                        items.push(
+                            MenuItem::new(
+                                if target.linked {
+                                    "Drums Latex · Vinculado"
+                                } else {
+                                    "Drums Latex · Local"
+                                },
+                                A::Page(MenuPage::Route),
+                            )
+                            .enabled(false),
+                        );
+                    } else {
+                        items.push(MenuItem::new(
+                            format!(
+                                "Salida MIDI · {}  ›",
+                                destination.map_or("Carril", |track| track.name.as_ref())
+                            ),
+                            A::Page(MenuPage::Route),
+                        ));
+                    }
                     items.push(
                         MenuItem::new(
                             format!("Materialize · {} MIDI", self.timeline.selected_midi.len()),
@@ -128,7 +150,8 @@ impl DawApp {
                     MenuItem::new(
                         format!("Ganancia · {:+.1} dB  ›", props.gain_db),
                         A::Page(MenuPage::Gain),
-                    ),
+                    )
+                    .enabled(drum.is_none()),
                     MenuItem::new("Mover a pista anterior", A::Move(-1))
                         .enabled(!props.locked && menu.track > 0)
                         .separated(),

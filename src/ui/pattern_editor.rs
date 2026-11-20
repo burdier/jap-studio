@@ -76,6 +76,24 @@ impl PatternEditor {
 impl DawApp {
     pub(super) fn apply_pattern_action(&mut self, action: PatternAction) {
         let selected_pattern = self.pattern_editor.session.active;
+        let updates_notes = matches!(
+            &action,
+            PatternAction::Toggle { .. }
+                | PatternAction::Velocity { .. }
+                | PatternAction::ExtendBar
+                | PatternAction::InsertNote { .. }
+                | PatternAction::MoveNote(_)
+                | PatternAction::DeleteNote(_)
+                | PatternAction::NoteVelocity { .. }
+        );
+        let updates_score = updates_notes
+            || matches!(
+                &action,
+                PatternAction::Select(_)
+                    | PatternAction::Duplicate
+                    | PatternAction::SongCell(_)
+                    | PatternAction::UseSource(_)
+            );
         match self.pattern_editor.apply(action, self.timeline.meter) {
             Ok(message) => {
                 let editor = &mut self.pattern_editor;
@@ -85,7 +103,19 @@ impl DawApp {
                 }
                 self.status_message =
                     format!("{message} · {} notas", editor.pattern().notes().len());
-                self.publish_drum_edit();
+                if updates_notes
+                    && let Err(error) = self
+                        .timeline
+                        .refresh_drum_links(&editor.session, selected_pattern)
+                {
+                    self.status_message = error;
+                    return;
+                }
+                if updates_score {
+                    self.publish_drum_edit();
+                } else {
+                    self.publish_drum_mix();
+                }
             }
             Err(error) => self.status_message = error,
         }
@@ -127,16 +157,6 @@ impl DawApp {
             _ => return false,
         }
         true
-    }
-
-    pub(super) fn drum_playback_pattern(
-        &self,
-    ) -> Result<Option<std::borrow::Cow<'_, Pattern>>, String> {
-        if self.pattern_loop_beats.is_some() {
-            self.pattern_editor.session.playback_pattern()
-        } else {
-            Ok(None)
-        }
     }
 
     /// Posición del patrón activo leída del motor. Canción usa su ocurrencia vigente.

@@ -97,9 +97,9 @@ impl Snapshot {
                 &self.pans,
             )?
         };
+        doc.set_drum_session(&self.drums)?;
         doc.reconcile_audio_clips(&self.audio)?;
         doc.set_pianos(&self.pianos)?;
-        doc.set_drum_session(&self.drums)?;
         Ok(doc)
     }
 

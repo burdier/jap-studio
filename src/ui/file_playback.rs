@@ -1,11 +1,17 @@
 //! Preparación de mezcla cancelable; fuentes y remuestreo fuera del callback.
 mod lua;
 use super::DawApp;
-use crate::audio::drums::{DrumInput, DrumPreview};
+use crate::audio::drums::{DrumInput, DrumPreview, DrumScore};
 use crate::audio::piano::VoiceSource;
 use crate::audio::{AudioClip, HiloBranchInput, MidiTrackInput, PreparedPlayback, TrackInput};
 use elevate::musical::clip::MidiClip;
-use elevate::musical::{hilo::HiloPlan, model::InstrumentId, time::PPQ};
+use elevate::musical::{
+    drums::{DrumPlaybackSource, arrangement_pattern},
+    hilo::HiloPlan,
+    model::InstrumentId,
+    time::PPQ,
+    track::effective_mix,
+};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 pub(super) struct PendingPlayback {
     result: Receiver<Result<PreparedPlayback, String>>,
@@ -17,6 +23,7 @@ pub(super) struct PendingPlayback {
     revision: u64,
     audio: crate::audio::device::AudioConfig,
     lua_preplay: bool,
+    drums_enabled: bool,
 }
 impl DawApp {
     fn audio_snapshot(&self) -> Vec<AudioClip> {
@@ -32,23 +39,81 @@ impl DawApp {
             .midi_clip
             .iter()
             .chain(&self.timeline.other_midi_clips)
+            .filter(|clip| clip.drum_target.is_none())
             .cloned()
             .collect()
     }
+    fn has_drum_clips(&self) -> bool {
+        self.timeline
+            .midi_clip
+            .iter()
+            .chain(&self.timeline.other_midi_clips)
+            .any(|clip| clip.drum_target.is_some())
+    }
+
+    fn drum_score(&self) -> Result<Option<DrumScore>, String> {
+        let session = &self.pattern_editor.session;
+        if session.source == DrumPlaybackSource::Arrangement {
+            let clips = self
+                .timeline
+                .midi_clip
+                .iter()
+                .chain(&self.timeline.other_midi_clips)
+                .filter(|clip| {
+                    clip.drum_target
+                        .is_some_and(|target| target.kit == session.kit.id)
+                });
+            let pattern = arrangement_pattern(clips, |clip| self.drum_track_audible(clip.track))?;
+            return Ok(pattern.map(|pattern| DrumScore {
+                pattern,
+                repeat: false,
+            }));
+        }
+        if session.source == DrumPlaybackSource::Song && session.song.is_empty() {
+            return Ok(None);
+        }
+        Ok(session.playback_pattern()?.map(|pattern| DrumScore {
+            pattern: pattern.into_owned(),
+            repeat: true,
+        }))
+    }
+
+    fn drum_track_audible(&self, index: usize) -> bool {
+        if self.pattern_editor.session.kit.bus.solo {
+            return self.tracks.get(index).is_some_and(|track| {
+                !track.muted
+                    && track
+                        .parent
+                        .and_then(|id| self.tracks.iter().find(|item| item.id == id))
+                        .is_none_or(|parent| !parent.muted)
+            });
+        }
+        effective_mix(&self.tracks, &self.track_levels, &self.track_pans, index).audible
+    }
+
     pub(super) fn request_file_playback(&mut self, beat: f64) {
         self.sync_vst_effects();
         let clips = self.audio_snapshot();
         let midi_clips = self.midi_snapshot();
         let bpm = self.timeline.tempo.bpm();
         let meter = self.timeline.meter;
-        let mut pattern = match self.drum_playback_pattern() {
-            Ok(pattern) => pattern.map(std::borrow::Cow::into_owned),
-            Err(error) => {
-                self.status_message = error;
-                self.pattern_loop_beats = None;
-                return;
+        let drums_enabled = self.pattern_loop_beats.is_some() || self.has_drum_clips();
+        let drums = if drums_enabled {
+            match self.drum_score() {
+                Ok(score) => Some(DrumInput {
+                    score,
+                    kit: self.pattern_editor.session.kit.clone(),
+                }),
+                Err(error) => {
+                    self.status_message = error;
+                    self.pattern_loop_beats = None;
+                    return;
+                }
             }
+        } else {
+            None
         };
+        self.pattern_loop_beats = loop_beats(drums.as_ref().and_then(|input| input.score.as_ref()));
 
         let mut hilo_plans = Vec::new();
         for (index, group) in self.tracks.iter().enumerate() {
@@ -198,15 +263,11 @@ impl DawApp {
                     midi.clips.is_empty()
                         && midi.hilo.as_ref().is_none_or(|hilo| hilo.clips.is_empty())
                 })
-        }) && pattern.is_none()
+        }) && drums.as_ref().is_none_or(|input| input.score.is_none())
         {
             self.status_message = "No hay clips de audio o MIDI para reproducir".into();
             return;
         }
-        let drums = self.pattern_loop_beats.map(|_| DrumInput {
-            pattern: pattern.take(),
-            kit: self.pattern_editor.session.kit.clone(),
-        });
         let (tx, rx) = mpsc::sync_channel(1);
         let audio = self.settings.audio.saved.clone();
         let lua_script = std::env::var_os("HAY_LUA_PREPLAY_SCRIPT").map(std::path::PathBuf::from);
@@ -224,6 +285,7 @@ impl DawApp {
             revision: self.track_revision,
             audio: audio.clone(),
             lua_preplay: lua_script.is_some(),
+            drums_enabled,
         });
         self.status_message = "Preparando mezcla de clips…".into();
         std::thread::spawn(move || {
@@ -269,14 +331,10 @@ impl DawApp {
             return;
         }
         match result.and_then(|mut prepared| {
-            if self.pattern_loop_beats.is_some() {
-                let pattern = self.drum_playback_pattern()?;
-                prepared.update_drums(&self.pattern_editor.session.kit, pattern.as_deref())?;
-                self.pattern_loop_beats = Some(
-                    pattern
-                        .as_deref()
-                        .map_or(0.0, |pattern| pattern.length().0 as f64 / PPQ as f64),
-                );
+            if pending.drums_enabled {
+                let score = self.drum_score()?;
+                prepared.update_drums(&self.pattern_editor.session.kit, score.as_ref())?;
+                self.pattern_loop_beats = loop_beats(score.as_ref());
             }
             prepared.start(
                 pending.beat,
@@ -311,25 +369,39 @@ impl DawApp {
     }
     /// Los editores publican una vez por acción confirmada. El callback solo ve el plan compilado.
     pub(in crate::ui) fn publish_drum_edit(&mut self) {
-        if self.pattern_loop_beats.is_none() {
+        if !self
+            .player
+            .as_ref()
+            .is_some_and(|player| player.has_drum_kit())
+        {
             return;
         }
-        let session = &self.pattern_editor.session;
-        let (pattern, error) = match session.playback_pattern() {
-            Ok(pattern) => (pattern, None),
-            Err(error) => (None, Some(error)),
+        let score = match self.drum_score() {
+            Ok(score) => score,
+            Err(error) => {
+                self.status_message = error;
+                return;
+            }
         };
-        self.pattern_loop_beats = Some(
-            pattern
-                .as_deref()
-                .map_or(0.0, |pattern| pattern.length().0 as f64 / PPQ as f64),
-        );
+        self.pattern_loop_beats = loop_beats(score.as_ref());
         if let Some(player) = &mut self.player
-            && let Err(error) = player.update_drums(&session.kit, pattern.as_deref())
+            && let Err(error) =
+                player.update_drums(&self.pattern_editor.session.kit, score.as_ref())
         {
             self.status_message = error;
-        } else if let Some(error) = error {
-            self.status_message = error;
+        }
+    }
+
+    pub(in crate::ui) fn publish_drum_mix(&mut self) {
+        let session = &self.pattern_editor.session;
+        if session.source == DrumPlaybackSource::Arrangement
+            && let Some(player) = &self.player
+            && player.has_drum_kit()
+            && player.drum_bus_solo() != session.kit.bus.solo
+        {
+            self.publish_drum_edit();
+        } else if let Some(player) = &mut self.player {
+            player.update_drum_kit(&session.kit);
         }
     }
 
@@ -348,11 +420,18 @@ impl DawApp {
         })
     }
 }
+fn loop_beats(score: Option<&DrumScore>) -> Option<f64> {
+    score
+        .filter(|score| score.repeat)
+        .map(|score| score.pattern.length().0 as f64 / PPQ as f64)
+}
+
 fn same_midi_sources(a: &[MidiClip], b: &[MidiClip]) -> bool {
     a.len() == b.len()
         && a.iter().zip(b).all(|(a, b)| {
             a.id == b.id
                 && a.track == b.track
+                && a.hilo_target == b.hilo_target
                 && a.start_beat == b.start_beat
                 && a.pattern == b.pattern
                 && a.props == b.props

@@ -780,7 +780,10 @@ fn drums_and_wav_use_the_same_frame_clock() {
     let mut mix = Mix::prepare(
         vec![track(1, vec![clip([0.1, 0.1], 0.0, 48_000)])],
         Some(DrumInput {
-            pattern: Some(pattern),
+            score: Some(super::super::super::drums::DrumScore {
+                pattern,
+                repeat: true,
+            }),
             kit: Default::default(),
         }),
         48_000,

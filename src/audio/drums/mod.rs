@@ -7,4 +7,4 @@ mod voice;
 
 pub(crate) use controls::DrumBlock;
 pub(crate) use live::LiveDrums;
-pub(crate) use mix::{DrumInput, DrumPreview, PreparedDrums};
+pub(crate) use mix::{DrumInput, DrumPreview, DrumScore, PreparedDrums};

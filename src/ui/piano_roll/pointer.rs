@@ -52,10 +52,9 @@ impl DawApp {
             .unwrap_or(self.instrument.id());
         self.stop_audio();
         if let Some(clip) = self.timeline.midi_clip.as_mut() {
-            if let Ok(id) =
-                clip.pattern
-                    .add_note(instrument, Tick(start), Tick(duration), pitch, 100)
-            {
+            if let Ok(id) = clip.edit_pattern(|pattern| {
+                pattern.add_note(instrument, Tick(start), Tick(duration), pitch, 100)
+            }) {
                 self.piano_roll.cursor = Tick(start);
                 self.piano_roll.selected = Some(id);
                 self.piano_roll.selected_notes = vec![id];

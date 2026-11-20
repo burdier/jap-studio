@@ -490,8 +490,10 @@ referencia patrones y los pasos muestran las notas de la pieza. El Piano Roll Li
 reemplaza los pasos al elegir una pieza y edita las mismas notas por ID. El inspector
 edita las capas y parámetros del kit. Cada cambio se publica al reproductor vigente.
 El kit usa sfizz para las capas y conserva la síntesis de respaldo en las piezas
-sin muestra. Las piezas suman al bus Drums. PR-18 conecta los clips vinculados de
-Arrangement y presenta estos controles en el mixer.
+sin muestra. Las piezas suman al bus Drums. Los clips del Arrangement conservan
+kit y pieza. Mientras tengan vínculo, sus notas siguen el patrón. Una edición de
+notas convierte solo el clip editado en una copia local. Las tiras de ambos mixers
+consultan los picos del Player y editan los controles de sus respectivos canales.
 
 ## Análisis espectral para efectos
 
@@ -702,7 +704,8 @@ Transport::advance(frames) → FrameWindow → events_in()
 ```
 
 Session y Arrangement comparten el mezclador y el reloj de audio y MIDI. El kit de
-percusión usa el mismo mezclador cuando la fuente es Patrón o Canción.
+percusión selecciona una fuente: Patrón o Canción en loop, o el Arrangement en frames
+absolutos.
 La audición live del piano conserva un adaptador separado. `examples/sequencer.rs`
 sigue mostrando el plan sin abrir audio. La vista del piano no conoce RustySynth ni CPAL:
 pide notas a `instruments::Piano`, que posee el reproductor y las notas sostenidas.
@@ -890,8 +893,16 @@ después de sus faders. El bus Drums se suma con MIDI/WAV antes de Utility maste
 `drums/live.rs` publica planes de notas y controles mediante el RCU existente. El worker
 prepara cambios de capas y ajustes que cambian la configuración de las voces. Dos colas
 acotadas separan el traspaso al callback del retiro en el hilo de control, con una revisión
-para descartar preparaciones obsoletas. Los clips de batería del Arrangement conectan
-con ese mismo kit en DL-4.
+para descartar preparaciones obsoletas.
+
+**Enviar al Arrangement** crea clips MIDI por pieza y ocurrencia en el cursor de edición.
+Cada clip guarda KitId, pieza y patrón fuente en Loro, con su ClipId como identidad
+de ocurrencia. Los clips vinculados proyectan las notas de esa pieza al editar el patrón
+o al abrir el proyecto. Mover, recortar o silenciar afecta la ocurrencia. Editar sus notas
+la vuelve local y deja su salida en la misma pieza. Los eventos de esos clips pasan por el
+kit y su bus en la reproducción, fuera del enrutamiento MIDI de pistas o Hilos. El
+plan absoluto reserva hasta dos segundos de cola desde su último evento. La
+exportación offline del kit por Arrangement queda pendiente.
 
 ## Extensibilidad
 

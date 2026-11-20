@@ -41,7 +41,8 @@ impl DawApp {
             .midi_clip
             .as_mut()
             .ok_or("Selecciona un clip MIDI")?;
-        self.piano_roll.selected_control = Some(clip.pattern.set_control(lane, at, value)?);
+        self.piano_roll.selected_control =
+            Some(clip.edit_pattern(|pattern| pattern.set_control(lane, at, value))?);
         self.piano_roll.hint = format!(
             "{}: {value} · {}",
             lane.key(),
@@ -108,7 +109,7 @@ impl DawApp {
         {
             self.stop_audio();
             if let Some(clip) = &mut self.timeline.midi_clip {
-                clip.pattern.remove_control(id);
+                clip.edit_pattern(|pattern| pattern.remove_control(id));
             }
             self.piano_roll.selected_control = None;
             self.piano_roll.hint = "Punto MIDI eliminado".into();

@@ -54,7 +54,7 @@ impl MidiEdit {
                 selection.push(new);
             }
         }
-        clip.pattern = self.pattern;
+        clip.replace_pattern(self.pattern);
     }
 }
 

@@ -25,6 +25,11 @@ pub fn materialize(clips: &[&MidiClip]) -> Result<MidiClip, String> {
         if clip.track != first.track {
             return Err("Materialize requiere clips MIDI de la misma pista".into());
         }
+        if clip.drum_target.map(|target| (target.kit, target.piece))
+            != first.drum_target.map(|target| (target.kit, target.piece))
+        {
+            return Err("Materialize requiere clips con el mismo destino de batería".into());
+        }
         if clip.props.locked {
             return Err("Desbloquea los clips antes de materializar".into());
         }
@@ -91,6 +96,8 @@ pub fn materialize(clips: &[&MidiClip]) -> Result<MidiClip, String> {
         origin as f64 / PPQ as f64,
         pattern,
     );
+    result.drum_target = first.drum_target;
+    result.detach_drum_link();
     result.props = first.props;
     result.channel = first.channel;
     result.muted_notes = muted_notes;

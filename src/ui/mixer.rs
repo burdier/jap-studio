@@ -69,7 +69,7 @@ impl DawApp {
             let previous = *mix;
             update(mix);
             if *mix != previous {
-                self.publish_drum_edit();
+                self.publish_drum_mix();
             }
         }
     }

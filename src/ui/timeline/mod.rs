@@ -4,6 +4,7 @@ mod clip_edit;
 #[cfg(test)]
 mod clip_edit_tests;
 mod clip_frame;
+mod drum_clips;
 #[cfg(test)]
 mod gesture_tests;
 mod import_preview;

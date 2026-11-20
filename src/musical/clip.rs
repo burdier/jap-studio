@@ -2,6 +2,7 @@
 //! Sin GPUI, CPAL ni motores de audio: mapea lo que se toca desde el controlador
 //! a `NoteEvent` en ticks (`Pattern`) para insertarlo en un carril y reproducirlo.
 use super::{
+    drums::{DrumClipTarget, DrumSession, piece_pattern},
     midi::MidiMessage,
     model::{InstrumentId, NoteEvent, Pattern},
     time::{Meter, PPQ, Tick},
@@ -91,6 +92,8 @@ pub struct MidiClip {
     /// Destino musical explícito; el carril visual sigue siendo `track`.
     /// `None` usa el instrumento del carril o el Hilo de su propia cabecera.
     pub hilo_target: Option<TrackId>,
+    /// La posición y los recortes son de esta ocurrencia, identificada por `id`.
+    pub drum_target: Option<DrumClipTarget>,
     pub start_beat: f64,
     pub pattern: Pattern,
     /// Canal de salida del clip, numerado 1–16.
@@ -110,6 +113,7 @@ impl MidiClip {
             name: name.into(),
             track,
             hilo_target: None,
+            drum_target: None,
             start_beat: start_beat.max(0.0),
             pattern,
             channel: 1,
@@ -130,7 +134,49 @@ impl MidiClip {
     /// Un clip de la cabecera usa ese Hilo por defecto; el destino explícito
     /// permite enviar clips desde cualquier otro carril sin moverlos.
     pub fn targets_hilo(&self, group_index: usize, group: TrackId) -> bool {
-        self.hilo_target == Some(group) || (self.hilo_target.is_none() && self.track == group_index)
+        self.drum_target.is_none()
+            && (self.hilo_target == Some(group)
+                || (self.hilo_target.is_none() && self.track == group_index))
+    }
+
+    pub fn refresh_drum_link(&mut self, session: &DrumSession) -> Result<(), String> {
+        if let Some(target) = self.drum_target
+            && let Some(source) = target.resolve(session)?
+        {
+            self.pattern = piece_pattern(&source.notes, target.piece)?;
+        }
+        Ok(())
+    }
+
+    /// Confirma un cambio de notas con los mismos IDs y desvincula solo este clip.
+    pub fn replace_pattern(&mut self, mut pattern: Pattern) {
+        if let Some(target) = self.drum_target {
+            for note in &mut pattern.notes {
+                note.instrument = target.piece;
+            }
+        }
+        if self.pattern != pattern {
+            self.detach_drum_link();
+        }
+        self.pattern = pattern;
+    }
+
+    /// El enlace requiere comparar el resultado para conservarlo cuando no hubo cambios.
+    pub fn edit_pattern<R>(&mut self, edit: impl FnOnce(&mut Pattern) -> R) -> R {
+        if self.drum_target.is_some() {
+            let mut pattern = self.pattern.clone();
+            let result = edit(&mut pattern);
+            self.replace_pattern(pattern);
+            result
+        } else {
+            edit(&mut self.pattern)
+        }
+    }
+
+    pub fn detach_drum_link(&mut self) {
+        if let Some(target) = &mut self.drum_target {
+            target.linked = false;
+        }
     }
 
     /// Longitud completa del patrón, sin recorte.

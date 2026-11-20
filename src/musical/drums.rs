@@ -1,5 +1,7 @@
 //! Kit y sesión de percusión editables. Las notas y los tiempos son los del secuenciador común.
+mod arrangement;
 mod kit;
+pub use arrangement::{DrumClipTarget, arrangement_pattern, piece_pattern};
 pub use kit::{DrumKit, DrumKitId, DrumLayer, DrumMix, DrumPiece};
 
 use super::{

@@ -58,7 +58,9 @@ impl PreparedMidiArrangement {
     ) -> Result<Self, String> {
         let local: Vec<_> = clips
             .iter()
-            .filter(|clip| clip.track == index && clip.hilo_target.is_none())
+            .filter(|clip| {
+                clip.track == index && clip.hilo_target.is_none() && clip.drum_target.is_none()
+            })
             .map(|clip| {
                 let mut copy = clip.clone();
                 copy.track = 0;
@@ -80,7 +82,7 @@ impl PreparedMidiArrangement {
         let mut events = Vec::new();
         let mut end_frame = 0;
         for clip in clips {
-            if clip.props.muted {
+            if clip.props.muted || clip.drum_target.is_some() {
                 continue;
             }
             let track = tracks

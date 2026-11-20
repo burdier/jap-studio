@@ -3,6 +3,7 @@ use super::{CenterView, DawApp, pattern_editor::PatternAction};
 use crate::instruments::piano_params::{self, Applies, ParamId, SPECS};
 use elevate::musical::{
     controller::DEFAULT_VELOCITY,
+    drums::DrumPlaybackSource,
     midi::{MidiInputEvent, MidiMessage, MidiTarget, RoutedMidi},
     midi_map::{MappedEffect, MidiAction, MidiBindTarget},
     pitch::note_name,
@@ -20,6 +21,9 @@ impl DawApp {
         };
         self.track_revision = self.track_revision.wrapping_add(1);
         self.apply_track_gains();
+        if self.pattern_editor.session.source == DrumPlaybackSource::Arrangement {
+            self.publish_drum_edit();
+        }
         self.status_message = format!("{name}: {}", if muted { "Mute ON" } else { "Mute OFF" });
     }
 
@@ -33,6 +37,9 @@ impl DawApp {
         };
         self.track_revision = self.track_revision.wrapping_add(1);
         self.apply_track_gains();
+        if self.pattern_editor.session.source == DrumPlaybackSource::Arrangement {
+            self.publish_drum_edit();
+        }
         self.status_message = format!("{name}: {}", if solo { "Solo ON" } else { "Solo OFF" });
     }
 
@@ -396,7 +403,9 @@ impl DawApp {
                 }
                 MidiTarget::Instrument(_) => {}
                 MidiTarget::Sequencer => {
-                    if let MidiMessage::NoteOn { note, velocity } = message {
+                    if !self.pattern_editor.mixer_open
+                        && let MidiMessage::NoteOn { note, velocity } = message
+                    {
                         if let Some(piece) = self.pattern_editor.roll.piece {
                             self.preview_drum_piece(piece, note, velocity);
                         } else {

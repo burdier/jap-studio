@@ -676,7 +676,7 @@ acotada de selección por NoteOn durante la reproducción.
 - Docking estilo Visual Studio: paneles acoplables con imán/gravedad por tamaño,
   generalizar `DetachedPanel` a cualquier componente con salida de audio y recordar posición.
 
-- Enlazar los clips de Arrangement con Drums Latex y compartir tiras de canal con el mixer.
+- Exportar el bus de Drums Latex desde el Arrangement.
 - Mantener la salida disponible para audición mientras el transporte está detenido.
 - Sustituir el canal mpsc provisional del piano por una cola RT acotada.
 - Tempo map y chase de notas. El tempo y loop globales tienen controles en las rutas actuales.

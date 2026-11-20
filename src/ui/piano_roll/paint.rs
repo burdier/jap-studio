@@ -132,9 +132,11 @@ impl DawApp {
         self.stop_audio();
         let count = updates.len();
         if let Some(clip) = self.timeline.midi_clip.as_mut() {
-            for (id, value) in updates {
-                let _ = clip.pattern.set_note_property(id, property, value);
-            }
+            clip.edit_pattern(|pattern| {
+                for (id, value) in updates {
+                    let _ = pattern.set_note_property(id, property, value);
+                }
+            });
         }
         self.piano_roll.hint = format!(
             "{} · {} moldeada sobre {count} notas",

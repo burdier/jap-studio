@@ -227,7 +227,11 @@ impl DawApp {
         &mut self,
         target: Option<elevate::musical::track::TrackId>,
     ) {
-        if self.timeline.midi_clip.is_none() {
+        let Some(clip) = &self.timeline.midi_clip else {
+            return;
+        };
+        if clip.drum_target.is_some() {
+            self.status_message = "El clip de batería conserva su pieza de Drums Latex".into();
             return;
         }
         let destination = match target {

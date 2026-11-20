@@ -110,7 +110,7 @@ impl DawApp {
             .midi_clip
             .as_mut()
             .ok_or("Selecciona un clip MIDI")?;
-        clip.pattern = pattern;
+        clip.replace_pattern(pattern);
         if let Some(trim) = &mut clip.trim_len {
             *trim = trim.min(beats - clip.trim_start);
         }

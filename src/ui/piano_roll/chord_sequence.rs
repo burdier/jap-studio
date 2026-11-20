@@ -146,7 +146,7 @@ impl DawApp {
         self.release_chord_audition();
         self.stop_audio();
         if let Some(clip) = self.timeline.midi_clip.as_mut() {
-            clip.pattern = pattern;
+            clip.replace_pattern(pattern);
         }
         self.piano_roll.selected = selected.first().copied();
         self.piano_roll.selected_notes = selected;

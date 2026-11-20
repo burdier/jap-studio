@@ -5,7 +5,8 @@ use super::{
 };
 use crate::musical::{
     clip::{ClipId, ClipProps, MidiClip},
-    model::Pattern,
+    drums::{DrumClipTarget, DrumKitId, DrumPatternId},
+    model::{InstrumentId, Pattern},
     track::{TrackId, TrackKind},
 };
 use loro::{LoroDoc, LoroMap, LoroMovableList, ToJson};
@@ -50,6 +51,7 @@ pub(super) fn write_clips(
             clip.hilo_target.map_or(-1, |id| i64::from(id.0)),
         )
         .map_err(err)?;
+        write_drum_target(&map, clip.drum_target)?;
         map.insert("name", clip.name.as_str()).map_err(err)?;
         map.insert("channel", i64::from(clip.channel))
             .map_err(err)?;
@@ -119,6 +121,7 @@ pub(super) fn read_clips(doc: &LoroDoc, tracks: &[ProjectTrack]) -> Result<Vec<M
                 }
                 Some(target)
             },
+            drum_target: read_drum_target(&map)?,
             start_beat: read_f64(&map, "start")?,
             pattern,
             channel: if map.get("channel").is_none() {
@@ -152,6 +155,39 @@ pub(super) fn read_clips(doc: &LoroDoc, tracks: &[ProjectTrack]) -> Result<Vec<M
     Ok(clips)
 }
 
+fn write_drum_target(map: &LoroMap, target: Option<DrumClipTarget>) -> Result<(), String> {
+    if target.is_none() && map.get("drum_kit").is_none() {
+        return Ok(());
+    }
+    map.insert(
+        "drum_kit",
+        target.map_or(-1, |target| i64::from(target.kit.0)),
+    )
+    .map_err(err)?;
+    if let Some(target) = target {
+        map.insert("drum_piece", i64::from(target.piece.0))
+            .map_err(err)?;
+        map.insert("drum_pattern", i64::from(target.pattern.0))
+            .map_err(err)?;
+        map.insert("drum_linked", target.linked).map_err(err)?;
+    }
+    Ok(())
+}
+
+fn read_drum_target(map: &LoroMap) -> Result<Option<DrumClipTarget>, String> {
+    if map.get("drum_kit").is_none() || read_i64(map, "drum_kit")? == -1 {
+        return Ok(None);
+    }
+    let id =
+        |key| u32::try_from(read_i64(map, key)?).map_err(|_| "ID de batería inválido".to_string());
+    Ok(Some(DrumClipTarget {
+        kit: DrumKitId(id("drum_kit")?),
+        piece: InstrumentId(id("drum_piece")?),
+        pattern: DrumPatternId(id("drum_pattern")?),
+        linked: read_bool(map, "drum_linked")?,
+    }))
+}
+
 fn validate_clip(clip: &MidiClip) -> Result<(), String> {
     if !(1..=16).contains(&clip.channel)
         || clip.id.value() == 0
@@ -167,6 +203,19 @@ fn validate_clip(clip: &MidiClip) -> Result<(), String> {
         || clip.pattern.next_id() > i64::MAX as u64
     {
         return Err("Propiedades de clip MIDI inválidas".into());
+    }
+    if let Some(target) = clip.drum_target
+        && (clip.hilo_target.is_some()
+            || target.kit.0 == 0
+            || target.piece.0 == 0
+            || target.pattern.0 == 0
+            || clip
+                .notes()
+                .iter()
+                .any(|note| note.instrument != target.piece)
+            || (target.linked && !clip.muted_notes.is_empty()))
+    {
+        return Err("Destino de clip de batería inválido".into());
     }
     Pattern::restore_with_next_id(
         clip.pattern.length(),

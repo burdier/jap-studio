@@ -87,7 +87,8 @@ impl DawApp {
                     self.stop_audio();
                     let value = property.value_at_fraction(frac);
                     if let Some(clip) = self.timeline.midi_clip.as_mut() {
-                        let _ = clip.pattern.set_note_property(id, property, value);
+                        let _ = clip
+                            .edit_pattern(|pattern| pattern.set_note_property(id, property, value));
                     }
                     self.piano_roll.hint = format!(
                         "{}: {}{}",
@@ -192,12 +193,13 @@ impl DawApp {
         match self.piano_roll.tool {
             RollTool::Paint => {
                 if let Some(id) = hit_id {
-                    let _ = clip.pattern.set_velocity(id, 100);
+                    let _ = clip.edit_pattern(|pattern| pattern.set_velocity(id, 100));
                     self.piano_roll.hint = "Velocity: 100".into();
                 }
             }
             RollTool::Mute => {
                 if let Some(id) = hit_id {
+                    clip.detach_drum_link();
                     if !clip.muted_notes.insert(id) {
                         clip.muted_notes.remove(&id);
                     }

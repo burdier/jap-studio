@@ -75,6 +75,15 @@ impl DawApp {
                 .chain(self.timeline.midi_clip.iter())
                 .cloned()
                 .collect();
+            if midi.iter().any(|clip| {
+                clip.drum_target.is_some()
+                    && options.includes_track(clip.track)
+                    && !clip.props.muted
+            }) {
+                return Err(
+                    "La exportación de clips Drums Latex todavía no está disponible".into(),
+                );
+            }
             let hilo = self.capture_hilo_export(&midi, &options)?;
             let piano_ids: std::collections::HashSet<_> = midi
                 .iter()

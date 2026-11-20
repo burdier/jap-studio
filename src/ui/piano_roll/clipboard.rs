@@ -30,8 +30,12 @@ impl DawApp {
         if cut {
             self.stop_audio();
             if let Some(clip) = self.timeline.midi_clip.as_mut() {
+                clip.edit_pattern(|pattern| {
+                    for (note, _) in &notes {
+                        let _ = pattern.remove_note(note.id);
+                    }
+                });
                 for (note, _) in &notes {
-                    let _ = clip.pattern.remove_note(note.id);
                     clip.muted_notes.remove(&note.id);
                 }
             }
@@ -93,7 +97,7 @@ impl DawApp {
         }
         self.stop_audio();
         if let Some(clip) = self.timeline.midi_clip.as_mut() {
-            clip.pattern = pattern;
+            clip.replace_pattern(pattern);
             clip.muted_notes = muted;
         }
         self.piano_roll.hint = format!("{} notas pegadas", selected.len());
