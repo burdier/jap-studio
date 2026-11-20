@@ -9,17 +9,25 @@ use elevate::musical::{
     model::{NoteEvent, Pattern},
     time::{Meter, PPQ},
 };
-use gpui::Task;
+use gpui::{ScrollHandle, Task};
 
 pub(super) use action::PatternAction;
+pub(super) use inspector::DrumSampleTarget;
 
-pub(in crate::ui) const TICKS_PER_STEP: i64 = PPQ / 4;
 pub(in crate::ui) const SONG_BARS_PER_PAGE: i64 = 8;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(in crate::ui) enum PatternOptions {
+    Meter,
+    Grid,
+}
 
 #[derive(Default)]
 pub(super) struct PatternEditor {
     pub session: DrumSession,
     pub cursor_lane: usize,
+    pub steps_scroll: ScrollHandle,
+    pub options: Option<PatternOptions>,
     pub cursor_step: usize,
     pub song_page: i64,
     pub workspace_ratio: Option<f32>,
@@ -41,7 +49,9 @@ impl PatternEditor {
     pub fn show_roll(&mut self, lane: usize) {
         if let Some(piece) = self.session.kit.pieces.get(lane) {
             self.cursor_lane = lane;
-            self.roll.focus(piece, &self.session.active_pattern().notes);
+            let pattern = self.session.active_pattern();
+            self.roll.snap = pattern.grid;
+            self.roll.focus(piece, &pattern.notes);
         }
     }
 
@@ -51,11 +61,11 @@ impl PatternEditor {
     }
 
     pub fn step_count(&self) -> usize {
-        ((self.pattern().length().0 - 1) / TICKS_PER_STEP + 1) as usize
+        self.session.active_pattern().step_count()
     }
 
-    pub fn beats_per_step(&self) -> f64 {
-        TICKS_PER_STEP as f64 / PPQ as f64
+    pub fn ticks_per_step(&self) -> i64 {
+        self.session.active_pattern().grid.ticks().0
     }
 
     pub fn note_at(&self, lane: usize, step: usize) -> Option<&NoteEvent> {
@@ -63,12 +73,13 @@ impl PatternEditor {
         if step >= self.step_count() {
             return None;
         }
-        let start = step as i64 * TICKS_PER_STEP;
+        let step_ticks = self.ticks_per_step();
+        let start = step as i64 * step_ticks;
         // Una celda representa un intervalo; no borra microtiming al cambiar resolución.
         self.pattern().notes().iter().find(|note| {
             note.instrument == piece.id
                 && note.start.0 >= start
-                && note.start.0 < start + TICKS_PER_STEP
+                && note.start.0 < start + step_ticks
         })
     }
 }
@@ -80,7 +91,8 @@ impl DawApp {
             &action,
             PatternAction::Toggle { .. }
                 | PatternAction::Velocity { .. }
-                | PatternAction::ExtendBar
+                | PatternAction::Bars(_)
+                | PatternAction::Meter(_)
                 | PatternAction::InsertNote { .. }
                 | PatternAction::MoveNote(_)
                 | PatternAction::DeleteNote(_)
@@ -91,15 +103,22 @@ impl DawApp {
                 &action,
                 PatternAction::Select(_)
                     | PatternAction::Duplicate
+                    | PatternAction::NewPattern
                     | PatternAction::SongCell(_)
                     | PatternAction::UseSource(_)
             );
-        match self.pattern_editor.apply(action, self.timeline.meter) {
+        let updates_grid = matches!(&action, PatternAction::Grid(_));
+        let closes_options = updates_grid || matches!(&action, PatternAction::Meter(_));
+        if closes_options {
+            self.pattern_editor.options = None;
+        }
+        match self.pattern_editor.apply(action) {
             Ok(message) => {
                 let editor = &mut self.pattern_editor;
                 editor.cursor_step = editor.cursor_step.min(editor.step_count() - 1);
                 if editor.session.active != selected_pattern {
                     editor.roll.reset_selection();
+                    editor.roll.snap = editor.session.active_pattern().grid;
                 }
                 self.status_message =
                     format!("{message} · {} notas", editor.pattern().notes().len());
@@ -113,7 +132,7 @@ impl DawApp {
                 }
                 if updates_score {
                     self.publish_drum_edit();
-                } else {
+                } else if !updates_grid {
                     self.publish_drum_mix();
                 }
             }
@@ -134,6 +153,9 @@ impl DawApp {
             } else {
                 false
             };
+        }
+        if key == "escape" && self.pattern_editor.options.take().is_some() {
+            return true;
         }
         if self.pattern_editor.roll.piece.is_some() {
             return self.handle_drum_roll_key(key);
@@ -182,7 +204,8 @@ impl DawApp {
     }
 
     pub(super) fn pattern_play_step(&self) -> Option<usize> {
-        self.drum_pattern_playhead()
-            .map(|beat| (beat / self.pattern_editor.beats_per_step()).floor() as usize)
+        self.drum_pattern_playhead().map(|beat| {
+            (beat * PPQ as f64 / self.pattern_editor.ticks_per_step() as f64).floor() as usize
+        })
     }
 }

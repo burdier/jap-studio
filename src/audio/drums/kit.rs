@@ -8,7 +8,7 @@ use elevate::{
     Primitive, ProcessSpec, StereoFrame,
     devices::sampler::TUNE,
     musical::{
-        drums::{DrumKit, DrumPiece},
+        drums::{DrumKit, DrumPiece, MAX_DRUM_PIECES},
         model::InstrumentId,
     },
     primitives::amplitude::Volume,
@@ -16,12 +16,12 @@ use elevate::{
 use std::{collections::HashMap, path::Path, sync::Arc};
 
 const BLOCK: usize = 256;
-const MAX_PIECES: usize = 64;
 const MAX_LAYERS: usize = 128;
 
 enum Sound {
     Samples(SfizzEngine),
     Builtin(Box<BuiltinDrums>),
+    Silent,
 }
 
 struct Piece {
@@ -40,7 +40,11 @@ impl Piece {
         rate: u32,
     ) -> Result<Self, String> {
         let sound = if piece.layers.is_empty() {
-            Sound::Builtin(Box::new(BuiltinDrums::new()))
+            if (1..=4).contains(&piece.id.0) {
+                Sound::Builtin(Box::new(BuiltinDrums::new()))
+            } else {
+                Sound::Silent
+            }
         } else {
             let layers = piece
                 .layers
@@ -77,6 +81,7 @@ impl Piece {
         match &mut self.sound {
             Sound::Samples(engine) => engine.cut(),
             Sound::Builtin(engine) => **engine = BuiltinDrums::new(),
+            Sound::Silent => {}
         }
     }
 
@@ -92,6 +97,7 @@ impl Piece {
                 }
             }
             Sound::Builtin(engine) => engine.render(output, dt),
+            Sound::Silent => output.fill([0.0; 2]),
         }
     }
 }
@@ -111,7 +117,7 @@ impl PreparedKit {
         previous_assets: &HashMap<String, Arc<SampleAsset>>,
         rate: u32,
     ) -> Result<Self, String> {
-        if kit.pieces.len() > MAX_PIECES
+        if kit.pieces.len() > MAX_DRUM_PIECES
             || kit
                 .pieces
                 .iter()
@@ -188,6 +194,7 @@ impl PreparedKit {
                     f32::from(pitch) - f32::from(control.base_note) + control.params.get(TUNE);
                 engine.trigger_pitched(id, velocity, note, (f64::from(offset) / 12.0).exp2());
             }
+            Sound::Silent => {}
         }
     }
 

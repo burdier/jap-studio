@@ -1,11 +1,17 @@
 //! Ajustes de la pieza activa; el sampler de pistas conserva su propio estado.
 use super::{PatternAction, PatternEditor};
-use crate::ui::DawApp;
+use crate::{audio::AudioFile, ui::DawApp};
 use elevate::{
     devices::sampler::PARAMS,
     musical::{drums::DrumLayer, model::InstrumentId},
 };
 use gpui::{Context, PathPromptOptions};
+
+pub(in crate::ui) enum DrumSampleTarget {
+    NewPiece,
+    AddLayer(InstrumentId),
+    ReplaceLayer(InstrumentId, usize, String),
+}
 
 impl PatternEditor {
     pub(super) fn apply_inspector(
@@ -17,6 +23,7 @@ impl PatternEditor {
             SampleParam { piece, .. }
             | Choke { piece, .. }
             | AddSample { piece, .. }
+            | ReplaceSample { piece, .. }
             | RemoveSample { piece, .. }
             | LayerVelocity { piece, .. }
             | Filter(piece) => *piece,
@@ -68,6 +75,20 @@ impl PatternEditor {
                 layers.sort_by_key(|layer| layer.velocity_min);
                 Ok("Capa añadida")
             }
+            ReplaceSample {
+                layer,
+                previous,
+                path,
+                ..
+            } => {
+                let layer = piece
+                    .layers
+                    .get_mut(layer)
+                    .filter(|layer| layer.source == previous)
+                    .ok_or("La capa cambió mientras se abría la muestra")?;
+                layer.source = path;
+                Ok("Muestra reemplazada")
+            }
             RemoveSample { layer, .. } if layer < piece.layers.len() => {
                 piece.layers.remove(layer);
                 Ok("Capa eliminada")
@@ -98,37 +119,68 @@ impl PatternEditor {
 impl DawApp {
     pub(in crate::ui) fn choose_drum_sample(
         &mut self,
-        piece: InstrumentId,
+        target: DrumSampleTarget,
         cx: &mut Context<Self>,
     ) {
         if self.pattern_editor.sample_picker.is_some() {
             return;
         }
+        let title = match target {
+            DrumSampleTarget::NewPiece => "Añadir una muestra al kit",
+            DrumSampleTarget::AddLayer(_) => "Añadir una muestra a la pieza",
+            DrumSampleTarget::ReplaceLayer(..) => "Cambiar muestra de la capa",
+        };
         let prompt = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
             multiple: false,
-            prompt: Some("Añadir muestra a la pieza".into()),
+            prompt: Some(title.into()),
         });
+        let background = cx.background_executor().clone();
         self.pattern_editor.sample_picker = Some(cx.spawn(async move |this, cx| {
-            let result = prompt.await;
+            let result = match prompt.await {
+                Ok(Ok(Some(paths))) => {
+                    if let Some(path) = paths.into_iter().next() {
+                        background
+                            .spawn(async move {
+                                let source = path
+                                    .to_str()
+                                    .ok_or("La ruta de la muestra debe ser UTF-8")?;
+                                AudioFile::decode(&path).map_err(|error| {
+                                    format!("No se pudo cargar {} · {error}", path.display())
+                                })?;
+                                Ok(Some(source.to_owned()))
+                            })
+                            .await
+                    } else {
+                        Ok(None)
+                    }
+                }
+                Ok(Ok(None)) => Ok(None),
+                _ => Err("No se pudo abrir el selector de muestras".into()),
+            };
             let _ = this.update(cx, |this, cx| {
                 this.pattern_editor.sample_picker = None;
                 match result {
-                    Ok(Ok(Some(paths))) => {
-                        if let Some(path) = paths.first() {
-                            if let Some(path) = path.to_str() {
-                                this.apply_pattern_action(PatternAction::AddSample {
-                                    piece,
-                                    path: path.to_owned(),
-                                });
-                            } else {
-                                this.status_message = "La ruta de la muestra debe ser UTF-8".into();
+                    Ok(Some(path)) => {
+                        let action = match target {
+                            DrumSampleTarget::NewPiece => PatternAction::AddPiece(path),
+                            DrumSampleTarget::AddLayer(piece) => {
+                                PatternAction::AddSample { piece, path }
                             }
-                        }
+                            DrumSampleTarget::ReplaceLayer(piece, layer, previous) => {
+                                PatternAction::ReplaceSample {
+                                    piece,
+                                    layer,
+                                    previous,
+                                    path,
+                                }
+                            }
+                        };
+                        this.apply_pattern_action(action);
                     }
-                    Ok(Ok(None)) => {}
-                    _ => this.status_message = "No se pudo abrir el selector de muestras".into(),
+                    Ok(None) => {}
+                    Err(error) => this.status_message = error,
                 }
                 cx.notify();
             });

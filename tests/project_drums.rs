@@ -2,8 +2,9 @@ use elevate::{
     devices::sampler::TUNE,
     musical::{
         drums::{DrumLayer, DrumPlaybackSource, DrumSession, DrumSongCell},
+        grid::NoteGrid,
         note_expression::NoteProperty,
-        time::{PPQ, Tick},
+        time::{Meter, PPQ, Tick},
     },
     project::ProjectDoc,
 };
@@ -115,4 +116,40 @@ fn linked_drum_clip_refreshes_but_its_local_copy_keeps_note_edits() {
     assert_eq!(arranged.notes()[0].pitch, 39);
     assert_eq!(arranged.notes()[0].velocity, 88);
     assert_eq!(arranged.notes()[1].start, Tick(8 * PPQ + PPQ / 2));
+}
+
+#[test]
+fn custom_drum_pattern_and_sample_survive_reopen() {
+    let mut drums = DrumSession::default();
+    let original = drums.active;
+    let piece = drums.kit.add_sample("Audio/Rim seco.wav".into()).unwrap();
+
+    let created = drums.new_pattern().unwrap();
+    assert_ne!(created, original);
+    let six_eight = Meter::new(6, 8).unwrap();
+    drums.set_active_meter(six_eight).unwrap();
+    drums.active_pattern_mut().grid = NoteGrid::new(8).unwrap();
+    assert_eq!(drums.active_pattern().notes.length(), Tick(3 * PPQ));
+    assert_eq!(drums.active_pattern().step_count(), 6);
+
+    let notes = &mut drums.active_pattern_mut().notes;
+    notes
+        .add_note(piece, Tick(2 * PPQ), Tick(PPQ / 2), 36, 87)
+        .unwrap();
+    assert!(drums.set_active_meter(Meter::new(2, 4).unwrap()).is_err());
+    assert_eq!(drums.active_pattern().meter, six_eight);
+    drums.active_pattern_mut().grid = NoteGrid::new(16).unwrap();
+    assert_eq!(drums.active_pattern().step_count(), 12);
+
+    let doc = ProjectDoc::new("Rim en 6/8").unwrap();
+    doc.set_drum_session(&drums).unwrap();
+    let reopened = ProjectDoc::import(&doc.snapshot().unwrap()).unwrap();
+    let restored = reopened.drum_session().unwrap().unwrap();
+    assert_eq!(restored, drums);
+    assert_eq!(restored.pattern(original).unwrap().step_count(), 16);
+    assert_eq!(
+        restored.active_pattern().notes.notes()[0].start,
+        Tick(2 * PPQ)
+    );
+    assert_eq!(restored.kit.pieces.last().unwrap().name, "Rim seco");
 }

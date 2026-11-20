@@ -10,10 +10,10 @@ use crate::ui::{
         button::{flat_control, toggle_badge},
         meter::track_peak_meter,
     },
-    pattern_editor::PatternAction,
+    pattern_editor::{DrumSampleTarget, PatternAction, PatternOptions},
     workspace_focus::Panel,
 };
-use elevate::musical::drums::DrumPlaybackSource;
+use elevate::musical::{drums::DrumPlaybackSource, grid::NoteGrid, time::Meter};
 use gpui::{Context, Div, MouseButton, SharedString, Stateful, div, prelude::*, px, rgb};
 
 impl DawApp {
@@ -74,6 +74,9 @@ impl DawApp {
                     )
                     .child(self.render_pattern_controls(cx).flex_1()),
             )
+            .when(!editor.mixer_open, |panel| {
+                panel.child(self.render_pattern_settings(cx))
+            })
             .when_some(
                 instrument.filter(|_| editor.inspector_open && !editor.mixer_open),
                 |panel, piece| panel.child(self.render_drum_inspector(piece, cx)),
@@ -128,8 +131,6 @@ impl DawApp {
                     .flex_shrink_0()
                     .bg(rgb(ds.border)),
             )
-            .child(self.drum_action_chip("+ Compás", false, PatternAction::ExtendBar, cx))
-            .child(self.drum_action_chip("Duplicar", false, PatternAction::Duplicate, cx))
             .child(
                 flat_control(ds, false, ds.accent)
                     .id("send-drums-to-arrangement")
@@ -153,6 +154,26 @@ impl DawApp {
                     ),
             )
             .child(
+                toggle_badge(ds, "+ Muestra", false, ds.cyan)
+                    .id("add-drum-sample")
+                    .h(px(22.0))
+                    .px_2()
+                    .text_color(rgb(ds.cyan))
+                    .tooltip(|window, cx| {
+                        gpui::component::tooltip::Tooltip::new(
+                            "Crear una pieza del kit con un archivo de audio",
+                        )
+                        .build(window, cx)
+                    })
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, cx| {
+                            this.choose_drum_sample(DrumSampleTarget::NewPiece, cx);
+                            cx.notify();
+                        }),
+                    ),
+            )
+            .child(
                 div()
                     .relative()
                     .id("drums-bus-peak")
@@ -166,7 +187,7 @@ impl DawApp {
                     .child(track_peak_meter(ds, peak)),
             )
             .child(
-                toggle_badge(ds, "🥁", self.pattern_editor.inspector_open, ds.accent)
+                toggle_badge(ds, "Ajustes", self.pattern_editor.inspector_open, ds.accent)
                     .id("drum-inspector-toggle")
                     .h(px(22.0))
                     .px_2()
@@ -183,6 +204,150 @@ impl DawApp {
                         }),
                     ),
             )
+    }
+
+    fn render_pattern_settings(&self, cx: &mut Context<Self>) -> Div {
+        let ds = &self.ds;
+        let editor = &self.pattern_editor;
+        let pattern = editor.session.active_pattern();
+        let bars = pattern.bar_count();
+        let options = editor.options;
+        div()
+            .flex()
+            .flex_col()
+            .flex_shrink_0()
+            .bg(rgb(ds.panel))
+            .child(
+                div()
+                    .id("drum-pattern-settings")
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .p_1()
+                    .text_xs()
+                    .font_family("monospace")
+                    .overflow_x_scroll()
+                    .child(
+                        div()
+                            .px_1()
+                            .flex_shrink_0()
+                            .text_color(rgb(ds.accent))
+                            .child(pattern.name.clone()),
+                    )
+                    .child(self.drum_action_chip("+ Patrón", false, PatternAction::NewPattern, cx))
+                    .child(self.drum_action_chip("Duplicar", false, PatternAction::Duplicate, cx))
+                    .children(
+                        [
+                            (
+                                PatternOptions::Meter,
+                                format!("Compás {} ⌄", pattern.meter.label()),
+                            ),
+                            (
+                                PatternOptions::Grid,
+                                format!("Paso 1/{} ⌄", pattern.grid.denominator()),
+                            ),
+                        ]
+                        .into_iter()
+                        .map(|(field, label)| {
+                            toggle_badge(ds, label, options == Some(field), ds.cyan)
+                                .h(px(22.0))
+                                .px_2()
+                                .text_color(rgb(ds.text))
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(move |this, _, _, cx| {
+                                        let options = &mut this.pattern_editor.options;
+                                        *options = if *options == Some(field) {
+                                            None
+                                        } else {
+                                            Some(field)
+                                        };
+                                        cx.notify();
+                                    }),
+                                )
+                        }),
+                    )
+                    .child(if bars > 1 {
+                        self.drum_action_chip("−", false, PatternAction::Bars(-1), cx)
+                    } else {
+                        div()
+                            .w(px(22.0))
+                            .flex_shrink_0()
+                            .text_center()
+                            .text_color(rgb(ds.muted))
+                            .child("−")
+                    })
+                    .child(
+                        div()
+                            .flex_shrink_0()
+                            .text_color(rgb(ds.text))
+                            .child(if bars == 1 {
+                                "1 compás".into()
+                            } else {
+                                format!("{bars} compases")
+                            }),
+                    )
+                    .child(self.drum_action_chip("+", false, PatternAction::Bars(1), cx))
+                    .child(
+                        div()
+                            .px_1()
+                            .flex_shrink_0()
+                            .text_color(rgb(ds.muted))
+                            .child(format!("{} pasos", pattern.step_count())),
+                    ),
+            )
+            .when_some(options, |panel, options| {
+                let choices = match options {
+                    PatternOptions::Meter => [
+                        (2, 4),
+                        (3, 4),
+                        (4, 4),
+                        (5, 4),
+                        (7, 4),
+                        (3, 8),
+                        (5, 8),
+                        (6, 8),
+                        (7, 8),
+                        (9, 8),
+                        (12, 8),
+                    ]
+                    .into_iter()
+                    .map(|(n, d)| {
+                        let meter = Meter::new(n, d).expect("compás predefinido");
+                        self.drum_action_chip(
+                            meter.label(),
+                            meter == pattern.meter,
+                            PatternAction::Meter(meter),
+                            cx,
+                        )
+                    })
+                    .collect::<Vec<_>>(),
+                    PatternOptions::Grid => [8, 16, 32, 64]
+                        .into_iter()
+                        .map(|denominator| {
+                            let grid = NoteGrid::new(denominator).expect("subdivisión predefinida");
+                            self.drum_action_chip(
+                                format!("1/{denominator}"),
+                                grid == pattern.grid,
+                                PatternAction::Grid(grid),
+                                cx,
+                            )
+                        })
+                        .collect(),
+                };
+                panel.child(
+                    div()
+                        .id("drum-pattern-options")
+                        .flex()
+                        .items_center()
+                        .gap_1()
+                        .px_1()
+                        .pb_1()
+                        .font_family("monospace")
+                        .overflow_x_scroll()
+                        .children(choices),
+                )
+            })
     }
 
     fn drum_action_chip(

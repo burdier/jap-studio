@@ -2,9 +2,10 @@
 mod arrangement;
 mod kit;
 pub use arrangement::{DrumClipTarget, arrangement_pattern, piece_pattern};
-pub use kit::{DrumKit, DrumKitId, DrumLayer, DrumMix, DrumPiece};
+pub use kit::{DrumKit, DrumKitId, DrumLayer, DrumMix, DrumPiece, MAX_DRUM_PIECES};
 
 use super::{
+    grid::NoteGrid,
     model::{NoteId, Pattern},
     time::{Meter, PPQ, Tick},
 };
@@ -18,6 +19,18 @@ pub struct DrumPattern {
     pub id: DrumPatternId,
     pub name: String,
     pub notes: Pattern,
+    pub meter: Meter,
+    pub grid: NoteGrid,
+}
+
+impl DrumPattern {
+    pub fn bar_count(&self) -> i64 {
+        (self.notes.length().0 - 1) / self.meter.ticks_per_bar() + 1
+    }
+
+    pub fn step_count(&self) -> usize {
+        ((self.notes.length().0 - 1) / self.grid.ticks().0 + 1) as usize
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -56,6 +69,8 @@ impl Default for DrumSession {
                 id,
                 name: "Patrón 1".into(),
                 notes: Pattern::new(Tick(Meter::default().ticks_per_bar())).unwrap(),
+                meter: Meter::default(),
+                grid: NoteGrid::default(),
             }],
             active: id,
             next_pattern_id: 2,
@@ -91,23 +106,51 @@ impl DrumSession {
         if length.0 > MAX_PATTERN_TICKS {
             return Err("El patrón supera la capacidad de la vista de pasos".into());
         }
+        if self
+            .song
+            .iter()
+            .any(|cell| cell.pattern == self.active && cell.at.0.checked_add(length.0).is_none())
+        {
+            return Err("El patrón supera el final permitido de Canción".into());
+        }
         self.active_pattern_mut()
             .notes
             .resize(length)
             .map_err(|error| error.to_string())
     }
 
+    pub fn set_active_meter(&mut self, meter: Meter) -> Result<(), String> {
+        let pattern = self.active_pattern();
+        if meter != pattern.meter {
+            self.resize_active(Tick(pattern.bar_count() * meter.ticks_per_bar()))?;
+            self.active_pattern_mut().meter = meter;
+        }
+        Ok(())
+    }
+
+    pub fn new_pattern(&mut self) -> Result<DrumPatternId, String> {
+        let meter = self.active_pattern().meter;
+        let notes = Pattern::new(Tick(meter.ticks_per_bar())).map_err(|error| error.to_string())?;
+        self.insert_pattern(notes)
+    }
+
     pub fn duplicate_active(&mut self) -> Result<DrumPatternId, String> {
+        self.insert_pattern(self.active_pattern().notes.clone())
+    }
+
+    fn insert_pattern(&mut self, notes: Pattern) -> Result<DrumPatternId, String> {
         let id = DrumPatternId(self.next_pattern_id);
         let next = self
             .next_pattern_id
             .checked_add(1)
             .ok_or("IDs de patrón agotados")?;
-        let notes = self.active_pattern().notes.clone();
+        let DrumPattern { meter, grid, .. } = *self.active_pattern();
         self.patterns.push(DrumPattern {
             id,
             name: format!("Patrón {}", id.0),
             notes,
+            meter,
+            grid,
         });
         self.next_pattern_id = next;
         self.active = id;

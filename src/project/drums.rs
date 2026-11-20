@@ -7,7 +7,8 @@ use super::{
 };
 use crate::musical::{
     drums::{DrumKitId, DrumPattern, DrumPatternId, DrumPlaybackSource, DrumSession, DrumSongCell},
-    time::Tick,
+    grid::NoteGrid,
+    time::{Meter, Tick},
 };
 use loro::LoroMap;
 use std::collections::HashSet;
@@ -51,6 +52,12 @@ impl ProjectDoc {
             let id = u64::from(pattern.id.0);
             let map = self.doc.get_map(format!("{PATTERN_PREFIX}:{id}"));
             map.insert("name", pattern.name.as_str()).map_err(err)?;
+            map.insert("meter_numerator", i64::from(pattern.meter.numerator()))
+                .map_err(err)?;
+            map.insert("meter_denominator", i64::from(pattern.meter.denominator()))
+                .map_err(err)?;
+            map.insert("grid", i64::from(pattern.grid.denominator()))
+                .map_err(err)?;
             super::pattern::write(&self.doc, PATTERN_PREFIX, id, &map, &pattern.notes, &muted)?;
         }
         meta.insert("song_count", state.song.len() as i64)
@@ -75,6 +82,7 @@ impl ProjectDoc {
         let kit = kit::read(&self.doc, DrumKitId(parse_id(&meta, "kit_id")?))?;
         let order = self.doc.get_movable_list("drums-patterns");
         let mut patterns = Vec::new();
+        let (_, session_meter) = self.timing()?;
         for index in 0..order.len() {
             let id = order_id(&order, index).ok_or("ID de patrón inválido")?;
             let map = self.doc.get_map(format!("{PATTERN_PREFIX}:{id}"));
@@ -83,6 +91,20 @@ impl ProjectDoc {
                 id: DrumPatternId(u32::try_from(id).map_err(|_| "ID de patrón inválido")?),
                 name: read_string(&map, "name")?,
                 notes,
+                meter: if map.get("meter_numerator").is_some() {
+                    Meter::new(
+                        parse_id(&map, "meter_numerator")?,
+                        parse_id(&map, "meter_denominator")?,
+                    )
+                    .map_err(|error| error.to_string())?
+                } else {
+                    session_meter
+                },
+                grid: if map.get("grid").is_some() {
+                    NoteGrid::new(parse_id(&map, "grid")?)?
+                } else {
+                    NoteGrid::default()
+                },
             });
         }
         let count = parse_id::<usize>(&meta, "song_count")?;

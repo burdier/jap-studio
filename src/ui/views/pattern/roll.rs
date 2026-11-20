@@ -26,7 +26,7 @@ impl DawApp {
         let root = piece.base_note();
         let piece_id = piece.id;
         let snap = editor.roll.snap;
-        let meter = self.timeline.meter;
+        let meter = editor.session.active_pattern().meter;
         let viewport = editor.roll.viewport;
         let grid_handle = editor.roll.grid.clone();
         let selected = editor.roll.selected;

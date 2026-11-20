@@ -476,21 +476,24 @@ restaura parámetros sin abrir dispositivos. README detalla las exclusiones.
 
 `musical/drums::DrumSession` agrupa kit, piezas, patrones y ocurrencias de Canción.
 Cada pieza usa el `InstrumentId` de sus notas. Cada patrón reutiliza `Pattern` con
-IDs de nota locales y un ID de patrón estable. Duplicar mantiene el contenido y crea
-un patrón independiente. Una ocurrencia de Canción apunta al patrón por ID y a su
+IDs de nota locales, un ID estable, su compás y su subdivisión. Cambiar la rejilla
+conserva las posiciones en ticks. Cambiar el compás ajusta el final a la cantidad de
+compases del patrón y rechaza el cambio si cortaría notas o automatización. Una
+ocurrencia de Canción apunta al patrón por ID y a su
 posición absoluta en ticks. Los controles del sampler se comparten con Hay Sampler.
 
 `project/drums` guarda estos datos y las referencias a capas en una sección opcional
 de Loro. Los documentos que carecen de esa sección abren con el kit inicial y un patrón
-vacío. `project/pattern` comparte la persistencia de notas y controles con los clips MIDI
+vacío. Los patrones guardados sin ajustes de rejilla conservan su duración original
+y usan el compás del proyecto con pasos de 1/16. `project/pattern` comparte la persistencia de notas y controles con los clips MIDI
 del Arrangement.
 
 La vista Drums Latex comparte el espacio con Arrangement. En su panel, Canción
 referencia patrones y los pasos muestran las notas de la pieza. El Piano Roll Light
 reemplaza los pasos al elegir una pieza y edita las mismas notas por ID. El inspector
-edita las capas y parámetros del kit. Cada cambio se publica al reproductor vigente.
-El kit usa sfizz para las capas y conserva la síntesis de respaldo en las piezas
-sin muestra. Las piezas suman al bus Drums. Los clips del Arrangement conservan
+edita las capas y parámetros del kit. Las muestras se validan fuera del hilo de UI.
+El reproductor prepara los cambios del kit en su worker y usa sfizz para las capas.
+Las piezas iniciales ofrecen síntesis si no se les ha cargado una muestra. Las piezas suman al bus Drums. Los clips del Arrangement conservan
 kit y pieza. Mientras tengan vínculo, sus notas siguen el patrón. Una edición de
 notas convierte solo el clip editado en una copia local. Las tiras de ambos mixers
 consultan los picos del Player y editan los controles de sus respectivos canales.

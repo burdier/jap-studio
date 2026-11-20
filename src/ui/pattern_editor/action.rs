@@ -1,7 +1,8 @@
 //! Acciones de la superficie de batería. Pasos, Canción y roll editan la sesión compartida.
-use super::{PatternEditor, TICKS_PER_STEP};
+use super::PatternEditor;
 use elevate::musical::{
     drums::{DrumPatternId, DrumPlaybackSource, DrumSongCell},
+    grid::NoteGrid,
     model::{EditError, InstrumentId, NoteEvent, NoteId},
     time::{Meter, Tick},
 };
@@ -18,7 +19,10 @@ pub(in crate::ui) enum PatternAction {
         delta: i16,
     },
     Select(DrumPatternId),
-    ExtendBar,
+    NewPattern,
+    Meter(Meter),
+    Grid(NoteGrid),
+    Bars(i64),
     Duplicate,
     SongCell(DrumSongCell),
     InsertNote {
@@ -43,8 +47,15 @@ pub(in crate::ui) enum PatternAction {
         piece: InstrumentId,
         delta: i32,
     },
+    AddPiece(String),
     AddSample {
         piece: InstrumentId,
+        path: String,
+    },
+    ReplaceSample {
+        piece: InstrumentId,
+        layer: usize,
+        previous: String,
         path: String,
     },
     RemoveSample {
@@ -74,23 +85,20 @@ impl PatternEditor {
         let id = piece.id;
         let pitch = piece.base_note();
         let old_note = self.note_at(lane, step).copied();
+        let step_ticks = self.ticks_per_step();
         let pattern = &mut self.session.active_pattern_mut().notes;
         if let Some(note) = old_note {
             pattern.remove_note(note.id)?;
             Ok("Nota eliminada")
         } else {
-            let start = Tick(step as i64 * TICKS_PER_STEP);
-            let duration = Tick(TICKS_PER_STEP.min(pattern.length().0 - start.0));
+            let start = Tick(step as i64 * step_ticks);
+            let duration = Tick(step_ticks.min(pattern.length().0 - start.0));
             pattern.add_note(id, start, duration, pitch, 100)?;
             Ok("Nota añadida · velocity 100")
         }
     }
 
-    pub(super) fn apply(
-        &mut self,
-        action: PatternAction,
-        meter: Meter,
-    ) -> Result<&'static str, String> {
+    pub(super) fn apply(&mut self, action: PatternAction) -> Result<&'static str, String> {
         match action {
             PatternAction::Toggle { lane, step } => {
                 self.toggle(lane, step).map_err(|error| error.to_string())
@@ -112,10 +120,31 @@ impl PatternEditor {
                 self.session.select(id)?;
                 Ok("Patrón seleccionado")
             }
-            PatternAction::ExtendBar => {
+            PatternAction::NewPattern => {
+                self.session.new_pattern()?;
+                self.cursor_step = 0;
+                Ok("Patrón vacío creado")
+            }
+            PatternAction::Meter(meter) => {
+                self.session.set_active_meter(meter)?;
+                Ok("Compás actualizado")
+            }
+            PatternAction::Grid(grid) => {
+                let cursor = self.cursor_step as i64 * self.ticks_per_step();
+                self.session.active_pattern_mut().grid = grid;
+                self.cursor_step = (cursor / grid.ticks().0) as usize;
+                self.roll.snap = grid;
+                Ok("Subdivisión actualizada")
+            }
+            PatternAction::Bars(delta) => {
+                let pattern = self.session.active_pattern();
+                let bars = pattern.bar_count() + delta;
+                if bars < 1 {
+                    return Err("El patrón necesita al menos un compás".into());
+                }
                 self.session
-                    .resize_active(Tick(self.pattern().length().0 + meter.ticks_per_bar()))?;
-                Ok("Compás añadido")
+                    .resize_active(Tick(bars * pattern.meter.ticks_per_bar()))?;
+                Ok("Duración del patrón actualizada")
             }
             PatternAction::Duplicate => {
                 self.session.duplicate_active()?;
@@ -179,6 +208,15 @@ impl PatternEditor {
             PatternAction::UseSource(source) => {
                 self.session.source = source;
                 Ok("Fuente de batería seleccionada")
+            }
+            PatternAction::AddPiece(path) => {
+                self.session.kit.add_sample(path)?;
+                self.cursor_lane = self.session.kit.pieces.len() - 1;
+                self.roll.piece = None;
+                self.roll.reset_selection();
+                self.mixer_open = false;
+                self.steps_scroll.scroll_to_item(self.cursor_lane);
+                Ok("Muestra añadida al kit")
             }
             action => self.apply_inspector(action),
         }

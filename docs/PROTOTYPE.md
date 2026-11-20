@@ -582,8 +582,11 @@ acotada de selección por NoteOn durante la reproducción.
 - Efecto de partículas del playhead aislado en UI, con particula-rs y fastrand.
 - **Drums Latex** (`2` / `:pattern`) muestra Canción y el editor de batería junto a
   Arrangement. La matriz organiza ocurrencias por compás. Clic en una pieza reemplaza
-  los pasos con el Piano Roll Light para editar tono, duración y velocidad. El icono de
-  tambor abre sus muestras, capas y controles. El proyecto guarda el kit y los patrones.
+  los pasos con el Piano Roll Light para editar tono, duración y velocidad.
+  **+ Patrón** crea un compás vacío con el compás y la subdivisión del patrón activo.
+  La rejilla distingue compases, pulsos y pasos. **+ Muestra** añade una pieza al kit.
+  **Ajustes** abre los controles de la pieza y permite cargar, cambiar o añadir capas.
+  El proyecto guarda el kit, los patrones y sus ajustes de rejilla.
 - **Audio de Drums Latex:** Patrón y Canción publican sus notas durante Play y usan el
   transporte compartido. Una pieza con muestras usa sfizz y sus capas por velocidad.
   El kit inicial se puede escuchar con síntesis de respaldo. Los picos de pieza y bus

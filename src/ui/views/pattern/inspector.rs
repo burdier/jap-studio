@@ -5,7 +5,7 @@ use crate::ui::{
         button::flat_control,
         knob::{KnobSpec, rotary_knob},
     },
-    pattern_editor::PatternAction,
+    pattern_editor::{DrumSampleTarget, PatternAction},
 };
 use elevate::{
     devices::sampler::{
@@ -63,9 +63,9 @@ impl DawApp {
                             .h(px(22.0))
                             .px_2()
                             .text_color(rgb(ds.cyan))
-                            .child("+ Muestra")
+                            .child(if piece.layers.is_empty() { "Cargar muestra" } else { "+ Capa" })
                             .on_mouse_down(MouseButton::Left, cx.listener(move |this, _, _, cx| {
-                                this.choose_drum_sample(id, cx);
+                                this.choose_drum_sample(DrumSampleTarget::AddLayer(id), cx);
                                 cx.notify();
                             })),
                     ),
@@ -97,6 +97,7 @@ impl DawApp {
                                 .and_then(|name| name.to_str())
                                 .unwrap_or(&sample.source)
                                 .to_owned();
+                            let source = sample.source.clone();
                             div()
                                 .flex()
                                 .items_center()
@@ -131,6 +132,20 @@ impl DawApp {
                                                 }))
                                         },
                                     ),
+                                )
+                                .child(
+                                    flat_control(ds, false, ds.cyan)
+                                        .h(px(18.0))
+                                        .px_2()
+                                        .text_color(rgb(ds.cyan))
+                                        .child("Cambiar")
+                                        .on_mouse_down(MouseButton::Left, cx.listener(move |this, _, _, cx| {
+                                            this.choose_drum_sample(
+                                                DrumSampleTarget::ReplaceLayer(id, layer, source.clone()),
+                                                cx,
+                                            );
+                                            cx.notify();
+                                        })),
                                 )
                                 .child(self.drum_action_chip("×", false, PatternAction::RemoveSample { piece: id, layer }, cx))
                         })),

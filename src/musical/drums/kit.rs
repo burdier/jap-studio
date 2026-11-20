@@ -3,7 +3,10 @@ use crate::{
     devices::sampler::{ROOT, SamplerParams},
     musical::{model::InstrumentId, track::TrackMix},
 };
-use std::collections::HashSet;
+use std::{collections::HashSet, path::Path};
+
+// El motor reserva un conjunto acotado de voces y controles por kit.
+pub const MAX_DRUM_PIECES: usize = 64;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct DrumKitId(pub u32);
@@ -26,6 +29,22 @@ pub struct DrumPiece {
 }
 
 impl DrumPiece {
+    fn new(id: InstrumentId, name: String, note: u8, layers: Vec<DrumLayer>) -> Self {
+        let mut sampler = SamplerParams::default();
+        sampler.apply_drum_preset();
+        sampler.keytrack = true;
+        sampler.choke = false;
+        sampler.set(ROOT, f32::from(note));
+        Self {
+            id,
+            name,
+            layers,
+            sampler,
+            choke_group: None,
+            mix: DrumMix::default(),
+        }
+    }
+
     pub fn base_note(&self) -> u8 {
         self.sampler.get(ROOT) as u8
     }
@@ -71,21 +90,7 @@ impl Default for DrumKit {
             (4, "Clap", 39),
         ]
         .into_iter()
-        .map(|(id, name, note)| {
-            let mut sampler = SamplerParams::default();
-            sampler.apply_drum_preset();
-            sampler.keytrack = true;
-            sampler.choke = false;
-            sampler.set(ROOT, f32::from(note));
-            DrumPiece {
-                id: InstrumentId(id),
-                name: name.into(),
-                layers: Vec::new(),
-                sampler,
-                choke_group: None,
-                mix: DrumMix::default(),
-            }
-        })
+        .map(|(id, name, note)| DrumPiece::new(InstrumentId(id), name.into(), note, Vec::new()))
         .collect();
         Self {
             id: DrumKitId(1),
@@ -96,6 +101,43 @@ impl Default for DrumKit {
 }
 
 impl DrumKit {
+    pub fn add_sample(&mut self, source: String) -> Result<InstrumentId, String> {
+        if self.pieces.len() >= MAX_DRUM_PIECES {
+            return Err(format!("El kit admite hasta {MAX_DRUM_PIECES} piezas"));
+        }
+        if source.trim().is_empty() || source.contains('\0') {
+            return Err("Ruta de muestra inválida".into());
+        }
+        let next = self
+            .pieces
+            .iter()
+            .map(|piece| piece.id.0)
+            .max()
+            .unwrap_or(0)
+            .checked_add(1)
+            .filter(|&id| id < u32::MAX)
+            .ok_or("IDs de pieza agotados")?;
+        let name = Path::new(&source)
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .unwrap_or("Muestra")
+            .to_owned();
+        let id = InstrumentId(next);
+        self.pieces.push(DrumPiece::new(
+            id,
+            name,
+            36,
+            vec![DrumLayer {
+                source,
+                velocity_min: 1,
+                velocity_max: 127,
+            }],
+        ));
+        Ok(id)
+    }
+
     pub(super) fn validate(&self) -> Result<HashSet<InstrumentId>, String> {
         if self.id.0 == 0 || self.pieces.is_empty() || !self.bus.validate() {
             return Err("Kit o bus de batería inválido".into());
