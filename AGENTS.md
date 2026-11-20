@@ -12,8 +12,8 @@
 1. Comunicar en español. Avanzar por incrementos comprensibles.
 2. Preguntar antes de añadir dependencias; comprobar API, licencia y encaje.
 3. Mantener `main.rs` como arranque. `mod.rs` declara módulos, fachada y estado compartido.
-4. Un archivo por responsabilidad. Como referencia, 100–250 líneas; separar por concepto,
-   no cortar funciones arbitrariamente para cumplir un número.
+4. Mantener juntas las operaciones con una misma responsabilidad. Divide un archivo
+   cuando la separación aclare qué hace cada parte y cómo se comunican.
 5. `src/musical/` no importa GPUI, CPAL, RustySynth ni tipos de `ui/` o `audio/`.
 6. `src/audio/` no importa GPUI. Decodificar y preparar recursos fuera del callback.
 7. `src/instruments/` no importa GPUI. Posee el estado de ejecución (notas, ratón,
@@ -33,6 +33,34 @@
 14. Compilar y publicar las ediciones de percusión fuera del callback. Un plan de notas
     nuevo conserva el reloj y las voces que están sonando.
 15. Actualizar el mapa de archivos y el estado si cambia una frontera o una capacidad.
+
+## Refactorización
+
+Simplifica el código preservando su comportamiento, rendimiento y determinismo musical.
+[Guía de refactorización de PufferLib](https://github.com/PufferAI/PufferLib/blob/5.0/SKILL_ISSUES.md)
+
+1. Empieza por la entrada normal de la función y revisa sus llamadores. Identifica los
+   contratos que deben conservarse, como el orden de eventos, los IDs de clips y notas
+   y la apertura de proyectos guardados con versiones anteriores.
+2. Integra un auxiliar de un solo uso cuando la operación se lea mejor en el llamador.
+   Conserva las funciones que delimitan una operación musical o una frontera entre la
+   interfaz, el proyecto y el motor.
+3. Reduce el anidamiento con retornos tempranos y estados explícitos. Si cambias una
+   función compartida, revisa todos sus llamadores en el mismo cambio.
+4. Valida archivos, plugins y dispositivos en sus fronteras. Devuelve los errores
+   recuperables con `Result` para que la UI pueda explicarlos. Reserva las aserciones
+   para invariantes internas fuera del callback de audio.
+5. Reutiliza las acciones y los componentes existentes. Prepara recursos y planes fuera
+   del callback, conserva los límites de sus bloques y publica el estado cuando esté listo.
+6. Deja los nombres y el formato para la última pasada. Usa `rustfmt` y elige una
+   comprobación que cubra el riesgo concreto del cambio.
+
+## Entregas en paralelo
+
+Para cada entrega, registra el objetivo, las dependencias, el commit previsto, los archivos
+a cargo del agente y la comprobación de cierre. Parte de una base común y asigna a una
+persona la integración de los archivos compartidos. Concentra la comprobación conjunta al
+integrar.
 
 ## Verificación
 
