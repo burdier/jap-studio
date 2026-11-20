@@ -309,7 +309,7 @@
         <div class="score" aria-label="Avance total">
           <strong><span id="done-count">10</span> / <span id="total-count">19</span></strong>
           <span>PR completados · <span id="percent">53%</span></span>
-          <span class="commit-score"><span id="commit-done">53</span>/<span id="commit-total">82</span> commits · <span id="commit-percent">65%</span></span>
+          <span class="commit-score"><span id="commit-done">53</span>/<span id="commit-total">83</span> commits · <span id="commit-percent">64%</span></span>
           <div class="bar" aria-hidden="true"><span id="bar-fill"></span></div>
         </div>
       </header>
@@ -436,6 +436,16 @@
           </article>
         </div>
         <p class="phase-note"><strong>Pasada final:</strong> crear Groove A y un fill, editar un golpe fantasma sin parar Play, enviar las piezas al Arrangement, quitar un Kick en una sola ocurrencia, mover el fader del bus y reabrir el proyecto.</p>
+        <details class="commit-plan" open>
+          <summary>Swap · 1 commit futuro después de PR-18</summary>
+          <ol>
+            <li id="drums-latex-swap" data-task="DL-6" data-owner="explorer">
+              <strong>feat(drums): reemplazar muestras compatibles con Swap</strong>
+              <p>Al activar Swap, el Explorer muestra solo reemplazos compatibles con el tipo de pieza y el carácter de las muestras actuales, según rasgos como afinación, ataque y duración. Se puede aplicar al conjunto de muestras del kit, al conjunto de una pieza o a una muestra concreta. El reemplazo en conjunto busca equivalencias por pieza y capa. Las notas, la mezcla y los vínculos con Arrangement se conservan.</p>
+              <small>Comprobar que un kick corto solo ofrece kicks de carácter similar y que el mismo groove admite el reemplazo individual y el del conjunto.</small>
+            </li>
+          </ol>
+        </details>
       </section>
 
       <section>
