@@ -114,6 +114,7 @@ impl DawApp {
             track_levels: DEMO_LEVELS.to_vec(),
             track_pans: DEMO_PANS.to_vec(),
             track_control_drag: None,
+            mixer_drag: None,
             track_reorder_drag: None,
             player: None,
             file_playback: None,
@@ -200,6 +201,7 @@ impl DawApp {
     }
     pub(super) fn set_center_view(&mut self, view: CenterView) {
         if view != self.center_view {
+            self.mixer_drag = None;
             self.workspace_focus = Default::default();
         }
         self.track_delete_pending = false;

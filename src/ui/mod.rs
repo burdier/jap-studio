@@ -25,6 +25,7 @@ mod keyboard_preferences;
 mod kit;
 mod lua_components;
 mod lua_tools;
+mod mixer;
 mod navigation;
 mod palette;
 mod pattern_editor;
@@ -163,6 +164,7 @@ struct DawApp {
     track_levels: Vec<i32>,
     track_pans: Vec<i32>,
     track_control_drag: Option<views::tracks::TrackControlDrag>,
+    mixer_drag: Option<mixer::MixerDrag>,
     track_reorder_drag: Option<track_drag::TrackReorderDrag>,
     track_scroll: ScrollHandle,
     mode: VimMode,

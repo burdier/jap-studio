@@ -49,7 +49,7 @@ impl DawApp {
         let (label, help) = match self.center_view {
             CenterView::Arrangement => ("ARRANGEMENT", ""),
             CenterView::Session => ("DRUMS LATEX", ""),
-            CenterView::Mixer => ("MIXER / MOCK", "Tab: cycle | 1/2/3/4: jump"),
+            CenterView::Mixer => ("MIXER", ""),
         };
         div()
             .flex_1()
@@ -95,7 +95,7 @@ impl DawApp {
                     .border_1()
                     .border_color(rgb(ds.frame_border()))
                     .overflow_hidden()
-                    .child(self.render_mixer())
+                    .child(self.render_mixer(cx))
                     .into_any_element(),
             })
             .into_any_element()

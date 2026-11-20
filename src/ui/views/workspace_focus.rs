@@ -43,7 +43,7 @@ impl DawApp {
             Panel::Arrangement => self.render_arrangement(cx).into_any_element(),
             Panel::Center => match self.center_view {
                 CenterView::Session => self.render_pattern(cx).into_any_element(),
-                CenterView::Mixer => self.render_mixer().into_any_element(),
+                CenterView::Mixer => self.render_mixer(cx).into_any_element(),
                 CenterView::Arrangement => self.render_arrangement(cx).into_any_element(),
             },
         };

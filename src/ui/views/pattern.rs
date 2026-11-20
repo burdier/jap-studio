@@ -45,12 +45,42 @@ impl DawApp {
                 window.focus(&this.focus_handle, cx);
             }))
             .child(self.render_drum_song(cx))
-            .child(self.render_pattern_controls(cx))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .flex_shrink_0()
+                    .min_w_0()
+                    .bg(rgb(self.ds.panel_dark))
+                    .child(
+                        toggle_badge(&self.ds, "Mixer", editor.mixer_open, self.ds.cyan)
+                            .id("drums-mixer-toggle")
+                            .h(px(22.0))
+                            .mx_1()
+                            .px_2()
+                            .tooltip(|window, cx| {
+                                gpui::component::tooltip::Tooltip::new("Mixer del kit")
+                                    .build(window, cx)
+                            })
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _, _, cx| {
+                                    this.pattern_editor.mixer_open =
+                                        !this.pattern_editor.mixer_open;
+                                    this.mixer_drag = None;
+                                    cx.notify();
+                                }),
+                            ),
+                    )
+                    .child(self.render_pattern_controls(cx).flex_1()),
+            )
             .when_some(
-                instrument.filter(|_| editor.inspector_open),
+                instrument.filter(|_| editor.inspector_open && !editor.mixer_open),
                 |panel, piece| panel.child(self.render_drum_inspector(piece, cx)),
             )
-            .child(if let Some(piece) = selected {
+            .child(if editor.mixer_open {
+                self.render_drum_mixer(cx)
+            } else if let Some(piece) = selected {
                 self.render_drum_roll(piece, cx)
             } else {
                 self.render_drum_steps(cx)

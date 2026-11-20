@@ -24,6 +24,7 @@ pub(super) struct PatternEditor {
     pub song_page: i64,
     pub workspace_ratio: Option<f32>,
     pub inspector_open: bool,
+    pub mixer_open: bool,
     pub roll: roll::DrumRoll,
     sample_picker: Option<Task<()>>,
 }
@@ -95,6 +96,15 @@ impl DawApp {
     }
 
     pub(super) fn handle_drum_key(&mut self, key: &str) -> bool {
+        if self.pattern_editor.mixer_open {
+            return if key == "escape" {
+                self.pattern_editor.mixer_open = false;
+                self.mixer_drag = None;
+                true
+            } else {
+                false
+            };
+        }
         if self.pattern_editor.roll.piece.is_some() {
             return self.handle_drum_roll_key(key);
         }

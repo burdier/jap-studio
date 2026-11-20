@@ -264,7 +264,7 @@ impl DawApp {
                     .px_2()
                     .bg(rgb(self.ds.panel_dark))
                     .text_size(px(11.0))
-                    .child("MIXER / MOCK · Piano roll en ventana separada")
+                    .child("Mixer · Piano Roll en ventana separada")
                     .child(self.roll_button(
                         "Acoplar piano roll",
                         false,
@@ -272,6 +272,6 @@ impl DawApp {
                         cx,
                     )),
             )
-            .child(self.render_mixer())
+            .child(self.render_mixer(cx))
     }
 }

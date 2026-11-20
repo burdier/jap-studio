@@ -588,6 +588,10 @@ acotada de selección por NoteOn durante la reproducción.
   transporte compartido. Una pieza con muestras usa sfizz y sus capas por velocidad.
   El kit inicial se puede escuchar con síntesis de respaldo. Los picos de pieza y bus
   se miden después de sus faders.
+- **Mixers reales:** la mesa del proyecto y el panel Mixer de Drums Latex comparten
+  tiras con mute, solo, paneo y fader vertical con lectura en dB. Los medidores
+  leen picos publicados por el transporte común. Master usa la ganancia y el
+  bypass de Utility. El bus Drums y cada pieza conservan su mezcla en el proyecto.
 - Biblioteca musical sin GPUI/CPAL: patrón variable, notas simultáneas, tempo constante,
   transporte en frames y plan NoteOn/NoteOff con offsets por buffer.
 - Buscador tipo rofi con `[+]`, `a` o `:add`: filtra instrumentos, primitivos, componentes
@@ -638,7 +642,7 @@ acotada de selección por NoteOn durante la reproducción.
 - Pan y volumen de pista responden a rueda y click; el paneo se aplica en el adaptador estéreo
   (`audio::stereo_pan`) después de Volume, leyendo un valor atómico por bloque y sin asignar.
 - Al abrir un clip MIDI, Arrangement queda arriba y el piano roll acoplado debajo. Separarlo
-  en una ventana muestra el Mixer mock en el panel inferior; cerrar la ventana lo vuelve a acoplar.
+  en una ventana muestra el Mixer del proyecto en el panel inferior; cerrar la ventana lo vuelve a acoplar.
 - Puntero inmersivo en GPU (`src/ui/cursor_fx.rs` con `particula-rs` + `fastrand`): cinco modos
   seleccionables desde Configuración (`◈ Hay`), comandos (`:cursor fire|sparks|neon|stars|off`)
   o `~/.jaybu.profile` (`CURSOR_FX=fire`), incluyendo el efecto **Fueguito** por defecto.

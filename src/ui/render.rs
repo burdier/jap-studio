@@ -314,6 +314,14 @@ impl Render for DawApp {
             .on_mouse_move(
                 cx.listener(|this, event: &gpui::MouseMoveEvent, window, cx| {
                     this.update_tempo_drag(event);
+                    if this.update_mixer_drag(
+                        event.position.y,
+                        event.dragging(),
+                        event.modifiers.shift,
+                    ) {
+                        cx.notify();
+                        return;
+                    }
                     this.update_track_control_drag(event.position, event.dragging());
                     let track_drag_changed =
                         this.update_track_reorder_drag(event.position, event.dragging());
@@ -463,13 +471,19 @@ impl Render for DawApp {
                     let track_dragged = this.track_reorder_drag.is_some();
                     this.finish_track_reorder_drag(event.position);
                     let control_dragged = this.end_track_control_drag();
+                    let mixer_dragged = this.mixer_drag.take().is_some();
                     this.finish_sample_drag(cx);
                     this.piano_ui.drag = None;
                     this.release_mouse_note();
                     this.release_chord_audition();
                     this.timeline.end_clip_drag();
                     let split_dragged = this.split_drag.take().is_some();
-                    if tempo_dragged || track_dragged || split_dragged || control_dragged {
+                    if tempo_dragged
+                        || track_dragged
+                        || split_dragged
+                        || control_dragged
+                        || mixer_dragged
+                    {
                         cx.notify();
                     }
                 }),
@@ -481,13 +495,19 @@ impl Render for DawApp {
                     let track_dragged = this.track_reorder_drag.is_some();
                     this.finish_track_reorder_drag(event.position);
                     let control_dragged = this.end_track_control_drag();
+                    let mixer_dragged = this.mixer_drag.take().is_some();
                     this.finish_sample_drag(cx);
                     this.piano_ui.drag = None;
                     this.release_mouse_note();
                     this.release_chord_audition();
                     this.timeline.end_clip_drag();
                     let split_dragged = this.split_drag.take().is_some();
-                    if tempo_dragged || track_dragged || split_dragged || control_dragged {
+                    if tempo_dragged
+                        || track_dragged
+                        || split_dragged
+                        || control_dragged
+                        || mixer_dragged
+                    {
                         cx.notify();
                     }
                 }),
