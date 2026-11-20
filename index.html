@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Hay · Avance de Lua, multipista e Hilos</title>
+    <title>Hay · Roadmap de Drums Latex y motor</title>
     <style>
       :root {
         color-scheme: dark;
@@ -300,16 +300,16 @@
       <header>
         <div>
           <p class="eyebrow">Hay / Elevate · Roadmap</p>
-          <h1>Lua, multipista e Hilos</h1>
+          <h1>Drums Latex y el motor de Hay</h1>
           <p class="intro">
-            Quince entregas con valor observable. Cada PR actualiza su tarjeta en este
-            archivo y conserva el detalle técnico en el plan Markdown.
+            Drums Latex es la prioridad actual. Su plan concentra la batería, su editor y
+            su mezcla en pocas entregas. Abajo se conserva el historial del motor.
           </p>
         </div>
         <div class="score" aria-label="Avance total">
-          <strong><span id="done-count">0</span> / <span id="total-count">15</span></strong>
-          <span>PR completados · <span id="percent">0%</span></span>
-          <span class="commit-score"><span id="commit-done">3</span>/<span id="commit-total">69</span> commits · <span id="commit-percent">4%</span></span>
+          <strong><span id="done-count">10</span> / <span id="total-count">19</span></strong>
+          <span>PR completados · <span id="percent">53%</span></span>
+          <span class="commit-score"><span id="commit-done">53</span>/<span id="commit-total">82</span> commits · <span id="commit-percent">65%</span></span>
           <div class="bar" aria-hidden="true"><span id="bar-fill"></span></div>
         </div>
       </header>
@@ -321,7 +321,8 @@
       </div>
 
       <details class="rules">
-        <summary>Reglas de corte para todos los PR</summary>
+        <summary>Reglas generales del roadmap</summary>
+        <p>Estas reglas describen PR-01 a PR-15. PR-16 a PR-18 se coordinan y se verifican según la sección Drums Latex.</p>
         <ul>
           <li>Un commit tiene una sola intención; no mezclar función, formato y documentación.</li>
           <li>No introducir tipos sin un consumidor real. Los contratos deben tener su primer uso o una prueba que los ejercite.</li>
@@ -355,6 +356,87 @@
         <p><small>Verificado con scripts/check.sh (CARGO_BUILD_JOBS=1): 269 pruebas correctas,
           formato y compilación correctos. Sin prueba interactiva de los diálogos.</small></p>
       </details>
+
+      <section id="drums-latex" aria-labelledby="drums-latex-title">
+        <h2 id="drums-latex-title">Prioridad · Drums Latex</h2>
+        <p class="phase-note">Una batería, un kit y un bus. La vista Canción organiza patrones y el Arrangement permite editar cada pieza por separado. Tres PR y cinco commits de implementación.</p>
+
+        <details class="rules" open>
+          <summary>Contrato compartido y reparto entre agentes</summary>
+          <ul>
+            <li><strong>Fuente única.</strong> IDs estables para kit, pieza, patrón y nota. Pads y Piano Roll editan las mismas notas en ticks. La pieza elige el instrumento y el tono MIDI afina ese mismo sonido respecto a su nota base.</li>
+            <li><strong>Patrón y ocurrencia.</strong> Una celda de Canción apunta al patrón. Al enviar MIDI al Arrangement, cada pieza genera un clip con referencia al patrón y al mismo kit. Editar el patrón actualiza las ocurrencias vinculadas. La primera edición de notas de un clip convierte solo esa ocurrencia en una copia local de notas que conserva su pieza y su kit. Mover, recortar o silenciar el clip afecta solo esa ocurrencia.</li>
+            <li><strong>Un transporte.</strong> Al escuchar Drums Latex se elige Patrón/Canción o Arrangement como fuente de notas. Ambas vistas pueden estar visibles. El selector afecta solo al kit: las demás pistas del proyecto siguen su transporte normal. Cada pieza suma su audio al mismo bus Drums. La audición de un pad es un gesto explícito.</li>
+            <li><strong>Trabajo paralelo.</strong> Integrar <a href="#drums-latex-base">DL-1</a> primero. Después se pueden repartir <a href="#drums-latex-editor">DL-2</a> (editor), <a href="#drums-latex-kit">DL-3</a> (audio), <a href="#drums-latex-midi">DL-4</a> (Arrangement) y <a href="#drums-latex-mixer">DL-5</a> (mixer) a cuatro agentes. DL-1 deja definidos los datos y las acciones que usan los cuatro. Las conexiones al audio real se integran después de DL-3.</li>
+            <li><strong>Una rama y un commit por tarea.</strong> Cada agente trabaja en su propia copia y entrega el hash, los archivos tocados y la comprobación que hizo. DL-2 a DL-5 parten del mismo commit de base. DL-3 integra el transporte. El coordinador integra el registro en <code>ui/mod.rs</code> y <code>ui/views/mod.rs</code> y actualiza el estado del tablero junto con cada PR.</li>
+            <li><strong>Verificación ligera.</strong> Revisar formato y diff en cada commit. El integrador concentra <code>cargo check --bin daw-gpui --locked -j1</code> al cerrar cada PR. Añadir una prueba pequeña solo si protege una regresión concreta. Hacer una sola pasada manual del flujo al final. Evitar builds de release y suites completas por cada agente.</li>
+          </ul>
+        </details>
+
+        <div class="grid">
+          <article id="pr-16" data-pr="PR-16" data-status="pending">
+            <div class="pr-head"><span class="pr-number">PR-16</span><span class="status">Pendiente</span></div>
+            <h3>Patrones que se pueden recuperar</h3>
+            <p>Crear un groove de más de un compás, duplicarlo para hacer una variación y recuperar ambos al abrir el proyecto.</p>
+            <div class="depends">Inicio · 1 commit</div>
+            <details class="commit-plan" open>
+              <summary>Modelo, acciones y Loro</summary>
+              <ol>
+                <li id="drums-latex-base" data-task="DL-1" data-owner="modelo-proyecto">
+                  <strong>feat(drums): guardar el kit y los patrones de Drums Latex</strong>
+                  <p>El agente de modelo y proyecto fija los IDs, la edición de notas por pieza, las ocurrencias de patrón, la selección de fuente y el estado editable de mezcla por pieza y bus. Conecta el editor y la audición actuales al patrón activo. Persiste piezas, referencias a sus muestras, ajustes, notas, patrones y orden de canción en Loro. Abrir proyectos anteriores conserva su comportamiento.</p>
+                  <small><b>Área:</b> <code>src/musical/</code>, <code>src/project/</code> y adaptador <code>src/ui/project/</code>. <b>Entrega:</b> guardar un groove con dos compases y una variación, y recuperarlos con sus notas e IDs.</small>
+                </li>
+              </ol>
+            </details>
+          </article>
+
+          <article id="pr-17" data-pr="PR-17" data-status="pending">
+            <div class="pr-head"><span class="pr-number">PR-17</span><span class="status">Pendiente</span></div>
+            <h3>Programar y escuchar el kit</h3>
+            <p>Editar pasos o notas y ajustar el sonido de una pieza sin salir de Drums Latex. Escuchar los cambios de notas con Play activo.</p>
+            <div class="depends">Después de DL-1 · 2 commits en paralelo</div>
+            <details class="commit-plan" open>
+              <summary>Editor embebido y audio del kit</summary>
+              <ol>
+                <li id="drums-latex-editor" data-task="DL-2" data-owner="editor">
+                  <strong>feat(ui): editar patrones y notas de batería en el mismo espacio</strong>
+                  <p>El agente de editor construye la matriz Canción, los pads y el Piano Roll ligero con las herramientas existentes. Clic en una pieza reemplaza la cuadrícula completa de pasos. El roll muestra nota base, afinación por nota, snap y velocidad debajo. Al volver, una pieza con notas afinadas o fuera de paso muestra una miniatura fiel. El icono de tambor abre el inspector plegable para la pieza activa en cualquiera de las dos vistas.</p>
+                  <small><b>Área:</b> <code>src/ui/pattern_editor.rs</code>, <code>src/ui/views/pattern.rs</code> y adaptador del Piano Roll. <b>Entrega:</b> editar tono y velocidad dentro del roll y ver el cambio al volver a Pasos. El panel muestra los parámetros conectados por DL-3.</small>
+                </li>
+                <li id="drums-latex-kit" data-task="DL-3" data-owner="audio">
+                  <strong>feat(audio): tocar y mezclar un kit compartido durante Play</strong>
+                  <p>El agente de audio prepara muestras y capas por pieza con el sampler existente y conserva una voz de respaldo para el kit inicial. Conecta afinación base, envolvente, filtro y grupos de corte al inspector. Patrón y Canción publican el plan de notas preparado al cambiarlo, que entra en el siguiente bloque sin reiniciar el reloj. Cada pieza expone mute, solo, paneo, ganancia y pico real antes del bus Drums.</p>
+                  <small><b>Área:</b> <code>src/audio/drums/</code>, sampler existente y adaptadores de mezcla y transporte. <b>Entrega:</b> un cambio de velocidad se oye al repetir el groove sin pulsar Stop, y el pico de cada pieza responde a su fader.</small>
+                </li>
+              </ol>
+            </details>
+          </article>
+
+          <article id="pr-18" data-pr="PR-18" data-status="pending">
+            <div class="pr-head"><span class="pr-number">PR-18</span><span class="status">Pendiente</span></div>
+            <h3>Una batería en las dos vistas</h3>
+            <p>Enviar el groove al Arrangement, editar un fill por pieza y mezclar el mismo kit con la misma tira de canal que el mixer general.</p>
+            <div class="depends">DL-4 y DL-5 arrancan tras DL-1 · Cierre tras PR-17</div>
+            <details class="commit-plan" open>
+              <summary>MIDI por pieza y tiras de canal compartidas</summary>
+              <ol>
+                <li id="drums-latex-midi" data-task="DL-4" data-owner="arrangement">
+                  <strong>feat(arrangement): enviar MIDI por pieza al kit compartido</strong>
+                  <p>El agente de Arrangement lleva patrones o una secuencia de Canción al timeline como clips por pieza. Conserva posición, duración, nota y velocidad, y habilita edición local sin cambiar el patrón fuente. Al tocar esos clips se usa la ruta de DL-3 y el proyecto conserva sus referencias al volver a abrirlo.</p>
+                  <small><b>Área:</b> acciones de Arrangement, <code>src/ui/timeline/</code> y persistencia de referencias en <code>src/project/midi.rs</code>. <b>Entrega:</b> quitar un Kick de un compás sin cambiar Groove A; afinar el instrumento y oírlo desde ambos orígenes.</small>
+                </li>
+                <li id="drums-latex-mixer" data-task="DL-5" data-owner="mixer">
+                  <strong>feat(ui): compartir tiras entre el mixer de batería y el general</strong>
+                  <p>El agente de mixer reutiliza una tira con mute, solo, paneo, valor en dB, fader vertical y medidor. En Drums Latex muestra piezas y bus Drums. En el mixer general muestra pistas del proyecto y usa los controles y picos disponibles. Las dos vistas comparten los widgets y el controlador de cada canal real.</p>
+                  <small><b>Área:</b> <code>src/ui/views/mixer.rs</code>, componente de tira y adaptación del mixer de batería. <b>Entrega:</b> silenciar y subir una pieza en el mixer de batería y comprobar que el cambio se oye al reproducir sus clips del Arrangement.</small>
+                </li>
+              </ol>
+            </details>
+          </article>
+        </div>
+        <p class="phase-note"><strong>Pasada final:</strong> crear Groove A y un fill, editar un golpe fantasma sin parar Play, enviar las piezas al Arrangement, quitar un Kick en una sola ocurrencia, mover el fader del bus y reabrir el proyecto.</p>
+      </section>
 
       <section>
         <h2>1 · Kit Lua</h2>
@@ -640,7 +722,7 @@
       </section>
 
       <footer>
-        <span>Estimación inicial total: 68–127 jornadas-persona (aprox. 14–26 semanas a tiempo completo). PR-01 a PR-07 completados; PR-08 cerrado con transformación previa a Play; PR-09 cerrado y PR-10 en progreso local. Lua en audio sigue pendiente.</span>
+        <span>Estimación original del motor, sin Drums Latex: 68–127 jornadas-persona (aprox. 14–26 semanas a tiempo completo). PR-01 a PR-07 completados; PR-08 cerrado con transformación previa a Play; PR-09 cerrado y PR-10 en progreso local. Lua en audio sigue pendiente.</span>
         <a href="docs/PLAN_LUA_MULTITRACK_HILOS.md">Ver tareas y criterios completos</a>
       </footer>
     </main>
