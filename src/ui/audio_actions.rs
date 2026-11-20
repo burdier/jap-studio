@@ -132,8 +132,10 @@ impl DawApp {
             }
         }
         let (targets, mode, hilo_id) = match self.center_view {
-            CenterView::Session => (vec![MidiTarget::Sequencer], HiloMode::Layer, None),
-            CenterView::Arrangement | CenterView::Mixer => {
+            CenterView::Session if self.drums_panel_active() => {
+                (vec![MidiTarget::Sequencer], HiloMode::Layer, None)
+            }
+            CenterView::Arrangement | CenterView::Mixer | CenterView::Session => {
                 let armed: Vec<_> = self
                     .tracks
                     .iter()
@@ -394,13 +396,17 @@ impl DawApp {
                 }
                 MidiTarget::Instrument(_) => {}
                 MidiTarget::Sequencer => {
-                    if let MidiMessage::NoteOn { .. } = message {
-                        self.apply_pattern_action(PatternAction::Toggle {
-                            lane: self.cursor_row,
-                            step: self.cursor_col,
-                        });
-                        let step_count = self.pattern_editor.step_count().max(1);
-                        self.cursor_col = (self.cursor_col + 1) % step_count;
+                    if let MidiMessage::NoteOn { note, velocity } = message {
+                        if let Some(piece) = self.pattern_editor.roll.piece {
+                            self.preview_drum_piece(piece, note, velocity);
+                        } else {
+                            self.apply_pattern_action(PatternAction::Toggle {
+                                lane: self.pattern_editor.cursor_lane,
+                                step: self.pattern_editor.cursor_step,
+                            });
+                            let editor = &mut self.pattern_editor;
+                            editor.cursor_step = (editor.cursor_step + 1) % editor.step_count();
+                        }
                     }
                 }
             }

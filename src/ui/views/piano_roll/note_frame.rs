@@ -3,7 +3,7 @@ use super::grid_background::rectangle;
 use crate::ui::DesignSystem;
 use gpui::{Bounds, BoxShadow, Pixels, Window, fill, px, rgb, rgba};
 
-pub(super) fn paint(
+pub(in crate::ui::views) fn paint(
     bounds: Bounds<Pixels>,
     color: u32,
     hovered: bool,

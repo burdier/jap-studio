@@ -1,34 +1,31 @@
 //! Adaptador entre celdas visuales y notas. El patrón conserva ticks, no columnas.
-use super::DawApp;
+mod action;
+mod inspector;
+mod roll;
+
+use super::{CenterView, DawApp, workspace_focus::Panel};
 use elevate::musical::{
-    drums::{DrumPatternId, DrumPlaybackSource, DrumSession, DrumSongCell},
-    model::{EditError, NoteEvent, Pattern},
-    time::{Meter, PPQ, Tick},
+    drums::{DrumPlaybackSource, DrumSession},
+    model::{NoteEvent, Pattern},
+    time::{Meter, PPQ},
 };
+use gpui::Task;
 
-const TICKS_PER_STEP: i64 = PPQ / 4;
+pub(super) use action::PatternAction;
 
-#[derive(Clone, Copy)]
-pub(super) enum PatternAction {
-    Toggle {
-        lane: usize,
-        step: usize,
-    },
-    Velocity {
-        lane: usize,
-        step: usize,
-        delta: i16,
-    },
-    Select(DrumPatternId),
-    ExtendBar,
-    Duplicate,
-    AppendToSong,
-    UseSource(DrumPlaybackSource),
-}
+pub(in crate::ui) const TICKS_PER_STEP: i64 = PPQ / 4;
+pub(in crate::ui) const SONG_BARS_PER_PAGE: i64 = 8;
 
 #[derive(Default)]
 pub(super) struct PatternEditor {
     pub session: DrumSession,
+    pub cursor_lane: usize,
+    pub cursor_step: usize,
+    pub song_page: i64,
+    pub workspace_ratio: Option<f32>,
+    pub inspector_open: bool,
+    pub roll: roll::DrumRoll,
+    sample_picker: Option<Task<()>>,
 }
 
 impl PatternEditor {
@@ -38,6 +35,18 @@ impl PatternEditor {
 
     pub fn pattern(&self) -> &Pattern {
         &self.session.active_pattern().notes
+    }
+
+    pub fn show_roll(&mut self, lane: usize) {
+        if let Some(piece) = self.session.kit.pieces.get(lane) {
+            self.cursor_lane = lane;
+            self.roll.focus(piece, &self.session.active_pattern().notes);
+        }
+    }
+
+    pub fn song_page_start(&self, meter: Meter) -> i64 {
+        self.song_page
+            .saturating_mul(SONG_BARS_PER_PAGE * meter.ticks_per_bar())
     }
 
     pub fn step_count(&self) -> usize {
@@ -61,97 +70,53 @@ impl PatternEditor {
                 && note.start.0 < start + TICKS_PER_STEP
         })
     }
-
-    fn toggle(&mut self, lane: usize, step: usize) -> Result<&'static str, EditError> {
-        let piece = self
-            .session
-            .kit
-            .pieces
-            .get(lane)
-            .ok_or(EditError::InvalidNote)?;
-        if step >= self.step_count() {
-            return Err(EditError::InvalidNote);
-        }
-        let id = piece.id;
-        let pitch = piece.base_note();
-        let old_note = self.note_at(lane, step).copied();
-        let pattern = &mut self.session.active_pattern_mut().notes;
-        if let Some(note) = old_note {
-            pattern.remove_note(note.id)?;
-            Ok("Nota eliminada")
-        } else {
-            let start = Tick(step as i64 * TICKS_PER_STEP);
-            let duration = Tick(TICKS_PER_STEP.min(pattern.length().0 - start.0));
-            pattern.add_note(id, start, duration, pitch, 100)?;
-            Ok("Nota añadida · velocity 100")
-        }
-    }
-
-    fn apply(&mut self, action: PatternAction, meter: Meter) -> Result<&'static str, String> {
-        match action {
-            PatternAction::Toggle { lane, step } => {
-                self.toggle(lane, step).map_err(|error| error.to_string())
-            }
-            PatternAction::Velocity { lane, step, delta } => {
-                let note = self
-                    .note_at(lane, step)
-                    .copied()
-                    .ok_or_else(|| EditError::UnknownNote.to_string())?;
-                let velocity = (i32::from(note.velocity) + i32::from(delta)).clamp(1, 127) as u8;
-                self.session
-                    .active_pattern_mut()
-                    .notes
-                    .set_velocity(note.id, velocity)
-                    .map_err(|error| error.to_string())?;
-                Ok("Velocity actualizada")
-            }
-            PatternAction::Select(id) => {
-                self.session.select(id)?;
-                Ok("Patrón seleccionado")
-            }
-            PatternAction::ExtendBar => {
-                self.session
-                    .resize_active(Tick(self.pattern().length().0 + meter.ticks_per_bar()))?;
-                Ok("Compás añadido")
-            }
-            PatternAction::Duplicate => {
-                self.session.duplicate_active()?;
-                Ok("Patrón duplicado")
-            }
-            PatternAction::AppendToSong => {
-                self.session.set_song_cell(
-                    DrumSongCell {
-                        at: self.session.song_end()?,
-                        pattern: self.session.active,
-                    },
-                    true,
-                )?;
-                Ok("Patrón añadido a Canción")
-            }
-            PatternAction::UseSource(source) => {
-                self.session.source = source;
-                Ok("Fuente de batería seleccionada")
-            }
-        }
-    }
 }
 
 impl DawApp {
     pub(super) fn apply_pattern_action(&mut self, action: PatternAction) {
-        let mut status = match self.pattern_editor.apply(action, self.timeline.meter) {
+        let selected_pattern = self.pattern_editor.session.active;
+        match self.pattern_editor.apply(action, self.timeline.meter) {
             Ok(message) => {
-                self.cursor_col = self.cursor_col.min(self.pattern_editor.step_count() - 1);
-                format!(
-                    "{message} · {} notas",
-                    self.pattern_editor.pattern().notes().len()
-                )
+                let editor = &mut self.pattern_editor;
+                editor.cursor_step = editor.cursor_step.min(editor.step_count() - 1);
+                if editor.session.active != selected_pattern {
+                    editor.roll.reset_selection();
+                }
+                self.status_message =
+                    format!("{message} · {} notas", editor.pattern().notes().len());
+                self.publish_drum_edit();
             }
-            Err(error) => error,
-        };
-        if self.pattern_loop_beats.is_some() {
-            status.push_str(" · Space: reiniciar audición");
+            Err(error) => self.status_message = error,
         }
-        self.status_message = status;
+    }
+
+    pub(in crate::ui) fn drums_panel_active(&self) -> bool {
+        self.center_view == CenterView::Session && self.workspace_focus.active == Panel::Center
+    }
+
+    pub(super) fn handle_drum_key(&mut self, key: &str) -> bool {
+        if self.pattern_editor.roll.piece.is_some() {
+            return self.handle_drum_roll_key(key);
+        }
+        let editor = &mut self.pattern_editor;
+        match key {
+            "enter" => {
+                let lane = editor.cursor_lane;
+                let step = editor.cursor_step;
+                self.apply_pattern_action(PatternAction::Toggle { lane, step });
+            }
+            "h" | "left" => editor.cursor_step = editor.cursor_step.saturating_sub(1),
+            "l" | "right" => {
+                editor.cursor_step = (editor.cursor_step + 1).min(editor.step_count() - 1)
+            }
+            "k" | "up" => editor.cursor_lane = editor.cursor_lane.saturating_sub(1),
+            "j" | "down" => {
+                editor.cursor_lane =
+                    (editor.cursor_lane + 1).min(editor.session.kit.pieces.len() - 1);
+            }
+            _ => return false,
+        }
+        true
     }
 
     pub(super) fn drum_playback_pattern(
@@ -164,14 +129,30 @@ impl DawApp {
         }
     }
 
-    /// Paso que suena ahora. Es solo presentación: lo calcula el frame del motor.
-    pub(super) fn pattern_play_step(&self) -> Option<usize> {
-        if self.pattern_editor.session.source != DrumPlaybackSource::Pattern {
-            return None;
+    /// Posición del patrón activo leída del motor. Canción usa su ocurrencia vigente.
+    pub(in crate::ui) fn drum_pattern_playhead(&self) -> Option<f64> {
+        let length = self
+            .pattern_loop_beats
+            .filter(|length| length.is_finite() && *length > 0.0)?;
+        let beat = self.player.as_ref()?.beat().rem_euclid(length);
+        let session = &self.pattern_editor.session;
+        match session.source {
+            DrumPlaybackSource::Pattern => Some(beat),
+            DrumPlaybackSource::Song => {
+                let tick = beat * PPQ as f64;
+                let length = self.pattern_editor.pattern().length().0 as f64;
+                session.song.iter().rev().find_map(|cell| {
+                    let local = tick - cell.at.0 as f64;
+                    (cell.pattern == session.active && local >= 0.0 && local < length)
+                        .then_some(local / PPQ as f64)
+                })
+            }
+            DrumPlaybackSource::Arrangement => None,
         }
-        let player = self.player.as_ref()?;
-        let loop_beats = self.pattern_loop_beats?;
-        let local = player.beat().rem_euclid(loop_beats);
-        Some((local / self.pattern_editor.beats_per_step()).floor() as usize)
+    }
+
+    pub(super) fn pattern_play_step(&self) -> Option<usize> {
+        self.drum_pattern_playhead()
+            .map(|beat| (beat / self.pattern_editor.beats_per_step()).floor() as usize)
     }
 }

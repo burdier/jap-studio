@@ -1,6 +1,6 @@
 //! Render raíz y ciclo visual. El refresco de GPUI nunca avanza el transporte musical.
 use super::{
-    CenterView, DawApp, VimMode,
+    DawApp, VimMode,
     components::splitter::{SplitDrag, horizontal_splitter},
 };
 use gpui::{
@@ -58,7 +58,7 @@ impl Render for DawApp {
         self.poll_file_playback();
         self.scan_palette_plugins(cx);
         if (self.fx.editor_track.is_some_and(|id| {
-            self.center_view == CenterView::Arrangement
+            self.arrangement_visible()
                 && self.tracks.get(self.cursor_row).is_some_and(|track| {
                     track.id == id && track.instrument == Some(self.instrument.id())
                 })
@@ -69,7 +69,7 @@ impl Render for DawApp {
         }
         self.poll_piano_resources(cx);
         let piano_editor = self.fx.editor_track.is_some_and(|id| {
-            self.center_view == CenterView::Arrangement
+            self.arrangement_visible()
                 && self.tracks.get(self.cursor_row).is_some_and(|track| {
                     track.id == id && track.instrument == Some(self.instrument.id())
                 })
@@ -159,9 +159,10 @@ impl Render for DawApp {
             );
             self.stop_instrument();
         }
+        let arrangement_visible = self.arrangement_visible();
         let particles_alive = self
             .timeline
-            .advance_particles(&self.ds, self.center_view == CenterView::Arrangement);
+            .advance_particles(&self.ds, arrangement_visible);
         let cursor_fx_alive = self.cursor_fx.advance();
         if self.player.is_some()
             || self.instrument.clip_playing()
@@ -384,6 +385,15 @@ impl Render for DawApp {
                                 let dx = f32::from(event.position.x) - start_x;
                                 this.ds.track_header_width = (start_width + dx).clamp(140.0, 380.0);
                             }
+                            SplitDrag::DrumWorkspace {
+                                start_x,
+                                start_ratio,
+                            } => {
+                                let width = f32::from(window.viewport_size().width).max(300.0);
+                                let dx = f32::from(event.position.x) - start_x;
+                                this.pattern_editor.workspace_ratio =
+                                    Some((start_ratio + dx / width).clamp(0.28, 0.72));
+                            }
                             SplitDrag::WorkspaceVertical {
                                 start_y,
                                 start_ratio,
@@ -404,7 +414,7 @@ impl Render for DawApp {
                         cx.notify();
                         return;
                     }
-                    let hover_changed = this.center_view == CenterView::Arrangement
+                    let hover_changed = this.arrangement_visible()
                         && this.timeline.update_hover(
                             event.position,
                             event.dragging(),
@@ -421,7 +431,7 @@ impl Render for DawApp {
                         }
                         return;
                     }
-                    if this.center_view == CenterView::Arrangement
+                    if this.arrangement_visible()
                         && let Some(track) = this.timeline.move_clip_in_tracks(
                             event.position,
                             this.ds.track_header_height,

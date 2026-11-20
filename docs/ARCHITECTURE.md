@@ -483,9 +483,15 @@ posición absoluta en ticks. Los controles del sampler se comparten con Hay Samp
 `project/drums` guarda estos datos y las referencias a capas en una sección opcional
 de Loro. Los documentos que carecen de esa sección abren con el kit inicial y un patrón
 vacío. `project/pattern` comparte la persistencia de notas y controles con los clips MIDI
-del Arrangement. La vista Pattern conecta el patrón activo y Canción a la audición
-sintetizada existente, que recompila el plan al pulsar Play. Las capas, la mezcla
-dedicada y el enlace de clips del Arrangement se conectarán en PR-17 y PR-18.
+del Arrangement.
+
+La vista Drums Latex comparte el espacio con Arrangement. En su panel, Canción
+referencia patrones y los pasos muestran las notas de la pieza. El Piano Roll Light
+reemplaza los pasos al elegir una pieza y edita las mismas notas por ID. El inspector
+edita las capas y parámetros del kit. Cada cambio se publica al reproductor vigente.
+El kit usa sfizz para las capas y conserva la síntesis de respaldo en las piezas
+sin muestra. Las piezas suman al bus Drums. PR-18 conecta los clips vinculados de
+Arrangement y presenta estos controles en el mixer.
 
 ## Análisis espectral para efectos
 

@@ -9,6 +9,7 @@ use super::{
     settings::SettingsUi,
     timeline::Timeline,
     views::tracks::{DEMO_LEVELS, DEMO_PANS},
+    workspace_focus::Panel,
 };
 use crate::audio::MidiHardwareIn;
 use crate::instruments::Piano;
@@ -165,7 +166,6 @@ impl DawApp {
             workspace_focus: Default::default(),
             center_view: CenterView::Arrangement,
             cursor_row: 0,
-            cursor_col: 0,
             command_buffer: String::new(),
             cmd_selected: None,
             last_key: String::new(),
@@ -212,21 +212,16 @@ impl DawApp {
         if view != CenterView::Arrangement {
             self.timeline.end_clip_drag();
         }
-        if view == CenterView::Session {
-            self.cursor_row = self
-                .cursor_row
-                .min(self.pattern_editor.session.kit.pieces.len() - 1);
-            self.cursor_col = self.cursor_col.min(self.pattern_editor.step_count() - 1);
+        if view == CenterView::Session && self.center_view != view {
+            self.workspace_focus.active = Panel::Center;
         }
-        if view != CenterView::Session {
-            self.cursor_row = self.cursor_row.min(self.tracks.len().saturating_sub(1));
-        }
+        self.cursor_row = self.cursor_row.min(self.tracks.len().saturating_sub(1));
         self.center_view = view;
         self.sync_midi_focus();
     }
     pub(super) fn reveal_track(&mut self) {
         self.sync_midi_focus();
-        if self.center_view != CenterView::Arrangement {
+        if !self.arrangement_visible() {
             return;
         }
         let height = self.track_scroll.bounds().size.height;

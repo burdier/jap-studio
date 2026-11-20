@@ -18,6 +18,17 @@ pub(super) struct WorkspaceFocus {
     pub active: Panel,
 }
 impl DawApp {
+    pub(super) fn arrangement_visible(&self) -> bool {
+        match self.workspace_focus.expanded {
+            Some(Panel::Arrangement | Panel::PianoRoll | Panel::Instrument) => true,
+            Some(_) => false,
+            None => matches!(
+                self.center_view,
+                CenterView::Arrangement | CenterView::Session
+            ),
+        }
+    }
+
     fn detached_window(&self, window: &Window) -> bool {
         let id = window.window_handle().window_id();
         self.instrument_window.is_some_and(|w| w.window_id() == id)
@@ -86,7 +97,7 @@ impl DawApp {
             Panel::Explorer
         } else if self.piano_roll_focus.is_focused(window) {
             Panel::PianoRoll
-        } else if self.center_view != CenterView::Arrangement {
+        } else if self.center_view == CenterView::Mixer {
             Panel::Center
         } else {
             self.workspace_focus.active

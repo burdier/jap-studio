@@ -1,0 +1,162 @@
+//! Matriz de ocurrencias de Canción. Cada celda conserva su posición en ticks.
+use crate::ui::{
+    DawApp,
+    components::button::flat_control,
+    pattern_editor::{PatternAction, SONG_BARS_PER_PAGE},
+};
+use elevate::musical::{
+    drums::{DrumPlaybackSource, DrumSongCell},
+    time::{PPQ, Tick},
+};
+use gpui::{Context, Div, MouseButton, Stateful, div, prelude::*, px, rgb};
+
+const LABEL_WIDTH: f32 = 104.0;
+const CELL_WIDTH: f32 = 42.0;
+
+impl DawApp {
+    pub(super) fn render_drum_song(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+        let ds = &self.ds;
+        let session = &self.pattern_editor.session;
+        let meter = self.timeline.meter;
+        let bar = meter.ticks_per_bar();
+        let page_start = self.pattern_editor.song_page_start(meter);
+        let page_end = page_start.saturating_add(SONG_BARS_PER_PAGE * bar);
+        let mut columns: Vec<_> = (0..SONG_BARS_PER_PAGE)
+            .map(|index| Tick(page_start.saturating_add(index * bar)))
+            .collect();
+        columns.extend(session.song.iter().filter_map(|entry| {
+            (entry.at.0 >= page_start && entry.at.0 < page_end && entry.at.0 % bar != 0)
+                .then_some(entry.at)
+        }));
+        columns.sort_unstable();
+        columns.dedup();
+        let song_end = session.song_end().ok().map_or(0, |end| end.0);
+        let last_page = song_end / (SONG_BARS_PER_PAGE * bar);
+        let now = if session.source == DrumPlaybackSource::Song {
+            self.pattern_loop_beats
+                .filter(|length| length.is_finite() && *length > 0.0)
+                .and_then(|length| {
+                    self.player
+                        .as_ref()
+                        .map(|player| (player.beat().rem_euclid(length) * PPQ as f64) as i64)
+                })
+        } else {
+            None
+        };
+        let header = div()
+            .flex()
+            .w_full()
+            .gap_1()
+            .items_center()
+            .flex_shrink_0()
+            .child(
+                div()
+                    .w(px(LABEL_WIDTH))
+                    .flex_shrink_0()
+                    .px_2()
+                    .text_color(rgb(ds.accent))
+                    .child("CANCIÓN"),
+            )
+            .children(columns.iter().enumerate().map(|(index, &at)| {
+                let next = columns.get(index + 1).map_or(page_end, |next| next.0);
+                let playing = now.is_some_and(|tick| tick >= at.0 && tick < next);
+                div()
+                    .flex_shrink_0()
+                    .w(px(CELL_WIDTH))
+                    .h(px(20.0))
+                    .text_center()
+                    .text_color(rgb(if playing { ds.cyan } else { ds.muted }))
+                    .child(if at.0 % bar == 0 {
+                        (at.0 / bar + 1).to_string()
+                    } else {
+                        meter.position_label(at)
+                    })
+            }));
+        div()
+            .id("drum-song")
+            .flex()
+            .flex_col()
+            .flex_shrink_0()
+            .min_w_0()
+            .max_h(px(144.0))
+            .p_1()
+            .gap_1()
+            .bg(rgb(ds.panel))
+            .border_b_1()
+            .border_color(rgb(ds.border))
+            .text_xs()
+            .font_family("monospace")
+            .child(
+                div()
+                    .id("drum-song-cells")
+                    .flex()
+                    .flex_col()
+                    .min_h_0()
+                    .overflow_x_scroll()
+                    .overflow_y_scroll()
+                    .gap_1()
+                    .child(header)
+                    .children(session.patterns.iter().map(|pattern| {
+                        let id = pattern.id;
+                        div()
+                            .flex()
+                            .items_center()
+                            .flex_shrink_0()
+                            .gap_1()
+                            .child(
+                                self.drum_action_chip(
+                                    pattern.name.clone(),
+                                    id == session.active,
+                                    PatternAction::Select(id),
+                                    cx,
+                                )
+                                .justify_start()
+                                .w(px(LABEL_WIDTH)),
+                            )
+                            .children(columns.iter().map(|&at| {
+                                let cell = DrumSongCell { at, pattern: id };
+                                let occupied = session
+                                    .song
+                                    .binary_search_by_key(&(at, id), |entry| {
+                                        (entry.at, entry.pattern)
+                                    })
+                                    .is_ok();
+                                self.drum_action_chip(
+                                    if occupied { "●" } else { "·" },
+                                    occupied,
+                                    PatternAction::SongCell(cell),
+                                    cx,
+                                )
+                                .w(px(CELL_WIDTH))
+                            }))
+                    })),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .flex_shrink_0()
+                    .children([("‹", -1), ("›", 1)].into_iter().map(|(label, delta)| {
+                        flat_control(ds, false, ds.cyan)
+                            .h(px(17.0))
+                            .px_2()
+                            .text_color(rgb(ds.muted))
+                            .child(label)
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |this, _, _, cx| {
+                                    let page = &mut this.pattern_editor.song_page;
+                                    *page = (*page + delta).clamp(0, last_page + 1);
+                                    cx.notify();
+                                }),
+                            )
+                    }))
+                    .child(div().text_color(rgb(ds.muted)).child(format!(
+                        "{}–{}",
+                        page_start / bar + 1,
+                        page_end / bar,
+                    ))),
+            )
+    }
+}

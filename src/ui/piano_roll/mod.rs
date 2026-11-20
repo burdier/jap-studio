@@ -13,7 +13,7 @@ mod grid_actions;
 mod keyboard;
 pub(in crate::ui) mod lane;
 pub(in crate::ui) mod motion;
-mod navigation;
+pub(in crate::ui) mod navigation;
 #[cfg(test)]
 mod navigation_tests;
 mod paint;

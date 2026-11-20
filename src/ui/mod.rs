@@ -170,7 +170,6 @@ struct DawApp {
     workspace_focus: workspace_focus::WorkspaceFocus,
     center_view: CenterView,
     cursor_row: usize,
-    cursor_col: usize,
     command_buffer: String,
     cmd_selected: Option<usize>,
     last_key: String,

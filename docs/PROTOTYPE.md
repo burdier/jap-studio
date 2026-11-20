@@ -580,13 +580,14 @@ acotada de selección por NoteOn durante la reproducción.
   sin extender antes del beat cero. WAV conserva su nombre de archivo original.
   Loop y transposición no se ofrecen en el menú mientras su reproducción siga pendiente.
 - Efecto de partículas del playhead aislado en UI, con particula-rs y fastrand.
-- Vista `2` / `:pattern`: cuatro slots, 16 pasos iniciales, click/Enter para alternar
-  notas y rueda para velocity. **+ Compás** extiende el patrón, **Duplicar** crea una
-  variación y **+ A Canción** añade una ocurrencia del patrón activo. La sesión se
-  conserva al guardar y abrir el proyecto.
-- Audición del patrón en loop con cuatro percusiones sintetizadas (sin samples externos),
-  plan compilado al pulsar Play, offsets por frame y transporte por frames. Space
-  inicia/detiene desde la vista Pattern; el paso que suena se resalta.
+- **Drums Latex** (`2` / `:pattern`) muestra Canción y el editor de batería junto a
+  Arrangement. La matriz organiza ocurrencias por compás. Clic en una pieza reemplaza
+  los pasos con el Piano Roll Light para editar tono, duración y velocidad. El icono de
+  tambor abre sus muestras, capas y controles. El proyecto guarda el kit y los patrones.
+- **Audio de Drums Latex:** Patrón y Canción publican sus notas durante Play y usan el
+  transporte compartido. Una pieza con muestras usa sfizz y sus capas por velocidad.
+  El kit inicial se puede escuchar con síntesis de respaldo. Los picos de pieza y bus
+  se miden después de sus faders.
 - Biblioteca musical sin GPUI/CPAL: patrón variable, notas simultáneas, tempo constante,
   transporte en frames y plan NoteOn/NoteOff con offsets por buffer.
 - Buscador tipo rofi con `[+]`, `a` o `:add`: filtra instrumentos, primitivos, componentes
@@ -654,9 +655,10 @@ acotada de selección por NoteOn durante la reproducción.
   Cambiar de preset dentro del mismo banco sí se aplica en vivo por MIDI Bank/Program.
 - Los parámetros del instrumento no se guardan al cerrar la app; el tema y el cursor sí.
 
-- El plan activo es inmutable. Editar notas mientras suena no cambia el audio hasta
-  detener y volver a pulsar Play. Los cambios de plan en caliente siguen pendientes; el loop global de audio está disponible en PR-04.
-- Los cuatro instrumentos son síntesis provisional; todavía no cargan samples del usuario.
+- Los cambios del patrón activo se publican durante Play. El panel escucha las teclas
+  del Piano Roll Light a través del reproductor del kit cuando está activo.
+- La envolvente y el filtro editables se aplican a las piezas con muestras. Las piezas
+  sin muestras usan la síntesis de respaldo con su propia envolvente.
 - Play de Arrangement y Session comparte stream para clips, MIDI y percusión.
   La audición live del instrumento conserva un adaptador aparte e interrumpe Play.
 - Solo existe una instancia de piano. El buscador la asigna a una pista y la mueve al
@@ -670,11 +672,10 @@ acotada de selección por NoteOn durante la reproducción.
 - Docking estilo Visual Studio: paneles acoplables con imán/gravedad por tamaño,
   generalizar `DetachedPanel` a cualquier componente con salida de audio y recordar posición.
 
-- Sustituir la percusión sintetizada por un sampler de cuatro samples con pool de voces.
-- Integrar la audición live en el stream común y mantenerlo persistente entre Play y Stop.
-- Cola RT acotada y snapshots coherentes; el piano conserva su canal mpsc provisional;
-  la percusión aún no recibe actualizaciones de plan durante la reproducción.
-- Tempo map, tempo editable en UI, chase de notas y cambios de plan en caliente; loop global de audio disponible.
+- Enlazar los clips de Arrangement con Drums Latex y compartir tiras de canal con el mixer.
+- Mantener la salida disponible para audición mientras el transporte está detenido.
+- Sustituir el canal mpsc provisional del piano por una cola RT acotada.
+- Tempo map y chase de notas. El tempo y loop globales tienen controles en las rutas actuales.
 - Guardado global `.dawproj`, undo/redo e instancias independientes del piano;
   remuestreo y mezcla de clips de audio disponibles.
 - Edición MIDI avanzada del piano roll, launcher, automatización, MIDI físico y hosting CLAP/VST3.
@@ -689,8 +690,8 @@ acotada de selección por NoteOn durante la reproducción.
    definir el contrato `procesar bloque + eventos`. Resolver frecuencia de samples y motor.
 3. **Puente RT:** aprobar `rtrb`, limitar comandos por bloque y decidir saturación,
    prioridad de Stop/AllOff y devolución de recursos fuera del callback.
-4. **Samples reales:** sustituir la síntesis provisional por cuatro samples cargados
-   fuera del callback y un pool de voces acotado, conservando los offsets verificados.
+4. **Samples reales:** Drums Latex ya prepara sus capas fuera del callback y conserva
+   la síntesis de respaldo para las piezas sin muestras.
 5. **Transporte conectado:** GPUI observa snapshots. Loop configurable y cambios de plan
    en caliente; BPM/compás editables ya llegan a las rutas actuales, pero falta un
    transporte único con cambios de plan sin detener la reproducción.

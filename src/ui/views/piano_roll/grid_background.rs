@@ -8,7 +8,7 @@ use crate::ui::{
 use elevate::musical::{keyboard::is_black, pitch::note_name, scale::PitchScale};
 use gpui::{App, Bounds, Pixels, TextAlign, TextRun, Window, fill, point, px, rgb, rgba, size};
 
-pub(super) fn paint_rows(
+pub(in crate::ui::views) fn paint_rows(
     grid: &Grid,
     ds: &DesignSystem,
     highlight: bool,
@@ -119,7 +119,7 @@ pub(super) fn paint_rows(
     );
 }
 
-pub(super) fn paint_time(
+pub(in crate::ui::views) fn paint_time(
     grid: &Grid,
     ds: &DesignSystem,
     beats: f64,
@@ -191,7 +191,7 @@ pub(super) fn paint_time(
     }
 }
 
-pub(super) fn rectangle(
+pub(in crate::ui::views) fn rectangle(
     window: &mut Window,
     x: Pixels,
     y: Pixels,
@@ -205,7 +205,7 @@ pub(super) fn rectangle(
     ));
 }
 
-pub(super) fn label(
+pub(in crate::ui::views) fn label(
     window: &mut Window,
     cx: &mut App,
     text: &str,

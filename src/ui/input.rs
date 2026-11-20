@@ -3,7 +3,6 @@ use super::{
     CenterView, DawApp, VimMode,
     cursor_fx::CursorFxMode,
     design::ThemePreset,
-    pattern_editor::PatternAction,
     views::tracks::{TcpControlStyle, TcpLayoutPreset},
 };
 use gpui::{Context, KeyDownEvent, KeyUpEvent, Window};
@@ -126,7 +125,8 @@ impl DawApp {
                     | "-"
                     | "["
                     | "]"
-            ) {
+            ) || (self.drums_panel_active() && matches!(key, "delete" | "backspace"))
+            {
                 self.handle_normal_key(key);
             }
             return;
@@ -154,13 +154,12 @@ impl DawApp {
         }
     }
     fn handle_normal_key(&mut self, key: &str) {
+        let drums_active = self.drums_panel_active();
+        if drums_active && self.handle_drum_key(key) {
+            return;
+        }
+        let arrangement = self.arrangement_visible() && !drums_active;
         match key {
-            "enter" if self.center_view == CenterView::Session => {
-                self.apply_pattern_action(PatternAction::Toggle {
-                    lane: self.cursor_row,
-                    step: self.cursor_col,
-                })
-            }
             "[" => self.change_gain(-0.1),
             "]" => self.change_gain(0.1),
             "a" | "insert" => self.open_palette(),
@@ -176,49 +175,23 @@ impl DawApp {
                 CenterView::Session => CenterView::Mixer,
                 CenterView::Mixer => CenterView::Arrangement,
             }),
-            "h" | "left" if self.center_view == CenterView::Arrangement => {
-                self.timeline.move_cursor(-1.0)
-            }
-            "l" | "right" if self.center_view == CenterView::Arrangement => {
-                self.timeline.move_cursor(1.0)
-            }
-            "home" if self.center_view == CenterView::Arrangement => {
+            "h" | "left" if arrangement => self.timeline.move_cursor(-1.0),
+            "l" | "right" if arrangement => self.timeline.move_cursor(1.0),
+            "home" if arrangement => {
                 if let Err(error) = self.seek_audio(0.) {
                     self.status_message = error;
                 }
             }
-            "+" | "=" if self.center_view == CenterView::Arrangement => {
-                self.timeline.zoom_at_cursor(2.0)
+            "+" | "=" if arrangement => self.timeline.zoom_at_cursor(2.0),
+            "-" if arrangement => self.timeline.zoom_at_cursor(0.5),
+            "k" | "up" if arrangement => self.move_visible_track(false),
+            "j" | "down" if arrangement => self.move_visible_track(true),
+            "k" | "up" if self.center_view == CenterView::Mixer => {
+                self.select_track(self.cursor_row.saturating_sub(1), false, false);
             }
-            "-" if self.center_view == CenterView::Arrangement => self.timeline.zoom_at_cursor(0.5),
-            "h" | "left" => self.cursor_col = self.cursor_col.saturating_sub(1),
-            "l" | "right" => {
-                self.cursor_col = (self.cursor_col + 1).min(self.pattern_editor.step_count() - 1)
-            }
-            "k" | "up" if self.center_view == CenterView::Arrangement => {
-                self.move_visible_track(false)
-            }
-            "j" | "down" if self.center_view == CenterView::Arrangement => {
-                self.move_visible_track(true)
-            }
-            "k" | "up" => {
-                self.cursor_row = self.cursor_row.saturating_sub(1);
-                if self.center_view != CenterView::Session {
-                    self.select_track(self.cursor_row, false, false);
-                }
-                self.reveal_track();
-            }
-            "j" | "down" => {
-                let last = if self.center_view == CenterView::Session {
-                    self.pattern_editor.session.kit.pieces.len() - 1
-                } else {
-                    self.tracks.len().saturating_sub(1)
-                };
-                self.cursor_row = (self.cursor_row + 1).min(last);
-                if self.center_view != CenterView::Session {
-                    self.select_track(self.cursor_row, false, false);
-                }
-                self.reveal_track();
+            "j" | "down" if self.center_view == CenterView::Mixer => {
+                let last = self.tracks.len().saturating_sub(1);
+                self.select_track((self.cursor_row + 1).min(last), false, false);
             }
             "1" => self.set_center_view(CenterView::Arrangement),
             "2" => self.set_center_view(CenterView::Session),

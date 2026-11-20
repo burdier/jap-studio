@@ -307,9 +307,9 @@
           </p>
         </div>
         <div class="score" aria-label="Avance total">
-          <strong><span id="done-count">10</span> / <span id="total-count">19</span></strong>
-          <span>PR completados · <span id="percent">53%</span></span>
-          <span class="commit-score"><span id="commit-done">53</span>/<span id="commit-total">83</span> commits · <span id="commit-percent">64%</span></span>
+          <strong><span id="done-count">11</span> / <span id="total-count">19</span></strong>
+          <span>PR completados · <span id="percent">58%</span></span>
+          <span class="commit-score"><span id="commit-done">56</span>/<span id="commit-total">83</span> commits · <span id="commit-percent">67%</span></span>
           <div class="bar" aria-hidden="true"><span id="bar-fill"></span></div>
         </div>
       </header>
@@ -374,15 +374,15 @@
         </details>
 
         <div class="grid">
-          <article id="pr-16" data-pr="PR-16" data-status="pending">
-            <div class="pr-head"><span class="pr-number">PR-16</span><span class="status">Pendiente</span></div>
+          <article id="pr-16" data-pr="PR-16" data-status="done">
+            <div class="pr-head"><span class="pr-number">PR-16</span><span class="status">Completado</span></div>
             <h3>Patrones que se pueden recuperar</h3>
             <p>Crear un groove de más de un compás, duplicarlo para hacer una variación y recuperar ambos al abrir el proyecto.</p>
             <div class="depends">Inicio · 1 commit</div>
             <details class="commit-plan" open>
               <summary>Modelo, acciones y Loro</summary>
               <ol>
-                <li id="drums-latex-base" data-task="DL-1" data-owner="modelo-proyecto">
+                <li id="drums-latex-base" data-task="DL-1" data-owner="modelo-proyecto" data-status="done" data-commit="e013989">
                   <strong>feat(drums): guardar el kit y los patrones de Drums Latex</strong>
                   <p>El agente de modelo y proyecto fija los IDs, la edición de notas por pieza, las ocurrencias de patrón, la selección de fuente y el estado editable de mezcla por pieza y bus. Conecta el editor y la audición actuales al patrón activo. Persiste piezas, referencias a sus muestras, ajustes, notas, patrones y orden de canción en Loro. Abrir proyectos anteriores conserva su comportamiento.</p>
                   <small><b>Área:</b> <code>src/musical/</code>, <code>src/project/</code> y adaptador <code>src/ui/project/</code>. <b>Entrega:</b> guardar un groove con dos compases y una variación, y recuperarlos con sus notas e IDs.</small>
@@ -391,20 +391,20 @@
             </details>
           </article>
 
-          <article id="pr-17" data-pr="PR-17" data-status="pending">
-            <div class="pr-head"><span class="pr-number">PR-17</span><span class="status">Pendiente</span></div>
+          <article id="pr-17" data-pr="PR-17" data-status="progress">
+            <div class="pr-head"><span class="pr-number">PR-17</span><span class="status">En progreso</span></div>
             <h3>Programar y escuchar el kit</h3>
             <p>Editar pasos o notas y ajustar el sonido de una pieza sin salir de Drums Latex. Escuchar los cambios de notas con Play activo.</p>
-            <div class="depends">Después de DL-1 · 2 commits en paralelo</div>
+            <div class="depends">2 commits integrados · Audición y gestos en la pasada final</div>
             <details class="commit-plan" open>
               <summary>Editor embebido y audio del kit</summary>
               <ol>
-                <li id="drums-latex-editor" data-task="DL-2" data-owner="editor">
+                <li id="drums-latex-editor" data-task="DL-2" data-owner="editor" data-status="done">
                   <strong>feat(ui): editar patrones y notas de batería en el mismo espacio</strong>
                   <p>El agente de editor construye la matriz Canción, los pads y el Piano Roll ligero con las herramientas existentes. Clic en una pieza reemplaza la cuadrícula completa de pasos. El roll muestra nota base, afinación por nota, snap y velocidad debajo. Al volver, una pieza con notas afinadas o fuera de paso muestra una miniatura fiel. El icono de tambor abre el inspector plegable para la pieza activa en cualquiera de las dos vistas.</p>
                   <small><b>Área:</b> <code>src/ui/pattern_editor.rs</code>, <code>src/ui/views/pattern.rs</code> y adaptador del Piano Roll. <b>Entrega:</b> editar tono y velocidad dentro del roll y ver el cambio al volver a Pasos. El panel muestra los parámetros conectados por DL-3.</small>
                 </li>
-                <li id="drums-latex-kit" data-task="DL-3" data-owner="audio">
+                <li id="drums-latex-kit" data-task="DL-3" data-owner="audio" data-status="done" data-commit="cc335c3">
                   <strong>feat(audio): tocar y mezclar un kit compartido durante Play</strong>
                   <p>El agente de audio prepara muestras y capas por pieza con el sampler existente y conserva una voz de respaldo para el kit inicial. Conecta afinación base, envolvente, filtro y grupos de corte al inspector. Patrón y Canción publican el plan de notas preparado al cambiarlo, que entra en el siguiente bloque sin reiniciar el reloj. Cada pieza expone mute, solo, paneo, ganancia y pico real antes del bus Drums.</p>
                   <small><b>Área:</b> <code>src/audio/drums/</code>, sampler existente y adaptadores de mezcla y transporte. <b>Entrega:</b> un cambio de velocidad se oye al repetir el groove sin pulsar Stop, y el pico de cada pieza responde a su fader.</small>

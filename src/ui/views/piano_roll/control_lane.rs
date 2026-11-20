@@ -184,3 +184,16 @@ pub(super) fn paint_note_contour(
         },
     );
 }
+
+pub(in crate::ui::views) fn paint_velocity_stem(
+    grid: &Grid,
+    x: gpui::Pixels,
+    fraction: f32,
+    color: u32,
+    window: &mut Window,
+) {
+    let height = fraction * (f32::from(grid.velocity.size.height) - 16.0).max(0.0);
+    let top = grid.velocity.bottom() - px(height);
+    rectangle(window, x + px(5.0), top, 5.0, height, (color << 8) | 0xff);
+    rectangle(window, x + px(5.0), top, 5.0, 1.0, 0xffffff60);
+}

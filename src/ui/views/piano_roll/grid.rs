@@ -571,23 +571,7 @@ fn paint_notes(
                             0xffffff80,
                         );
                     } else {
-                        let height = frac * max_h;
-                        rectangle(
-                            window,
-                            x + px(5.0),
-                            grid.velocity.bottom() - px(height),
-                            5.0,
-                            height,
-                            (color << 8) | 0xff,
-                        );
-                        rectangle(
-                            window,
-                            x + px(5.0),
-                            grid.velocity.bottom() - px(height),
-                            5.0,
-                            1.0,
-                            0xffffff60,
-                        );
+                        super::control_lane::paint_velocity_stem(grid, x, frac, color, window);
                     }
                 },
             );

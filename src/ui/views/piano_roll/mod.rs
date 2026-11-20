@@ -2,11 +2,11 @@
 mod choices;
 mod chord;
 mod chord_sequence;
-mod control_lane;
+pub(super) mod control_lane;
 mod grid;
-mod grid_background;
+pub(super) mod grid_background;
 mod inspector;
-mod note_frame;
+pub(super) mod note_frame;
 mod toolbar;
 
 use crate::ui::{DawApp, VimMode, piano_roll::RollAction};

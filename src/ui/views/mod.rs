@@ -34,8 +34,11 @@ mod utility;
 mod workspace;
 mod workspace_focus;
 
-use super::{CenterView, DawApp};
-use gpui::{Context, IntoElement, div, prelude::*, px, rgb};
+use super::{
+    CenterView, DawApp,
+    components::splitter::{SplitDrag, vertical_splitter},
+};
+use gpui::{Context, IntoElement, MouseButton, MouseDownEvent, div, prelude::*, px, relative, rgb};
 
 impl DawApp {
     pub(super) fn render_center(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
@@ -45,10 +48,7 @@ impl DawApp {
         let ds = &self.ds;
         let (label, help) = match self.center_view {
             CenterView::Arrangement => ("ARRANGEMENT", ""),
-            CenterView::Session => (
-                "PATTERN / PROTOTIPO",
-                "Click/Enter: nota | rueda: velocity | Space: play/stop",
-            ),
+            CenterView::Session => ("DRUMS LATEX", ""),
             CenterView::Mixer => ("MIXER / MOCK", "Tab: cycle | 1/2/3/4: jump"),
         };
         div()
@@ -85,17 +85,7 @@ impl DawApp {
             )
             .child(match self.center_view {
                 CenterView::Arrangement => self.render_arrangement_workspace(cx).into_any_element(),
-                CenterView::Session => div()
-                    .flex_1()
-                    .min_h_0()
-                    .flex()
-                    .flex_col()
-                    .rounded(px(ds.radius_lg))
-                    .border_1()
-                    .border_color(rgb(ds.frame_border()))
-                    .overflow_hidden()
-                    .child(self.render_pattern(cx))
-                    .into_any_element(),
+                CenterView::Session => self.render_drum_workspace(cx).into_any_element(),
                 CenterView::Mixer => div()
                     .flex_1()
                     .min_h_0()
@@ -109,5 +99,36 @@ impl DawApp {
                     .into_any_element(),
             })
             .into_any_element()
+    }
+}
+
+impl DawApp {
+    fn render_drum_workspace(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let ratio = self.pattern_editor.workspace_ratio.unwrap_or(0.5);
+        let dragging = matches!(self.split_drag, Some(SplitDrag::DrumWorkspace { .. }));
+        div()
+            .flex()
+            .flex_1()
+            .min_h_0()
+            .min_w_0()
+            .overflow_hidden()
+            .child(
+                self.render_pattern(cx)
+                    .flex_basis(relative(ratio))
+                    .flex_grow_0()
+                    .flex_shrink_0(),
+            )
+            .child(vertical_splitter(&self.ds, dragging).on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                    this.split_drag = Some(SplitDrag::DrumWorkspace {
+                        start_x: f32::from(event.position.x),
+                        start_ratio: ratio,
+                    });
+                    cx.stop_propagation();
+                    cx.notify();
+                }),
+            ))
+            .child(self.render_arrangement_workspace(cx))
     }
 }
