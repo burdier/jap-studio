@@ -51,6 +51,22 @@ impl DawApp {
             CenterView::Session => ("DRUMS LATEX", ""),
             CenterView::Mixer => ("MIXER", ""),
         };
+        let content = match self.center_view {
+            CenterView::Arrangement => self.render_arrangement_workspace(cx).into_any_element(),
+            CenterView::Session => self.render_drum_workspace(cx).into_any_element(),
+            CenterView::Mixer => div()
+                .flex_1()
+                .min_h_0()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .rounded(px(ds.radius_lg))
+                .border_1()
+                .border_color(rgb(ds.frame_border()))
+                .overflow_hidden()
+                .child(self.render_mixer(cx))
+                .into_any_element(),
+        };
         div()
             .flex_1()
             .min_h_0()
@@ -83,26 +99,7 @@ impl DawApp {
                             .child(self.workspace_zoom_button(cx)),
                     ),
             )
-            .child(match self.center_view {
-                CenterView::Arrangement => self.render_arrangement_workspace(cx).into_any_element(),
-                CenterView::Session => self.render_drum_workspace(cx).into_any_element(),
-                CenterView::Mixer => self
-                    .workspace_with_explorer(cx)
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_h_0()
-                            .min_w_0()
-                            .flex()
-                            .flex_col()
-                            .rounded(px(ds.radius_lg))
-                            .border_1()
-                            .border_color(rgb(ds.frame_border()))
-                            .overflow_hidden()
-                            .child(self.render_mixer(cx)),
-                    )
-                    .into_any_element(),
-            })
+            .child(self.workspace_with_explorer(cx).child(content))
             .into_any_element()
     }
 }

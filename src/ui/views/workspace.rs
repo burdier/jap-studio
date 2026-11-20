@@ -51,7 +51,13 @@ impl DawApp {
     }
 
     pub(super) fn render_arrangement_workspace(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        self.workspace_with_explorer(cx)
+        div()
+            .flex_1()
+            .min_h_0()
+            .min_w_0()
+            .flex()
+            .gap(px(3.0))
+            .overflow_hidden()
             .when(self.fx.width > 0.0, |workspace| {
                 workspace.child(
                     div()

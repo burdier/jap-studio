@@ -397,7 +397,9 @@ impl Render for DawApp {
                                 start_x,
                                 start_ratio,
                             } => {
-                                let width = f32::from(window.viewport_size().width).max(300.0);
+                                let width = (f32::from(window.viewport_size().width)
+                                    - this.explorer.width)
+                                    .max(300.0);
                                 let dx = f32::from(event.position.x) - start_x;
                                 this.pattern_editor.workspace_ratio =
                                     Some((start_ratio + dx / width).clamp(0.28, 0.72));

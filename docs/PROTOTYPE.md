@@ -415,7 +415,7 @@ acotada de selección por NoteOn durante la reproducción.
   Este historial de texto no implementa undo/redo del proyecto. Validación: compilación,
   sin ejecutar tests ni comprobación interactiva de la UI.
 
-- Explorador de bibliotecas disponible junto a Arrangement, Drums Latex y Mixer.
+- Explorador de bibliotecas en el borde izquierdo de Arrangement, Drums Latex y Mixer.
   El separador permite ajustar el ancho hasta ocultarlo. `e` en modo Normal abre
   y cierra el Explorador en la vista actual. Con el foco en el árbol, Esc también
   lo cierra. En el piano roll, Borrar queda disponible con Shift+E. Árbol con sangría y guías, carpetas primero, iconos
