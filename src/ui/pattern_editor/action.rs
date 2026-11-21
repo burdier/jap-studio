@@ -43,6 +43,8 @@ pub(in crate::ui) enum PatternAction {
         value: f32,
     },
     Filter(InstrumentId),
+    FullSample(InstrumentId),
+    RetriggerChoke(InstrumentId),
     Choke {
         piece: InstrumentId,
         delta: i32,

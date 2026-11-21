@@ -33,7 +33,9 @@ impl PatternEditor {
             | ReplaceSample { piece, .. }
             | RemoveSample { piece, .. }
             | LayerVelocity { piece, .. }
-            | Filter(piece) => *piece,
+            | Filter(piece)
+            | FullSample(piece)
+            | RetriggerChoke(piece) => *piece,
             _ => unreachable!("acción ajena al inspector"),
         };
         let piece = self
@@ -51,6 +53,18 @@ impl PatternEditor {
             Filter(_) => {
                 piece.sampler.filter = !piece.sampler.filter;
                 Ok("Filtro actualizado")
+            }
+            FullSample(_) => {
+                piece.sampler.play_full_sample();
+                Ok("Cola completa activada · Sustain 100 %")
+            }
+            RetriggerChoke(_) => {
+                piece.sampler.choke = !piece.sampler.choke;
+                Ok(if piece.sampler.choke {
+                    "Cada golpe corta la cola anterior de esta pieza"
+                } else {
+                    "Los golpes de esta pieza pueden superponerse"
+                })
             }
             Choke { delta, .. } => {
                 let group = i32::from(piece.choke_group.unwrap_or(0)) + delta;

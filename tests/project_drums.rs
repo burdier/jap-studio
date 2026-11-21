@@ -1,5 +1,5 @@
 use elevate::{
-    devices::sampler::TUNE,
+    devices::sampler::{PlayMode, SUSTAIN, TUNE},
     musical::{
         drums::{DrumPlaybackSource, DrumSession, DrumSongCell},
         grid::NoteGrid,
@@ -126,6 +126,10 @@ fn custom_drum_pattern_and_sample_survive_reopen() {
 
     let original = drums.active;
     let piece = drums.kit.add_sample("Audio/Rim seco.wav".into()).unwrap();
+    let sampler = &drums.kit.pieces[0].sampler;
+    assert_eq!(sampler.mode, PlayMode::OneShot);
+    assert_eq!(sampler.get(SUSTAIN), 100.0);
+    assert!(sampler.choke);
 
     let created = drums.new_pattern().unwrap();
     assert_ne!(created, original);

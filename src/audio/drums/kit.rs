@@ -147,6 +147,12 @@ impl PreparedKit {
         })
     }
 
+    pub fn has_one_shot_tail(&self) -> bool {
+        self.pieces.iter().any(
+            |piece| matches!(&piece.sound, Sound::Samples(engine) if engine.has_one_shot_tail()),
+        )
+    }
+
     pub fn cut(&mut self) {
         for piece in &mut self.pieces {
             piece.cut();

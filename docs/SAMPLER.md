@@ -85,3 +85,14 @@ el instrumento; también permite recuperarse de un error al abrir el dispositivo
 Verificación solicitada: compilación de sfizz, `cargo check --all-targets --locked`,
 `cargo check --no-default-features --lib --locked` y build de la aplicación. No se ejecutan
 tests ni se afirma validación auditiva o interactiva de esta UI.
+
+
+## Envolvente de Drums Latex
+
+Cada pieza usa su propia envolvente de amplitud y conserva esos ajustes al guardar.
+**Cola completa** selecciona one-shot y pone Sustain al 100 %. Los pasos disparan
+la muestra, y su duración audible se ajusta con el archivo y la envolvente.
+**Cortar al repetir** hace que el siguiente golpe de la misma pieza apague
+el anterior, incluso al cambiar de tono. **Grupo de corte** permite enlazar piezas.
+Las muestras nuevas traen activados Cola completa y Cortar al repetir.
+Para una muestra ya guardada, actívalos desde **Ajustes** de esa pieza.

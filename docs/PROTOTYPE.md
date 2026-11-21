@@ -591,6 +591,9 @@ acotada de selección por NoteOn durante la reproducción.
   El proyecto guarda el kit, los patrones y sus ajustes de rejilla.
 - **Audio de Drums Latex:** Patrón y Canción publican sus notas durante Play y usan el
   transporte compartido. Una pieza con muestras usa sfizz y sus capas por velocidad.
+  Las muestras nuevas arrancan con **Cola completa** y **Cortar al repetir**.
+  En **Ajustes**, cada pieza tiene su envolvente de amplitud y puede dejar que sus
+  golpes se superpongan. En Arrangement el fin automático espera las colas one-shot.
   Los kits anteriores conservan sus voces sintetizadas. Los picos de pieza y bus
   se miden después de sus faders.
 - **Mixers reales:** la mesa del proyecto y el panel Mixer de Drums Latex comparten

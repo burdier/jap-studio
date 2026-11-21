@@ -270,6 +270,12 @@ impl Mix {
         }
     }
 
+    pub fn has_drum_one_shot_tail(&self) -> bool {
+        self.drums
+            .as_ref()
+            .is_some_and(PreparedDrums::has_one_shot_tail)
+    }
+
     pub fn render_with_drums(
         &mut self,
         position: u64,

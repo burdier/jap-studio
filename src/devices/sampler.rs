@@ -160,6 +160,12 @@ impl SamplerParams {
         }
     }
 
+    pub fn play_full_sample(&mut self) {
+        self.mode = PlayMode::OneShot;
+        self.looped = false;
+        self.set(SUSTAIN, 100.);
+    }
+
     /// Configura el Simpler para programar baterías de un toque (1-Shot + AHD + Pitch fijo + Choke).
     pub fn apply_drum_preset(&mut self) {
         self.mode = PlayMode::OneShot;

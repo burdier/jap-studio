@@ -9,7 +9,8 @@ use crate::ui::{
 };
 use elevate::{
     devices::sampler::{
-        ATTACK, CUTOFF, DECAY, HOLD, PARAMS, RELEASE, RESONANCE, ROOT, SUSTAIN, SamplerParams, TUNE,
+        ATTACK, CUTOFF, DECAY, HOLD, PARAMS, PlayMode, RELEASE, RESONANCE, ROOT, SUSTAIN,
+        SamplerParams, TUNE,
     },
     musical::{drums::DrumPiece, pitch::note_name},
 };
@@ -22,7 +23,9 @@ impl DawApp {
         let id = piece.id;
         let choke = piece
             .choke_group
-            .map_or_else(|| "Off".into(), |group| group.to_string());
+            .map_or_else(|| "—".into(), |group| group.to_string());
+        let full_sample =
+            piece.sampler.mode == PlayMode::OneShot && piece.sampler.get(SUSTAIN) == 100.0;
         div()
             .flex()
             .flex_col()
@@ -53,7 +56,7 @@ impl DawApp {
                             .items_center()
                             .gap_1()
                             .text_color(rgb(ds.muted))
-                            .child(format!("Corte {choke}"))
+                            .child(format!("Grupo de corte {choke}"))
                             .children([("−", -1), ("+", 1)].into_iter().map(|(label, delta)| {
                                 self.drum_action_chip(label, false, PatternAction::Choke { piece: id, delta }, cx)
                             })),
@@ -72,12 +75,43 @@ impl DawApp {
             )
             .child(
                 div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .px_1()
+                    .child(self.drum_action_chip(
+                        "Cola completa",
+                        full_sample,
+                        PatternAction::FullSample(id),
+                        cx,
+                    )
+                    .id(("drum-full-sample", id.0 as usize))
+                    .tooltip(|window, cx| {
+                        gpui::component::tooltip::Tooltip::new(
+                            "One-shot con Sustain al 100 %. La duración del paso no corta el audio.",
+                        ).build(window, cx)
+                    }))
+                    .child(self.drum_action_chip(
+                        "Cortar al repetir",
+                        piece.sampler.choke,
+                        PatternAction::RetriggerChoke(id),
+                        cx,
+                    )
+                    .id(("drum-retrigger-choke", id.0 as usize))
+                    .tooltip(|window, cx| {
+                        gpui::component::tooltip::Tooltip::new(
+                            "El nuevo golpe corta la cola de esta pieza, aunque cambie la nota.",
+                        ).build(window, cx)
+                    })),
+            )
+            .child(
+                div()
                     .id("drum-inspector-knobs")
                     .flex()
                     .gap_1()
                     .overflow_x_scroll()
                     .children(
-                        [ROOT, TUNE, ATTACK, HOLD, DECAY, SUSTAIN, RELEASE, CUTOFF, RESONANCE]
+                        [ATTACK, HOLD, DECAY, SUSTAIN, RELEASE, ROOT, TUNE, CUTOFF, RESONANCE]
                             .into_iter()
                             .map(|param| self.render_drum_knob(piece, param, cx)),
                     ),
@@ -193,11 +227,16 @@ impl DawApp {
                 if scroll == 0.0 {
                     return;
                 }
-                let adjusted = if param == ROOT {
-                    value + scroll.signum()
-                } else {
-                    let scale = if event.modifiers.shift { 0.004 } else { 0.025 };
-                    SamplerParams::value_at(param, fraction + scroll.signum() * scale)
+                let direction = scroll.signum();
+                let fine = event.modifiers.shift;
+                let adjusted = match param {
+                    ROOT => value + direction,
+                    ATTACK | HOLD => value + direction * if fine { 0.5 } else { 5.0 },
+                    DECAY | RELEASE => value + direction * if fine { 5.0 } else { 50.0 },
+                    _ => {
+                        let scale = if fine { 0.004 } else { 0.025 };
+                        SamplerParams::value_at(param, fraction + direction * scale)
+                    }
                 };
                 this.apply_pattern_action(PatternAction::SampleParam {
                     piece: id,

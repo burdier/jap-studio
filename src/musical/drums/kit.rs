@@ -103,8 +103,8 @@ impl DrumKit {
         let id = InstrumentId(next);
         let mut sampler = SamplerParams::default();
         sampler.apply_drum_preset();
+        sampler.play_full_sample();
         sampler.keytrack = true;
-        sampler.choke = false;
         sampler.set(ROOT, 36.0);
         self.pieces.push(DrumPiece {
             id,

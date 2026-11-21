@@ -336,7 +336,19 @@ impl Player {
                             let end = if drums.is_some_and(DrumBlock::loops) {
                                 u64::MAX
                             } else {
-                                clip_end.max(drums.map_or(0, DrumBlock::arrangement_end))
+                                let drum_end = drums.map_or(0, DrumBlock::arrangement_end);
+                                let end = clip_end.max(drum_end);
+                                let block_end = cursor.frame().saturating_add(count as u64);
+                                // El fin del arreglo espera cualquier one-shot que siga sonando.
+                                if drum_end > 0
+                                    && request.loop_range.is_none()
+                                    && block_end >= end
+                                    && mix.has_drum_one_shot_tail()
+                                {
+                                    end.max(block_end.saturating_add(1))
+                                } else {
+                                    end
+                                }
                             };
                             cursor.set_end(end);
                             cursor.render_with_tail(

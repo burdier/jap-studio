@@ -63,6 +63,10 @@ impl PreparedDrums {
         ))
     }
 
+    pub fn has_one_shot_tail(&self) -> bool {
+        self.kit.has_one_shot_tail()
+    }
+
     pub fn render(&mut self, at: u64, output: &mut [StereoFrame], state: &DrumBlock) {
         self.handoff.install(&mut self.kit, state.voice_revision);
         let mode = state.plan.as_ref().map(|plan| plan.repeat);

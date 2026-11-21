@@ -3,7 +3,7 @@ use super::{
     native::{Api, Synth},
     sfz,
 };
-use elevate::devices::sampler::{PARAMS, SamplerParams, VOICES, live_control};
+use elevate::devices::sampler::{PARAMS, PlayMode, SamplerParams, VOICES, live_control};
 use std::{ffi::CString, sync::Arc};
 
 pub(crate) struct SfizzEngine {
@@ -98,6 +98,10 @@ impl SfizzEngine {
             }
         }
         self.params = params.clone();
+    }
+
+    pub fn has_one_shot_tail(&self) -> bool {
+        self.params.mode == PlayMode::OneShot && unsafe { (self.api.active_voices)(self.synth) > 0 }
     }
 
     pub fn cut(&mut self) {
