@@ -1,6 +1,7 @@
 //! Vista autónoma: modelo headless, lecturas asíncronas y lista virtualizada.
 mod input;
 mod io;
+mod preview;
 mod view;
 
 pub(super) use view::ExplorerSampleDrag;
@@ -23,6 +24,7 @@ pub(super) struct Explorer {
     tree: LibraryTree,
     selected: Option<PathBuf>,
     search: String,
+    preview: preview::Preview,
     category: Option<String>,
     scroll: UniformListScrollHandle,
     config: Option<PathBuf>,
@@ -50,6 +52,7 @@ impl Explorer {
             tree: LibraryTree::default(),
             selected: None,
             search: String::new(),
+            preview: preview::Preview::default(),
             category: None,
             scroll: UniformListScrollHandle::new(),
             config: dirs::config_dir().map(|path| path.join("hay-daw/libraries")),

@@ -131,6 +131,7 @@ impl Explorer {
     }
 
     pub(super) fn remove_library(&mut self, path: &PathBuf, cx: &mut Context<Self>) {
+        self.stop_preview_in(path);
         self.tree.remove(path);
         self.scans
             .retain(|dir, _| this_root_contains(&self.tree, dir));
@@ -153,6 +154,7 @@ impl Explorer {
         self.generation = self.generation.wrapping_add(1);
         self.scans.clear();
         self.tree.refresh();
+        self.stop_preview();
         self.selected = None;
         self.status = None;
         self.scan_pending(cx);

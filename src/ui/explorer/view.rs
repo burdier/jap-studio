@@ -11,6 +11,10 @@ use gpui::{
 
 use std::path::PathBuf;
 
+const PREVIEW_PLAY: &[u8] =
+    include_bytes!("../../../assets/icons/toolbar/media-playback-start.svg");
+const PREVIEW_STOP: &[u8] = include_bytes!("../../../assets/icons/toolbar/media-playback-stop.svg");
+const HEADPHONES: &[u8] = include_bytes!("../../../assets/icons/toolbar/headphones.svg");
 const MIDI: &[u8] = include_bytes!("../../../assets/icons/toolbar/piano.svg");
 
 #[derive(Clone)]
@@ -94,7 +98,7 @@ impl Render for Explorer {
                         .child("Añade carpetas de audio o MIDI. Sus accesos quedarán guardados hasta que los quites."))
                     .child(div().text_color(rgb(style.muted)).child("Quitar una biblioteca no borra sus archivos.")),
             ))
-            .when(!empty, |panel| panel.child(
+            .when(!empty, |panel| panel.child(self.render_preview_controls(cx)).child(
                 tree::list("library-tree", self.tree.rows().len(), &self.scroll, cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
                     range.map(|index| this.render_row(index, cx)).collect()
                 })),
@@ -115,6 +119,96 @@ impl Render for Explorer {
 }
 
 impl Explorer {
+    fn render_preview_controls(&self, cx: &mut Context<Self>) -> Div {
+        let style = self.style;
+        let automatic = self.preview.automatic;
+        let icon_color = if automatic { style.accent } else { style.muted };
+        div()
+            .flex()
+            .flex_shrink_0()
+            .items_center()
+            .gap_2()
+            .px_2()
+            .pb_1()
+            .child(
+                div()
+                    .id("library-preview-auto")
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .h(px(22.0))
+                    .px_1()
+                    .rounded(px(style.radius))
+                    .cursor_pointer()
+                    .bg(rgb(if automatic {
+                        style.selected
+                    } else {
+                        style.panel
+                    }))
+                    .hover(move |s| s.bg(rgb(style.hover)))
+                    .text_color(rgb(icon_color))
+                    .child(render_svg_icon(HEADPHONES, 13.0, icon_color))
+                    .child("Auto")
+                    .tooltip(|window, cx| {
+                        gpui::component::tooltip::Tooltip::new(
+                            "Preescuchar al seleccionar o navegar con las flechas",
+                        )
+                        .build(window, cx)
+                    })
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, cx| {
+                            this.toggle_auto_preview(cx);
+                        }),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .ml_auto()
+                    .child(div().text_color(rgb(style.muted)).child("Vol"))
+                    .child(self.render_preview_level_button("−", -10, cx))
+                    .child(
+                        div()
+                            .w(px(32.0))
+                            .text_center()
+                            .whitespace_nowrap()
+                            .font_family("monospace")
+                            .child(format!("{}%", self.preview.level)),
+                    )
+                    .child(self.render_preview_level_button("+", 10, cx)),
+            )
+    }
+
+    fn render_preview_level_button(
+        &self,
+        label: &'static str,
+        direction: i16,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let style = self.style;
+        div()
+            .id(("library-preview-volume", usize::from(direction > 0)))
+            .size(px(20.0))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(px(style.radius))
+            .bg(rgb(style.hover))
+            .hover(move |s| s.bg(rgb(style.selected)))
+            .cursor_pointer()
+            .text_color(rgb(style.accent))
+            .child(label)
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, _, _, cx| {
+                    this.change_preview_level(direction, cx);
+                }),
+            )
+    }
+
     fn render_row(&self, index: usize, cx: &mut Context<Self>) -> Stateful<Div> {
         let row = &self.tree.rows()[index];
         let style = self.style;
@@ -154,7 +248,48 @@ impl Explorer {
                 path: row.entry.path.clone(),
                 style,
             };
+            let path = row.entry.path.clone();
+            let active = self.preview.path.as_ref() == Some(&path);
             line.on_drag(drag, |drag, _, _, cx| cx.new(|_| drag.clone()))
+                .child(
+                    div()
+                        .id(("library-preview-sample", index))
+                        .ml_1()
+                        .size(px(22.0))
+                        .flex_shrink_0()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(style.radius))
+                        .bg(rgb(if active { style.selected } else { style.panel }))
+                        .hover(move |s| s.bg(rgb(style.hover)))
+                        .cursor_pointer()
+                        .child(render_svg_icon(
+                            if active { PREVIEW_STOP } else { PREVIEW_PLAY },
+                            12.0,
+                            style.accent,
+                        ))
+                        .tooltip(move |window, cx| {
+                            gpui::component::tooltip::Tooltip::new(if active {
+                                "Detener preescucha"
+                            } else {
+                                "Preescuchar muestra"
+                            })
+                            .build(window, cx)
+                        })
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, _, window, cx| {
+                                if !this.focus.is_focused(window) {
+                                    cx.emit(ExplorerEvent::Focused);
+                                }
+                                window.focus(&this.focus, cx);
+                                this.selected = Some(path.clone());
+                                this.toggle_sample_preview(path.clone(), cx);
+                                cx.stop_propagation();
+                            }),
+                        ),
+                )
         })
         .when(row.root, |line| {
             line.child(

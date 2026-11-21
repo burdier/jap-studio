@@ -424,6 +424,8 @@ acotada de selección por NoteOn durante la reproducción.
   `~/.config/hay-daw/libraries` (o la carpeta de configuración del sistema). «Quitar» olvida
   el acceso sin borrar archivos. Bibliotecas desconectadas se conservan y muestran error.
   «Recargar» consulta cambios externos; todavía no hay vigilancia automática del disco.
+  El botón ▶ preescucha archivos de audio con volumen independiente. **Auto** preescucha
+  al seleccionar una muestra con las flechas o el ratón. Al cerrar el Explorador se detiene la audición.
   Doble clic/Enter insertan audio o MIDI en la pista activa y el cursor del Arrangement.
   `explorer.toggle`, `explorer.insert` y `file.import` están en catálogo e iconos; esta última
   recoge una ruta con el formulario declarativo. La importación conserva TrackId al reordenar.

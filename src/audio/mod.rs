@@ -14,6 +14,7 @@ mod output;
 pub(crate) mod piano;
 mod playback;
 mod publication;
+pub(crate) mod sample_preview;
 pub(crate) mod sampler;
 mod stereo_pan;
 pub(crate) mod vst3;

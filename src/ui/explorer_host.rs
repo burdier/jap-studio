@@ -115,12 +115,17 @@ impl DawApp {
     pub(super) fn sync_explorer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.flush_file_import(cx);
         let style = ExplorerStyle::from(&self.ds);
-        if self.explorer.view.read(cx).style != style
-            || self.explorer.view.read(cx).vim_enabled != self.vim_enabled
+        let audio = &self.settings.audio.saved;
+        let visible = self.explorer_visible();
+        let explorer = self.explorer.view.read(cx);
+        if explorer.style != style
+            || explorer.vim_enabled != self.vim_enabled
+            || explorer.preview_needs_sync(audio, visible)
         {
             self.explorer.view.update(cx, |explorer, cx| {
                 explorer.style = style;
                 explorer.vim_enabled = self.vim_enabled;
+                explorer.sync_preview(audio, visible);
                 cx.notify();
             });
         }

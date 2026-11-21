@@ -15,7 +15,14 @@ impl Explorer {
                 self.scan_pending(cx);
             }
         } else if double && row.entry.kind.importable() {
-            cx.emit(ExplorerEvent::Insert(row.entry.path));
+            self.stop_preview();
+            cx.emit(ExplorerEvent::Insert(row.entry.path.clone()));
+        }
+        if !double {
+            self.preview_selection(
+                (row.entry.kind == EntryKind::Audio).then_some(row.entry.path.clone()),
+                cx,
+            );
         }
         cx.notify();
     }
@@ -79,8 +86,7 @@ impl Explorer {
                     Some(index) => (index + 1).min(last),
                     None => 0,
                 };
-                self.selected = Some(self.tree.rows()[index].entry.path.clone());
-                self.scroll.scroll_to_item(index, ScrollStrategy::Nearest);
+                self.select_and_scroll(index, cx);
             }
             "enter" if !event.is_held => {
                 if let Some(index) = current {
@@ -100,9 +106,7 @@ impl Explorer {
                             .get(index + 1)
                             .is_some_and(|next| next.depth > row.depth)
                     {
-                        self.selected = Some(self.tree.rows()[index + 1].entry.path.clone());
-                        self.scroll
-                            .scroll_to_item(index + 1, ScrollStrategy::Nearest);
+                        self.select_and_scroll(index + 1, cx);
                     }
                 }
             }
@@ -115,13 +119,20 @@ impl Explorer {
                         .rev()
                         .find(|&i| self.tree.rows()[i].depth < row.depth)
                     {
-                        self.selected = Some(self.tree.rows()[parent].entry.path.clone());
-                        self.scroll.scroll_to_item(parent, ScrollStrategy::Nearest);
+                        self.select_and_scroll(parent, cx);
                     }
                 }
             }
             _ => {}
         }
         cx.notify();
+    }
+    fn select_and_scroll(&mut self, index: usize, cx: &mut Context<Self>) {
+        let entry = &self.tree.rows()[index].entry;
+        let path = entry.path.clone();
+        let audio = (entry.kind == EntryKind::Audio).then_some(path.clone());
+        self.selected = Some(path);
+        self.scroll.scroll_to_item(index, ScrollStrategy::Nearest);
+        self.preview_selection(audio, cx);
     }
 }

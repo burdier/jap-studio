@@ -85,6 +85,7 @@
 | Instrumento en Track FX | `src/ui/fx/{presentation,host,input}.rs`, `src/ui/views/workspace.rs` | Fila virtual por asignación de pista; editor bajo Arrangement, sin duplicar el dispositivo en la cadena DSP |
 | Add contextual, menú y comandos FX | `src/ui/fx/{host,commands,menu}.rs` | `palette.rs`, `actions/fx.rs`, `action_form.rs`; reutiliza catálogo, menú plano y formulario; destino TrackId/FxId |
 | Audio de cadenas Utility | `src/devices/fx_gain.rs`, `src/audio/fx_gain.rs` | Compilación lineal fuera del callback, publicación atómica y rampa de 256 frames; `ui/fx/audio.rs`, streams audio/piano y snapshot export |
+| Preescucha de bibliotecas | `src/ui/explorer/preview.rs` | `src/audio/sample_preview.rs`: decodificación en background, volumen independiente y reproducción por frames en la salida elegida |
 | Explorador visual independiente | `src/ui/explorer/` | Entidad GPUI propia, `uniform_list`, E/S en workers y guardados serializados |
 | Atajo e, ancho y acción insertar archivo | `src/ui/explorer_host.rs` | `input.rs`, `views/workspace.rs`, `render.rs`, `catalog.rs`, `actions.rs`; acción compartida con doble clic e iconos |
 | Catálogo de instrumentos/acciones | `src/catalog.rs`, `src/catalog/{entry,tools}.rs` | `tests/catalog.rs`, `tests/lua_tools.rs`; entradas nativas estáticas y metadatos Lua propios, sin VM |
