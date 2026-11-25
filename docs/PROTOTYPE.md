@@ -29,6 +29,16 @@ acotada de selección por NoteOn durante la reproducción.
 
 ## Disponible
 
+- **Buses auxiliares Send / Return (FX)**: las pistas pueden enviar señal post-fader (`0–100%`) a uno o varios buses Return (`:return` o menú de pista / Mixer). `Mix::render_block` procesa en 3 fases deterministas (hojas → grupos → returns) con actualización sin bloqueos (`Publication`) durante Play, soporte *Solo Safe* para buses Return, exportación offline y persistencia en Loro (limpiando envíos huérfanos al borrar un Return).
+- **Mapeo unificado de parámetros y MIDI Learn persistente (Fase 1)**: `MidiBindTarget` direcciona por IDs estables (`TrackId`, `FxId`, `InstrumentId`) volumen, pan, envíos Return, parámetros de FX Lua/Hay y parámetros VST3 (efectos e instrumentos). El motor VST3 expone `last_touched()` global, `list_parameters()` y `set_parameter()` bidireccional sin bloquear RT (`:learn.vst` o botón *MIDI Learn último VST3*). Todos los enlaces se guardan y restauran en `.loro`.
+- **Freeze / Unfreeze de pistas**: congelado pre-fader / post-FX en segundo plano a WAV 32-bit float (`:freeze`, `:unfreeze`, menú contextual de pista o insignia `❄` en cabecera). Durante Play la pista congelada libera la CPU de su instrumento y su rack FX conservando vivos volumen, pan, mute, solo, automatización, grupo y envíos Return.
+- **Flujo de trabajo, Transporte, Drums y Piano Roll**:
+  - Navegación directa por pestañas (`Arrangement F1`, `Drums F2`, `Mixer F3`), breadcrumb vivo, dock inferior con pestañas y paleta de comandos (`:` / `Ctrl+P`) siempre accesible sin modo Vim.
+  - Doble clic sobre espacio vacío de la cabecera de pista abre su instrumento asociado (editor nativo VST3 o editor acoplado).
+  - Transporte con **Tap Tempo** (`TAP` junto al LCD y `:tap`), contador `Mic` de ancho fijo, y temas de alto contraste **Cyberpunk Studio** y **Daylight Studio** persistidos en `~/.jaybu.profile`.
+  - Vista **Drums** con estado inicial limpio hasta soltar o cargar la primera muestra y barra única organizada en 4 cápsulas (`Patrones`, `Ritmo`, `Modo`, `Kit`), mostrando la matriz `Canción` solo cuando se activa ese modo.
+  - **Piano Roll** con pestaña **Acordes (Hay Chord)** responsive (4 cuadros visibles lado a lado sin recorte) y encuadre automático `RollViewport::for_clip` (~4 compases y ~22 semitonos legibles al abrir o reiniciar vista).
+
 - Pulsar un WAV en el Arrangement abre su editor a la izquierda. El WAV conserva EQ de campana y operaciones de rango por instancia en Loro y en la sesión compartida. Al seleccionar un clip MIDI, el piano roll se abre debajo del Arrangement. La afinación por clip admite ±24 semitonos y ±100 cents, conserva la duración y se escucha también al exportar. La selección, el zoom y el transporte de preescucha (pausa, volver al inicio y bucle del rango) son locales.
 
 - Los instrumentos VST3 con editor X11 abren en una ventana separada, incluso en una sesión Wayland.
@@ -702,56 +712,33 @@ acotada de selección por NoteOn durante la reproducción.
   se actualizan también los colores para que una paleta explícita antigua no anule el tema
   al reiniciar o recargar. Los errores de guardado se muestran en Configuración y en el estado.
 
-## Limitaciones de esta audición
+## Limitaciones actuales
 
 - Polifonía, Reverb+chorus y el cambio de archivo `.sf2` solo los lee RustySynth al crearse:
   cambiarlos con el piano abierto lo cierra (corta notas) y se reabre en el siguiente note-on.
   Cambiar de preset dentro del mismo banco sí se aplica en vivo por MIDI Bank/Program.
-- Los parámetros del instrumento no se guardan al cerrar la app; el tema y el cursor sí.
-
-- Los cambios del patrón activo se publican durante Play. El panel escucha las teclas
-  del Piano Roll Light a través del reproductor del kit cuando está activo.
-- La envolvente y el filtro editables se aplican a las piezas con muestras. Las piezas
-  sin muestras usan la síntesis de respaldo con su propia envolvente.
-- Play de Arrangement y Session comparte stream para clips, MIDI y percusión.
-  La audición live del instrumento conserva un adaptador aparte e interrumpe Play.
-- Solo existe una instancia de piano. El buscador la asigna a una pista y la mueve al
-  reasignarla; todavía no crea instancias nuevas. `Volume` y `Componente serial` son metadatos.
-- Las acciones del catálogo usan comandos string provisionales; no son todavía el
-  sistema de acciones definitivo.
-- No hay chase de notas sostenidas, tempo editable desde la UI ni map de tempo.
+- La audición live individual fuera de Play todavía usa adaptadores separados por instrumento.
+- No hay tempo map (cambios de BPM/compás en el tiempo) ni chase de notas sostenidas al hacer seek en mitad de una nota.
+- El Freeze de pistas es de sesión (en memoria + WAV temporal): al cerrar y reabrir el `.loro` la pista vuelve descongelada.
+- Las ramas de Hilo con VST3 siguen rechazándose explícitamente en exportación offline hasta ampliar ese render.
 
 ## Todavía pendiente
 
-- Docking estilo Visual Studio: paneles acoplables con imán/gravedad por tamaño,
-  generalizar `DetachedPanel` a cualquier componente con salida de audio y recordar posición.
+- **Export Pro (LUFS / True Peak)**: normalización de sonoridad objetivo (ej. `-14 LUFS`, `-1 dBTP`), limitador True Peak opcional y resumen final de medición al exportar máster o stems.
+- **Automatización de parámetros FX / VST3 / Envíos (Fase 2 del Mapeo)**: extender las curvas de automatización del Arrangement (hoy Volumen y Pan) a cualquier `FxParam`, `VstInstrumentParam` y `TrackSend` usando `list_parameters()` / `last_touched()`.
+- **Panel de gestión MIDI Learn**: vista compacta para inspeccionar enlaces activos, ajustar rango `min/max` y desvincular controles concretos.
+- **Drums creativos**: Swing / Groove, probabilidad por paso, edición rápida de velocity/pitch por paso y guardado/carga de kits completos.
+- **Freeze persistente en proyecto**: guardar la referencia del audio congelado (o re-congelar bajo demanda) dentro del proyecto `.loro`.
+- **Tempo map y chase de notas sostenidas** al saltar el playhead dentro de un acorde o nota larga.
+- **Exportación offline de ramas Hilo con VST3** y soporte CLAP.
+- **Docking libre** (paneles acoplables arbitrarios con memoria de posición) y **Flatpak actualizado** (`cargo-sources.json` sincronizado con `Cargo.lock`).
 
-- Exportar el bus de Drums Latex desde el Arrangement.
-- Mantener la salida disponible para audición mientras el transporte está detenido.
-- Sustituir el canal mpsc provisional del piano por una cola RT acotada.
-- Tempo map y chase de notas. El tempo y loop globales tienen controles en las rutas actuales.
-- Guardado global `.dawproj`, undo/redo e instancias independientes del piano;
-  remuestreo y mezcla de clips de audio disponibles.
-- Edición MIDI avanzada del piano roll, launcher, automatización, MIDI físico y hosting CLAP/VST3.
-- Mezcla por pista de audio con mute/solo/nivel/balance; buses generales y mezcla con instrumentos pendientes.
+## Próximos incrementos recomendados
 
-## Orden recomendado
-
-1. **Varias instancias por pista:** la asignación única y el `[+]` ya están conectados;
-   falta crear instancias independientes, decidir si cada una abre su stream o comparte
-   motor y generalizar el catálogo. Separar identidad, datos de ejecución y vista.
-2. **Motor único:** extraer procesadores del clip, piano y percusión, abrir una salida y
-   definir el contrato `procesar bloque + eventos`. Resolver frecuencia de samples y motor.
-3. **Puente RT:** aprobar `rtrb`, limitar comandos por bloque y decidir saturación,
-   prioridad de Stop/AllOff y devolución de recursos fuera del callback.
-4. **Samples reales:** Drums Latex ya prepara sus capas fuera del callback y conserva
-   la síntesis de respaldo para las piezas sin muestras.
-5. **Transporte conectado:** GPUI observa snapshots. Loop configurable y cambios de plan
-   en caliente; BPM/compás editables ya llegan a las rutas actuales, pero falta un
-   transporte único con cambios de plan sin detener la reproducción.
-6. **Persistencia:** aprobar Serde/JSON y guardado temporal; versionar datos musicales
-   separadamente del layout, nunca serializar voces/streams.
-7. Swing/probabilidad/microtiming, más vistas y extensiones sobre esos contratos.
+1. **Export Pro (LUFS / True Peak)** sobre el pipeline existente de `src/audio/export/` y `ebur128`.
+2. **Automatización unificada (Fase 2)** reutilizando los IDs estables y `set_parameter()` de Fase 1.
+3. **Drums creativos** (Swing, probabilidad, velocity por paso y presets de kit).
+4. **Freeze persistente + tempo map / chase de notas** y actualización del manifiesto Flatpak.
 
 La futura arquitectura completa se mantiene como dirección; estos puntos son tareas
 concretas, no módulos vacíos ya creados.
