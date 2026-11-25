@@ -4,6 +4,7 @@ mod kit;
 pub use arrangement::{DrumClipTarget, arrangement_pattern, piece_pattern};
 pub use kit::{
     DrumKit, DrumKitId, DrumLayer, DrumMix, DrumPiece, LAST_LEGACY_DRUM_ID, MAX_DRUM_PIECES,
+    OffsetMode,
 };
 
 use super::{
@@ -121,13 +122,9 @@ impl DrumSession {
             .map_err(|error| error.to_string())
     }
 
-    pub fn set_active_meter(&mut self, meter: Meter) -> Result<(), String> {
-        let pattern = self.active_pattern();
-        if meter != pattern.meter {
-            self.resize_active(Tick(pattern.bar_count() * meter.ticks_per_bar()))?;
-            self.active_pattern_mut().meter = meter;
-        }
-        Ok(())
+    /// Reagrupa la regla del patrón conservando sus notas y su duración en ticks.
+    pub fn set_active_meter(&mut self, meter: Meter) {
+        self.active_pattern_mut().meter = meter;
     }
 
     pub fn new_pattern(&mut self) -> Result<DrumPatternId, String> {
@@ -220,7 +217,7 @@ impl DrumSession {
                         .pattern(cell.pattern)
                         .ok_or("Patrón de Canción inexistente")?;
                     for note in pattern.notes.notes() {
-                        let mut copy = *note;
+                        let mut copy = note.clone();
                         copy.id = NoteId(notes.len() as u64 + 1);
                         copy.start.0 += cell.at.0;
                         notes.push(copy);

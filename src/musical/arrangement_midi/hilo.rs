@@ -60,6 +60,7 @@ impl PreparedMidiArrangement {
                 if source.len() >= 65_536 {
                     return Err("Plan MIDI excede 65536 eventos".into());
                 }
+                event.clip = Some(clip.id);
                 event.pitch = (i16::from(event.pitch) + i16::from(clip.props.pitch_semitones))
                     .clamp(0, 127) as u8;
                 source.push(SourceEvent {
@@ -89,6 +90,9 @@ impl PreparedMidiArrangement {
                 EventKind::NoteOff => owners
                     .remove(&(item.clip, item.event.note))
                     .ok_or("NoteOff de Hilo sin NoteOn")?,
+                EventKind::PitchRamp { .. } => *owners
+                    .get(&(item.clip, item.event.note))
+                    .ok_or("Curva de pitch de Hilo sin NoteOn")?,
                 EventKind::Control { .. } => branch_index,
             };
             if mode == HiloMode::Layer || selected == branch_index {
@@ -105,7 +109,7 @@ impl PreparedMidiArrangement {
                 });
             }
         }
-        Ok(Self { events, end_frame })
+        Ok(Self::new(events, end_frame))
     }
 }
 

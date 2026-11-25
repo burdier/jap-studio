@@ -109,7 +109,7 @@ impl Pattern {
     }
     pub fn add_note_copy(
         &mut self,
-        source: NoteEvent,
+        source: &NoteEvent,
         start: super::time::Tick,
         duration: super::time::Tick,
         instrument: super::model::InstrumentId,
@@ -120,6 +120,7 @@ impl Pattern {
         let id = self.add_note(instrument, start, duration, source.pitch, source.velocity)?;
         if let Some(note) = self.notes.iter_mut().find(|note| note.id == id) {
             note.expression = source.expression;
+            note.pitch_curve = source.pitch_curve.clone();
         }
         Ok(id)
     }

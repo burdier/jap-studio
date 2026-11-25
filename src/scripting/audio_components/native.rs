@@ -55,7 +55,14 @@ pub(super) fn parse_node(
         path,
     )?;
     for spec in node.info().parameters {
-        let raw = number(&params, spec.key)?;
+        let raw = if kind == NativeKind::Filter
+            && spec.key == "gain"
+            && matches!(params.raw_get::<Value>("gain"), Ok(Value::Nil))
+        {
+            f64::from(spec.default)
+        } else {
+            number(&params, spec.key)?
+        };
         if raw < spec.min as f64 || raw > spec.max as f64 {
             return Err(format!("{path}.{}: fuera de rango", spec.key));
         }

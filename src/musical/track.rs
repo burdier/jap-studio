@@ -22,6 +22,7 @@ pub const TRACK_COUNT: usize = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TrackId(pub u32);
+pub const MASTER_TRACK_ID: TrackId = TrackId(0);
 static NEXT_TRACK_ID: AtomicU32 = AtomicU32::new(9);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,10 +51,24 @@ impl TrackKind {
         match self {
             Self::Drum => "Drum",
             Self::Synth => "Synth",
-            Self::Effect => "Effect",
+            Self::Effect => "Return",
             Self::Audio => "Audio",
             Self::Group => "Grupo",
         }
+    }
+}
+
+/// Envío auxiliar post-fader de una pista o grupo hacia un bus Return (`TrackKind::Effect`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TrackSend {
+    pub target: TrackId,
+    /// Nivel 0–100 (100 = 0 dB unidad).
+    pub amount: u8,
+}
+
+impl TrackSend {
+    pub fn gain(self) -> f32 {
+        f32::from(self.amount.min(100)) / 100.0
     }
 }
 
@@ -75,6 +90,8 @@ pub struct Track {
     pub weave_rule: Option<WeaveRule>,
     /// Topología FX recursiva; datos de proyecto, sin instancias DSP.
     pub chain: FxChain,
+    /// Envíos post-fader hacia buses Return (`TrackKind::Effect`).
+    pub sends: Vec<TrackSend>,
 }
 
 /// Identidad de plugin. La variante VST3 reserva el contrato; todavía no existe su host.
@@ -98,6 +115,29 @@ impl Track {
             hilo: None,
             weave_rule: None,
             chain: FxChain::new(),
+            sends: Vec::new(),
+        }
+    }
+    pub fn is_return(&self) -> bool {
+        self.kind == TrackKind::Effect
+    }
+    pub fn send_amount(&self, target: TrackId) -> u8 {
+        self.sends
+            .iter()
+            .find(|s| s.target == target)
+            .map_or(0, |s| s.amount.min(100))
+    }
+    pub fn set_send(&mut self, target: TrackId, amount: u8) {
+        if self.id == target || self.is_return() {
+            return;
+        }
+        let amount = amount.min(100);
+        if amount == 0 {
+            self.sends.retain(|s| s.target != target);
+        } else if let Some(existing) = self.sends.iter_mut().find(|s| s.target == target) {
+            existing.amount = amount;
+        } else {
+            self.sends.push(TrackSend { target, amount });
         }
     }
     /// Evita colisiones al volver a insertar pistas después de abrir un proyecto.
@@ -143,6 +183,7 @@ const fn track(id: u32, name: &'static str, kind: TrackKind) -> Track {
         hilo: None,
         weave_rule: None,
         chain: FxChain::new(),
+        sends: Vec::new(),
     }
 }
 

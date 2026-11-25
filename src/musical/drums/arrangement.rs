@@ -41,7 +41,7 @@ pub fn piece_pattern(pattern: &Pattern, piece: InstrumentId) -> Result<Pattern, 
         .notes()
         .iter()
         .filter(|note| note.instrument == piece)
-        .copied()
+        .cloned()
         .collect();
     pattern
         .with_notes(notes, pattern.next_id())
@@ -75,7 +75,7 @@ pub fn arrangement_pattern<'a>(
         }
         let window = clip.playback_pattern();
         for note in window.notes() {
-            let mut event = *note;
+            let mut event = note.clone();
             event.id.0 = events.len() as u64 + 1;
             event.start.0 = origin
                 .checked_add(note.start.0)

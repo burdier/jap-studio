@@ -90,6 +90,12 @@ fn nodes(lua: &Lua, nodes: &[FxNode]) -> Result<Table, String> {
                     .map_err(|e| e.to_string())?;
                 "serial"
             }
+            FxKind::Crossover { hz, branches } => {
+                row.raw_set("hz", *hz).map_err(|e| e.to_string())?;
+                row.raw_set("children", self::nodes(lua, branches)?)
+                    .map_err(|e| e.to_string())?;
+                "crossover"
+            }
             FxKind::ParallelChain { branches } => {
                 row.raw_set("children", self::nodes(lua, branches)?)
                     .map_err(|e| e.to_string())?;

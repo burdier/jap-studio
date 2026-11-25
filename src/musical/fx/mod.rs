@@ -1,7 +1,12 @@
 //! Topología editable por pista. Identidades estables; sin UI, DSP ni dispositivos abiertos.
+mod bands;
+pub mod cabinet;
 mod edit;
+mod preset;
 use super::track::TrackDevice;
+pub use bands::Band;
 pub use edit::{FxEdit, FxPlacement};
+pub use preset::VstPreset;
 use std::{
     collections::BTreeMap,
     sync::atomic::{AtomicU64, Ordering},
@@ -21,6 +26,10 @@ pub enum FxKind {
         plugin_id: TrackDevice,
         parameters: BTreeMap<u32, f32>,
     },
+    Crossover {
+        hz: u16,
+        branches: Vec<FxNode>,
+    },
     SerialChain {
         children: Vec<FxNode>,
     },
@@ -30,11 +39,31 @@ pub enum FxKind {
         branches: Vec<FxNode>,
     },
 }
+/// Nivel posterior a los FX de una rama, en décimas de dB; el mínimo equivale a silencio.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct BranchMix {
+    pub db10: i16,
+    pub solo: bool,
+}
+impl BranchMix {
+    pub const MIN: i16 = -800;
+    pub const MAX: i16 = 60;
+
+    pub fn gain(self, any_solo: bool) -> f32 {
+        if self.db10 == Self::MIN || (any_solo && !self.solo) {
+            return 0.;
+        }
+        10f32.powf(f32::from(self.db10) / 200.)
+    }
+}
 #[derive(Debug, Clone, PartialEq)]
 pub struct FxNode {
     pub id: FxId,
     pub name: String,
     pub enabled: bool,
+    pub branch_mix: BranchMix,
+    pub cabinet_ir: Option<cabinet::CabinetImpulse>,
+    pub vst_preset: Option<VstPreset>,
     pub kind: FxKind,
 }
 impl FxNode {
@@ -43,6 +72,9 @@ impl FxNode {
             id: FxId::fresh(),
             name: name.into(),
             enabled: true,
+            branch_mix: BranchMix::default(),
+            cabinet_ir: None,
+            vst_preset: None,
             kind,
         }
     }
@@ -50,14 +82,18 @@ impl FxNode {
         match &self.kind {
             FxKind::Effect { .. } => None,
             FxKind::SerialChain { children } => Some(children),
-            FxKind::ParallelChain { branches } => Some(branches),
+            FxKind::ParallelChain { branches } | FxKind::Crossover { branches, .. } => {
+                Some(branches)
+            }
         }
     }
     fn children_mut(&mut self) -> Option<&mut Vec<FxNode>> {
         match &mut self.kind {
             FxKind::Effect { .. } => None,
             FxKind::SerialChain { children } => Some(children),
-            FxKind::ParallelChain { branches } => Some(branches),
+            FxKind::ParallelChain { branches } | FxKind::Crossover { branches, .. } => {
+                Some(branches)
+            }
         }
     }
     pub fn duplicate(&self) -> Self {
@@ -125,6 +161,11 @@ impl FxChain {
         Self {
             nodes: self.nodes.iter().map(FxNode::duplicate).collect(),
             revision: 0,
+        }
+    }
+    pub fn set_vst_preset(&mut self, id: FxId, preset: VstPreset) {
+        if let Some(node) = self.nodes.iter_mut().find_map(|n| n.find_mut(id)) {
+            node.vst_preset = Some(preset);
         }
     }
     pub fn insertion_after(&self, id: Option<FxId>) -> FxPlacement {

@@ -19,6 +19,22 @@ const MACRO_CC_KEY: &str = "'";
 const NOTE_KEYS: [&str; 17] = [
     "a", "w", "s", "e", "d", "f", "t", "g", "y", "h", "u", "j", "k", "o", "l", "p", ";",
 ];
+pub fn computer_midi_keys() -> impl Iterator<Item = &'static str> {
+    NOTE_KEYS.into_iter().chain([
+        TOGGLE_KEY,
+        OCTAVE_DOWN_KEY,
+        OCTAVE_UP_KEY,
+        VELOCITY_DOWN_KEY,
+        VELOCITY_UP_KEY,
+        SUSTAIN_TOGGLE_KEY,
+        BEND_DOWN_KEY,
+        BEND_UP_KEY,
+        MOD_DOWN_KEY,
+        MOD_UP_KEY,
+        MACRO_CC_KEY,
+    ])
+}
+
 const BASE_NOTE: i16 = 60;
 const MAX_OCTAVE_SHIFT: i8 = 4;
 const VELOCITY_STEP: u8 = 20;

@@ -13,6 +13,7 @@ use std::{
 pub enum EntryKind {
     Directory,
     Midi,
+    Hydrogen,
     Audio,
     Other,
 }
@@ -27,12 +28,20 @@ impl EntryKind {
             .as_str()
         {
             "mid" | "midi" => Self::Midi,
+            "h2song" => Self::Hydrogen,
+            "xml"
+                if path
+                    .file_name()
+                    .is_some_and(|name| name.eq_ignore_ascii_case("drumkit.xml")) =>
+            {
+                Self::Hydrogen
+            }
             "wav" | "wave" | "flac" | "mp3" | "ogg" | "oga" | "aac" | "m4a" | "mp4" => Self::Audio,
             _ => Self::Other,
         }
     }
     pub fn importable(self) -> bool {
-        matches!(self, Self::Midi | Self::Audio)
+        matches!(self, Self::Midi | Self::Audio | Self::Hydrogen)
     }
 }
 

@@ -1,6 +1,7 @@
-//! Mapeo MIDI en tiempo real (`MidiMapper`) y sistema `MIDI Learn` estilo REAPER.
+//! Mapeo MIDI en tiempo real (`MidiMapper`) y sistema `MIDI Learn` por IDs estables.
 //! Cumple los principios #4 (Mapping real) y #5 (Acciones) sin depender de GPUI ni CPAL.
-use super::midi::MidiMessage;
+use super::{fx::FxId, midi::MidiMessage, model::InstrumentId, track::TrackId};
+use std::collections::HashSet;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MidiSource {
@@ -31,21 +32,43 @@ pub enum MidiAction {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MidiBindTarget {
-    TrackVolume(usize),
-    TrackPan(usize),
+    TrackVolume(TrackId),
+    TrackPan(TrackId),
+    TrackSend {
+        track: TrackId,
+        target: TrackId,
+    },
     MasterGain,
     /// Índice dentro de `piano_params::SPECS`.
     InstrumentParam(u8),
+    /// Parámetro de efecto en rack (FX Lua/Hay o VST3 FX) por identidad estable.
+    FxParam {
+        track: TrackId,
+        fx: FxId,
+        param: u32,
+    },
+    /// Parámetro de un instrumento VST3 por identidad estable.
+    VstInstrumentParam {
+        instrument: InstrumentId,
+        param: u32,
+    },
     Action(MidiAction),
 }
 
 impl MidiBindTarget {
     pub fn label(self) -> String {
         match self {
-            Self::TrackVolume(idx) => format!("Pista {} · Volumen", idx + 1),
-            Self::TrackPan(idx) => format!("Pista {} · Pan", idx + 1),
+            Self::TrackVolume(id) => format!("Pista #{} · Volumen", id.0),
+            Self::TrackPan(id) => format!("Pista #{} · Pan", id.0),
+            Self::TrackSend { track, target } => {
+                format!("Pista #{} · Envío → #{}", track.0, target.0)
+            }
             Self::MasterGain => "Master Volume".into(),
             Self::InstrumentParam(idx) => format!("Parámetro #{idx}"),
+            Self::FxParam { fx, param, .. } => format!("FX #{} · Param #{param}", fx.0),
+            Self::VstInstrumentParam { instrument, param } => {
+                format!("VST3 #{} · Param #{param}", instrument.0)
+            }
             Self::Action(action) => format!("Acción {action:?}"),
         }
     }
@@ -87,30 +110,46 @@ impl Default for MidiMapper {
 }
 
 impl MidiMapper {
-    /// Sigue la identidad de las pistas después de insertar, eliminar o reordenar.
-    pub fn remap_tracks(&mut self, mapping: &[Option<usize>]) {
-        let remap = |target| match target {
-            MidiBindTarget::TrackVolume(i) => mapping
-                .get(i)
-                .copied()
-                .flatten()
-                .map(MidiBindTarget::TrackVolume),
-            MidiBindTarget::TrackPan(i) => mapping
-                .get(i)
-                .copied()
-                .flatten()
-                .map(MidiBindTarget::TrackPan),
-            other => Some(other),
-        };
-        self.armed_target = self.armed_target.and_then(remap);
-        self.bindings.retain_mut(|binding| {
-            if let Some(target) = remap(binding.target) {
-                binding.target = target;
-                true
-            } else {
-                false
+    pub fn from_bindings(bindings: Vec<MidiBinding>) -> Self {
+        Self {
+            learn_mode: false,
+            armed_target: None,
+            bindings,
+        }
+    }
+
+    /// Elimina enlaces huérfanos cuando se borra una pista, un FX o un instrumento.
+    /// Al usar IDs estables, reordenar o insertar pistas preserva todos los enlaces intactos.
+    pub fn prune_orphans(
+        &mut self,
+        valid_tracks: &HashSet<TrackId>,
+        valid_fx: &HashSet<FxId>,
+        valid_instruments: &HashSet<InstrumentId>,
+    ) {
+        let keep = |target: MidiBindTarget| match target {
+            MidiBindTarget::TrackVolume(id) | MidiBindTarget::TrackPan(id) => {
+                valid_tracks.contains(&id)
             }
-        });
+            MidiBindTarget::TrackSend { track, target } => {
+                valid_tracks.contains(&track) && valid_tracks.contains(&target)
+            }
+            MidiBindTarget::FxParam { track, fx, .. } => {
+                (track == super::track::MASTER_TRACK_ID || valid_tracks.contains(&track))
+                    && valid_fx.contains(&fx)
+            }
+            MidiBindTarget::VstInstrumentParam { instrument, .. } => {
+                valid_instruments.contains(&instrument)
+            }
+            MidiBindTarget::MasterGain
+            | MidiBindTarget::InstrumentParam(_)
+            | MidiBindTarget::Action(_) => true,
+        };
+        if let Some(armed) = self.armed_target
+            && !keep(armed)
+        {
+            self.armed_target = None;
+        }
+        self.bindings.retain(|binding| keep(binding.target));
     }
 
     pub fn new() -> Self {
@@ -181,6 +220,12 @@ impl MidiMapper {
         });
     }
 
+    pub fn unbind(&mut self, target: MidiBindTarget) -> bool {
+        let before = self.bindings.len();
+        self.bindings.retain(|b| b.target != target);
+        self.bindings.len() != before
+    }
+
     /// Evalúa un mensaje MIDI entrante. Si hay un destino armado en modo Learn,
     /// vincula el origen al destino; si no, dispara todos los destinos mapeados (1 a N).
     pub fn process(&mut self, message: MidiMessage) -> Vec<MappedEffect> {
@@ -234,7 +279,7 @@ mod tests {
     #[test]
     fn midi_learn_binds_cc_to_track_volume_and_scales_value() {
         let mut mapper = MidiMapper::new();
-        let target = MidiBindTarget::TrackVolume(0);
+        let target = MidiBindTarget::TrackVolume(TrackId(7));
         mapper.arm_target(target);
         assert!(mapper.learn_mode());
         assert_eq!(mapper.armed_target(), Some(target));
@@ -258,5 +303,36 @@ mod tests {
                 fraction: 1.0
             }]
         );
+    }
+
+    #[test]
+    fn stable_ids_support_fx_vst3_send_and_prune_only_removed_targets() {
+        let mut mapper = MidiMapper::from_bindings(Vec::new());
+        let fx_target = MidiBindTarget::FxParam {
+            track: TrackId(1),
+            fx: FxId(42),
+            param: 7,
+        };
+        let vst_target = MidiBindTarget::VstInstrumentParam {
+            instrument: InstrumentId(9),
+            param: 1200,
+        };
+        let send_target = MidiBindTarget::TrackSend {
+            track: TrackId(1),
+            target: TrackId(2),
+        };
+        mapper.bind(MidiSource::Cc(14), fx_target);
+        mapper.bind(MidiSource::Cc(15), vst_target);
+        mapper.bind(MidiSource::Cc(16), send_target);
+
+        let tracks = HashSet::from([TrackId(1)]);
+        let fx = HashSet::from([FxId(42)]);
+        let instruments = HashSet::from([InstrumentId(9)]);
+        mapper.prune_orphans(&tracks, &fx, &instruments);
+
+        assert_eq!(mapper.source_for(fx_target), Some(MidiSource::Cc(14)));
+        assert_eq!(mapper.source_for(vst_target), Some(MidiSource::Cc(15)));
+        // El bus Return #2 fue eliminado -> su envío huérfano se limpia automáticamente.
+        assert_eq!(mapper.source_for(send_target), None);
     }
 }

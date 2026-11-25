@@ -188,7 +188,7 @@ pub fn parse(source: &str) -> Result<AudioComponent, String> {
         let max = number(&row, "max")?;
         let default = number(&row, "default")?;
         let step = number(&row, "step")?;
-        if min < 0.0
+        if min < -(f32::MAX as f64)
             || max > f32::MAX as f64
             || (logarithmic && (min as f32 <= 0. || !choices.is_empty()))
             || (!choices.is_empty()
@@ -229,7 +229,7 @@ pub fn parse(source: &str) -> Result<AudioComponent, String> {
                 || nodes[node_index].values[spec.id.0 as usize] != default as f32
                 || (nodes[node_index].kind == NativeKind::Filter
                     && spec.id.0 == 2
-                    && choices.len() != 3)
+                    && !(3..=crate::primitives::filter::MODE_COUNT).contains(&choices.len()))
             {
                 return Err(format!(
                     "{path}: destino repetido, rango inválido o valor inicial distinto"
@@ -290,6 +290,12 @@ mod tests {
     fn bundled_component_has_two_ordered_stages_and_one_macro() {
         let component = parse(EXAMPLE).unwrap();
         assert_eq!(component.id, "hay.fx.double_volume");
+        let filter = parse(include_str!(
+            "../../assets/scripts/components/audio/filter.lua"
+        ))
+        .unwrap();
+        assert_eq!(filter.id, "hay.fx.filter");
+        assert_eq!(filter.controls.len(), 4);
         assert_eq!(component.order, vec![2, 0, 1, 3]);
         assert_eq!(
             component.controls[0].targets,

@@ -4,6 +4,7 @@ use super::{Track, TrackId, TrackKind, validate_track_structure};
 #[derive(Clone, Copy)]
 pub enum TrackEdit {
     Insert,
+    InsertReturn,
     Delete,
     Duplicate,
     Group,
@@ -39,8 +40,25 @@ pub fn edit_tracks(
             });
             output.insert((cursor + 1).min(output.len()), track);
         }
+        TrackEdit::InsertReturn => {
+            let existing = tracks
+                .iter()
+                .filter(|t| t.kind == TrackKind::Effect)
+                .count();
+            let letter = (b'A' + (existing % 26) as u8) as char;
+            let name = if existing < 26 {
+                format!("Return {letter}")
+            } else {
+                format!("Return {}", existing + 1)
+            };
+            let track = Track::new(name, TrackKind::Effect);
+            output.push(track);
+        }
         TrackEdit::Delete => {
             output.retain(|t| !selected.contains(&t.id));
+            for track in &mut output {
+                track.sends.retain(|s| !selected.contains(&s.target));
+            }
             remap_removed_weave_steps(tracks, &mut output)?;
         }
         TrackEdit::Duplicate => {

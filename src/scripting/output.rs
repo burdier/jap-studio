@@ -25,16 +25,16 @@ impl MidiEdit {
             return Err("El resultado supera 16384 notas".into());
         }
         let edited: std::collections::HashMap<_, _> =
-            self.pattern.notes().iter().map(|n| (n.id, *n)).collect();
+            self.pattern.notes().iter().map(|n| (n.id, n)).collect();
         let mut children: std::collections::HashMap<NoteId, Vec<NoteId>> = Default::default();
         for (new, parent) in &self.descendants {
             children.entry(*parent).or_default().push(*new);
         }
         let mut notes = Vec::with_capacity(len);
         for note in original.notes() {
-            notes.push(edited.get(&note.id).copied().unwrap_or(*note));
+            notes.push(edited.get(&note.id).copied().unwrap_or(note).clone());
             if let Some(ids) = children.get(&note.id) {
-                notes.extend(ids.iter().map(|id| edited[id]));
+                notes.extend(ids.iter().map(|id| edited[id].clone()));
             }
         }
         self.pattern = original
@@ -71,7 +71,7 @@ pub(super) fn decode(notes: Table, pattern: &Pattern) -> Result<MidiEdit, String
         if id != original.id.0 {
             return Err("El script no puede cambiar la identidad de una nota".into());
         }
-        let mut note = *original;
+        let mut note = original.clone();
         note.start = Tick(row.raw_get("start").map_err(|e| e.to_string())?);
         note.duration = Tick(row.raw_get("duration").map_err(|e| e.to_string())?);
         note.pitch = row.raw_get("pitch").map_err(|e| e.to_string())?;
@@ -105,14 +105,21 @@ pub(super) fn decode(notes: Table, pattern: &Pattern) -> Result<MidiEdit, String
         if count >= MAX_NOTES || changed.len() + count + 1 > MAX_NOTES {
             return Err("El resultado supera 16384 notas".into());
         }
+        let source_start = note.start.0;
+        let source_duration = note.duration.0;
+        let source_curve = note.pitch_curve.clone();
         if let Some(cuts) = cuts {
             for index in 1..=count {
                 let cut: i64 = cuts.raw_get(index).map_err(|e| e.to_string())?;
                 if cut <= note.start.0 || cut >= end {
                     return Err("Los cortes deben ser crecientes e interiores a la nota".into());
                 }
-                note.duration = Tick(cut - note.start.0);
-                changed.push(note);
+                let length = cut - note.start.0;
+                let mut segment = note.clone();
+                segment.duration = Tick(length);
+                segment.pitch_curve =
+                    source_curve.window(note.start.0 - source_start, length, source_duration);
+                changed.push(segment);
                 let id = NoteId(next_id);
                 next_id = next_id.checked_add(1).ok_or("No quedan IDs de nota")?;
                 descendants.push((id, original.id));
@@ -121,6 +128,11 @@ pub(super) fn decode(notes: Table, pattern: &Pattern) -> Result<MidiEdit, String
             }
         }
         note.duration = Tick(end - note.start.0);
+        note.pitch_curve = source_curve.window(
+            note.start.0 - source_start,
+            note.duration.0,
+            source_duration,
+        );
         changed.push(note);
     }
     let pattern = pattern
@@ -168,7 +180,7 @@ pub(super) fn append_generated(
             .notes()
             .iter()
             .find(|note| note.id == source_id)
-            .copied()
+            .cloned()
             .ok_or("No se encontró la nota de origen en el resultado")?;
         note.id = NoteId(next_id);
         next_id = next_id.checked_add(1).ok_or("No quedan IDs de nota")?;

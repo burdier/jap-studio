@@ -25,7 +25,7 @@ pub fn edit_builtin(
         .notes()
         .iter()
         .filter(|n| affected(&n.id))
-        .copied()
+        .cloned()
         .collect();
     // Mantener el contador del patrón completo: los cortes nunca reutilizan IDs omitidos.
     let input = Pattern::restore_with_next_id(pattern.length(), notes, pattern.next_id())

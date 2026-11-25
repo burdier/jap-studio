@@ -178,6 +178,7 @@ fn utility_only(nodes: &[FxNode]) -> bool {
         } => catalog_id == "hay.utility",
         FxKind::Effect { .. } => false,
         FxKind::SerialChain { children } => utility_only(children),
+        FxKind::Crossover { .. } => false,
         FxKind::ParallelChain { branches } => utility_only(branches),
     })
 }

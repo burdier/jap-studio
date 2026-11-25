@@ -76,15 +76,20 @@ pub fn materialize(clips: &[&MidiClip]) -> Result<MidiClip, String> {
             let start = note.start.0.max(source_start);
             let end = (note.start.0 + note.duration.0).min(source_end);
             if end > start {
+                let note_id = note.id;
+                let mut note = note.clone();
+                note.pitch_curve =
+                    note.pitch_curve
+                        .window(start - note.start.0, end - start, note.duration.0);
                 let id = pattern
                     .add_note_copy(
-                        *note,
+                        &note,
                         Tick(offset + start - source_start),
                         Tick(end - start),
                         note.instrument,
                     )
                     .map_err(|e| e.to_string())?;
-                if clip.muted_notes.contains(&note.id) {
+                if clip.muted_notes.contains(&note_id) {
                     muted_notes.insert(id);
                 }
             }

@@ -34,11 +34,25 @@ fn coefficient(node: &FxNode) -> Result<f32, String> {
             ..
         } if catalog_id == super::spectrum::ID => Ok(1.0),
         FxKind::Effect { .. } => Err(format!("{}: procesador no disponible", node.name)),
+        FxKind::Crossover { branches, .. } => {
+            let [low, high] = branches.as_slice() else {
+                return Err("Cruce incompleto".into());
+            };
+            let low = coefficient(low)?;
+            if low == coefficient(high)? {
+                Ok(low)
+            } else {
+                Err("Ganancia distinta por banda".into())
+            }
+        }
         FxKind::SerialChain { children } => serial(children),
         FxKind::ParallelChain { branches } if branches.is_empty() => Ok(1.0),
-        FxKind::ParallelChain { branches } => branches
-            .iter()
-            .try_fold(0.0, |sum, branch| checked(sum + coefficient(branch)?)),
+        FxKind::ParallelChain { branches } => {
+            let solo = branches.iter().any(|b| b.branch_mix.solo);
+            branches.iter().try_fold(0., |sum, b| {
+                checked(sum + coefficient(b)? * b.branch_mix.gain(solo))
+            })
+        }
     }
 }
 fn checked(gain: f32) -> Result<f32, String> {

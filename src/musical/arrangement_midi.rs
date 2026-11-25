@@ -6,9 +6,12 @@ use super::{
     time::{FrameWindow, TimeBase},
     track::{Track, TrackId},
 };
+use std::collections::HashMap;
+mod changes;
 mod hilo;
+pub use changes::NoteChange;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ArrangementEvent {
     pub track: TrackId,
     pub instrument: InstrumentId,
@@ -16,7 +19,7 @@ pub struct ArrangementEvent {
     pub event: ScheduledEvent,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct AtFrame {
     frame: u64,
     routed: ArrangementEvent,
@@ -27,9 +30,29 @@ struct AtFrame {
 pub struct PreparedMidiArrangement {
     events: Vec<AtFrame>,
     end_frame: u64,
+    conventional_channels: HashMap<InstrumentId, u16>,
 }
 
 impl PreparedMidiArrangement {
+    fn new(events: Vec<AtFrame>, end_frame: u64) -> Self {
+        let mut conventional_channels = HashMap::new();
+        for item in &events {
+            let routed = item.routed;
+            if routed.channel != 0 && routed.event.initial_pitch_cents.is_none() {
+                *conventional_channels.entry(routed.instrument).or_default() |= 1 << routed.channel;
+            }
+        }
+        Self {
+            events,
+            end_frame,
+            conventional_channels,
+        }
+    }
+
+    pub fn conventional_channels(&self, id: InstrumentId) -> u16 {
+        self.conventional_channels.get(&id).copied().unwrap_or(0)
+    }
+
     /// Une planes ya compilados fuera del callback; conserva el orden de los eventos.
     pub fn append(&mut self, mut other: Self) -> Result<(), String> {
         if self.events.len() + other.events.len() > 65_536 {
@@ -37,6 +60,9 @@ impl PreparedMidiArrangement {
         }
         self.end_frame = self.end_frame.max(other.end_frame);
         self.events.append(&mut other.events);
+        for (instrument, channels) in other.conventional_channels {
+            *self.conventional_channels.entry(instrument).or_default() |= channels;
+        }
         self.events.sort_by_key(|item| {
             (
                 item.frame,
@@ -105,6 +131,7 @@ impl PreparedMidiArrangement {
                 let frame = start
                     .checked_add(local)
                     .ok_or("Evento MIDI fuera de rango")?;
+                event.clip = Some(clip.id);
                 event.pitch = (i16::from(event.pitch) + i16::from(clip.props.pitch_semitones))
                     .clamp(0, 127) as u8;
                 events.push(AtFrame {
@@ -126,7 +153,7 @@ impl PreparedMidiArrangement {
                 item.routed.event.note,
             )
         });
-        Ok(Self { events, end_frame })
+        Ok(Self::new(events, end_frame))
     }
 
     pub fn end_frame(&self) -> u64 {

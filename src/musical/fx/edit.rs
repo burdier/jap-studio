@@ -1,5 +1,5 @@
 //! Ediciones transaccionales: rechazan ciclos y destinos obsoletos sin perder nodos.
-use super::{FxChain, FxId, FxKind, FxNode};
+use super::{BranchMix, FxChain, FxId, FxKind, FxNode};
 
 #[derive(Clone, Copy, Debug)]
 pub enum FxPlacement {
@@ -14,6 +14,9 @@ pub enum FxEdit {
     Duplicate(FxId),
     Rename(FxId, String),
     Toggle(FxId),
+    Cabinet(FxId, u8, Option<super::cabinet::CabinetImpulse>),
+    BranchLevel(FxId, FxId, i16),
+    BranchSolo(FxId, FxId),
     Parameter(FxId, u32, f32),
     Move(FxId, FxPlacement),
 }
@@ -60,19 +63,53 @@ impl FxChain {
                 next.node_mut(id)?.name = name.into();
                 Some(id)
             }
+            FxEdit::Cabinet(id, model, ir) => {
+                let node = next.node_mut(id)?;
+                let FxKind::Effect {
+                    plugin_id: super::TrackDevice::Hay { catalog_id },
+                    parameters,
+                } = &mut node.kind
+                else {
+                    return Err("Selecciona Hey Convolver".into());
+                };
+                if catalog_id != super::cabinet::ID
+                    || (model as usize) >= super::cabinet::MODELS.len()
+                {
+                    return Err("Preset de convolver inválido".into());
+                }
+                node.cabinet_ir = ir;
+                parameters.insert(0, model as f32);
+                Some(id)
+            }
             FxEdit::Toggle(id) => {
                 let node = next.node_mut(id)?;
                 node.enabled = !node.enabled;
+                Some(id)
+            }
+            FxEdit::BranchLevel(parent, id, db10) => {
+                next.branch_mut(parent, id)?.db10 = db10;
+                Some(id)
+            }
+            FxEdit::BranchSolo(parent, id) => {
+                let mix = next.branch_mut(parent, id)?;
+                mix.solo = !mix.solo;
                 Some(id)
             }
             FxEdit::Parameter(id, parameter, value) => {
                 if !value.is_finite() {
                     return Err("El parámetro debe ser finito".into());
                 }
-                let FxKind::Effect { parameters, .. } = &mut next.node_mut(id)?.kind else {
-                    return Err("Selecciona un efecto".into());
-                };
-                parameters.insert(parameter, value);
+                match &mut next.node_mut(id)?.kind {
+                    FxKind::Crossover { hz, .. }
+                        if parameter == 0 && (20.0..=20000.0).contains(&value) =>
+                    {
+                        *hz = value.round() as u16
+                    }
+                    FxKind::Effect { parameters, .. } => {
+                        parameters.insert(parameter, value);
+                    }
+                    _ => return Err("Parámetro fuera de rango".into()),
+                }
                 Some(id)
             }
         };
@@ -81,6 +118,16 @@ impl FxChain {
         next.revision = self.revision.wrapping_add(1);
         *self = next;
         Ok(selected)
+    }
+    fn branch_mut(&mut self, parent: FxId, id: FxId) -> Result<&mut BranchMix, String> {
+        let FxKind::ParallelChain { branches } = &mut self.node_mut(parent)?.kind else {
+            return Err("Selecciona un paralelo".into());
+        };
+        branches
+            .iter_mut()
+            .find(|n| n.id == id)
+            .map(|n| &mut n.branch_mix)
+            .ok_or_else(|| "La rama ya no está en este paralelo".into())
     }
     fn node_mut(&mut self, id: FxId) -> Result<&mut FxNode, String> {
         self.nodes
@@ -97,7 +144,13 @@ pub(super) fn validate(
     if depth > 32 {
         return Err("Máximo 32 niveles de FX".into());
     }
+    if depth == 0 {
+        super::bands::validate(nodes, 0, 24000)?;
+    }
     for node in nodes {
+        if !(BranchMix::MIN..=BranchMix::MAX).contains(&node.branch_mix.db10) {
+            return Err("Nivel de rama fuera de rango".into());
+        }
         if !ids.insert(node.id) {
             return Err("Identidad FX duplicada".into());
         }

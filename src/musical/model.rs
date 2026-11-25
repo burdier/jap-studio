@@ -26,7 +26,7 @@ impl InstrumentId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NoteId(pub u64);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NoteEvent {
     pub id: NoteId,
     pub instrument: InstrumentId,
@@ -35,6 +35,7 @@ pub struct NoteEvent {
     pub pitch: u8,
     pub velocity: u8,
     pub expression: super::note_expression::NoteExpression,
+    pub pitch_curve: super::pitch_curve::PitchCurve,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -209,11 +210,44 @@ impl Pattern {
                 pitch,
                 velocity,
                 expression: Default::default(),
+                pitch_curve: Default::default(),
             },
         );
         self.next_id = next;
         Ok(id)
     }
+    /// Divide una nota conservando su primer ID y la expresión de ambos tramos.
+    pub fn split_note(&mut self, id: NoteId, at: Tick) -> Result<NoteId, EditError> {
+        let index = self
+            .notes
+            .iter()
+            .position(|note| note.id == id)
+            .ok_or(EditError::UnknownNote)?;
+        let note = &self.notes[index];
+        if at <= note.start || at.0 >= note.start.0 + note.duration.0 {
+            return Err(EditError::InvalidNote);
+        }
+        let next_id = self.next_id.checked_add(1).ok_or(EditError::IdsExhausted)?;
+        let first_duration = at.0 - note.start.0;
+        let mut second = note.clone();
+        second.id = NoteId(self.next_id);
+        second.start = at;
+        second.duration = Tick(note.duration.0 - first_duration);
+        second.pitch_curve =
+            note.pitch_curve
+                .window(first_duration, second.duration.0, note.duration.0);
+        let first = &mut self.notes[index];
+        first.pitch_curve = first
+            .pitch_curve
+            .window(0, first_duration, first.duration.0);
+        first.duration = Tick(first_duration);
+        let insert_at = self.notes.partition_point(|note| note.start <= at);
+        let id = second.id;
+        self.notes.insert(insert_at, second);
+        self.next_id = next_id;
+        Ok(id)
+    }
+
     pub fn remove_note(&mut self, id: NoteId) -> Result<(), EditError> {
         let index = self
             .notes

@@ -1,6 +1,7 @@
 //! Plan inmutable preparado fuera del callback; consulta sin asignaciones por bloque.
 //! Una vuelta a tempo constante; el reproductor segmenta bloques en los límites del loop.
 use super::{
+    clip::ClipId,
     model::{InstrumentId, NoteId, Pattern},
     time::{FrameWindow, Tick, TimeBase, TimeError},
 };
@@ -15,6 +16,11 @@ pub enum EventKind {
     NoteOn {
         velocity: u8,
     },
+    PitchRamp {
+        from_cents: i16,
+        to_cents: i16,
+        frames: u64,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,6 +29,8 @@ pub struct ScheduledEvent {
     pub note: NoteId,
     pub instrument: InstrumentId,
     pub pitch: u8,
+    pub clip: Option<ClipId>,
+    pub initial_pitch_cents: Option<i16>,
     pub kind: EventKind,
     pub expression: super::note_expression::NoteExpression,
 }
@@ -55,6 +63,8 @@ impl PreparedPattern {
                 note: note.id,
                 instrument: note.instrument,
                 pitch: note.pitch,
+                clip: None,
+                initial_pitch_cents: note.pitch_curve.points().first().map(|point| point.cents),
                 expression: note.expression,
                 kind: EventKind::NoteOn {
                     velocity: note.velocity,
@@ -71,6 +81,37 @@ impl PreparedPattern {
                     ..event
                 },
             });
+            let mut anchors = Vec::<(u64, i16)>::new();
+            for point in note.pitch_curve.points() {
+                let fraction = u128::from(point.at);
+                let offset = (u128::from(end - start) * fraction + u128::from(u16::MAX / 2))
+                    / u128::from(u16::MAX);
+                let frame = start + offset as u64;
+                if let Some(last) = anchors.last_mut().filter(|last| last.0 == frame) {
+                    if frame != start {
+                        last.1 = point.cents;
+                    }
+                } else {
+                    anchors.push((frame, point.cents));
+                }
+            }
+            for pair in anchors.windows(2) {
+                let (frame, from_cents) = pair[0];
+                let (target, to_cents) = pair[1];
+                if from_cents != to_cents {
+                    events.push(PreparedEvent {
+                        frame,
+                        event: ScheduledEvent {
+                            kind: EventKind::PitchRamp {
+                                from_cents,
+                                to_cents,
+                                frames: target - frame,
+                            },
+                            ..event
+                        },
+                    });
+                }
+            }
         }
         for point in pattern.controls().points() {
             events.push(PreparedEvent {
@@ -80,6 +121,8 @@ impl PreparedPattern {
                     note: NoteId(0),
                     instrument: InstrumentId(0),
                     pitch: 0,
+                    clip: None,
+                    initial_pitch_cents: None,
                     expression: Default::default(),
                     kind: EventKind::Control {
                         lane: point.lane,
@@ -88,7 +131,7 @@ impl PreparedPattern {
                 },
             });
         }
-        // Off antes de Control y On en un retrigger. IDs estabilizan notas simultáneas.
+        // Off antes de Control y On en un retrigger. Las rampas empiezan tras su On.
         events.sort_by_key(|item| (item.frame, item.event.kind, item.event.note));
         Ok(Self {
             events,

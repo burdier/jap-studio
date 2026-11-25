@@ -28,11 +28,67 @@ pub struct DrumPiece {
     pub sampler: SamplerParams,
     pub choke_group: Option<u16>,
     pub mix: DrumMix,
+    /// Desfase de tiempo relativo a la rejilla en ticks (`-120..=120`, ±1 semicorchea).
+    pub timing_offset: i16,
+    /// Modo de desfase temporal: fijo, alterno en cada nota (groove/swing) o aleatorio.
+    pub timing_mode: OffsetMode,
 }
 
 impl DrumPiece {
+    pub const MAX_TIMING_OFFSET: i16 = 120;
+
     pub fn base_note(&self) -> u8 {
         self.sampler.get(ROOT) as u8
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum OffsetMode {
+    #[default]
+    Fixed,
+    EachNote,
+    Random,
+}
+
+impl OffsetMode {
+    pub fn next(self) -> Self {
+        match self {
+            Self::Fixed => Self::EachNote,
+            Self::EachNote => Self::Random,
+            Self::Random => Self::Fixed,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Fixed => "Fijo",
+            Self::EachNote => "Cada nota",
+            Self::Random => "Random",
+        }
+    }
+
+    pub fn short_label(self) -> &'static str {
+        match self {
+            Self::Fixed => "Fij",
+            Self::EachNote => "Nota",
+            Self::Random => "Rnd",
+        }
+    }
+
+    pub fn as_u8(self) -> u8 {
+        match self {
+            Self::Fixed => 0,
+            Self::EachNote => 1,
+            Self::Random => 2,
+        }
+    }
+
+    pub fn from_u8(value: u8) -> Self {
+        match value {
+            1 => Self::EachNote,
+            2 => Self::Random,
+            _ => Self::Fixed,
+        }
     }
 }
 
@@ -42,6 +98,14 @@ pub struct DrumLayer {
     /// Ambos extremos se incluyen; la velocidad MIDI cero se reserva a NoteOff.
     pub velocity_min: u8,
     pub velocity_max: u8,
+    /// Parte del tramo reproducible que se salta al atacar, en milésimas.
+    pub start_offset: u16,
+    /// Comportamiento del offset por golpe: fijo, progresivo en cada nota o aleatorio.
+    pub offset_mode: OffsetMode,
+}
+
+impl DrumLayer {
+    pub const MAX_START_OFFSET: u16 = 999;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -113,11 +177,49 @@ impl DrumKit {
                 source,
                 velocity_min: 1,
                 velocity_max: 127,
+                start_offset: 0,
+                offset_mode: OffsetMode::Fixed,
             }],
             sampler,
             choke_group: None,
             mix: DrumMix::default(),
+            timing_offset: 0,
+            timing_mode: OffsetMode::Fixed,
         });
+        Ok(id)
+    }
+
+    /// Duplica una pieza del kit justo debajo de la original.
+    /// Con `keep_layers = false` crea una pista sin muestra (lista para soltar otro audio).
+    pub fn clone_piece(&mut self, lane: usize, keep_layers: bool) -> Result<InstrumentId, String> {
+        if self.pieces.len() >= MAX_DRUM_PIECES {
+            return Err(format!("El kit admite hasta {MAX_DRUM_PIECES} piezas"));
+        }
+        let source = self
+            .pieces
+            .get(lane)
+            .ok_or("La pieza ya no existe")?
+            .clone();
+        let next = self
+            .pieces
+            .iter()
+            .map(|piece| piece.id.0)
+            .fold(LAST_LEGACY_DRUM_ID, u32::max)
+            .checked_add(1)
+            .filter(|&id| id < u32::MAX)
+            .ok_or("IDs de pieza agotados")?;
+        let id = InstrumentId(next);
+        let mut cloned = source;
+        cloned.id = id;
+        cloned.name = if keep_layers {
+            format!("{} (copia)", cloned.name)
+        } else {
+            format!("{} (MIDI)", cloned.name)
+        };
+        if !keep_layers {
+            cloned.layers.clear();
+        }
+        self.pieces.insert(lane + 1, cloned);
         Ok(id)
     }
 
@@ -142,6 +244,7 @@ impl DrumKit {
                     || layer.velocity_min == 0
                     || layer.velocity_min > layer.velocity_max
                     || layer.velocity_max > 127
+                    || layer.start_offset > DrumLayer::MAX_START_OFFSET
                 {
                     return Err("Capa de batería inválida".into());
                 }

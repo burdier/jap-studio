@@ -84,7 +84,7 @@ impl ClipProps {
 /// Componente clip MIDI ubicado en un carril del Arrangement.
 /// Las funciones avanzadas de edición (piano roll, split, loop interno) llegarán en
 /// etapas posteriores; esta primera etapa almacena el `Pattern` mapeado y su posición.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MidiClip {
     pub id: ClipId,
     pub name: String,
@@ -184,41 +184,73 @@ impl MidiClip {
         self.pattern.length().0 as f64 / PPQ as f64
     }
 
-    /// Longitud visible en el Arrangement (patrón recortado).
-    pub fn duration_beats(&self) -> f64 {
-        let available = (self.pattern_beats() - self.trim_start).max(0.0);
-        self.trim_len.map_or(available, |len| len.min(available))
+    /// Longitud de un ciclo sin bucle (patrón menos recorte inicial).
+    pub fn cycle_beats(&self) -> f64 {
+        (self.pattern_beats() - self.trim_start).max(0.0)
     }
 
-    /// Patrón a reproducir: solo la ventana visible, sin modificar el original.
+    /// Longitud visible en el Arrangement (patrón recortado o repetido en bucle).
+    pub fn duration_beats(&self) -> f64 {
+        let available = self.cycle_beats();
+        if self.props.looped {
+            self.trim_len.unwrap_or(available).max(0.0)
+        } else {
+            self.trim_len.map_or(available, |len| len.min(available))
+        }
+    }
+
+    /// Patrón a reproducir: ventana visible (y repetida en ciclos si `props.looped`), sin modificar el original.
     pub fn playback_pattern(&self) -> Pattern {
-        if self.trim_start == 0.0 && self.trim_len.is_none() && self.muted_notes.is_empty() {
+        let needs_loop = self.props.looped && self.duration_beats() > self.cycle_beats() + 1e-6;
+        if !needs_loop
+            && self.trim_start == 0.0
+            && self.trim_len.is_none()
+            && self.muted_notes.is_empty()
+        {
             return self.pattern.clone();
         }
         let window_start = (self.trim_start * PPQ as f64).round() as i64;
         let window_len = (self.duration_beats() * PPQ as f64).round().max(1.0) as i64;
+        let cycle_len = (self.cycle_beats() * PPQ as f64).round().max(1.0) as i64;
         let Ok(mut trimmed) = Pattern::new(Tick(window_len)) else {
             return self.pattern.clone();
         };
-        for note in self.pattern.notes() {
-            if self.muted_notes.contains(&note.id) {
-                continue;
+        let cycles = if self.props.looped {
+            (window_len + cycle_len - 1) / cycle_len
+        } else {
+            1
+        };
+        for cycle in 0..cycles {
+            let cycle_offset = cycle * cycle_len;
+            let cycle_end_in_window = (cycle_offset + cycle_len).min(window_len);
+            let cycle_span = cycle_end_in_window - cycle_offset;
+            if cycle_span <= 0 {
+                break;
             }
-            let start = note.start.0.max(window_start);
-            let end = (note.start.0 + note.duration.0).min(window_start + window_len);
-            if end > start {
-                let _ = trimmed.add_note_copy(
-                    *note,
-                    Tick(start - window_start),
-                    Tick(end - start),
-                    note.instrument,
-                );
+            for note in self.pattern.notes() {
+                if self.muted_notes.contains(&note.id) {
+                    continue;
+                }
+                let start = note.start.0.max(window_start);
+                let end = (note.start.0 + note.duration.0).min(window_start + cycle_span);
+                if end > start {
+                    let mut note = note.clone();
+                    note.pitch_curve =
+                        note.pitch_curve
+                            .window(start - note.start.0, end - start, note.duration.0);
+                    let _ = trimmed.add_note_copy(
+                        &note,
+                        Tick(cycle_offset + (start - window_start)),
+                        Tick(end - start),
+                        note.instrument,
+                    );
+                }
             }
         }
         trimmed.automation = self
             .pattern
             .controls()
-            .window(Tick(window_start), Tick(window_len));
+            .window(Tick(window_start), Tick(window_len.min(cycle_len)));
         trimmed
     }
 
@@ -518,5 +550,20 @@ mod tests {
             .unwrap();
         assert_eq!(clip.notes().len(), 1);
         assert_eq!(clip.notes()[0].pitch, 72);
+    }
+
+    #[test]
+    fn looped_midi_clip_tiles_notes_across_stretched_length() {
+        let mut pattern = Pattern::new(Tick(PPQ * 4)).unwrap();
+        pattern
+            .add_note(InstrumentId(1), Tick(0), Tick(PPQ), 60, 100)
+            .unwrap();
+        let mut clip = MidiClip::new("Loop", 0, 0.0, pattern);
+        clip.props.looped = true;
+        clip.trim_len = Some(12.0); // 3 compases (3 ciclos de 4 beats)
+        assert_eq!(clip.duration_beats(), 12.0);
+        let tiled = clip.playback_pattern();
+        let starts: Vec<i64> = tiled.notes().iter().map(|n| n.start.0).collect();
+        assert_eq!(starts, vec![0, PPQ * 4, PPQ * 8]);
     }
 }

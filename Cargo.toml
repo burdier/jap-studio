@@ -18,9 +18,11 @@ required-features = ["ui"]
 
 [features]
 default = ["ui"]
-ui = ["dep:gpui", "dep:dirs", "dep:symphonia", "dep:cpal", "dep:rustysynth", "dep:particula-rs", "dep:fastrand", "dep:midir", "dep:rtrb", "dep:libc", "dep:realfft", "dep:vst3"]
+ui = ["dep:gpui", "dep:dirs", "dep:symphonia", "dep:cpal", "dep:rustysynth", "dep:particula-rs", "dep:fastrand", "dep:midir", "dep:rtrb", "dep:libc", "dep:realfft", "dep:vst3", "dep:ebur128", "dep:basic-pitch-rs"]
+p2p = ["dep:iroh", "dep:tokio", "dep:base64", "dep:serde", "dep:serde_json"]
 
 [dependencies]
+fft-convolver = "=0.3.0"
 # La fachada conserva los imports gpui:: y alinea runtime, plataforma y controles.
 gpui = { package = "gpui-kit", version = "=0.9.0", default-features = false, features = ["component", "assets"], optional = true }
 dirs = { version = "5", optional = true }
@@ -36,6 +38,13 @@ midir = { version = "0.11.1", optional = true }
 rtrb = { version = "0.3.6", optional = true }
 libc = { version = "0.2", optional = true }
 realfft = { version = "=3.5.1", optional = true }
+ebur128 = { version = "0.1", optional = true }
+basic-pitch-rs = { version = "0.2.0", optional = true, default-features = false, features = ["tract", "bundled-model"] }
 loro = "=1.17.1"
 mlua = { version = "=0.12.2", default-features = false, features = ["lua54", "vendored"] }
 vst3 = { version = "=0.3.0", optional = true }
+iroh = { version = "=1.5.0", default-features = false, features = ["tls-ring"], optional = true }
+tokio = { version = "1", features = ["rt", "time"], optional = true }
+base64 = { version = "0.22", optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }

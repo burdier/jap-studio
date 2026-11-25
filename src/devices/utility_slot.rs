@@ -70,6 +70,12 @@ impl UtilitySlot {
         );
     }
 
+    pub fn restore(&self, state: UtilityState) -> Result<(), PrimitiveError> {
+        DESCRIPTOR.parameters[0].validate(state.gain)?;
+        self.publish(state);
+        Ok(())
+    }
+
     /// Un único escritor (control/UI). Los clones entregados al audio solo leen.
     pub fn apply(&self, action: UtilityAction) -> Result<UtilityState, PrimitiveError> {
         let mut state = self.state();

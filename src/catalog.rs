@@ -45,6 +45,14 @@ const fn piano_action(id: &'static str, name: &'static str, command: &'static st
 
 pub const CATALOG: &[CatalogEntry] = &[
     CatalogEntry {
+        id: "action.track.tuner",
+        kind: EntryKind::Action,
+        name: "Afinar pista · StompTuner",
+        summary: "Activar o cerrar el afinador integrado de la pista del cursor",
+        keywords: &["afinar", "afinador", "pitch", "tuner", "stomp", "808"],
+        action: CatalogAction::Invoke("track.tuner"),
+    },
+    CatalogEntry {
         id: "action.project.reveal",
         kind: EntryKind::Action,
         name: "Mostrar carpeta del proyecto",
@@ -91,14 +99,6 @@ pub const CATALOG: &[CatalogEntry] = &[
         summary: "Crear o editar el apunte general persistente",
         keywords: &["nota", "apunte", "note", "escribir", "texto"],
         action: CatalogAction::Invoke("note.edit"),
-    },
-    CatalogEntry {
-        id: "action.vim.toggle",
-        kind: EntryKind::Action,
-        name: "Vim · activar/desactivar",
-        summary: "Navegación modal opcional; preferencia guardada en Configuración → Atajos",
-        keywords: &["vim", "teclado", "normal", "insert", "toggle"],
-        action: CatalogAction::Invoke("vim.toggle"),
     },
     CatalogEntry {
         id: "action.view.maximize",
@@ -976,6 +976,21 @@ pub const CATALOG: &[CatalogEntry] = &[
         summary: "Insertar Utility en la cadena de la pista · ganancia y bypass · :utility abre la salida",
         keywords: &["utility", "utilidad", "efecto", "ganancia", "componente"],
         action: CatalogAction::Invoke("utility"),
+    },
+    CatalogEntry {
+        id: "hey.convolver",
+        kind: EntryKind::Component,
+        name: "Hey Convolver",
+        summary: "Gabinetes modelados e impulsos WAV estéreo",
+        keywords: &[
+            "cabinet",
+            "gabinete",
+            "convolution",
+            "impulso",
+            "IR",
+            "efecto",
+        ],
+        action: CatalogAction::Invoke("fx.convolver"),
     },
     CatalogEntry {
         id: "hay.spectrum",
