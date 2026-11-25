@@ -809,14 +809,50 @@ impl DawApp {
                         .audio_recorder
                         .as_ref()
                         .is_some_and(|r| r.track_id == track.id);
-                toggle_badge(ds, "R", recording, ds.danger)
-                    .on_mouse_down(
+                let mon_mode = self.track_monitor_mode(track.id);
+                let mon_active = mon_mode != crate::audio::input_monitor::MonitorMode::Off;
+                let mon_color = match mon_mode {
+                    crate::audio::input_monitor::MonitorMode::In => ds.success,
+                    crate::audio::input_monitor::MonitorMode::Auto => ds.warning,
+                    crate::audio::input_monitor::MonitorMode::Off => ds.muted,
+                };
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(2.0))
+                    .child(toggle_badge(ds, "R", recording, ds.danger).on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |this, _, _, cx| {
                             this.toggle_track_record(i);
                             cx.stop_propagation();
                             cx.notify();
                         }),
+                    ))
+                    .when(
+                        track.accepts_clips()
+                            && track.kind != elevate::musical::track::TrackKind::Group
+                            && !track.is_return(),
+                        |row| {
+                            row.child(
+                                toggle_badge(ds, mon_mode.badge(), mon_active, mon_color)
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(move |this, _, _, cx| {
+                                            this.cycle_track_monitor(Some(i));
+                                            cx.stop_propagation();
+                                            cx.notify();
+                                        }),
+                                    )
+                                    .on_mouse_down(
+                                        MouseButton::Right,
+                                        cx.listener(move |this, _, _, cx| {
+                                            this.toggle_audio_record_stereo();
+                                            cx.stop_propagation();
+                                            cx.notify();
+                                        }),
+                                    ),
+                            )
+                        },
                     )
                     .into_any_element()
             }

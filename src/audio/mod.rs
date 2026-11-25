@@ -13,6 +13,7 @@ pub(crate) mod drums;
 pub(crate) mod export;
 pub(crate) mod fundamental;
 mod fx_gain;
+pub(crate) mod input_monitor;
 pub(crate) mod metronome;
 mod midi_in;
 mod output;

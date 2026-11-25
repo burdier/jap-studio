@@ -2,8 +2,10 @@ use std::fmt;
 
 pub mod amplitude;
 pub mod compressor;
+pub mod echo;
 pub mod filter;
 pub mod limiter;
+pub mod reverb;
 
 pub type StereoFrame = [f32; 2];
 

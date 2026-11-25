@@ -86,6 +86,7 @@ impl DawApp {
                 piano.set_fx_gain(gain);
             }
         }
+        self.sync_input_monitor();
     }
 }
 

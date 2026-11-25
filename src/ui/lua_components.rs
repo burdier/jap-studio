@@ -26,6 +26,8 @@ impl LuaComponents {
             include_str!("../../assets/scripts/components/audio/filter.lua"),
             include_str!("../../assets/scripts/components/audio/compressor.lua"),
             include_str!("../../assets/scripts/components/audio/limiter.lua"),
+            include_str!("../../assets/scripts/components/audio/echo.lua"),
+            include_str!("../../assets/scripts/components/audio/reverb.lua"),
         ]
         .into_iter()
         .map(|source| {

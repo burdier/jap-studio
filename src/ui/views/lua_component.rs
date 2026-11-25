@@ -20,6 +20,8 @@ use std::rc::Rc;
 
 const COMP_ID: &str = "hay.fx.compressor";
 const LIMITER_ID: &str = "hay.fx.limiter";
+const ECHO_ID: &str = "hay.fx.echo";
+const REVERB_ID: &str = "hay.fx.reverb";
 
 impl DawApp {
     pub(in crate::ui) fn selected_lua_component(&self) -> Option<FxTarget> {
@@ -303,6 +305,8 @@ impl DawApp {
                     format!("{value:.1}:1")
                 } else if control.unit == "%" {
                     format!("{value:.0}%")
+                } else if control.unit == "s" {
+                    format!("{value:.2} s")
                 } else {
                     format!("{value:.2} {}", control.unit)
                 };
@@ -346,6 +350,8 @@ impl DawApp {
 
         let is_comp = desc.id == COMP_ID;
         let is_limiter = desc.id == LIMITER_ID;
+        let is_echo = desc.id == ECHO_ID;
+        let is_reverb = desc.id == REVERB_ID;
         if is_comp || is_limiter {
             panel = panel.child(render_gr_meter(ds, effect.gain_reduction_db()));
         }
@@ -365,6 +371,26 @@ impl DawApp {
                     cx,
                 ));
             }
+        }
+        if is_echo {
+            let mode = parameters.get(&0).copied().unwrap_or(0.0) as u8;
+            let time_l = parameters.get(&1).copied().unwrap_or(375.0);
+            let time_r = parameters.get(&2).copied().unwrap_or(375.0);
+            let feedback = parameters.get(&3).copied().unwrap_or(42.0);
+            let lp_hz = parameters.get(&5).copied().unwrap_or(6500.0);
+            panel = panel.child(render_echo_visualizer(
+                ds, track, id, mode, time_l, time_r, feedback, lp_hz, cx,
+            ));
+        }
+        if is_reverb {
+            let freeze = parameters.get(&0).copied().unwrap_or(0.0) >= 0.5;
+            let predelay = parameters.get(&1).copied().unwrap_or(18.0);
+            let decay = parameters.get(&2).copied().unwrap_or(2.4);
+            let size = parameters.get(&3).copied().unwrap_or(65.0);
+            let mix = parameters.get(&8).copied().unwrap_or(32.0);
+            panel = panel.child(render_reverb_visualizer(
+                ds, track, id, freeze, predelay, decay, size, mix, cx,
+            ));
         }
 
         // Curva interactiva protagonista arriba (con espectro Pre/Post en vivo)
@@ -509,7 +535,7 @@ fn render_compressor_curve(
             crosshair: true,
             color: ds.cyan,
         }],
-        header: "TRANSFERENCIA · Arrastra Umbral/Ratio · Rueda Knee".into(),
+        header: "TRANSFERENCIA".into(),
         readout: format!("{threshold_db:.1} dB · {ratio:.1}:1 · Knee {knee_db:.1} dB").into(),
         x_labels: vec![
             "-60".into(),
@@ -550,6 +576,236 @@ fn render_compressor_curve(
 
     interactive_curve_box(
         gpui::ElementId::Name(format!("comp-curve-{}", fx_id.0).into()),
+        ds,
+        model,
+        on_gesture,
+    )
+}
+
+/// Visualizador interactivo de ecos L/R y decaimiento por Feedback estilo Ableton Echo.
+fn render_echo_visualizer(
+    ds: &DesignSystem,
+    track: TrackId,
+    fx_id: FxId,
+    mode: u8,
+    time_l_ms: f32,
+    time_r_ms: f32,
+    feedback_pct: f32,
+    lp_hz: f32,
+    cx: &mut Context<DawApp>,
+) -> impl IntoElement {
+    let fb = (feedback_pct / 100.0).clamp(0.0, 0.95);
+    let span_ms = (time_l_ms.max(time_r_ms) * 5.0).clamp(600.0, 4000.0);
+    let mut left_curve = vec![(0.0, 0.0), (0.0, 0.92), (0.008, 0.0)];
+    let mut right_curve = vec![(0.0, 0.0)];
+
+    for tap in 1..=8 {
+        let amp = (0.92 * fb.powi(tap - 1)).clamp(0.02, 0.92);
+        let tl = (time_l_ms * tap as f32) / span_ms;
+        let tr = if mode == 1 {
+            // Ping-Pong alterna L y R en pasos impares/pares
+            (time_r_ms * (tap as f32 - 0.5)) / span_ms
+        } else {
+            (time_r_ms * tap as f32) / span_ms
+        };
+        if tl <= 0.99 {
+            left_curve.push(((tl - 0.006).max(0.0), 0.0));
+            left_curve.push((tl, amp));
+            left_curve.push(((tl + 0.008).min(1.0), 0.0));
+        }
+        if tr > 0.0 && tr <= 0.99 {
+            let amp_r = if mode == 1 { amp * 0.92 } else { amp * 0.85 };
+            right_curve.push(((tr - 0.006).max(0.0), 0.0));
+            right_curve.push((tr, amp_r));
+            right_curve.push(((tr + 0.008).min(1.0), 0.0));
+        }
+    }
+    left_curve.push((1.0, 0.0));
+    right_curve.push((1.0, 0.0));
+
+    let norm_x = ((time_l_ms / 1.0).ln() / 2000.0_f32.ln()).clamp(0.0, 1.0);
+    let norm_y = (feedback_pct / 95.0).clamp(0.0, 1.0);
+    let mode_tag = match mode {
+        1 => "Ping Pong",
+        2 => "Mid/Side",
+        _ => "Stereo",
+    };
+
+    let model = CurveModel {
+        grid_x: vec![0.25, 0.5, 0.75],
+        grid_y: vec![0.33, 0.66],
+        curves: vec![
+            CurvePath {
+                points: right_curve,
+                color: 0xf59e0b,
+                stroke_px: 1.6,
+                fill_alpha: 20,
+            },
+            CurvePath {
+                points: left_curve,
+                color: ds.cyan,
+                stroke_px: 2.0,
+                fill_alpha: 28,
+            },
+        ],
+        anchors: vec![CurveAnchor {
+            x: norm_x,
+            y: norm_y,
+            stem: true,
+            crosshair: false,
+            color: ds.accent,
+        }],
+        header: format!("ECHO · {mode_tag}").into(),
+        readout: format!("L {time_l_ms:.0} ms · R {time_r_ms:.0} ms · FB {feedback_pct:.0}%")
+            .into(),
+        x_labels: vec![
+            "0".into(),
+            format!("{:.0} ms", span_ms * 0.25).into(),
+            format!("{:.0} ms", span_ms * 0.5).into(),
+            format!("{:.0} ms", span_ms * 0.75).into(),
+            format!("{:.0} ms", span_ms).into(),
+        ],
+        height_px: 112.0,
+        ..Default::default()
+    };
+
+    let ratio_rl = (time_r_ms / time_l_ms.max(1.0)).clamp(0.25, 4.0);
+    let on_gesture: GestureHandler =
+        Rc::new(cx.listener(move |this, gesture: &CurveGesture, _, cx| {
+            match *gesture {
+                CurveGesture::Move { x, y } => {
+                    let next_l = 2000.0_f32.powf(x.clamp(0.0, 1.0)).clamp(1.0, 2000.0);
+                    let next_r = (next_l * ratio_rl).clamp(1.0, 2000.0);
+                    let next_fb = (y.clamp(0.0, 1.0) * 95.0).clamp(0.0, 95.0);
+                    let _ = this.edit_fx(track, FxEdit::Parameter(fx_id, 1, next_l));
+                    let _ = this.edit_fx(track, FxEdit::Parameter(fx_id, 2, next_r));
+                    let _ = this.edit_fx(track, FxEdit::Parameter(fx_id, 3, next_fb));
+                }
+                CurveGesture::Wheel { delta, fine } => {
+                    let mult = if delta > 0.0 {
+                        if fine { 1.05 } else { 1.18 }
+                    } else if fine {
+                        1.0 / 1.05
+                    } else {
+                        1.0 / 1.18
+                    };
+                    let next_lp = (lp_hz * mult).clamp(500.0, 20000.0);
+                    let _ = this.edit_fx(track, FxEdit::Parameter(fx_id, 5, next_lp));
+                }
+                CurveGesture::Reset => {
+                    let _ = this.edit_fx(track, FxEdit::Parameter(fx_id, 1, 375.0));
+                    let _ = this.edit_fx(track, FxEdit::Parameter(fx_id, 2, 375.0));
+                    let _ = this.edit_fx(track, FxEdit::Parameter(fx_id, 3, 42.0));
+                    let _ = this.edit_fx(track, FxEdit::Parameter(fx_id, 5, 6500.0));
+                }
+                CurveGesture::Commit => {}
+            }
+            cx.notify();
+        }));
+
+    interactive_curve_box(
+        gpui::ElementId::Name(format!("echo-vis-{}", fx_id.0).into()),
+        ds,
+        model,
+        on_gesture,
+    )
+}
+
+/// Visualizador interactivo de envolvente Pre-Delay + Decay / Freeze estilo Ableton Reverb.
+fn render_reverb_visualizer(
+    ds: &DesignSystem,
+    track: TrackId,
+    fx_id: FxId,
+    freeze: bool,
+    predelay_ms: f32,
+    decay_s: f32,
+    size_pct: f32,
+    mix_pct: f32,
+    cx: &mut Context<DawApp>,
+) -> impl IntoElement {
+    let span_s = (decay_s * 1.25).clamp(1.0, 22.0);
+    let pre_x = ((predelay_ms * 0.001) / span_s).clamp(0.0, 0.25);
+    let wet_h = (0.25 + (mix_pct / 100.0) * 0.7).clamp(0.2, 0.95);
+
+    let mut env = vec![(0.0, 0.0), (0.0, 0.95), (0.006, 0.0), (pre_x, 0.0)];
+    for i in 0..=48 {
+        let t_frac = i as f32 / 48.0;
+        let x = pre_x + t_frac * (1.0 - pre_x);
+        let t_sec = t_frac * (span_s - predelay_ms * 0.001).max(0.1);
+        let y = if freeze {
+            wet_h * 0.86
+        } else {
+            // Curva exponencial RT60 (-60 dB en decay_s)
+            let lin = 10.0_f32.powf(-3.0 * t_sec / decay_s.max(0.2));
+            (wet_h * lin.powf(0.45)).clamp(0.0, 0.95)
+        };
+        env.push((x, y));
+    }
+
+    let decay_norm = ((decay_s / 0.2).ln() / (20.0_f32 / 0.2).ln()).clamp(0.0, 1.0);
+    let mix_norm = (mix_pct / 100.0).clamp(0.0, 1.0);
+    let color = if freeze { 0x38bdf8 } else { ds.cyan };
+
+    let model = CurveModel {
+        grid_x: vec![0.25, 0.5, 0.75],
+        grid_y: vec![0.33, 0.66],
+        curves: vec![CurvePath {
+            points: env,
+            color,
+            stroke_px: 2.0,
+            fill_alpha: if freeze { 44 } else { 30 },
+        }],
+        anchors: vec![CurveAnchor {
+            x: decay_norm,
+            y: mix_norm,
+            stem: false,
+            crosshair: true,
+            color: if freeze { 0x38bdf8 } else { ds.accent },
+        }],
+        header: if freeze {
+            "REVERB · FREEZE ∞".into()
+        } else {
+            "REVERB · ESPACIO".into()
+        },
+        readout: format!("Pre {predelay_ms:.0} ms · Decay {decay_s:.1}s · Mix {mix_pct:.0}%")
+            .into(),
+        x_labels: vec![
+            "0".into(),
+            format!("{:.1}s", span_s * 0.25).into(),
+            format!("{:.1}s", span_s * 0.5).into(),
+            format!("{:.1}s", span_s * 0.75).into(),
+            format!("{:.1}s", span_s).into(),
+        ],
+        height_px: 112.0,
+        ..Default::default()
+    };
+
+    let on_gesture: GestureHandler =
+        Rc::new(cx.listener(move |this, gesture: &CurveGesture, _, cx| {
+            match *gesture {
+                CurveGesture::Move { x, y } => {
+                    let next_decay = (0.2 * 100.0_f32.powf(x.clamp(0.0, 1.0))).clamp(0.2, 20.0);
+                    let next_mix = (y.clamp(0.0, 1.0) * 100.0).clamp(0.0, 100.0);
+                    let _ = this.edit_fx(track, FxEdit::Parameter(fx_id, 2, next_decay));
+                    let _ = this.edit_fx(track, FxEdit::Parameter(fx_id, 8, next_mix));
+                }
+                CurveGesture::Wheel { delta, fine } => {
+                    let step = if fine { 2.0 } else { 6.0 };
+                    let next_size = (size_pct + delta.signum() * step).clamp(10.0, 100.0);
+                    let _ = this.edit_fx(track, FxEdit::Parameter(fx_id, 3, next_size));
+                }
+                CurveGesture::Reset => {
+                    let _ = this.edit_fx(track, FxEdit::Parameter(fx_id, 2, 2.4));
+                    let _ = this.edit_fx(track, FxEdit::Parameter(fx_id, 3, 65.0));
+                    let _ = this.edit_fx(track, FxEdit::Parameter(fx_id, 8, 32.0));
+                }
+                CurveGesture::Commit => {}
+            }
+            cx.notify();
+        }));
+
+    interactive_curve_box(
+        gpui::ElementId::Name(format!("reverb-vis-{}", fx_id.0).into()),
         ds,
         model,
         on_gesture,

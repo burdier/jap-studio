@@ -2,7 +2,10 @@
 use super::*;
 use crate::{
     PrimitiveInfo,
-    primitives::{amplitude::Volume, compressor::Compressor, filter::Filter, limiter::Limiter},
+    primitives::{
+        amplitude::Volume, compressor::Compressor, echo::Echo, filter::Filter, limiter::Limiter,
+        reverb::Reverb,
+    },
 };
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeKind {
@@ -10,6 +13,8 @@ pub enum NativeKind {
     Filter,
     Compressor,
     Limiter,
+    Echo,
+    Reverb,
 }
 #[derive(Debug, Clone)]
 pub struct AudioNode {
@@ -24,6 +29,8 @@ impl AudioNode {
             NativeKind::Filter => Filter::INFO,
             NativeKind::Compressor => Compressor::INFO,
             NativeKind::Limiter => Limiter::INFO,
+            NativeKind::Echo => Echo::INFO,
+            NativeKind::Reverb => Reverb::INFO,
         }
     }
 }
@@ -38,6 +45,8 @@ pub(super) fn parse_node(
         "elevate.filter.svf" if version == 2 => NativeKind::Filter,
         "elevate.dynamics.compressor" if version == 2 => NativeKind::Compressor,
         "elevate.dynamics.limiter" if version == 2 => NativeKind::Limiter,
+        "elevate.time.echo" if version == 2 => NativeKind::Echo,
+        "elevate.space.reverb" if version == 2 => NativeKind::Reverb,
         _ => {
             return Err(format!(
                 "{path}.primitive: primitiva desconocida o versión incompatible"

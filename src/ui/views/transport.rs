@@ -107,6 +107,19 @@ impl DawApp {
         } else {
             ds.muted
         };
+        let mon_mode = self.active_monitor_mode();
+        let mon_on = mon_mode != crate::audio::input_monitor::MonitorMode::Off;
+        let mon_peak = self.input_monitor_peak();
+        let mon_label = match mon_mode {
+            crate::audio::input_monitor::MonitorMode::Off => "Mon".to_string(),
+            crate::audio::input_monitor::MonitorMode::In => "Mon IN".to_string(),
+            crate::audio::input_monitor::MonitorMode::Auto => "Mon AUTO".to_string(),
+        };
+        let mon_color = match mon_mode {
+            crate::audio::input_monitor::MonitorMode::In => ds.success,
+            crate::audio::input_monitor::MonitorMode::Auto => ds.warning,
+            crate::audio::input_monitor::MonitorMode::Off => ds.muted,
+        };
         let btn_h = (ds.transport_btn_size - 2.0).max(22.0);
         let midi_color = if self.midi_capture.has_notes() {
             ds.cyan
@@ -212,6 +225,52 @@ impl DawApp {
                         MouseButton::Right,
                         cx.listener(|this, _, _, cx| {
                             this.toggle_audio_record_stereo();
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    ),
+            )
+            .child(
+                capsule_toggle(ds, mon_label, mon_on, mon_color, btn_h)
+                    .id("transport-input-monitor")
+                    .w(px(74.0))
+                    .font_family("monospace")
+                    .relative()
+                    .overflow_hidden()
+                    .tooltip(|window, cx| {
+                        Tooltip::new(
+                            "Monitoreo en vivo (sin grabar) con FX de la pista · Clic: In/Off · Clic derecho: Off/In/Auto",
+                        )
+                        .build(window, cx)
+                    })
+                    .when(mon_on, |btn| {
+                        let meter_w = (mon_peak.clamp(0.0, 1.0) * 74.0).round();
+                        btn.child(
+                            div()
+                                .absolute()
+                                .left_0()
+                                .bottom_0()
+                                .h(px(2.5))
+                                .w(px(meter_w))
+                                .bg(rgb(if mon_peak > 0.92 {
+                                    ds.danger
+                                } else {
+                                    mon_color
+                                })),
+                        )
+                    })
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, cx| {
+                            this.toggle_input_monitor();
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    )
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(|this, _, _, cx| {
+                            this.cycle_track_monitor(None);
                             cx.stop_propagation();
                             cx.notify();
                         }),

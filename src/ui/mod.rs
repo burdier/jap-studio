@@ -101,6 +101,7 @@ struct DawApp {
     recording_waiting_count_in: bool,
     audio_recorder: Option<audio_record::ActiveAudioRecording>,
     audio_record_stereo: bool,
+    input_monitor: Option<audio_record::ActiveInputMonitor>,
     instrument: Piano,
     piano_instances: HashMap<elevate::musical::model::InstrumentId, Piano>,
     sampler: crate::instruments::sampler::Sampler,

@@ -524,6 +524,15 @@ impl DawApp {
             "record" | "rec" => self.toggle_midi_record(),
             "rec.audio" | "mic" => self.toggle_audio_record(None),
             "rec.stereo" => self.toggle_audio_record_stereo(),
+            "mon" | "monitor" => self.toggle_input_monitor(),
+            "mon.auto" => self.set_track_monitor_mode(
+                None,
+                crate::audio::input_monitor::MonitorMode::Auto,
+            ),
+            "mon.off" => self.set_track_monitor_mode(
+                None,
+                crate::audio::input_monitor::MonitorMode::Off,
+            ),
             "capture" | "dump" => self.capture_midi_to_track(),
             "materialize" => self.materialize_midi_selection(),
             "bounce" => self.bounce_midi_to_audio(),

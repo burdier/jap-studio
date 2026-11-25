@@ -3,7 +3,8 @@ use super::Device;
 use crate::{
     ComponentError, ParameterId, ProcessSpec, StereoFrame,
     primitives::{
-        Primitive, amplitude::Volume, compressor::Compressor, filter::Filter, limiter::Limiter,
+        Primitive, amplitude::Volume, compressor::Compressor, echo::Echo, filter::Filter,
+        limiter::Limiter, reverb::Reverb,
     },
     scripting::audio_components::{AudioComponent, NativeKind},
 };
@@ -30,6 +31,8 @@ impl AudioComponentDevice {
                 NativeKind::Filter => Box::new(Filter::new(spec)),
                 NativeKind::Compressor => Box::new(Compressor::new(spec)),
                 NativeKind::Limiter => Box::new(Limiter::new(spec)),
+                NativeKind::Echo => Box::new(Echo::new(spec)),
+                NativeKind::Reverb => Box::new(Reverb::new(spec)),
             };
             for (id, value) in node.values.iter().enumerate() {
                 primitive.set_parameter(ParameterId(id as u32), *value)?;

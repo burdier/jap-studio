@@ -119,6 +119,7 @@ impl DawApp {
             recording_waiting_count_in: false,
             audio_recorder: None,
             audio_record_stereo: false,
+            input_monitor: None,
             instrument,
             piano_instances: Default::default(),
             controller: ComputerKeyboard::default(),

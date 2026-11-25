@@ -1,13 +1,23 @@
 //! Grabación de audio real en pistas del Arrangement: coordina `AudioRecorder`,
 //! pre-cuenta con el metrónomo, transporte e inserción del clip WAV resultante.
 use super::DawApp;
-use crate::audio::{AudioClip, AudioFile, recorder::AudioRecorder};
-use elevate::musical::track::{TrackId, TrackKind};
+use crate::audio::{
+    AudioClip, AudioFile,
+    input_monitor::{InputMonitor, MonitorMode},
+    recorder::AudioRecorder,
+};
+use elevate::musical::track::{TrackId, TrackKind, effective_mix};
 use std::{
     path::PathBuf,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
+
+pub(super) struct ActiveInputMonitor {
+    pub monitor: InputMonitor,
+    pub track_id: TrackId,
+    pub mode: MonitorMode,
+}
 
 pub(super) struct ActiveAudioRecording {
     pub recorder: AudioRecorder,
@@ -29,14 +39,160 @@ impl DawApp {
 
     pub(in crate::ui) fn toggle_audio_record_stereo(&mut self) {
         self.audio_record_stereo = !self.audio_record_stereo;
+        if let Some(mon) = &self.input_monitor {
+            mon.monitor.set_stereo(self.audio_record_stereo);
+        }
         self.status_message = format!(
-            "Grabación de audio: modo {}",
+            "Entrada de audio: modo {}",
             if self.audio_record_stereo {
                 "Estéreo (canales L+R)"
             } else {
                 "Mono centrado (canal de entrada)"
             }
         );
+    }
+
+    pub(in crate::ui) fn track_monitor_mode(&self, track_id: TrackId) -> MonitorMode {
+        self.input_monitor
+            .as_ref()
+            .filter(|m| m.track_id == track_id)
+            .map_or(MonitorMode::Off, |m| m.mode)
+    }
+
+    pub(in crate::ui) fn active_monitor_mode(&self) -> MonitorMode {
+        self.input_monitor
+            .as_ref()
+            .map_or(MonitorMode::Off, |m| m.mode)
+    }
+
+    pub(in crate::ui) fn input_monitor_peak(&self) -> f32 {
+        self.input_monitor
+            .as_ref()
+            .map_or(0.0, |m| m.monitor.input_peak().max(m.monitor.output_peak()))
+    }
+
+    pub(in crate::ui) fn toggle_input_monitor(&mut self) {
+        let current = self.active_monitor_mode();
+        if current == MonitorMode::Off {
+            self.set_track_monitor_mode(None, MonitorMode::In);
+        } else {
+            self.set_track_monitor_mode(None, MonitorMode::Off);
+        }
+    }
+
+    pub(in crate::ui) fn cycle_track_monitor(&mut self, track_index: Option<usize>) {
+        let target = track_index.unwrap_or(self.cursor_row);
+        let current = self
+            .tracks
+            .get(target)
+            .map_or(MonitorMode::Off, |t| self.track_monitor_mode(t.id));
+        self.set_track_monitor_mode(Some(target), current.next());
+    }
+
+    pub(in crate::ui) fn set_track_monitor_mode(
+        &mut self,
+        track_index: Option<usize>,
+        mode: MonitorMode,
+    ) {
+        if mode == MonitorMode::Off {
+            if self.input_monitor.take().is_some() {
+                self.status_message = "🎧 Monitoreo de entrada desactivado".into();
+            }
+            return;
+        }
+        let Some(target) = self.resolve_audio_record_track(track_index) else {
+            self.status_message = "Selecciona una pista de audio para monitorear".into();
+            return;
+        };
+        let track_id = self.tracks[target].id;
+        let track_name = self.tracks[target].name.to_string();
+        self.sync_vst_effects();
+        let rack = self.effect_rack(target);
+        let fx_gain = self.own_track_fx_gain(target);
+        let mix = effective_mix(&self.tracks, &self.track_levels, &self.track_pans, target);
+
+        if let Some(active) = &mut self.input_monitor {
+            active.track_id = track_id;
+            active.mode = mode;
+            let device_name = active.monitor.input_device_name.clone();
+            self.sync_input_monitor();
+            let mode_txt = match mode {
+                MonitorMode::In => "IN (siempre activo con FX)",
+                MonitorMode::Auto => "AUTO (activo en Stop / Grabación)",
+                MonitorMode::Off => "OFF",
+            };
+            self.status_message =
+                format!("🎧 Monitoreo {mode_txt} en «{track_name}» · {device_name}");
+            return;
+        }
+
+        match InputMonitor::start(
+            &self.settings.audio.saved,
+            self.audio_record_stereo,
+            rack,
+            fx_gain,
+            mix.gain,
+            mix.pan,
+        ) {
+            Ok(monitor) => {
+                let device_name = monitor.input_device_name.clone();
+                let ch_label = if self.audio_record_stereo {
+                    "Estéreo"
+                } else {
+                    "Mono"
+                };
+                self.input_monitor = Some(ActiveInputMonitor {
+                    monitor,
+                    track_id,
+                    mode,
+                });
+                self.sync_input_monitor();
+                let mode_txt = match mode {
+                    MonitorMode::In => "IN (siempre activo con FX)",
+                    MonitorMode::Auto => "AUTO (activo en Stop / Grabación)",
+                    MonitorMode::Off => "OFF",
+                };
+                self.status_message = format!(
+                    "🎧 Monitoreo {mode_txt} en «{track_name}» · {device_name} ({ch_label})"
+                );
+            }
+            Err(error) => {
+                self.status_message = format!("Monitoreo de entrada: {error}");
+            }
+        }
+    }
+
+    pub(in crate::ui) fn sync_input_monitor(&mut self) {
+        let Some(active) = &self.input_monitor else {
+            return;
+        };
+        if active.monitor.failed() {
+            self.input_monitor = None;
+            self.status_message = "La entrada de audio del monitoreo se desconectó".into();
+            return;
+        }
+        let Some(index) = self.tracks.iter().position(|t| t.id == active.track_id) else {
+            self.input_monitor = None;
+            return;
+        };
+        let rack = self.effect_rack(index);
+        let fx_gain = self.own_track_fx_gain(index);
+        let mix = effective_mix(&self.tracks, &self.track_levels, &self.track_pans, index);
+        let playing = self.player.is_some();
+        let recording_this = self
+            .audio_recorder
+            .as_ref()
+            .is_some_and(|r| r.track_id == active.track_id);
+        let should_hear = mix.audible
+            && match active.mode {
+                MonitorMode::Off => false,
+                MonitorMode::In => true,
+                MonitorMode::Auto => !playing || recording_this,
+            };
+        active.monitor.set_fx(rack, fx_gain);
+        active.monitor.set_mix(mix.gain, mix.pan);
+        active.monitor.set_stereo(self.audio_record_stereo);
+        active.monitor.set_active(should_hear);
     }
 
     fn recordings_dir(&self) -> PathBuf {
@@ -171,6 +327,7 @@ impl DawApp {
     }
 
     pub(in crate::ui) fn poll_audio_recording(&mut self) {
+        self.sync_input_monitor();
         if let Some(active) = &self.audio_recorder
             && active.recorder.failed()
         {
