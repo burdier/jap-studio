@@ -59,7 +59,7 @@ mod tests {
             palette.results().len(),
             catalog::entries().len() + palette.components.len() + palette.tools.len()
         );
-        palette.set_category(Some(EntryKind::Action));
+        palette.set_category(crate::ui::palette::PaletteCategory::Action);
         for key in "acentuacion".chars() {
             palette.handle_key(&key.to_string(), true);
         }
@@ -71,9 +71,9 @@ mod tests {
             chosen.action,
             CatalogAction::Invoke("midi.tool user.accent".into())
         );
-        palette.set_category(Some(EntryKind::Instrument));
+        palette.set_category(crate::ui::palette::PaletteCategory::Instrument);
         assert!(palette.results().is_empty());
-        palette.set_category(Some(EntryKind::Action));
+        palette.set_category(crate::ui::palette::PaletteCategory::Action);
         palette.replace_tools(vec![]);
         assert!(palette.results().is_empty());
         palette.open_for_track(0);
@@ -81,6 +81,18 @@ mod tests {
             palette.results().len(),
             catalog::entries().len() + palette.components.len()
         );
+        palette.set_category(crate::ui::palette::PaletteCategory::Hey);
+        assert!(
+            palette
+                .results()
+                .iter()
+                .all(|e| e.plugin.is_none() && !e.is_tool)
+        );
+        assert!(palette.results().iter().any(|e| e.name == "Hay Comp"));
+        assert!(palette.results().iter().any(|e| e.name == "Hay Echo"));
+        assert!(palette.results().iter().any(|e| e.name == "Hay Reverb"));
+        assert!(palette.results().iter().any(|e| e.name == "Hay Sampler"));
+        assert!(!palette.results().iter().any(|e| e.id == "component.serial"));
     }
 
     #[test]

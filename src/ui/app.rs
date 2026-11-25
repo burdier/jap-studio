@@ -80,6 +80,7 @@ impl DawApp {
         let explorer = super::explorer_host::ExplorerDock::new(&ds, cx);
         let fx = super::fx::FxDock::new((&ds).into(), cx);
         let lua_tools = super::lua_tools::LuaTools::new();
+        let lua_components = super::lua_components::LuaComponents::new();
         let weave_rule = super::weave::load_from_env();
         let initial_status = match &weave_rule {
             Ok(Some(_)) => "Tejer: regla Lua preparada".into(),
@@ -88,6 +89,13 @@ impl DawApp {
         };
         let mut palette = Palette::new();
         palette.replace_tools(elevate::catalog::tools::entries(&lua_tools.registry));
+        palette.replace_components(
+            lua_components
+                .registry
+                .values()
+                .map(|c| (c.id.clone(), c.name.clone(), c.description.clone()))
+                .collect(),
+        );
         Self {
             timeline: Timeline::new(ds.timeline_pixels_per_beat),
             pattern_editor: PatternEditor::new(),
@@ -148,7 +156,7 @@ impl DawApp {
             project: super::project::ProjectUi::new(),
             script_task: None,
             lua_tools,
-            lua_components: super::lua_components::LuaComponents::new(),
+            lua_components,
             sampler,
             active_sampler_id: crate::instruments::sampler::SAMPLER_ID,
             sampler_instances: Default::default(),

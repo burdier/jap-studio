@@ -7,7 +7,7 @@ use super::super::{
     },
     design::blend_color,
     icons::render_svg_icon,
-    palette::{Palette, PaletteEntry},
+    palette::{Palette, PaletteCategory, PaletteEntry},
 };
 use elevate::catalog::{CatalogAction, EntryKind};
 use gpui::{
@@ -507,19 +507,20 @@ impl DawApp {
 
     fn render_palette_category_item(
         &self,
-        cat: Option<EntryKind>,
-        active_category: Option<EntryKind>,
+        cat: PaletteCategory,
+        active_category: PaletteCategory,
         cx: &mut Context<Self>,
     ) -> Div {
         let ds = &self.ds;
         let is_active = cat == active_category;
         let cat_color = category_color(ds, cat);
         let (label, icon) = match cat {
-            None => ("Todo", None),
-            Some(EntryKind::Instrument) => ("Instrumentos", Some(ICON_INSTRUMENT)),
-            Some(EntryKind::Component) => ("Efectos FX", Some(ICON_EFFECT)),
-            Some(EntryKind::Primitive) => ("Primitivos", Some(ICON_PRIMITIVE)),
-            Some(EntryKind::Action) => ("Acciones", Some(ICON_ACTION)),
+            PaletteCategory::All => ("Todo", None),
+            PaletteCategory::Hey => ("Hey", Some(ICON_EFFECT)),
+            PaletteCategory::Instrument => ("Instrumentos", Some(ICON_INSTRUMENT)),
+            PaletteCategory::Component => ("Efectos FX", Some(ICON_EFFECT)),
+            PaletteCategory::Primitive => ("Primitivos", Some(ICON_PRIMITIVE)),
+            PaletteCategory::Action => ("Acciones", Some(ICON_ACTION)),
         };
         let bg = if is_active { ds.panel } else { ds.bg };
         let hover = ds.panel_hover;
@@ -616,12 +617,13 @@ fn entry_visuals(
     }
 }
 
-fn category_color(ds: &DesignSystem, kind: Option<EntryKind>) -> u32 {
+fn category_color(ds: &DesignSystem, kind: PaletteCategory) -> u32 {
     match kind {
-        None => ds.accent,
-        Some(EntryKind::Instrument) => ds.accent,
-        Some(EntryKind::Primitive) => ds.cyan,
-        Some(EntryKind::Component) => ds.orange,
-        Some(EntryKind::Action) => ds.success,
+        PaletteCategory::All => ds.accent,
+        PaletteCategory::Hey => ds.cyan,
+        PaletteCategory::Instrument => ds.accent,
+        PaletteCategory::Primitive => ds.cyan,
+        PaletteCategory::Component => ds.orange,
+        PaletteCategory::Action => ds.success,
     }
 }

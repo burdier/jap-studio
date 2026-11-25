@@ -10,11 +10,45 @@ mod plugins;
 mod tools;
 pub(in crate::ui) use entry::PaletteEntry;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::ui) enum PaletteCategory {
+    All,
+    Hey,
+    Instrument,
+    Component,
+    Primitive,
+    Action,
+}
+
+impl PaletteCategory {
+    pub fn matches(self, entry: &PaletteEntry) -> bool {
+        match self {
+            Self::All => true,
+            Self::Hey => {
+                entry.plugin.is_none()
+                    && !entry.is_tool
+                    && (entry.id == "instrument.piano"
+                        || entry.id == "instrument.sampler"
+                        || entry.id.starts_with("hay.")
+                        || entry.id.starts_with("hey.")
+                        || entry
+                            .component_id
+                            .as_deref()
+                            .is_some_and(|cid| cid.starts_with("hay.") || cid.starts_with("hey.")))
+            }
+            Self::Instrument => entry.kind == EntryKind::Instrument,
+            Self::Component => entry.kind == EntryKind::Component,
+            Self::Primitive => entry.kind == EntryKind::Primitive,
+            Self::Action => entry.kind == EntryKind::Action,
+        }
+    }
+}
+
 pub(super) struct Palette {
     open: bool,
     target_track: Option<usize>,
     pub(super) fx_target: Option<super::fx::FxTarget>,
-    category: Option<EntryKind>,
+    category: PaletteCategory,
     query: String,
     selected: usize,
     results: Vec<PaletteEntry>,
@@ -26,12 +60,13 @@ pub(super) struct Palette {
 }
 
 impl Palette {
-    pub const CATEGORIES: [Option<EntryKind>; 5] = [
-        None,
-        Some(EntryKind::Instrument),
-        Some(EntryKind::Primitive),
-        Some(EntryKind::Component),
-        Some(EntryKind::Action),
+    pub const CATEGORIES: [PaletteCategory; 6] = [
+        PaletteCategory::All,
+        PaletteCategory::Hey,
+        PaletteCategory::Instrument,
+        PaletteCategory::Component,
+        PaletteCategory::Primitive,
+        PaletteCategory::Action,
     ];
 
     pub fn new() -> Self {
@@ -39,7 +74,7 @@ impl Palette {
             open: false,
             target_track: None,
             fx_target: None,
-            category: None,
+            category: PaletteCategory::All,
             query: String::new(),
             selected: 0,
             results: catalog::search("").into_iter().map(Into::into).collect(),
@@ -47,14 +82,34 @@ impl Palette {
             tools: Vec::new(),
             components: vec![
                 (
+                    "hay.fx.compressor".into(),
+                    "Hay Comp".into(),
+                    "Compresor estéreo estilo Ableton con Peak/RMS, Soft Knee, Dry/Wet y Sidechain.".into(),
+                ),
+                (
+                    "hay.fx.limiter".into(),
+                    "Hay Limiter".into(),
+                    "Limitador con Lookahead (1.5 / 3.0 / 6.0 ms), Ceiling y medidor GR.".into(),
+                ),
+                (
+                    "hay.fx.echo".into(),
+                    "Hay Echo".into(),
+                    "Delay estéreo / Ping-Pong / Mid-Side estilo Ableton con Tempo Sync, filtro, Drive y Wobble.".into(),
+                ),
+                (
+                    "hay.fx.reverb".into(),
+                    "Hay Reverb".into(),
+                    "Reverb algorítmica estéreo FDN estilo Ableton con Tempo Sync, Pre-Delay, Damping y Freeze.".into(),
+                ),
+                (
                     "hay.fx.filter".into(),
                     "Hay Filter".into(),
-                    "Filtro estéreo LP/HP/BP con frecuencia y resonancia; DSP FunDSP.".into(),
+                    "Filtro estéreo LP/HP/BP y EQ con frecuencia y resonancia.".into(),
                 ),
                 (
                     "hay.fx.double_volume".into(),
                     "Hay Double Volume".into(),
-                    "Dos etapas Volume con una macro de ganancia".into(),
+                    "Dos etapas Volume con una macro de ganancia.".into(),
                 ),
             ],
             scan_needed: false,
@@ -70,11 +125,11 @@ impl Palette {
         self.target_track
     }
 
-    pub fn category(&self) -> Option<EntryKind> {
+    pub fn category(&self) -> PaletteCategory {
         self.category
     }
 
-    pub fn set_category(&mut self, category: Option<EntryKind>) {
+    pub fn set_category(&mut self, category: PaletteCategory) {
         self.category = category;
         self.refresh();
     }
@@ -111,7 +166,7 @@ impl Palette {
         self.scan_needed = true;
         self.target_track = Some(track);
         self.fx_target = None;
-        self.category = None;
+        self.category = PaletteCategory::All;
         self.query.clear();
         self.refresh();
     }
@@ -120,7 +175,7 @@ impl Palette {
         self.open = false;
         self.target_track = None;
         self.fx_target = None;
-        self.category = None;
+        self.category = PaletteCategory::All;
         self.query.clear();
         self.selected = 0;
     }
@@ -182,7 +237,7 @@ impl Palette {
                         PaletteEntry::component(id.clone(), name.clone(), description.clone())
                     }),
             )
-            .filter(|entry| self.category.is_none_or(|kind| entry.kind == kind))
+            .filter(|entry| self.category.matches(entry))
             .collect();
         self.selected = 0;
     }

@@ -214,7 +214,8 @@ impl DawApp {
         if target.track == elevate::musical::track::MASTER_TRACK_ID {
             self.palette.open_for_track(0);
             self.palette.fx_target = Some(target);
-            self.palette.set_category(None);
+            self.palette
+                .set_category(crate::ui::palette::PaletteCategory::All);
             self.fx.master_focus = true;
             self.fx.current = Some(target);
             self.show_fx();
@@ -230,7 +231,8 @@ impl DawApp {
         };
         self.open_palette_for_track(index);
         self.palette.fx_target = Some(target);
-        self.palette.set_category(None);
+        self.palette
+            .set_category(crate::ui::palette::PaletteCategory::All);
         self.fx.current = Some(target);
         self.show_fx();
     }
