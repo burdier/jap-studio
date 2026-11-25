@@ -388,6 +388,7 @@ impl DawApp {
                 | FxEdit::BranchLevel(..)
                 | FxEdit::BranchSolo(..)
                 | FxEdit::Cabinet(..)
+                | FxEdit::Sidechain(..)
         );
         let parameter_change = match &edit {
             FxEdit::Parameter(id, parameter, value) => Some((*id, *parameter, *value)),

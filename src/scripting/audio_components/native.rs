@@ -2,12 +2,14 @@
 use super::*;
 use crate::{
     PrimitiveInfo,
-    primitives::{amplitude::Volume, filter::Filter},
+    primitives::{amplitude::Volume, compressor::Compressor, filter::Filter, limiter::Limiter},
 };
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeKind {
     Volume,
     Filter,
+    Compressor,
+    Limiter,
 }
 #[derive(Debug, Clone)]
 pub struct AudioNode {
@@ -20,6 +22,8 @@ impl AudioNode {
         match self.kind {
             NativeKind::Volume => Volume::INFO,
             NativeKind::Filter => Filter::INFO,
+            NativeKind::Compressor => Compressor::INFO,
+            NativeKind::Limiter => Limiter::INFO,
         }
     }
 }
@@ -32,6 +36,8 @@ pub(super) fn parse_node(
     let kind = match string(row, "primitive")?.as_str() {
         "elevate.amplitude.volume" => NativeKind::Volume,
         "elevate.filter.svf" if version == 2 => NativeKind::Filter,
+        "elevate.dynamics.compressor" if version == 2 => NativeKind::Compressor,
+        "elevate.dynamics.limiter" if version == 2 => NativeKind::Limiter,
         _ => {
             return Err(format!(
                 "{path}.primitive: primitiva desconocida o versión incompatible"

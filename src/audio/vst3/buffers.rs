@@ -65,10 +65,11 @@ impl Buffers {
                     buffers.output_samples.push(samples);
                     buffers.outputs.push(bus);
                 }
-                let active = index == 0 && (direction == 1 || effect);
+                let is_sidechain = effect && direction == 0 && index == 1;
+                let active = (index == 0 && (direction == 1 || effect)) || is_sidechain;
                 let result =
                     unsafe { component.activateBus(0, direction, index, u8::from(active)) };
-                if active && result != kResultOk {
+                if active && !is_sidechain && result != kResultOk {
                     return Err("VST3: no se pudo activar la salida principal".into());
                 }
             }
@@ -92,6 +93,35 @@ impl Buffers {
                 }
             }
             self.inputs[0].silenceFlags = 0;
+        }
+    }
+    pub fn sidechain_input(&mut self, frames: Option<&[[f32; 2]]>, len: usize) {
+        let Some(bus) = self.input_samples.get_mut(1) else {
+            return;
+        };
+        let count = len.min(512);
+        if let Some(sc) = frames {
+            let n = sc.len().min(count);
+            for (i, frame) in sc[..n].iter().enumerate() {
+                if bus.len() == 1 {
+                    bus[0][i] = (frame[0] + frame[1]) * 0.5;
+                } else {
+                    bus[0][i] = frame[0];
+                    bus[1][i] = frame[1];
+                }
+            }
+            for channel in bus.iter_mut() {
+                channel[n..count].fill(0.0);
+            }
+            for channel in bus.iter_mut().skip(2) {
+                channel[..n].fill(0.0);
+            }
+            self.inputs[1].silenceFlags = 0;
+        } else {
+            for channel in bus.iter_mut() {
+                channel[..count].fill(0.0);
+            }
+            self.inputs[1].silenceFlags = u64::MAX;
         }
     }
     pub fn clear_len(&mut self, len: usize) {

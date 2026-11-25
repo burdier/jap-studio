@@ -19,6 +19,37 @@ use std::{
     },
 };
 
+/// Vista de solo lectura de buses ya renderizados para sidechain sin reservas en RT.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct SidechainInputs<'a> {
+    pub drums: Option<&'a [[f32; 2]]>,
+    pub tracks: &'a [(elevate::musical::track::TrackId, Box<[[f32; 2]; 256]>)],
+    pub offset: usize,
+    pub len: usize,
+}
+impl<'a> SidechainInputs<'a> {
+    pub fn resolve(&self, source: elevate::musical::fx::SidechainSource) -> Option<&'a [[f32; 2]]> {
+        let slice = match source {
+            elevate::musical::fx::SidechainSource::Drums => self.drums?,
+            elevate::musical::fx::SidechainSource::Track(id) => self
+                .tracks
+                .iter()
+                .find(|(tid, _)| *tid == id)
+                .map(|(_, buf)| buf.as_slice())?,
+        };
+        let end = (self.offset + self.len).min(slice.len());
+        (self.offset < end).then(|| &slice[self.offset..end])
+    }
+    pub fn subslice(&self, rel_offset: usize, len: usize) -> Self {
+        Self {
+            drums: self.drums,
+            tracks: self.tracks,
+            offset: self.offset + rel_offset,
+            len,
+        }
+    }
+}
+
 pub(crate) struct Effect {
     engine: UnsafeCell<VstEngine>,
     busy: AtomicBool,
@@ -84,6 +115,15 @@ impl Effect {
         time: Option<TransportContext>,
         params: &[(u32, f64)],
     ) {
+        self.process_timed_params_sidechain(frames, time, params, None);
+    }
+    pub fn process_timed_params_sidechain(
+        &self,
+        frames: &mut [[f32; 2]],
+        time: Option<TransportContext>,
+        params: &[(u32, f64)],
+        sidechain: Option<&[[f32; 2]]>,
+    ) {
         if self
             .busy
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
@@ -94,8 +134,8 @@ impl Effect {
             return;
         }
         let engine = unsafe { &mut *self.engine.get() };
-        if time.is_some() || !params.is_empty() {
-            engine.process_effect_timed_params(frames, time, params);
+        if time.is_some() || !params.is_empty() || sidechain.is_some() {
+            engine.process_effect_timed_params_sidechain(frames, time, params, sidechain);
         } else {
             engine.process_effect(frames);
         }
@@ -119,15 +159,21 @@ struct RackStream {
 pub(crate) struct Rack {
     streams: std::sync::Mutex<Vec<std::sync::Weak<RackStream>>>,
     plan: Publication<Arc<Plan>>,
+    has_track_sidechain: AtomicBool,
     pub rate: u32,
 }
 impl Rack {
     pub fn new(plan: Plan, rate: u32) -> Arc<Self> {
+        let has_track_sc = plan.has_track_sidechain();
         Arc::new(Self {
             streams: std::sync::Mutex::new(Vec::new()),
             plan: Publication::new(Arc::new(plan)),
+            has_track_sidechain: AtomicBool::new(has_track_sc),
             rate,
         })
+    }
+    pub fn has_track_sidechain(&self) -> bool {
+        self.has_track_sidechain.load(Ordering::Acquire)
     }
     pub fn latency_samples(&self) -> u64 {
         self.plan.read(|plan| plan.latency_samples())
@@ -149,6 +195,7 @@ impl Rack {
     }
     pub fn publish(&self, plan: Plan) {
         let mut streams = self.streams.lock().unwrap();
+        let has_track_sc = plan.has_track_sidechain();
         let plan = Arc::new(plan);
         streams.retain(|weak| {
             let Some(stream) = weak.upgrade() else {
@@ -164,6 +211,8 @@ impl Rack {
             });
             true
         });
+        self.has_track_sidechain
+            .store(has_track_sc, Ordering::Release);
         self.plan.publish(plan);
     }
     fn subscribe(self: &Arc<Self>, rate: u32) -> Arc<RackStream> {
@@ -216,12 +265,29 @@ impl Routing {
     ) {
         self.process_timed_automated(frames, time, history, None);
     }
+    pub fn has_track_sidechain(&self) -> bool {
+        self.0.read(|stream| {
+            stream
+                .as_ref()
+                .is_some_and(|stream| stream.rack.has_track_sidechain())
+        })
+    }
     pub fn process_timed_automated(
         &self,
         frames: &mut [[f32; 2]],
         time: Option<TransportContext>,
         history: &mut CrossoverHistory,
         automation: Option<(&elevate::musical::track_automation::TrackAutomation, f64)>,
+    ) {
+        self.process_timed_automated_sidechain(frames, time, history, automation, None);
+    }
+    pub fn process_timed_automated_sidechain(
+        &self,
+        frames: &mut [[f32; 2]],
+        time: Option<TransportContext>,
+        history: &mut CrossoverHistory,
+        automation: Option<(&elevate::musical::track_automation::TrackAutomation, f64)>,
+        sidechain: Option<SidechainInputs<'_>>,
     ) {
         self.0.read(|stream| {
             if let Some(stream) = stream {
@@ -234,6 +300,7 @@ impl Routing {
                             history,
                             &current.delays,
                             automation,
+                            sidechain,
                         )
                     });
                 } else {

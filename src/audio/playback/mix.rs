@@ -109,6 +109,7 @@ impl PreparedTrack {
         score: &score::Score,
         delays: &MasterDelays,
         group_input: Option<&[StereoFrame; 256]>,
+        sidechain: Option<super::super::effects::SidechainInputs<'_>>,
         p: TrackRenderParams,
     ) {
         let remaining = self.retirement.remaining();
@@ -195,11 +196,12 @@ impl PreparedTrack {
                 .pan
                 .evaluate(beat)
                 .map(elevate::musical::track_automation::AutomationParam::pan_to_position);
-            self.fx.process_timed_automated(
+            self.fx.process_timed_automated_sidechain(
                 &self.control.fx,
                 bus,
                 Some(p.time),
                 Some((auto, beat)),
+                sidechain,
             );
             (g, pan)
         });
@@ -420,6 +422,8 @@ pub(crate) struct Mix {
     pool: Option<super::pool::AudioPool>,
     group_audio: Vec<Option<Box<[StereoFrame; 256]>>>,
     return_audio: Vec<Option<Box<[StereoFrame; 256]>>>,
+    sidechain_buses: Vec<(TrackId, Box<[StereoFrame; 256]>)>,
+    drum_bus: Box<[StereoFrame; 256]>,
     drums: Option<PreparedDrums>,
     drum_io: Option<(LiveDrums, Producer<DrumPreview>)>,
     pub end: u64,
@@ -644,6 +648,11 @@ impl Mix {
             }
             None => (None, None),
         };
+        let sidechain_buses: Vec<(TrackId, Box<[StereoFrame; 256]>)> = tracks
+            .iter()
+            .map(|t| (t.control.id, Box::new([[0.; 2]; 256])))
+            .collect();
+        let drum_bus = Box::new([[0.; 2]; 256]);
         Ok(Self {
             delays,
             tracks,
@@ -656,6 +665,8 @@ impl Mix {
             pool,
             group_audio,
             return_audio,
+            sidechain_buses,
+            drum_bus,
             drums,
             drum_io,
             end,
@@ -825,6 +836,21 @@ impl Mix {
             bpm: self.timing.bpm,
             peak_decay: self.peak_decay,
         };
+        let len = block.len();
+        self.drum_bus[..len].fill([0.; 2]);
+        let has_drums = if let (Some(drums), Some(drum_block)) = (&mut self.drums, drum_block) {
+            drums.render_block(
+                at,
+                &mut self.drum_bus[..len],
+                drum_block,
+                tail,
+                taps.as_deref_mut(),
+            );
+            true
+        } else {
+            false
+        };
+        let drum_sc: Option<&[StereoFrame]> = has_drums.then_some(&self.drum_bus[..len]);
         let score = &self.score;
         let tracks = &mut self.tracks;
         let leaf_order = &self.leaf_order;
@@ -834,28 +860,102 @@ impl Mix {
         let return_order = &self.return_order;
         let group_audio = &mut self.group_audio;
         let return_audio = &mut self.return_audio;
+        let sidechain_buses = &mut self.sidechain_buses;
         let pool = self.pool.as_ref();
 
+        let copy_bus =
+            |index: usize,
+             tracks: &[PreparedTrack],
+             sidechain_buses: &mut [(TrackId, Box<[StereoFrame; 256]>)]| {
+                let frames = tracks[index].rendered_frames;
+                if frames > 0 {
+                    sidechain_buses[index].1[..frames]
+                        .copy_from_slice(&tracks[index].bus[..frames]);
+                } else {
+                    sidechain_buses[index].1[..len].fill([0.; 2]);
+                }
+            };
+
         self.delays.read(|delays| {
-            // Fase 1a: pistas hoja seguras para paralelo (Audio, VST3, FX, Sampler, RustySynth).
-            if leaf_parallel.len() >= 2
-                && let Some(pool) = pool
+            // Fase 1a: pistas hoja seguras para paralelo; las que NO consumen sidechain de
+            // otra pista se renderizan primero para entregar su bloque actual con latencia 0.
+            let mut leaf_sources = [0usize; MAX_TRACKS];
+            let mut src_count = 0usize;
+            let mut leaf_consumers = [0usize; MAX_TRACKS];
+            let mut cons_count = 0usize;
+            for &index in leaf_parallel {
+                if tracks[index].control.fx.has_track_sidechain() {
+                    leaf_consumers[cons_count] = index;
+                    cons_count += 1;
+                } else {
+                    leaf_sources[src_count] = index;
+                    src_count += 1;
+                }
+            }
+            let src_slice = &leaf_sources[..src_count];
+            let cons_slice = &leaf_consumers[..cons_count];
             {
-                let ptr = SyncTrackPtr(tracks.as_mut_ptr());
-                pool.execute(leaf_parallel.len(), |slot| {
-                    let index = leaf_parallel[slot];
-                    // SAFETY: `leaf_parallel` contiene índices únicos < `tracks.len()`.
-                    let track = unsafe { ptr.get_mut(index) };
-                    track.render_into_bus(index, score, delays, None, params);
-                });
-            } else {
-                for &index in leaf_parallel {
-                    tracks[index].render_into_bus(index, score, delays, None, params);
+                let sc = super::super::effects::SidechainInputs {
+                    drums: drum_sc,
+                    tracks: sidechain_buses.as_slice(),
+                    offset: 0,
+                    len,
+                };
+                if src_slice.len() >= 2
+                    && let Some(pool) = pool
+                {
+                    let ptr = SyncTrackPtr(tracks.as_mut_ptr());
+                    pool.execute(src_slice.len(), |slot| {
+                        let index = src_slice[slot];
+                        // SAFETY: `src_slice` contiene índices únicos < `tracks.len()`.
+                        let track = unsafe { ptr.get_mut(index) };
+                        track.render_into_bus(index, score, delays, None, Some(sc), params);
+                    });
+                } else {
+                    for &index in src_slice {
+                        tracks[index].render_into_bus(index, score, delays, None, Some(sc), params);
+                    }
+                }
+            }
+            for &index in src_slice {
+                copy_bus(index, tracks, sidechain_buses);
+            }
+            if !cons_slice.is_empty() {
+                let sc = super::super::effects::SidechainInputs {
+                    drums: drum_sc,
+                    tracks: sidechain_buses.as_slice(),
+                    offset: 0,
+                    len,
+                };
+                if cons_slice.len() >= 2
+                    && let Some(pool) = pool
+                {
+                    let ptr = SyncTrackPtr(tracks.as_mut_ptr());
+                    pool.execute(cons_slice.len(), |slot| {
+                        let index = cons_slice[slot];
+                        // SAFETY: `cons_slice` contiene índices únicos < `tracks.len()`.
+                        let track = unsafe { ptr.get_mut(index) };
+                        track.render_into_bus(index, score, delays, None, Some(sc), params);
+                    });
+                } else {
+                    for &index in cons_slice {
+                        tracks[index].render_into_bus(index, score, delays, None, Some(sc), params);
+                    }
+                }
+                for &index in cons_slice {
+                    copy_bus(index, tracks, sidechain_buses);
                 }
             }
             // Fase 1b: pistas hoja con motores C con estado compartido global (ej. FluidSynth).
             for &index in leaf_serial {
-                tracks[index].render_into_bus(index, score, delays, None, params);
+                let sc = super::super::effects::SidechainInputs {
+                    drums: drum_sc,
+                    tracks: sidechain_buses.as_slice(),
+                    offset: 0,
+                    len,
+                };
+                tracks[index].render_into_bus(index, score, delays, None, Some(sc), params);
+                copy_bus(index, tracks, sidechain_buses);
             }
             let block_beat =
                 params.time.frame as f64 / f64::from(params.rate) * (params.bpm / 60.0);
@@ -890,27 +990,46 @@ impl Mix {
             }
 
             // Fase 2: buses de grupo (ya recibieron todas sus pistas hijas).
-            if group_order.len() >= 2
-                && let Some(pool) = pool
             {
-                let ptr = SyncTrackPtr(tracks.as_mut_ptr());
-                let group_in: &[Option<Box<[StereoFrame; 256]>>] = group_audio.as_slice();
-                pool.execute(group_order.len(), |slot| {
-                    let index = group_order[slot];
-                    // SAFETY: `group_order` contiene índices únicos < `tracks.len()`.
-                    let track = unsafe { ptr.get_mut(index) };
-                    track.render_into_bus(index, score, delays, group_in[index].as_deref(), params);
-                });
-            } else {
-                for &index in group_order {
-                    tracks[index].render_into_bus(
-                        index,
-                        score,
-                        delays,
-                        group_audio[index].as_deref(),
-                        params,
-                    );
+                let sc = super::super::effects::SidechainInputs {
+                    drums: drum_sc,
+                    tracks: sidechain_buses.as_slice(),
+                    offset: 0,
+                    len,
+                };
+                if group_order.len() >= 2
+                    && let Some(pool) = pool
+                {
+                    let ptr = SyncTrackPtr(tracks.as_mut_ptr());
+                    let group_in: &[Option<Box<[StereoFrame; 256]>>] = group_audio.as_slice();
+                    pool.execute(group_order.len(), |slot| {
+                        let index = group_order[slot];
+                        // SAFETY: `group_order` contiene índices únicos < `tracks.len()`.
+                        let track = unsafe { ptr.get_mut(index) };
+                        track.render_into_bus(
+                            index,
+                            score,
+                            delays,
+                            group_in[index].as_deref(),
+                            Some(sc),
+                            params,
+                        );
+                    });
+                } else {
+                    for &index in group_order {
+                        tracks[index].render_into_bus(
+                            index,
+                            score,
+                            delays,
+                            group_audio[index].as_deref(),
+                            Some(sc),
+                            params,
+                        );
+                    }
                 }
+            }
+            for &index in group_order {
+                copy_bus(index, tracks, sidechain_buses);
             }
             // Suma determinista de grupos al máster en orden fijo.
             for &index in group_order {
@@ -940,27 +1059,46 @@ impl Mix {
             }
 
             // Fase 3: buses Return / Aux (reciben los envíos post-fader de pistas y grupos).
-            if return_order.len() >= 2
-                && let Some(pool) = pool
             {
-                let ptr = SyncTrackPtr(tracks.as_mut_ptr());
-                let ret_in: &[Option<Box<[StereoFrame; 256]>>] = return_audio.as_slice();
-                pool.execute(return_order.len(), |slot| {
-                    let index = return_order[slot];
-                    // SAFETY: `return_order` contiene índices únicos < `tracks.len()`.
-                    let track = unsafe { ptr.get_mut(index) };
-                    track.render_into_bus(index, score, delays, ret_in[index].as_deref(), params);
-                });
-            } else {
-                for &index in return_order {
-                    tracks[index].render_into_bus(
-                        index,
-                        score,
-                        delays,
-                        return_audio[index].as_deref(),
-                        params,
-                    );
+                let sc = super::super::effects::SidechainInputs {
+                    drums: drum_sc,
+                    tracks: sidechain_buses.as_slice(),
+                    offset: 0,
+                    len,
+                };
+                if return_order.len() >= 2
+                    && let Some(pool) = pool
+                {
+                    let ptr = SyncTrackPtr(tracks.as_mut_ptr());
+                    let ret_in: &[Option<Box<[StereoFrame; 256]>>] = return_audio.as_slice();
+                    pool.execute(return_order.len(), |slot| {
+                        let index = return_order[slot];
+                        // SAFETY: `return_order` contiene índices únicos < `tracks.len()`.
+                        let track = unsafe { ptr.get_mut(index) };
+                        track.render_into_bus(
+                            index,
+                            score,
+                            delays,
+                            ret_in[index].as_deref(),
+                            Some(sc),
+                            params,
+                        );
+                    });
+                } else {
+                    for &index in return_order {
+                        tracks[index].render_into_bus(
+                            index,
+                            score,
+                            delays,
+                            return_audio[index].as_deref(),
+                            Some(sc),
+                            params,
+                        );
+                    }
                 }
+            }
+            for &index in return_order {
+                copy_bus(index, tracks, sidechain_buses);
             }
             // Suma determinista de buses Return al máster en orden fijo.
             for &index in return_order {
@@ -988,8 +1126,11 @@ impl Mix {
                 }
             }
         });
-        if let (Some(drums), Some(drum_block)) = (&mut self.drums, drum_block) {
-            drums.render_block(at, block, drum_block, tail, taps);
+        if has_drums {
+            for (sum, frame) in block.iter_mut().zip(self.drum_bus[..len].iter()) {
+                sum[0] += frame[0];
+                sum[1] += frame[1];
+            }
         }
     }
 }

@@ -1,7 +1,9 @@
 use std::fmt;
 
 pub mod amplitude;
+pub mod compressor;
 pub mod filter;
+pub mod limiter;
 
 pub type StereoFrame = [f32; 2];
 
@@ -112,6 +114,18 @@ pub trait Primitive: Send {
     fn set_parameter(&mut self, parameter: ParameterId, value: f32) -> Result<(), PrimitiveError>;
     fn prepare(&mut self, specification: ProcessSpec);
     fn process(&mut self, frames: &mut [StereoFrame]);
+    /// Procesa el bloque entregando una señal auxiliar de sidechain si el nodo la recibe.
+    fn process_sidechain(
+        &mut self,
+        frames: &mut [StereoFrame],
+        _sidechain: Option<&[StereoFrame]>,
+    ) {
+        self.process(frames);
+    }
+    /// Reducción de ganancia actual en dB positivos (para medidores GR de Compresor/Limiter).
+    fn gain_reduction_db(&self) -> f32 {
+        0.0
+    }
     fn reset(&mut self);
     fn is_bypassed(&self) -> bool;
     fn set_bypassed(&mut self, bypassed: bool);

@@ -2,7 +2,9 @@
 use super::Device;
 use crate::{
     ComponentError, ParameterId, ProcessSpec, StereoFrame,
-    primitives::{Primitive, amplitude::Volume, filter::Filter},
+    primitives::{
+        Primitive, amplitude::Volume, compressor::Compressor, filter::Filter, limiter::Limiter,
+    },
     scripting::audio_components::{AudioComponent, NativeKind},
 };
 use std::sync::Arc;
@@ -26,6 +28,8 @@ impl AudioComponentDevice {
             let mut primitive: Box<dyn Primitive> = match node.kind {
                 NativeKind::Volume => Box::new(Volume::new(spec)),
                 NativeKind::Filter => Box::new(Filter::new(spec)),
+                NativeKind::Compressor => Box::new(Compressor::new(spec)),
+                NativeKind::Limiter => Box::new(Limiter::new(spec)),
             };
             for (id, value) in node.values.iter().enumerate() {
                 primitive.set_parameter(ParameterId(id as u32), *value)?;
@@ -52,7 +56,7 @@ impl AudioComponentDevice {
         &self.descriptor
     }
 
-    fn process_chunk(&mut self, frames: &mut [StereoFrame]) {
+    fn process_chunk(&mut self, frames: &mut [StereoFrame], sidechain: Option<&[StereoFrame]>) {
         let count = self.processors.len();
         self.buffers[count][..frames.len()].copy_from_slice(frames);
         for &node in &self.descriptor.order {
@@ -67,7 +71,7 @@ impl AudioComponentDevice {
                     out[1] += input[1];
                 }
             }
-            self.processors[node].process(scratch);
+            self.processors[node].process_sidechain(scratch, sidechain);
             self.buffers[node][..frames.len()].copy_from_slice(scratch);
         }
         frames.fill([0.0; 2]);
@@ -77,6 +81,32 @@ impl AudioComponentDevice {
                 out[1] += input[1];
             }
         }
+    }
+
+    pub fn process_sidechain(
+        &mut self,
+        frames: &mut [StereoFrame],
+        sidechain: Option<&[StereoFrame]>,
+    ) {
+        if self.bypassed {
+            return;
+        }
+        let mut offset = 0;
+        while offset < frames.len() {
+            let len = (frames.len() - offset).min(BLOCK);
+            let sc_slice = sidechain
+                .filter(|sc| sc.len() >= offset + len)
+                .map(|sc| &sc[offset..offset + len]);
+            self.process_chunk(&mut frames[offset..offset + len], sc_slice);
+            offset += len;
+        }
+    }
+
+    pub fn gain_reduction_db(&self) -> f32 {
+        self.processors
+            .iter()
+            .map(|p| p.gain_reduction_db())
+            .fold(0.0_f32, f32::max)
     }
 }
 
@@ -109,12 +139,7 @@ impl Device for AudioComponentDevice {
     }
 
     fn process(&mut self, frames: &mut [StereoFrame]) {
-        if self.bypassed {
-            return;
-        }
-        for chunk in frames.chunks_mut(BLOCK) {
-            self.process_chunk(chunk);
-        }
+        self.process_sidechain(frames, None);
     }
 
     fn reset(&mut self) {

@@ -26,6 +26,7 @@ pub(crate) struct ComponentEffect {
     >,
     preparation: std::sync::Mutex<()>,
     active_rate: AtomicU32,
+    last_gr_db: AtomicU32,
     controls: Vec<(ParameterId, AtomicU32)>,
     busy: AtomicBool,
 }
@@ -37,6 +38,9 @@ unsafe impl Sync for ComponentEffect {}
 impl ComponentEffect {
     pub fn sample_rate(&self) -> u32 {
         self.active_rate.load(Ordering::Relaxed)
+    }
+    pub fn gain_reduction_db(&self) -> f32 {
+        f32::from_bits(self.last_gr_db.load(Ordering::Relaxed))
     }
     pub fn descriptor(&self) -> &Arc<AudioComponent> {
         &self.descriptor
@@ -61,6 +65,7 @@ impl ComponentEffect {
                 )]),
             ),
             active_rate: AtomicU32::new(rate),
+            last_gr_db: AtomicU32::new(0.0_f32.to_bits()),
             preparation: std::sync::Mutex::new(()),
             controls,
             busy: AtomicBool::new(false),
@@ -114,11 +119,7 @@ impl ComponentEffect {
         Ok(())
     }
 
-    pub fn process(&self, frames: &mut [[f32; 2]], rate: u32) {
-        self.process_automated(frames, rate, None);
-    }
-
-    pub fn process_automated(
+    pub fn process_automated_sidechain(
         &self,
         frames: &mut [[f32; 2]],
         rate: u32,
@@ -127,6 +128,7 @@ impl ComponentEffect {
             elevate::musical::fx::FxId,
             f64,
         )>,
+        sidechain: Option<&[[f32; 2]]>,
     ) {
         if self
             .busy
@@ -154,7 +156,9 @@ impl ComponentEffect {
                 };
                 let _ = processor.set_parameter(*id, effective);
             }
-            processor.process(frames);
+            processor.process_sidechain(frames, sidechain);
+            self.last_gr_db
+                .store(processor.gain_reduction_db().to_bits(), Ordering::Relaxed);
         });
         self.busy.store(false, Ordering::Release);
     }
@@ -176,7 +180,7 @@ mod tests {
         let effect = ComponentEffect::prepare(descriptor, 48000).unwrap();
         effect.set(0, 300.).unwrap();
         let id = elevate::musical::fx::FxId(1);
-        let rack = Rack::new(Plan::Component(id, effect.clone()), 0);
+        let rack = Rack::new(Plan::Component(id, effect.clone(), None), 0);
         let routing = Routing::new();
         routing.set(Some(rack.clone()), 96000);
 
@@ -195,7 +199,7 @@ mod tests {
         cancelled.set(Some(rack.clone()), 44100); // preparación cancelada de otra salida
         effect.set(0, 800.).unwrap();
         native.set_parameter(ParameterId(0), 800.).unwrap();
-        rack.publish(Plan::Component(id, effect.clone()));
+        rack.publish(Plan::Component(id, effect.clone(), None));
         routing.set(Some(rack.clone()), 96000);
         actual.fill([0.1, 0.]);
         expected.clone_from(&actual);
@@ -206,7 +210,7 @@ mod tests {
         // cancelado haya sido el último en registrar una frecuencia en este rack.
         let fresh = ComponentEffect::prepare(effect.descriptor().clone(), 48000).unwrap();
         fresh.set(0, 800.).unwrap();
-        rack.publish(Plan::Component(id, fresh.clone()));
+        rack.publish(Plan::Component(id, fresh.clone(), None));
         native.reset();
         actual.fill([0.1, 0.]);
         expected.clone_from(&actual);

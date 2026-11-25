@@ -24,6 +24,8 @@ impl LuaComponents {
         let registry = [
             include_str!("../../assets/scripts/components/audio/double_volume.lua"),
             include_str!("../../assets/scripts/components/audio/filter.lua"),
+            include_str!("../../assets/scripts/components/audio/compressor.lua"),
+            include_str!("../../assets/scripts/components/audio/limiter.lua"),
         ]
         .into_iter()
         .map(|source| {

@@ -56,6 +56,12 @@ impl BranchMix {
         10f32.powf(f32::from(self.db10) / 200.)
     }
 }
+/// Fuente externa de detección (sidechain) para compresores nativos y efectos VST3.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SidechainSource {
+    Track(super::track::TrackId),
+    Drums,
+}
 #[derive(Debug, Clone, PartialEq)]
 pub struct FxNode {
     pub id: FxId,
@@ -64,6 +70,7 @@ pub struct FxNode {
     pub branch_mix: BranchMix,
     pub cabinet_ir: Option<cabinet::CabinetImpulse>,
     pub vst_preset: Option<VstPreset>,
+    pub sidechain: Option<SidechainSource>,
     pub kind: FxKind,
 }
 impl FxNode {
@@ -75,6 +82,7 @@ impl FxNode {
             branch_mix: BranchMix::default(),
             cabinet_ir: None,
             vst_preset: None,
+            sidechain: None,
             kind,
         }
     }

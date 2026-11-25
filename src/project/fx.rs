@@ -1,6 +1,6 @@
 //! Adaptador de topología FX; Loro conserva cada nodo y su lista de hijos por ID.
 use crate::musical::{
-    fx::{BranchMix, FxChain, FxId, FxKind, FxNode},
+    fx::{BranchMix, FxChain, FxId, FxKind, FxNode, SidechainSource},
     track::{TrackDevice, TrackId},
 };
 use loro::{LoroDoc, LoroMovableList, ToJson};
@@ -93,6 +93,24 @@ fn write_children(
         {
             map.insert("branch_solo", node.branch_mix.solo)
                 .map_err(|e| e.to_string())?;
+        }
+        let sc_encoded = node.sidechain.map(|sc| match sc {
+            SidechainSource::Drums => "drums".to_owned(),
+            SidechainSource::Track(tid) => format!("track:{}", tid.0),
+        });
+        let stored_sc = map.get("sidechain").and_then(|v| {
+            v.get_deep_value()
+                .to_json_value()
+                .as_str()
+                .map(str::to_owned)
+        });
+        if stored_sc != sc_encoded {
+            if let Some(val) = sc_encoded {
+                map.insert("sidechain", val.as_str())
+                    .map_err(|e| e.to_string())?;
+            } else {
+                map.delete("sidechain").map_err(|e| e.to_string())?;
+            }
         }
         let (kind, plugin_type, plugin_id) = match &node.kind {
             FxKind::Effect {
@@ -305,6 +323,23 @@ fn read_children(
                     .transpose()?
                     .unwrap_or(false),
             },
+            sidechain: map
+                .get("sidechain")
+                .and_then(|v| {
+                    v.get_deep_value()
+                        .to_json_value()
+                        .as_str()
+                        .map(str::to_owned)
+                })
+                .and_then(|raw| {
+                    if raw == "drums" {
+                        Some(SidechainSource::Drums)
+                    } else {
+                        raw.strip_prefix("track:")
+                            .and_then(|n| n.parse::<u32>().ok())
+                            .map(|id| SidechainSource::Track(TrackId(id)))
+                    }
+                }),
             kind,
         });
     }

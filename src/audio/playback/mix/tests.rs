@@ -179,7 +179,7 @@ fn filter_changes_only_its_track_and_shared_track_clips_enter_one_bus() {
         vec![clip([0.8, 0.], 0., 12000), clip([0.2, 0.], 0., 12000)],
     );
     filtered.rack = Some(Rack::new(
-        Plan::Component(elevate::musical::fx::FxId(99), filter),
+        Plan::Component(elevate::musical::fx::FxId(99), filter, None),
         0,
     ));
     let mut mix = Mix::prepare(
@@ -953,7 +953,7 @@ fn track_automation_modulates_return_sends_and_lua_fx_parameters() {
     let fx_id = FxId(77);
     let component = ComponentEffect::prepare(descriptor, 48_000).unwrap();
     let mut fx_track = track(3, vec![clip([0.5, 0.5], 0.0, 96_000)]);
-    fx_track.rack = Some(Rack::new(Plan::Component(fx_id, component), 0));
+    fx_track.rack = Some(Rack::new(Plan::Component(fx_id, component, None), 0));
     let mut fx_auto = TrackAutomation::default();
     fx_auto
         .lane_mut(AutomationParam::FxParam {
@@ -1085,5 +1085,91 @@ fn send_return_routes_track_post_fader_through_return_fx_into_master() {
         (tail_dry[0] - 0.25).abs() < 1e-4 && (tail_dry[1] - 0.25).abs() < 1e-4,
         "esperado solo señal seca [0.25, 0.25], obtenido {:?}",
         tail_dry
+    );
+}
+
+#[test]
+fn sidechain_compressor_ducks_target_track_from_source_track() {
+    use elevate::musical::fx::{FxId, SidechainSource};
+
+    let descriptor = Arc::new(
+        elevate::scripting::audio_components::parse(include_str!(
+            "../../../../assets/scripts/components/audio/compressor.lua"
+        ))
+        .unwrap(),
+    );
+    let comp = ComponentEffect::prepare(descriptor, 48_000).unwrap();
+    comp.set(0, -24.0).unwrap(); // Threshold -24 dB
+    comp.set(1, 10.0).unwrap(); // Ratio 10:1
+    comp.set(2, 0.5).unwrap(); // Attack rápido 0.5 ms
+    comp.set(3, 50.0).unwrap(); // Release 50 ms
+    comp.set(4, 0.0).unwrap(); // Hard knee
+    comp.set(6, 100.0).unwrap(); // 100% wet
+
+    // Pista 1 (Kick / Key): señal fuerte en los primeros 4096 frames, luego silencio.
+    let key = track(1, vec![clip([0.9, 0.9], 0.0, 4096)]);
+    // Pista 2 (Bajo): señal suave constante (-26 dB ~ 0.05) por debajo del umbral interno,
+    // así que solo puede comprimirse si recibe realmente el sidechain de la Pista 1.
+    let mut bass = track(2, vec![clip([0.05, 0.05], 0.0, 16_384)]);
+    bass.rack = Some(Rack::new(
+        Plan::Component(
+            FxId(42),
+            comp.clone(),
+            Some(SidechainSource::Track(TrackId(1))),
+        ),
+        0,
+    ));
+
+    let mut mix = Mix::prepare(
+        vec![key, bass],
+        None,
+        48_000,
+        120.0,
+        elevate::musical::time::Meter::default(),
+    )
+    .unwrap();
+
+    // Durante el golpe del Kick (Pista 1), el Bajo (Pista 2) debe atenuarse fuertemente.
+    let mut stems = StemBuffers::from([
+        (Stem::Track(TrackId(1)), [[0.0; 2]; 256]),
+        (Stem::Track(TrackId(2)), [[0.0; 2]; 256]),
+    ]);
+    let mut master = [[0.0; 2]; 256];
+    for block_idx in 0..8 {
+        mix.render_block(
+            block_idx * 256,
+            &mut master,
+            None,
+            None,
+            false,
+            Some(&mut stems),
+        );
+    }
+    let ducked = stems[&Stem::Track(TrackId(2))][255][0].abs();
+    let gr_while_key = comp.gain_reduction_db();
+    assert!(
+        ducked < 0.02,
+        "bajo debía comprimirse por sidechain (< 0.02), obtenido {ducked}"
+    );
+    assert!(
+        gr_while_key > 6.0,
+        "medidor GR debía reportar reducción > 6 dB, obtenido {gr_while_key}"
+    );
+
+    // Cuando la Pista 1 deja de sonar (frame >= 4096), el Bajo se recupera cerca de 0.05.
+    for block_idx in 16..48 {
+        mix.render_block(
+            block_idx * 256,
+            &mut master,
+            None,
+            None,
+            false,
+            Some(&mut stems),
+        );
+    }
+    let recovered = stems[&Stem::Track(TrackId(2))][255][0].abs();
+    assert!(
+        recovered > 0.04,
+        "bajo debía recuperarse sin key (> 0.04), obtenido {recovered}"
     );
 }

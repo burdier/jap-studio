@@ -4,7 +4,7 @@ use super::convolver::{Cabinet, StreamDsp};
 use crate::audio::analyzer::tap::{Tap, TapPoint};
 use crate::audio::vst3::TransportContext;
 use elevate::musical::{
-    fx::{FxChain, FxId, FxKind, FxNode},
+    fx::{FxChain, FxId, FxKind, FxNode, SidechainSource},
     track::TrackDevice,
 };
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -13,9 +13,9 @@ pub(crate) enum Plan {
     Gain(f32),
     Cabinet(FxId, Cabinet, u64),
     BranchGain(FxId, f32),
-    Effect(FxId, Arc<Effect>, u32),
+    Effect(FxId, Arc<Effect>, u32, Option<SidechainSource>),
     Delay(FxId, usize),
-    Component(FxId, Arc<ComponentEffect>),
+    Component(FxId, Arc<ComponentEffect>, Option<SidechainSource>),
     Analyzer(Arc<Tap>),
     Observe(Box<Plan>),
     Serial(Vec<Plan>),
@@ -25,13 +25,32 @@ pub(crate) enum Plan {
 }
 impl Plan {
     pub(crate) fn effect(id: FxId, effect: Arc<Effect>) -> Self {
+        Self::effect_with_sidechain(id, effect, None)
+    }
+    pub(crate) fn effect_with_sidechain(
+        id: FxId,
+        effect: Arc<Effect>,
+        sidechain: Option<SidechainSource>,
+    ) -> Self {
         let latency = effect.editor.latency_samples();
-        Self::Effect(id, effect, latency)
+        Self::Effect(id, effect, latency, sidechain)
+    }
+
+    pub(crate) fn has_track_sidechain(&self) -> bool {
+        match self {
+            Self::Effect(_, _, _, Some(SidechainSource::Track(_)))
+            | Self::Component(_, _, Some(SidechainSource::Track(_))) => true,
+            Self::Observe(plan) => plan.has_track_sidechain(),
+            Self::Serial(nodes) | Self::Parallel(nodes) | Self::Crossover(_, _, nodes) => {
+                nodes.iter().any(Self::has_track_sidechain)
+            }
+            _ => false,
+        }
     }
 
     pub(super) fn latency_samples(&self) -> u64 {
         match self {
-            Self::Effect(_, _, latency) => u64::from(*latency),
+            Self::Effect(_, _, latency, _) => u64::from(*latency),
             Self::Delay(_, samples) => *samples as u64,
             Self::Serial(nodes) => nodes.iter().map(Self::latency_samples).sum(),
             Self::Parallel(nodes) | Self::Crossover(_, _, nodes) => {
@@ -92,7 +111,9 @@ impl Plan {
 
     pub(super) fn failed(&self) -> bool {
         match self {
-            Self::Effect(_, effect, _) => effect.failed.load(std::sync::atomic::Ordering::Relaxed),
+            Self::Effect(_, effect, _, _) => {
+                effect.failed.load(std::sync::atomic::Ordering::Relaxed)
+            }
             Self::Crossover(_, _, nodes) | Self::Parallel(nodes) | Self::Serial(nodes) => {
                 nodes.iter().any(Self::failed)
             }
@@ -102,7 +123,7 @@ impl Plan {
     pub(super) fn tail_frames(&self) -> u64 {
         match self {
             Self::Cabinet(_, _, tail) => *tail,
-            Self::Effect(_, effect, _) => effect.tail_frames,
+            Self::Effect(_, effect, _, _) => effect.tail_frames,
             Self::Serial(nodes) => nodes
                 .iter()
                 .map(Self::tail_frames)
@@ -116,7 +137,7 @@ impl Plan {
     /// Preparación y retiro exclusivamente en el publicador, nunca en process.
     pub fn prepare_rate(&self, rate: u32) {
         match self {
-            Self::Component(_, effect) => effect.prepare_rate(rate),
+            Self::Component(_, effect, _) => effect.prepare_rate(rate),
             Self::Observe(plan) => plan.prepare_rate(rate),
             Self::Crossover(_, _, nodes) | Self::Serial(nodes) | Self::Parallel(nodes) => {
                 for node in nodes {
@@ -135,6 +156,7 @@ impl Plan {
             &mut super::CrossoverHistory::new(),
             &StreamDsp::prepare(self, None, rate),
             None,
+            None,
         );
     }
     pub(super) fn process_timed_automated(
@@ -145,6 +167,7 @@ impl Plan {
         history: &mut super::CrossoverHistory,
         delays: &StreamDsp,
         automation: Option<(&elevate::musical::track_automation::TrackAutomation, f64)>,
+        sidechain: Option<super::SidechainInputs<'_>>,
     ) {
         match self {
             Self::Cabinet(id, _, _) => delays.convolve(*id, frames),
@@ -156,7 +179,7 @@ impl Plan {
                     f[1] *= gain;
                 }
             }
-            Self::Effect(fx_id, effect, _) => {
+            Self::Effect(fx_id, effect, _, sc_src) => {
                 if rate != effect.rate {
                     frames.fill([0.; 2]);
                     return;
@@ -165,17 +188,27 @@ impl Plan {
                 let count = automation.map_or(0, |(auto, beat)| {
                     auto.collect_fx_params(*fx_id, beat, &mut params)
                 });
-                if time.is_some() || count > 0 {
-                    effect.process_timed_params(frames, time, &params[..count]);
+                let sc_frames = sc_src.and_then(|src| sidechain.and_then(|s| s.resolve(src)));
+                if time.is_some() || count > 0 || sc_frames.is_some() {
+                    effect.process_timed_params_sidechain(
+                        frames,
+                        time,
+                        &params[..count],
+                        sc_frames,
+                    );
                 } else {
                     effect.process(frames);
                 }
             }
-            Self::Component(fx_id, effect) => effect.process_automated(
-                frames,
-                rate,
-                automation.map(|(a, beat)| (a, *fx_id, beat)),
-            ),
+            Self::Component(fx_id, effect, sc_src) => {
+                let sc_frames = sc_src.and_then(|src| sidechain.and_then(|s| s.resolve(src)));
+                effect.process_automated_sidechain(
+                    frames,
+                    rate,
+                    automation.map(|(a, beat)| (a, *fx_id, beat)),
+                    sc_frames,
+                );
+            }
             Self::Analyzer(tap) => tap.capture(frames, rate),
             // Las cadenas Utility conservan su salida escalar y su rampa existentes.
             // Evaluar sus puntos de análisis sobre una copia evita aplicar la ganancia
@@ -191,6 +224,7 @@ impl Plan {
                         history,
                         delays,
                         automation,
+                        sidechain.map(|s| s.subslice(index * 512, block.len())),
                     );
                 }
             }
@@ -210,11 +244,14 @@ impl Plan {
                     time,
                     delays,
                     automation,
+                    sidechain,
                 );
             }
             Self::Serial(nodes) => {
                 for node in nodes {
-                    node.process_timed_automated(frames, rate, time, history, delays, automation);
+                    node.process_timed_automated(
+                        frames, rate, time, history, delays, automation, sidechain,
+                    );
                 }
             }
             Self::Parallel(nodes) if nodes.is_empty() => {}
@@ -223,6 +260,7 @@ impl Plan {
                     let mut input = [[0.; 2]; 512];
                     input[..block.len()].copy_from_slice(block);
                     block.fill([0.; 2]);
+                    let sc = sidechain.map(|s| s.subslice(index * 512, block.len()));
                     for node in nodes {
                         let mut branch = input;
                         node.process_timed_automated(
@@ -232,6 +270,7 @@ impl Plan {
                             history,
                             delays,
                             automation,
+                            sc,
                         );
                         for (out, value) in block.iter_mut().zip(branch) {
                             out[0] += value[0];
@@ -340,7 +379,7 @@ pub(crate) fn compile(
                                 .into(),
                         );
                     }
-                    Plan::effect(n.id, effect.clone())
+                    Plan::effect_with_sidechain(n.id, effect.clone(), n.sidechain)
                 }
                 FxKind::Effect {
                     plugin_id: TrackDevice::Hay { catalog_id },
@@ -395,7 +434,7 @@ pub(crate) fn compile(
                     plugin_id: TrackDevice::Hay { .. },
                     ..
                 } if components.contains_key(&n.id) => {
-                    Plan::Component(n.id, components[&n.id].clone())
+                    Plan::Component(n.id, components[&n.id].clone(), n.sidechain)
                 }
                 FxKind::Effect { .. } => {
                     return Err(format!("{}: procesador no disponible", n.name));

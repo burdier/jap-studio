@@ -18,6 +18,7 @@ pub enum FxEdit {
     BranchLevel(FxId, FxId, i16),
     BranchSolo(FxId, FxId),
     Parameter(FxId, u32, f32),
+    Sidechain(FxId, Option<super::SidechainSource>),
     Move(FxId, FxPlacement),
 }
 impl FxChain {
@@ -110,6 +111,14 @@ impl FxChain {
                     }
                     _ => return Err("Parámetro fuera de rango".into()),
                 }
+                Some(id)
+            }
+            FxEdit::Sidechain(id, source) => {
+                let node = next.node_mut(id)?;
+                if !matches!(node.kind, FxKind::Effect { .. }) {
+                    return Err("Solo los efectos admiten entrada de sidechain".into());
+                }
+                node.sidechain = source;
                 Some(id)
             }
         };

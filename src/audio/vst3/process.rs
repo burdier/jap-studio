@@ -80,6 +80,15 @@ impl VstEngine {
         time: Option<TransportContext>,
         params: &[(u32, f64)],
     ) {
+        self.process_effect_timed_params_sidechain(frames, time, params, None);
+    }
+    pub fn process_effect_timed_params_sidechain(
+        &mut self,
+        frames: &mut [[f32; 2]],
+        time: Option<TransportContext>,
+        params: &[(u32, f64)],
+        sidechain: Option<&[[f32; 2]]>,
+    ) {
         if frames.is_empty() {
             return;
         }
@@ -88,8 +97,17 @@ impl VstEngine {
             return;
         }
         for (index, block) in frames.chunks_mut(512).enumerate() {
+            let offset = index * 512;
+            let sc_slice = sidechain.and_then(|sc| {
+                if offset < sc.len() {
+                    Some(&sc[offset..(offset + block.len()).min(sc.len())])
+                } else {
+                    None
+                }
+            });
             self.buffers.input(block);
-            self.render_effect_slice(block, time.map(|time| time.offset(index * 512)), params);
+            self.buffers.sidechain_input(sc_slice, block.len());
+            self.render_effect_slice(block, time.map(|time| time.offset(offset)), params);
             if self.failed {
                 block.fill([0.0; 2]);
             }

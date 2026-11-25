@@ -15,6 +15,9 @@ impl FxGain {
     pub fn tail_frames(&self) -> u64 {
         self.1.tail_frames()
     }
+    pub fn has_track_sidechain(&self) -> bool {
+        self.1.has_track_sidechain()
+    }
     pub fn set(&self, gain: f32) {
         self.0.store(gain.to_bits(), Ordering::Relaxed);
     }
@@ -58,15 +61,29 @@ impl PreparedFxGain {
         time: Option<super::vst3::TransportContext>,
         automation: Option<(&elevate::musical::track_automation::TrackAutomation, f64)>,
     ) {
+        self.process_timed_automated_sidechain(state, frames, time, automation, None);
+    }
+    pub fn process_timed_automated_sidechain(
+        &mut self,
+        state: &FxGain,
+        frames: &mut [[f32; 2]],
+        time: Option<super::vst3::TransportContext>,
+        automation: Option<(&elevate::musical::track_automation::TrackAutomation, f64)>,
+        sidechain: Option<super::effects::SidechainInputs<'_>>,
+    ) {
         let target = state.get();
         if self.target != target {
             self.target = target;
             self.remaining = 256;
             self.step = (target - self.current) / 256.0;
         }
-        state
-            .1
-            .process_timed_automated(frames, time, &mut self.history, automation);
+        state.1.process_timed_automated_sidechain(
+            frames,
+            time,
+            &mut self.history,
+            automation,
+            sidechain,
+        );
         for frame in frames {
             if self.remaining > 0 {
                 self.current += self.step;
