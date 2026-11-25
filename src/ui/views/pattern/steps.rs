@@ -523,6 +523,17 @@ impl DawApp {
             } else {
                 let first_idx = notes.partition_point(|note| note.start.0 < page_start);
                 let mut pending = &notes[first_idx..];
+                let mut note_cursor = first_idx;
+                let live_offset = editor.piece_timing_offset(piece_id, piece.timing_offset);
+                let timing_mode = piece.timing_mode;
+                let swing = editor.session.active_pattern().swing;
+                let swing_shift = if swing > 0 {
+                    (step_ticks * i64::from(swing.min(elevate::musical::drums::DrumPattern::MAX_SWING))
+                        + 50)
+                        / 100
+                } else {
+                    0
+                };
                 div()
                     .flex()
                     .flex_1()
@@ -533,6 +544,19 @@ impl DawApp {
                         let next = pending.partition_point(|note| note.start.0 < at + step_ticks);
                         let (hits, rest) = pending.split_at(next);
                         pending = rest;
+                        let step_note_index = note_cursor;
+                        note_cursor += hits.len();
+                        let timing_delta = hits.first().map_or(0, |note| {
+                            let base = DrumPiece::timing_delta_for(
+                                piece_id,
+                                live_offset,
+                                timing_mode,
+                                note.start.0,
+                                step_note_index,
+                            );
+                            let swing_delta = if step % 2 == 1 { swing_shift } else { 0 };
+                            base + swing_delta
+                        });
                         let lead = playing.and_then(|play| {
                             let dist = (step + total_steps - play) % total_steps;
                             (dist <= 2).then_some(dist as u8)
@@ -544,6 +568,7 @@ impl DawApp {
                             color,
                             cursor == Some(step),
                             lead,
+                            timing_delta,
                             page_start,
                             page_end,
                             visible_steps,
@@ -615,6 +640,7 @@ impl DawApp {
         color: u32,
         selected: bool,
         lead: Option<u8>,
+        timing_delta: i64,
         page_start: i64,
         page_end: i64,
         visible_steps: usize,
@@ -632,10 +658,25 @@ impl DawApp {
         let show_velocity = visible_steps <= 16;
         let is_bar_divider = at > page_start && at % meter.ticks_per_bar().max(1) == 0;
         let aligned = notes.first().is_some_and(|note| note.start.0 == at);
+        let offset_mag = if occupied && timing_delta != 0 {
+            (timing_delta.abs() as f32 / f32::from(DrumPiece::MAX_TIMING_OFFSET)).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let dark_shade = if ds.is_dark() {
+            0x040508
+        } else {
+            blend_color(ds.panel_dark, 0x0f172a, 50)
+        };
         let lead_1 = blend_color(ds.cyan, ds.accent, 45);
         let lead_2 = blend_color(ds.accent, ds.muted, 35);
         let base_surface = if occupied {
-            blend_color(ds.panel_dark, color, if aligned { 24 } else { 14 })
+            let raw = blend_color(ds.panel_dark, color, if aligned { 28 } else { 18 });
+            if offset_mag > 0.0 {
+                blend_color(raw, dark_shade, (offset_mag * 76.0).round() as u32)
+            } else {
+                raw
+            }
         } else {
             blend_color(beat_surface(ds, meter, at), ds.panel_dark, 45)
         };
@@ -649,7 +690,14 @@ impl DawApp {
             Some(0) => ds.cyan,
             Some(1) => blend_color(ds.panel, lead_1, 74),
             Some(2) => blend_color(ds.panel, lead_2, 46),
-            _ if occupied => blend_color(color, ds.text, 28),
+            _ if occupied => {
+                let raw = blend_color(color, ds.text, 28);
+                if offset_mag > 0.0 {
+                    blend_color(raw, dark_shade, (offset_mag * 52.0).round() as u32)
+                } else {
+                    raw
+                }
+            }
             _ => blend_color(ds.border, ds.muted, 24),
         };
         let dot_color = match lead {
@@ -658,7 +706,13 @@ impl DawApp {
             Some(1) => lead_1,
             Some(2) if occupied => blend_color(color, lead_2, 25),
             Some(2) => blend_color(ds.muted, lead_2, 58),
-            _ if occupied => color,
+            _ if occupied => {
+                if offset_mag > 0.0 {
+                    blend_color(color, dark_shade, (offset_mag * 56.0).round() as u32)
+                } else {
+                    color
+                }
+            }
             _ => ds.muted,
         };
         let first_note = notes.first();
@@ -689,11 +743,26 @@ impl DawApp {
             } else {
                 format!("{} ({first_pitch_delta:+} st)", note_name(note.pitch))
             };
+            let timing_txt = if timing_delta != 0 {
+                let ms = (timing_delta as f64 * 60_000.0
+                    / (self.timeline.tempo.bpm() * PPQ as f64))
+                    .round() as i32;
+                format!(" · Offset {ms:+} ms ({timing_delta:+}t)")
+            } else {
+                String::new()
+            };
             format!(
-                "Vel {} · Prob {}% · {} · Rueda: vel · Shift+rueda: prob · Alt+rueda: pitch · Clic der: roll",
-                note.velocity, note.expression.probability, pitch_txt
+                "Vel {} · Prob {}% · {}{} · Rueda: vel · Shift+rueda: prob · Alt+rueda: pitch · Clic der: roll",
+                note.velocity, note.expression.probability, pitch_txt, timing_txt
             )
         });
+        let offset_curtain_w = (offset_mag * 0.78).clamp(0.08, 0.78);
+        let curtain_alpha = (36.0 + offset_mag * 84.0).round() as u32;
+        let curtain_color = if ds.is_dark() {
+            (0x000000 << 8) | curtain_alpha.min(0xff)
+        } else {
+            (0x0f172a << 8) | (curtain_alpha / 2).min(0xff)
+        };
         div()
             .relative()
             .flex_grow(frac)
@@ -722,9 +791,28 @@ impl DawApp {
                     .w_full()
                     .min_w_0()
                     .h(px(31.0))
+                    .overflow_hidden()
                     .bg(rgb(surface))
                     .when(occupied || selected || lead.is_some(), |pad| {
                         pad.border_1().border_color(rgb(border))
+                    })
+                    .when(offset_mag > 0.0, |pad| {
+                        let edge = div()
+                            .absolute()
+                            .top_0()
+                            .bottom_0()
+                            .w(relative(offset_curtain_w))
+                            .bg(rgba(curtain_color));
+                        let edge = if timing_delta > 0 {
+                            edge.left_0()
+                                .border_r_1()
+                                .border_color(rgba((color << 8) | 0x66))
+                        } else {
+                            edge.right_0()
+                                .border_l_1()
+                                .border_color(rgba((color << 8) | 0x66))
+                        };
+                        pad.child(edge)
                     })
                     .child(
                         div()
@@ -842,14 +930,15 @@ impl DawApp {
                     })),
             )
             .children(notes.iter().map(|note| {
-                let rel = ((note.start.0 - at) as f32 / span as f32).clamp(0.05, 0.92);
+                let rel =
+                    ((note.start.0 - at + timing_delta) as f32 / span as f32).clamp(0.05, 0.92);
                 div()
                     .absolute()
                     .bottom(px(6.0))
                     .left(relative(rel))
                     .w(px(2.0))
                     .h(px(5.0))
-                    .bg(rgb(border))
+                    .bg(rgb(if timing_delta != 0 { color } else { border }))
             }))
     }
 }

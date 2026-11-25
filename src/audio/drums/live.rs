@@ -223,7 +223,7 @@ fn apply_piece_timing(
     kit: &DrumKit,
     repeat: bool,
 ) -> Result<elevate::musical::model::Pattern, String> {
-    use elevate::musical::{drums::OffsetMode, time::Tick};
+    use elevate::musical::time::Tick;
     let has_timing = kit.pieces.iter().any(|p| p.timing_offset != 0);
     if !has_timing {
         return Ok(pattern.clone());
@@ -241,30 +241,7 @@ fn apply_piece_timing(
         let idx = counts.entry(piece.id).or_insert(0);
         let note_index = *idx;
         *idx += 1;
-        let offset = i64::from(piece.timing_offset);
-        let delta = match piece.timing_mode {
-            OffsetMode::Fixed => offset,
-            OffsetMode::EachNote => {
-                if note_index % 2 == 1 {
-                    offset
-                } else {
-                    0
-                }
-            }
-            OffsetMode::Random => {
-                let mag = offset.abs();
-                if mag == 0 {
-                    0
-                } else {
-                    let seed = (u64::from(piece.id.0) << 32)
-                        ^ (note.start.0 as u64).wrapping_mul(2_654_435_761)
-                        ^ (note_index as u64).wrapping_mul(1_013_904_223);
-                    let mixed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
-                    let span = (mag * 2 + 1) as u64;
-                    ((mixed >> 16) % span) as i64 - mag
-                }
-            }
-        };
+        let delta = piece.timing_delta(note.start.0, note_index);
         let shifted = if repeat {
             (note.start.0 + delta).rem_euclid(length)
         } else {

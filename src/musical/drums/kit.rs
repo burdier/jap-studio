@@ -40,6 +40,54 @@ impl DrumPiece {
     pub fn base_note(&self) -> u8 {
         self.sampler.get(ROOT) as u8
     }
+
+    /// Calcula el desplazamiento temporal efectivo en ticks de un golpe según el modo
+    /// de timing de la pieza. Compartido entre el motor de audio y el feedback visual.
+    pub fn timing_delta_for(
+        piece_id: InstrumentId,
+        timing_offset: i16,
+        timing_mode: OffsetMode,
+        note_start_tick: i64,
+        note_index: usize,
+    ) -> i64 {
+        if timing_offset == 0 {
+            return 0;
+        }
+        let offset = i64::from(timing_offset);
+        match timing_mode {
+            OffsetMode::Fixed => offset,
+            OffsetMode::EachNote => {
+                if note_index % 2 == 1 {
+                    offset
+                } else {
+                    0
+                }
+            }
+            OffsetMode::Random => {
+                let mag = offset.abs();
+                if mag == 0 {
+                    0
+                } else {
+                    let seed = (u64::from(piece_id.0) << 32)
+                        ^ (note_start_tick as u64).wrapping_mul(2_654_435_761)
+                        ^ (note_index as u64).wrapping_mul(1_013_904_223);
+                    let mixed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+                    let span = (mag * 2 + 1) as u64;
+                    ((mixed >> 16) % span) as i64 - mag
+                }
+            }
+        }
+    }
+
+    pub fn timing_delta(&self, note_start_tick: i64, note_index: usize) -> i64 {
+        Self::timing_delta_for(
+            self.id,
+            self.timing_offset,
+            self.timing_mode,
+            note_start_tick,
+            note_index,
+        )
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
