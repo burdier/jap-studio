@@ -9,6 +9,10 @@ impl DawApp {
             .as_ref()
             .map(|(_, label)| format!("MIDI Learn · {label}"))
             .unwrap_or_else(|| "MIDI Learn último VST3".into());
+        let auto_label = last_touched
+            .as_ref()
+            .map(|(_, label)| format!("⚡ Automatizar · {label}"))
+            .unwrap_or_else(|| "⚡ Automatizar último VST3".into());
         div()
             .flex_1()
             .flex()
@@ -50,6 +54,15 @@ impl DawApp {
                             MouseButton::Left,
                             cx.listener(|this, _, _, cx| {
                                 this.arm_last_touched_vst_learn();
+                                cx.notify();
+                            }),
+                        ),
+                    )
+                    .child(
+                        pill_button(ds, auto_label, false, ds.accent).on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|this, _, _, cx| {
+                                this.automate_last_touched_vst();
                                 cx.notify();
                             }),
                         ),

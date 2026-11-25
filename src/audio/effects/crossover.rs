@@ -75,6 +75,7 @@ impl CrossoverHistory {
         rate: u32,
         time: Option<TransportContext>,
         delays: &super::convolver::StreamDsp,
+        automation: Option<(&elevate::musical::track_automation::TrackAutomation, f64)>,
     ) {
         let g = (std::f64::consts::PI * (f64::from(hz) / f64::from(rate.max(1))).min(0.49)).tan();
         let a = g / (1. + g);
@@ -100,8 +101,22 @@ impl CrossoverHistory {
             let original_low = low;
             let original_high = high;
             let time = time.map(|t| t.offset(n * 128));
-            low_fx.process_timed(&mut low[..block.len()], rate, time, self, delays);
-            high_fx.process_timed(&mut high[..block.len()], rate, time, self, delays);
+            low_fx.process_timed_automated(
+                &mut low[..block.len()],
+                rate,
+                time,
+                self,
+                delays,
+                automation,
+            );
+            high_fx.process_timed_automated(
+                &mut high[..block.len()],
+                rate,
+                time,
+                self,
+                delays,
+                automation,
+            );
             // Sumar solo los cambios conserva exactamente el transitorio seco con FX neutros.
             for (i, frame) in block.iter_mut().enumerate() {
                 for (gain, target) in mix.iter_mut().zip(target) {

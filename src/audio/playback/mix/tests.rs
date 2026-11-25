@@ -178,7 +178,10 @@ fn filter_changes_only_its_track_and_shared_track_clips_enter_one_bus() {
         1,
         vec![clip([0.8, 0.], 0., 12000), clip([0.2, 0.], 0., 12000)],
     );
-    filtered.rack = Some(Rack::new(Plan::Component(filter), 0));
+    filtered.rack = Some(Rack::new(
+        Plan::Component(elevate::musical::fx::FxId(99), filter),
+        0,
+    ));
     let mut mix = Mix::prepare(
         vec![filtered, track(2, vec![clip([0., 0.4], 0., 12000)])],
         None,
@@ -895,6 +898,98 @@ fn track_automation_ramps_volume_and_pan_across_blocks() {
         (tail_end[1] - 0.5).abs() < 0.02,
         "canal R debe estar cerca de 0.5 con volumen 0 dB y pan R: {:?}",
         tail_end
+    );
+}
+
+#[test]
+fn track_automation_modulates_return_sends_and_lua_fx_parameters() {
+    use elevate::musical::{
+        fx::FxId,
+        track_automation::{AutomationParam, TrackAutomation},
+    };
+    // 1. Envío Return automatizado desde 0% estático: beat 0 -> 0.0, beat 2 -> 1.0.
+    let mut source = track(1, vec![clip([0.4, 0.4], 0.0, 96_000)]);
+    let mut auto = TrackAutomation::default();
+    auto.lane_mut(AutomationParam::Send(TrackId(2)))
+        .upsert(0.0, 0.0);
+    auto.lane_mut(AutomationParam::Send(TrackId(2)))
+        .upsert(2.0, 1.0);
+    source.automation = auto;
+
+    let mut ret = track(2, vec![]);
+    ret.is_return = true;
+    ret.rack = Some(Rack::new(Plan::Gain(0.5), 0));
+
+    let mut mix = Mix::prepare(
+        vec![source, ret],
+        None,
+        48_000,
+        120.0,
+        elevate::musical::time::Meter::default(),
+    )
+    .unwrap();
+    let mut start = vec![[0.0; 2]; 512];
+    mix.render(0, &mut start);
+    assert!(
+        (start[511][0] - 0.4).abs() < 0.02,
+        "en beat 0 el envío automatizado es 0%: {:?}",
+        start[511]
+    );
+    let mut end = vec![[0.0; 2]; 512];
+    mix.render(48_000, &mut end);
+    assert!(
+        (end[511][0] - 0.6).abs() < 0.02,
+        "en beat 2 el envío es 100% hacia Return 0.5x => 0.4 + 0.2 = 0.6: {:?}",
+        end[511]
+    );
+
+    // 2. Parámetro de componente Lua/Hay automatizado en el rack FX.
+    let descriptor = Arc::new(
+        elevate::scripting::audio_components::parse(include_str!(
+            "../../../../assets/scripts/components/audio/double_volume.lua"
+        ))
+        .unwrap(),
+    );
+    let fx_id = FxId(77);
+    let component = ComponentEffect::prepare(descriptor, 48_000).unwrap();
+    let mut fx_track = track(3, vec![clip([0.5, 0.5], 0.0, 96_000)]);
+    fx_track.rack = Some(Rack::new(Plan::Component(fx_id, component), 0));
+    let mut fx_auto = TrackAutomation::default();
+    fx_auto
+        .lane_mut(AutomationParam::FxParam {
+            fx: fx_id,
+            param: 0,
+        })
+        .upsert(0.0, 0.0);
+    fx_auto
+        .lane_mut(AutomationParam::FxParam {
+            fx: fx_id,
+            param: 0,
+        })
+        .upsert(2.0, 0.5);
+    fx_track.automation = fx_auto;
+
+    let mut fx_mix = Mix::prepare(
+        vec![fx_track],
+        None,
+        48_000,
+        120.0,
+        elevate::musical::time::Meter::default(),
+    )
+    .unwrap();
+    let mut fx_start = vec![[0.0; 2]; 2048];
+    fx_mix.render(0, &mut fx_start);
+    assert!(
+        fx_start[2047][0].abs() < 0.05,
+        "en beat 0 el parámetro FX automatizado atenúa a ~0: {:?}",
+        fx_start[2047]
+    );
+    let mut fx_end = vec![[0.0; 2]; 2048];
+    fx_mix.render(48_000, &mut fx_end);
+    assert!(
+        fx_end[2047][0] > 0.35,
+        "en beat 2 el parámetro FX automatizado sube la ganancia: {:?}",
+        fx_end[2047]
     );
 }
 

@@ -35,6 +35,15 @@ impl DawApp {
         let region_tool = self.timeline.region_tool;
         let auto_mode = self.timeline.automation_mode;
         let auto_param = self.timeline.automation_param;
+        let auto_label = self.automation_param_label(auto_param);
+        let auto_candidates = self.available_automation_params(self.cursor_row);
+        let next_auto_label = auto_candidates
+            .iter()
+            .position(|(p, _)| *p == auto_param)
+            .map(|idx| auto_candidates[(idx + 1) % auto_candidates.len()].1.clone())
+            .or_else(|| auto_candidates.first().map(|(_, l)| l.clone()))
+            .unwrap_or_else(|| auto_param.toggle().short_label());
+        let last_vst_auto = self.last_touched_vst_automation_preview();
         let selected_track_has_auto = self
             .tracks
             .get(self.cursor_row)
@@ -42,6 +51,9 @@ impl DawApp {
         let auto_color = match auto_param {
             elevate::musical::track_automation::AutomationParam::Volume => ds.warning,
             elevate::musical::track_automation::AutomationParam::Pan => ds.cyan,
+            elevate::musical::track_automation::AutomationParam::Send(_) => ds.success,
+            elevate::musical::track_automation::AutomationParam::FxParam { .. } => ds.accent,
+            elevate::musical::track_automation::AutomationParam::InstrumentParam(_) => 0xa78bfa,
         };
         let header_bg = ds.arrangement_header();
 
@@ -367,7 +379,7 @@ impl DawApp {
                                         .build(window, cx)
                                     })
                                     .child(if auto_mode {
-                                        format!("⚡ {}", auto_param.short_label())
+                                        format!("⚡ {auto_label}")
                                     } else {
                                         "⚡ Auto".into()
                                     })
@@ -382,15 +394,17 @@ impl DawApp {
                                     .on_mouse_down(
                                         MouseButton::Right,
                                         cx.listener(|this, _, _, cx| {
-                                            this.set_automation_param(
-                                                this.timeline.automation_param.toggle(),
-                                            );
+                                            this.cycle_automation_param();
                                             cx.stop_propagation();
                                             cx.notify();
                                         }),
                                     ),
                             )
                             .when(auto_mode, |row| {
+                                let tip_next = format!(
+                                    "Cambiar parámetro de automatización ({} disponibles · siguiente: {next_auto_label})",
+                                    auto_candidates.len()
+                                );
                                 row.child(
                                     div()
                                         .id("arrangement-automation-param")
@@ -404,24 +418,50 @@ impl DawApp {
                                         .text_size(px(9.5))
                                         .text_color(rgb(ds.text))
                                         .cursor_pointer()
-                                        .tooltip(|window, cx| {
-                                            Tooltip::new(
-                                                "Alternar parámetro de automatización (Volumen / Pan)",
-                                            )
-                                            .build(window, cx)
+                                        .tooltip(move |window, cx| {
+                                            Tooltip::new(tip_next.clone()).build(window, cx)
                                         })
-                                        .child(auto_param.toggle().short_label())
+                                        .child(format!("▸ {next_auto_label}"))
                                         .on_mouse_down(
                                             MouseButton::Left,
                                             cx.listener(|this, _, _, cx| {
-                                                this.set_automation_param(
-                                                    this.timeline.automation_param.toggle(),
-                                                );
+                                                this.cycle_automation_param();
                                                 cx.stop_propagation();
                                                 cx.notify();
                                             }),
                                         ),
                                 )
+                                .when_some(last_vst_auto, |row, vst_label| {
+                                    let tip = format!(
+                                        "Automatizar último parámetro VST3 tocado: {vst_label}"
+                                    );
+                                    row.child(
+                                        div()
+                                            .id("arrangement-automation-vst")
+                                            .px(px(5.))
+                                            .py(px(2.))
+                                            .rounded(px(3.))
+                                            .bg(rgba((ds.accent << 8) | 0x1f))
+                                            .border_1()
+                                            .border_color(rgba((ds.accent << 8) | 0x77))
+                                            .hover(|b| b.bg(rgba((ds.accent << 8) | 0x38)))
+                                            .text_size(px(9.5))
+                                            .text_color(rgb(ds.text))
+                                            .cursor_pointer()
+                                            .tooltip(move |window, cx| {
+                                                Tooltip::new(tip.clone()).build(window, cx)
+                                            })
+                                            .child("+ VST3")
+                                            .on_mouse_down(
+                                                MouseButton::Left,
+                                                cx.listener(|this, _, _, cx| {
+                                                    this.automate_last_touched_vst();
+                                                    cx.stop_propagation();
+                                                    cx.notify();
+                                                }),
+                                            ),
+                                    )
+                                })
                                 .when(selected_track_has_auto, |row| {
                                     row.child(
                                         div()
@@ -580,13 +620,217 @@ impl DawApp {
             })
     }
 
+    pub(in crate::ui) fn automation_param_label(
+        &self,
+        param: elevate::musical::track_automation::AutomationParam,
+    ) -> String {
+        use elevate::musical::track_automation::AutomationParam;
+        match param {
+            AutomationParam::Volume => "Vol".into(),
+            AutomationParam::Pan => "Pan".into(),
+            AutomationParam::Send(target) => self
+                .tracks
+                .iter()
+                .find(|t| t.id == target)
+                .map(|t| format!("→ {}", t.name))
+                .unwrap_or_else(|| param.short_label()),
+            AutomationParam::FxParam { fx, param: pid } => {
+                let fx_name = self
+                    .tracks
+                    .iter()
+                    .find_map(|t| t.chain.find(fx))
+                    .or_else(|| self.master_chain.find(fx))
+                    .map(|n| n.name.as_str())
+                    .unwrap_or("FX");
+                if let Some(comp) = self.lua_components.instances.get(&fx)
+                    && let Some(ctrl) = comp.descriptor().controls.iter().find(|c| c.id == pid)
+                {
+                    return format!("{fx_name} · {}", ctrl.label);
+                }
+                if let Some(effect) = self.vst_effects.instances.get(&fx)
+                    && let Some(touched) = effect.editor.last_touched()
+                    && touched.id == pid
+                {
+                    return format!("{fx_name} · {}", touched.title);
+                }
+                format!("{fx_name} · P{pid}")
+            }
+            AutomationParam::InstrumentParam(pid) => {
+                if let Some(track) = self.tracks.get(self.cursor_row)
+                    && let Some(inst_id) = track.instrument
+                {
+                    let editor = if self.vst.id == inst_id {
+                        self.vst.editor()
+                    } else {
+                        self.vst_instances
+                            .get(&inst_id)
+                            .and_then(|inst| inst.editor())
+                    };
+                    if let Some(touched) = editor.and_then(|ed| ed.last_touched())
+                        && touched.id == pid
+                    {
+                        return format!("{} · {}", self.vst_name(inst_id), touched.title);
+                    }
+                    return format!("{} · P{pid}", self.vst_name(inst_id));
+                }
+                param.short_label()
+            }
+        }
+    }
+
+    pub(in crate::ui) fn available_automation_params(
+        &self,
+        track_index: usize,
+    ) -> Vec<(elevate::musical::track_automation::AutomationParam, String)> {
+        use elevate::musical::track_automation::AutomationParam;
+        let mut out = vec![
+            (AutomationParam::Volume, "Vol".into()),
+            (AutomationParam::Pan, "Pan".into()),
+        ];
+        let Some(track) = self.tracks.get(track_index) else {
+            return out;
+        };
+        let mut push_unique = |p: AutomationParam, label: String| {
+            if !out.iter().any(|(existing, _)| *existing == p) {
+                out.push((p, label));
+            }
+        };
+        if !track.is_return() {
+            for ret in self.tracks.iter().filter(|t| t.is_return()) {
+                push_unique(AutomationParam::Send(ret.id), format!("→ {}", ret.name));
+            }
+        }
+        fn collect_chain_fx(
+            nodes: &[elevate::musical::fx::FxNode],
+            out: &mut Vec<(elevate::musical::fx::FxId, String)>,
+        ) {
+            for node in nodes {
+                out.push((node.id, node.name.clone()));
+                if let Some(children) = node.children() {
+                    collect_chain_fx(children, out);
+                }
+            }
+        }
+        let mut fx_nodes = Vec::new();
+        collect_chain_fx(track.chain.nodes(), &mut fx_nodes);
+        for (fx_id, fx_name) in &fx_nodes {
+            if let Some(comp) = self.lua_components.instances.get(fx_id) {
+                for ctrl in &comp.descriptor().controls {
+                    push_unique(
+                        AutomationParam::FxParam {
+                            fx: *fx_id,
+                            param: ctrl.id,
+                        },
+                        format!("{fx_name} · {}", ctrl.label),
+                    );
+                }
+            }
+        }
+        if let Some(track_auto) = self.timeline.automation.track(track.id) {
+            for (&param, lane) in &track_auto.extra {
+                if !lane.is_empty() {
+                    push_unique(param, self.automation_param_label(param));
+                }
+            }
+        }
+        if let Some((target, label)) = self.last_touched_vst_target() {
+            match target {
+                elevate::musical::midi_map::MidiBindTarget::VstInstrumentParam {
+                    instrument,
+                    param,
+                } if track.instrument == Some(instrument) => {
+                    push_unique(AutomationParam::InstrumentParam(param), label);
+                }
+                elevate::musical::midi_map::MidiBindTarget::FxParam {
+                    track: fx_track,
+                    fx,
+                    param,
+                } if fx_track == track.id => {
+                    push_unique(AutomationParam::FxParam { fx, param }, label);
+                }
+                _ => {}
+            }
+        }
+        out
+    }
+
+    pub(in crate::ui) fn cycle_automation_param(&mut self) {
+        let candidates = self.available_automation_params(self.cursor_row);
+        if candidates.is_empty() {
+            self.set_automation_param(self.timeline.automation_param.toggle());
+            return;
+        }
+        let next = candidates
+            .iter()
+            .position(|(p, _)| *p == self.timeline.automation_param)
+            .map(|idx| candidates[(idx + 1) % candidates.len()].0)
+            .unwrap_or(candidates[0].0);
+        self.set_automation_param(next);
+    }
+
+    fn last_touched_vst_automation_preview(&self) -> Option<String> {
+        let (target, label) = self.last_touched_vst_target()?;
+        let active = self.timeline.automation_param;
+        let already_selected = match target {
+            elevate::musical::midi_map::MidiBindTarget::VstInstrumentParam { param, .. } => {
+                active
+                    == elevate::musical::track_automation::AutomationParam::InstrumentParam(param)
+            }
+            elevate::musical::midi_map::MidiBindTarget::FxParam { fx, param, .. } => {
+                active == elevate::musical::track_automation::AutomationParam::FxParam { fx, param }
+            }
+            _ => false,
+        };
+        (!already_selected).then_some(label)
+    }
+
+    pub(in crate::ui) fn automate_last_touched_vst(&mut self) {
+        use elevate::musical::{midi_map::MidiBindTarget, track_automation::AutomationParam};
+        let Some((target, label)) = self.last_touched_vst_target() else {
+            self.status_message =
+                "Mueve primero una perilla dentro de un plugin VST3 antes de automatizarla".into();
+            return;
+        };
+        match target {
+            MidiBindTarget::VstInstrumentParam { instrument, param } => {
+                if let Some(idx) = self
+                    .tracks
+                    .iter()
+                    .position(|t| t.instrument == Some(instrument))
+                {
+                    self.select_track(idx, false, false);
+                }
+                self.center_view = crate::ui::CenterView::Arrangement;
+                self.timeline.automation_param = AutomationParam::InstrumentParam(param);
+                self.timeline.automation_mode = true;
+                self.timeline.region_tool = false;
+                self.status_message = format!(
+                    "⚡ Automatización lista: {label} · clic en la pista para dibujar la curva"
+                );
+            }
+            MidiBindTarget::FxParam { track, fx, param } => {
+                if let Some(idx) = self.tracks.iter().position(|t| t.id == track) {
+                    self.select_track(idx, false, false);
+                }
+                self.center_view = crate::ui::CenterView::Arrangement;
+                self.timeline.automation_param = AutomationParam::FxParam { fx, param };
+                self.timeline.automation_mode = true;
+                self.timeline.region_tool = false;
+                self.status_message = format!(
+                    "⚡ Automatización lista: {label} · clic en la pista para dibujar la curva"
+                );
+            }
+            _ => {}
+        }
+    }
+
     pub(in crate::ui) fn toggle_automation_mode(&mut self) {
         self.timeline.automation_mode = !self.timeline.automation_mode;
         if self.timeline.automation_mode {
             self.timeline.region_tool = false;
             self.status_message = format!(
                 "Automatización {} activa · clic para añadir/mover puntos · doble clic o clic derecho para borrar",
-                self.timeline.automation_param.label()
+                self.automation_param_label(self.timeline.automation_param)
             );
         } else {
             self.timeline.end_automation_drag();
@@ -603,7 +847,7 @@ impl DawApp {
         self.timeline.region_tool = false;
         self.status_message = format!(
             "Automatización: {} · clic en una pista para dibujar la curva",
-            param.label()
+            self.automation_param_label(param)
         );
     }
 
@@ -614,10 +858,11 @@ impl DawApp {
         let id = track.id;
         let name = track.name.clone();
         let param = self.timeline.automation_param;
+        let label = self.automation_param_label(param);
         self.timeline.automation.clear_lane(id, param);
         self.publish_track_automation(id);
         self.refresh_project_dirty();
-        self.status_message = format!("{name}: automatización de {} borrada", param.label());
+        self.status_message = format!("{name}: automatización de {label} borrada");
     }
 
     /// Ctrl+L estilo Ableton: ajusta el Loop Brace a la región o clips seleccionados y activa/alterna el loop.

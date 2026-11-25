@@ -41,6 +41,9 @@ fn param_color(param: AutomationParam, ds: &DesignSystem) -> u32 {
     match param {
         AutomationParam::Volume => ds.warning,
         AutomationParam::Pan => ds.cyan,
+        AutomationParam::Send(_) => ds.success,
+        AutomationParam::FxParam { .. } => ds.accent,
+        AutomationParam::InstrumentParam(_) => 0xa78bfa,
     }
 }
 
@@ -308,11 +311,10 @@ pub(super) fn paint(
             .filter(|l| !l.is_empty())
         {
             (active_param, Some(lane))
-        } else if let Some(lane) = automation
-            .lane(track_id, active_param.toggle())
-            .filter(|l| !l.is_empty())
+        } else if let Some(track_auto) = automation.track(track_id)
+            && let Some(first_param) = track_auto.first_non_empty_param()
         {
-            (active_param.toggle(), Some(lane))
+            (first_param, Some(track_auto.lane(first_param)))
         } else {
             continue;
         };
@@ -321,6 +323,7 @@ pub(super) fn paint(
         let default_val = match param {
             AutomationParam::Volume => defaults.vol_norm,
             AutomationParam::Pan => defaults.pan_norm,
+            other => other.default_value(),
         };
         let points = lane_opt.map(|l| l.points()).unwrap_or(&[]);
 
@@ -352,8 +355,8 @@ pub(super) fn paint(
             + px(value_y(
                 row,
                 match param {
-                    AutomationParam::Volume => 0.0,
                     AutomationParam::Pan => 0.5,
+                    _ => 0.0,
                 },
             ));
 

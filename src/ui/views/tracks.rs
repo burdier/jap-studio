@@ -649,23 +649,33 @@ impl DawApp {
                         .child(self.track_title(i)),
                 )
                 .when(self.timeline.automation.has_any_points(track.id), |el| {
-                    let has_vol = self.timeline.automation.has_points(
-                        track.id,
-                        elevate::musical::track_automation::AutomationParam::Volume,
-                    );
+                    use elevate::musical::track_automation::AutomationParam;
+                    let first_param = self
+                        .timeline
+                        .automation
+                        .track(track.id)
+                        .and_then(|t| t.first_non_empty_param())
+                        .unwrap_or(AutomationParam::Volume);
+                    let badge_color = match first_param {
+                        AutomationParam::Volume => ds.warning,
+                        AutomationParam::Pan => ds.cyan,
+                        AutomationParam::Send(_) => ds.success,
+                        AutomationParam::FxParam { .. } => ds.accent,
+                        AutomationParam::InstrumentParam(_) => 0xa78bfa,
+                    };
                     el.child(
                         div()
                             .px(px(3.0))
                             .rounded(px(2.0))
                             .cursor_pointer()
                             .text_size(px(9.0))
-                            .text_color(rgb(if has_vol { ds.warning } else { ds.cyan }))
+                            .text_color(rgb(badge_color))
                             .child("⚡")
                             .on_mouse_down(
                                 MouseButton::Left,
                                 cx.listener(move |this, _, _, cx| {
                                     this.select_track(i, false, false);
-                                    this.timeline.automation_mode = true;
+                                    this.set_automation_param(first_param);
                                     cx.stop_propagation();
                                     cx.notify();
                                 }),

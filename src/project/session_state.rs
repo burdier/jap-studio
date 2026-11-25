@@ -284,18 +284,14 @@ impl ProjectDoc {
         let mut desired: std::collections::BTreeMap<String, Vec<LoroValue>> =
             std::collections::BTreeMap::new();
         for (&track_id, track_auto) in &automation.tracks {
-            for param in AutomationParam::ALL {
-                let lane = track_auto.lane(param);
-                if lane.is_empty() {
-                    continue;
-                }
+            track_auto.for_each_non_empty(|param, lane| {
                 let mut flat = Vec::with_capacity(lane.len() * 2);
                 for point in lane.points() {
                     flat.push(LoroValue::Double(point.beat));
                     flat.push(LoroValue::Double(f64::from(point.value)));
                 }
                 desired.insert(format!("{}:{}", track_id.0, param.key_suffix()), flat);
-            }
+            });
         }
         let existing_keys: Vec<String> = map.keys().map(|k| k.to_string()).collect();
         for key in existing_keys {

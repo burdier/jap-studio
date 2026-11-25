@@ -72,6 +72,14 @@ impl VstEngine {
         frames: &mut [[f32; 2]],
         time: Option<TransportContext>,
     ) {
+        self.process_effect_timed_params(frames, time, &[]);
+    }
+    pub fn process_effect_timed_params(
+        &mut self,
+        frames: &mut [[f32; 2]],
+        time: Option<TransportContext>,
+        params: &[(u32, f64)],
+    ) {
         if frames.is_empty() {
             return;
         }
@@ -81,14 +89,19 @@ impl VstEngine {
         }
         for (index, block) in frames.chunks_mut(512).enumerate() {
             self.buffers.input(block);
-            self.render_effect_slice(block, time.map(|time| time.offset(index * 512)));
+            self.render_effect_slice(block, time.map(|time| time.offset(index * 512)), params);
             if self.failed {
                 block.fill([0.0; 2]);
             }
         }
     }
 
-    fn render_effect_slice(&mut self, block: &mut [[f32; 2]], time: Option<TransportContext>) {
+    fn render_effect_slice(
+        &mut self,
+        block: &mut [[f32; 2]],
+        time: Option<TransportContext>,
+        params: &[(u32, f64)],
+    ) {
         let _access = match self.editor.latency.enter(self.export_latency) {
             Ok(Some(guard)) => guard,
             result => {
@@ -97,6 +110,9 @@ impl VstEngine {
                 return;
             }
         };
+        for &(id, value) in params {
+            self.changes.set(id, value);
+        }
         let mut last_edit = None;
         for _ in 0..256 {
             let Ok((seq, id, value)) = self.edits.pop() else {
@@ -159,6 +175,15 @@ impl VstEngine {
         right: &mut [f32],
         time: Option<TransportContext>,
     ) {
+        self.render_timed_params(left, right, time, &[]);
+    }
+    pub fn render_timed_params(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        time: Option<TransportContext>,
+        params: &[(u32, f64)],
+    ) {
         if left.is_empty() {
             return;
         }
@@ -176,6 +201,7 @@ impl VstEngine {
                 &mut left[start..end],
                 &mut right[start..end],
                 time.map(|time| time.offset(start)),
+                params,
             );
             start = end;
             if self.failed {
@@ -191,6 +217,7 @@ impl VstEngine {
         left: &mut [f32],
         right: &mut [f32],
         time: Option<TransportContext>,
+        params: &[(u32, f64)],
     ) {
         let _access = match self.editor.latency.enter(self.export_latency) {
             Ok(Some(guard)) => guard,
@@ -201,6 +228,9 @@ impl VstEngine {
                 return;
             }
         };
+        for &(id, value) in params {
+            self.changes.set(id, value);
+        }
         let mut last_edit = None;
         for _ in 0..256 {
             let Ok((seq, id, value)) = self.edits.pop() else {

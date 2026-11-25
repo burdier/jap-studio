@@ -76,6 +76,14 @@ impl Effect {
         self.process_timed(frames, None);
     }
     pub fn process_timed(&self, frames: &mut [[f32; 2]], time: Option<TransportContext>) {
+        self.process_timed_params(frames, time, &[]);
+    }
+    pub fn process_timed_params(
+        &self,
+        frames: &mut [[f32; 2]],
+        time: Option<TransportContext>,
+        params: &[(u32, f64)],
+    ) {
         if self
             .busy
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
@@ -86,8 +94,8 @@ impl Effect {
             return;
         }
         let engine = unsafe { &mut *self.engine.get() };
-        if time.is_some() {
-            engine.process_effect_timed(frames, time);
+        if time.is_some() || !params.is_empty() {
+            engine.process_effect_timed_params(frames, time, params);
         } else {
             engine.process_effect(frames);
         }
@@ -206,16 +214,26 @@ impl Routing {
         time: Option<TransportContext>,
         history: &mut CrossoverHistory,
     ) {
+        self.process_timed_automated(frames, time, history, None);
+    }
+    pub fn process_timed_automated(
+        &self,
+        frames: &mut [[f32; 2]],
+        time: Option<TransportContext>,
+        history: &mut CrossoverHistory,
+        automation: Option<(&elevate::musical::track_automation::TrackAutomation, f64)>,
+    ) {
         self.0.read(|stream| {
             if let Some(stream) = stream {
                 if stream.rack.rate == 0 || stream.rack.rate == stream.rate {
                     stream.current.read(|current| {
-                        current.plan.process_timed(
+                        current.plan.process_timed_automated(
                             frames,
                             stream.rate,
                             time,
                             history,
                             &current.delays,
+                            automation,
                         )
                     });
                 } else {

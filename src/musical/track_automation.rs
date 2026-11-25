@@ -1,54 +1,90 @@
 //! Curvas de automatización por pista en el Arrangement (headless: sin GPUI ni CPAL).
 //! Los puntos se almacenan ordenados por tiempo musical (`beat`) con valores normalizados `0.0..=1.0`.
-use super::track::{TrackId, UNITY_LEVEL};
-use std::collections::BTreeMap;
+use super::{
+    fx::FxId,
+    track::{TrackId, UNITY_LEVEL},
+};
+use std::collections::{BTreeMap, HashSet};
 
 pub const MAX_AUTOMATION_POINTS: usize = 4096;
 const POINT_MERGE_EPS: f64 = 1e-4;
+static EMPTY_LANE: AutomationLane = AutomationLane { points: Vec::new() };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub enum AutomationParam {
     #[default]
     Volume,
     Pan,
+    /// Envío post-fader hacia un bus Return (`TrackId` destino).
+    Send(TrackId),
+    /// Parámetro normalizado `0.0..=1.0` de un efecto en el rack (Hay/Lua o VST3 FX).
+    FxParam {
+        fx: FxId,
+        param: u32,
+    },
+    /// Parámetro normalizado `0.0..=1.0` del instrumento VST3 de esta pista.
+    InstrumentParam(u32),
 }
 
 impl AutomationParam {
     pub const ALL: [Self; 2] = [Self::Volume, Self::Pan];
 
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> String {
         match self {
-            Self::Volume => "Volumen",
-            Self::Pan => "Pan",
+            Self::Volume => "Volumen".into(),
+            Self::Pan => "Pan".into(),
+            Self::Send(target) => format!("Envío → R{}", target.0),
+            Self::FxParam { fx, param } => format!("FX #{} · P{param}", fx.0),
+            Self::InstrumentParam(param) => format!("Instrumento · P{param}"),
         }
     }
 
-    pub fn short_label(self) -> &'static str {
+    pub fn short_label(self) -> String {
         match self {
-            Self::Volume => "Vol",
-            Self::Pan => "Pan",
+            Self::Volume => "Vol".into(),
+            Self::Pan => "Pan".into(),
+            Self::Send(target) => format!("Send R{}", target.0),
+            Self::FxParam { param, .. } => format!("FX P{param}"),
+            Self::InstrumentParam(param) => format!("Inst P{param}"),
         }
     }
 
-    pub fn key_suffix(self) -> &'static str {
+    pub fn key_suffix(self) -> String {
         match self {
-            Self::Volume => "vol",
-            Self::Pan => "pan",
+            Self::Volume => "vol".into(),
+            Self::Pan => "pan".into(),
+            Self::Send(target) => format!("send:{}", target.0),
+            Self::FxParam { fx, param } => format!("fx:{}:{param}", fx.0),
+            Self::InstrumentParam(param) => format!("inst:{param}"),
         }
     }
 
     pub fn from_suffix(suffix: &str) -> Option<Self> {
         match suffix {
-            "vol" => Some(Self::Volume),
-            "pan" => Some(Self::Pan),
-            _ => None,
+            "vol" => return Some(Self::Volume),
+            "pan" => return Some(Self::Pan),
+            _ => {}
         }
+        if let Some(rest) = suffix.strip_prefix("send:") {
+            return rest.parse::<u32>().ok().map(|id| Self::Send(TrackId(id)));
+        }
+        if let Some(rest) = suffix.strip_prefix("fx:") {
+            let (raw_fx, raw_param) = rest.split_once(':')?;
+            let fx = FxId(raw_fx.parse::<u64>().ok()?);
+            let param = raw_param.parse::<u32>().ok()?;
+            return Some(Self::FxParam { fx, param });
+        }
+        if let Some(rest) = suffix.strip_prefix("inst:") {
+            return rest.parse::<u32>().ok().map(Self::InstrumentParam);
+        }
+        None
     }
 
     pub fn toggle(self) -> Self {
         match self {
             Self::Volume => Self::Pan,
             Self::Pan => Self::Volume,
+            _ => Self::Volume,
         }
     }
 
@@ -56,6 +92,8 @@ impl AutomationParam {
         match self {
             Self::Volume => UNITY_LEVEL as f32 / 100.0,
             Self::Pan => 0.5,
+            Self::Send(_) => 0.0,
+            Self::FxParam { .. } | Self::InstrumentParam(_) => 0.5,
         }
     }
 
@@ -99,6 +137,9 @@ impl AutomationParam {
                 } else {
                     format!("R {centered}")
                 }
+            }
+            Self::Send(_) | Self::FxParam { .. } | Self::InstrumentParam(_) => {
+                format!("{}%", (v * 100.0).round() as i32)
             }
         }
     }
@@ -249,6 +290,8 @@ impl AutomationLane {
 pub struct TrackAutomation {
     pub volume: AutomationLane,
     pub pan: AutomationLane,
+    /// Carriles adicionales de automatización (envíos Return, parámetros FX y VST3).
+    pub extra: BTreeMap<AutomationParam, AutomationLane>,
 }
 
 impl TrackAutomation {
@@ -256,6 +299,7 @@ impl TrackAutomation {
         match param {
             AutomationParam::Volume => &self.volume,
             AutomationParam::Pan => &self.pan,
+            other => self.extra.get(&other).unwrap_or(&EMPTY_LANE),
         }
     }
 
@@ -263,11 +307,45 @@ impl TrackAutomation {
         match param {
             AutomationParam::Volume => &mut self.volume,
             AutomationParam::Pan => &mut self.pan,
+            other => self.extra.entry(other).or_default(),
         }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.volume.is_empty() && self.pan.is_empty()
+        self.volume.is_empty()
+            && self.pan.is_empty()
+            && self.extra.values().all(AutomationLane::is_empty)
+    }
+
+    pub fn cleanup_empty(&mut self) {
+        self.extra.retain(|_, lane| !lane.is_empty());
+    }
+
+    pub fn for_each_non_empty(&self, mut f: impl FnMut(AutomationParam, &AutomationLane)) {
+        if !self.volume.is_empty() {
+            f(AutomationParam::Volume, &self.volume);
+        }
+        if !self.pan.is_empty() {
+            f(AutomationParam::Pan, &self.pan);
+        }
+        for (&param, lane) in &self.extra {
+            if !lane.is_empty() {
+                f(param, lane);
+            }
+        }
+    }
+
+    pub fn first_non_empty_param(&self) -> Option<AutomationParam> {
+        if !self.volume.is_empty() {
+            return Some(AutomationParam::Volume);
+        }
+        if !self.pan.is_empty() {
+            return Some(AutomationParam::Pan);
+        }
+        self.extra
+            .iter()
+            .find(|(_, lane)| !lane.is_empty())
+            .map(|(&param, _)| param)
     }
 
     pub fn evaluate_gain(&self, beat: f64, fallback_gain: f32, audible: bool) -> f32 {
@@ -283,6 +361,74 @@ impl TrackAutomation {
         self.pan
             .evaluate(beat)
             .map_or(fallback_pan, AutomationParam::pan_to_position)
+    }
+
+    /// Evalúa el nivel del envío post-fader hacia `target` (`0.0..=1.0`), sin asignaciones RT.
+    pub fn evaluate_send(&self, target: TrackId, beat: f64, fallback_gain: f32) -> f32 {
+        self.extra
+            .get(&AutomationParam::Send(target))
+            .and_then(|lane| lane.evaluate(beat))
+            .map_or(fallback_gain, |v| v.clamp(0.0, 1.0))
+    }
+
+    /// Evalúa un parámetro de efecto concreto (`0.0..=1.0`) si tiene curva activa.
+    pub fn evaluate_fx_param(&self, fx: FxId, param: u32, beat: f64) -> Option<f32> {
+        self.extra
+            .get(&AutomationParam::FxParam { fx, param })
+            .and_then(|lane| lane.evaluate(beat))
+    }
+
+    /// Recolecta en un buffer de stack todos los parámetros automatizados de un nodo FX VST3.
+    pub fn collect_fx_params(&self, fx: FxId, beat: f64, out: &mut [(u32, f64)]) -> usize {
+        let mut count = 0;
+        for (&param, lane) in &self.extra {
+            if count >= out.len() {
+                break;
+            }
+            if let AutomationParam::FxParam {
+                fx: target_fx,
+                param: param_id,
+            } = param
+                && target_fx == fx
+                && let Some(val) = lane.evaluate(beat)
+            {
+                out[count] = (param_id, f64::from(val.clamp(0.0, 1.0)));
+                count += 1;
+            }
+        }
+        count
+    }
+
+    /// Recolecta en un buffer de stack todos los parámetros automatizados del instrumento VST3.
+    pub fn collect_instrument_params(&self, beat: f64, out: &mut [(u32, f64)]) -> usize {
+        let mut count = 0;
+        for (&param, lane) in &self.extra {
+            if count >= out.len() {
+                break;
+            }
+            if let AutomationParam::InstrumentParam(param_id) = param
+                && let Some(val) = lane.evaluate(beat)
+            {
+                out[count] = (param_id, f64::from(val.clamp(0.0, 1.0)));
+                count += 1;
+            }
+        }
+        count
+    }
+
+    pub fn prune_orphans(&mut self, valid_tracks: &HashSet<TrackId>, valid_fx: &HashSet<FxId>) {
+        self.extra.retain(|param, lane| {
+            if lane.is_empty() {
+                return false;
+            }
+            match param {
+                AutomationParam::Send(target) => valid_tracks.contains(target),
+                AutomationParam::FxParam { fx, .. } => valid_fx.contains(fx),
+                AutomationParam::Volume
+                | AutomationParam::Pan
+                | AutomationParam::InstrumentParam(_) => true,
+            }
+        });
     }
 }
 
@@ -318,7 +464,13 @@ impl ArrangementAutomation {
 
     pub fn clear_lane(&mut self, id: TrackId, param: AutomationParam) {
         if let Some(track) = self.tracks.get_mut(&id) {
-            track.lane_mut(param).clear();
+            match param {
+                AutomationParam::Volume => track.volume.clear(),
+                AutomationParam::Pan => track.pan.clear(),
+                other => {
+                    track.extra.remove(&other);
+                }
+            }
             if track.is_empty() {
                 self.tracks.remove(&id);
             }
@@ -326,12 +478,38 @@ impl ArrangementAutomation {
     }
 
     pub fn cleanup_empty(&mut self) {
+        for track in self.tracks.values_mut() {
+            track.cleanup_empty();
+        }
         self.tracks.retain(|_, track| !track.is_empty());
     }
 
     pub fn retain_tracks(&mut self, valid: &[TrackId]) {
-        self.tracks
-            .retain(|id, track| valid.contains(id) && !track.is_empty());
+        let valid_set: HashSet<TrackId> = valid.iter().copied().collect();
+        self.tracks.retain(|id, track| {
+            if !valid_set.contains(id) {
+                return false;
+            }
+            track.extra.retain(|param, lane| {
+                !lane.is_empty()
+                    && match param {
+                        AutomationParam::Send(target) => valid_set.contains(target),
+                        _ => true,
+                    }
+            });
+            !track.is_empty()
+        });
+    }
+
+    pub fn prune_orphans(&mut self, valid_tracks: &[TrackId], valid_fx: &HashSet<FxId>) {
+        let valid_set: HashSet<TrackId> = valid_tracks.iter().copied().collect();
+        self.tracks.retain(|id, track| {
+            if !valid_set.contains(id) {
+                return false;
+            }
+            track.prune_orphans(&valid_set, valid_fx);
+            !track.is_empty()
+        });
     }
 
     pub fn is_empty(&self) -> bool {
@@ -377,5 +555,49 @@ mod tests {
 
         assert!(auto.volume.remove(0));
         assert_eq!(auto.volume.len(), 1);
+    }
+
+    #[test]
+    fn unified_params_round_trip_suffixes_evaluate_and_prune_orphans() {
+        let send = AutomationParam::Send(TrackId(7));
+        let fx = AutomationParam::FxParam {
+            fx: FxId(42),
+            param: 3,
+        };
+        let inst = AutomationParam::InstrumentParam(19);
+        for p in [
+            AutomationParam::Volume,
+            AutomationParam::Pan,
+            send,
+            fx,
+            inst,
+        ] {
+            let suffix = p.key_suffix();
+            assert_eq!(AutomationParam::from_suffix(&suffix), Some(p));
+        }
+
+        let mut auto = TrackAutomation::default();
+        auto.lane_mut(send).upsert(0.0, 0.2);
+        auto.lane_mut(send).upsert(2.0, 0.8);
+        auto.lane_mut(fx).upsert(0.0, 0.25);
+        auto.lane_mut(inst).upsert(0.0, 0.75);
+
+        assert!((auto.evaluate_send(TrackId(7), 1.0, 0.0) - 0.5).abs() < 1e-6);
+        assert!((auto.evaluate_send(TrackId(99), 1.0, 0.35) - 0.35).abs() < 1e-6);
+
+        let mut fx_buf = [(0u32, 0.0f64); 8];
+        assert_eq!(auto.collect_fx_params(FxId(42), 0.0, &mut fx_buf), 1);
+        assert_eq!(fx_buf[0], (3, 0.25));
+
+        let mut inst_buf = [(0u32, 0.0f64); 8];
+        assert_eq!(auto.collect_instrument_params(0.0, &mut inst_buf), 1);
+        assert_eq!(inst_buf[0], (19, 0.75));
+
+        let valid_tracks = HashSet::from([TrackId(1)]);
+        let valid_fx = HashSet::new();
+        auto.prune_orphans(&valid_tracks, &valid_fx);
+        assert!(auto.lane(send).is_empty());
+        assert!(auto.lane(fx).is_empty());
+        assert!(!auto.lane(inst).is_empty());
     }
 }

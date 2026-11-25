@@ -23,8 +23,16 @@ const KNOWN: &[(&str, &str)] = &[
         "auto.clear",
         "Borrar automatización de la pista seleccionada",
     ),
+    (
+        "auto.next",
+        "Cambiar al siguiente parámetro de automatización de la pista",
+    ),
     ("auto.pan", "Automatización: mostrar curva de Pan"),
     ("auto.vol", "Automatización: mostrar curva de Volumen"),
+    (
+        "auto.vst",
+        "Automatizar el último parámetro tocado en un VST3",
+    ),
     ("browse", "Abrir buscador"),
     ("capture", "Capturar MIDI tocado"),
     ("click", "Activar/desactivar metrónomo (Ctrl+K)"),

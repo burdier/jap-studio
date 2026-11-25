@@ -74,6 +74,17 @@ impl InstrumentVoice {
         state: &InstrumentState,
         time: Option<TransportContext>,
     ) {
+        self.render_params(left, right, state, time, &[]);
+    }
+
+    pub fn render_params(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        state: &InstrumentState,
+        time: Option<TransportContext>,
+        params: &[(u32, f64)],
+    ) {
         if let Some((plan, position, looped, cycle)) = self.plan.as_mut() {
             let finished = render_plan_block(
                 &mut self.synth,
@@ -92,7 +103,7 @@ impl InstrumentVoice {
                 state.plan_finished.store(true, Ordering::Relaxed);
             }
         } else {
-            self.synth.render_timed(left, right, time);
+            self.synth.render_timed_params(left, right, time, params);
         }
     }
 
@@ -212,7 +223,19 @@ impl PreparedArrangementVoice {
         output: &mut [[f32; 2]],
         time: Option<TransportContext>,
     ) {
-        self.voices.render_arrangement_timed(plan, at, output, time);
+        self.render_timed_params(plan, at, output, time, &[]);
+    }
+
+    pub fn render_timed_params(
+        &mut self,
+        plan: &PreparedMidiArrangement,
+        at: u64,
+        output: &mut [[f32; 2]],
+        time: Option<TransportContext>,
+        params: &[(u32, f64)],
+    ) {
+        self.voices
+            .render_arrangement_timed_params(plan, at, output, time, params);
         if let Some(filter) = &mut self.filter {
             filter.process(output);
         }
@@ -224,7 +247,16 @@ impl PreparedArrangementVoice {
     }
 
     pub fn render_tail_timed(&mut self, output: &mut [[f32; 2]], time: Option<TransportContext>) {
-        self.voices.render_timed(output, time);
+        self.render_tail_timed_params(output, time, &[]);
+    }
+
+    pub fn render_tail_timed_params(
+        &mut self,
+        output: &mut [[f32; 2]],
+        time: Option<TransportContext>,
+        params: &[(u32, f64)],
+    ) {
+        self.voices.render_timed_params(output, time, params);
         if let Some(filter) = &mut self.filter {
             filter.process(output);
         }
@@ -292,16 +324,25 @@ impl PreparedVoices {
         self.render_timed(output, None);
     }
     fn render_timed(&mut self, output: &mut [[f32; 2]], time: Option<TransportContext>) {
+        self.render_timed_params(output, time, &[]);
+    }
+    fn render_timed_params(
+        &mut self,
+        output: &mut [[f32; 2]],
+        time: Option<TransportContext>,
+        params: &[(u32, f64)],
+    ) {
         for (index, chunk) in output.chunks_mut(512).enumerate() {
             chunk.fill([0.0; 2]);
             for (_, voice, state) in &mut self.voices {
                 let mut left = [0.0; 512];
                 let mut right = [0.0; 512];
-                voice.render(
+                voice.render_params(
                     &mut left[..chunk.len()],
                     &mut right[..chunk.len()],
                     state,
                     time.map(|time| time.offset(index * 512)),
+                    params,
                 );
                 if voice.failed() {
                     state.failed.store(true, Ordering::Relaxed);
@@ -323,14 +364,15 @@ impl PreparedVoices {
         position: u64,
         output: &mut [[f32; 2]],
     ) {
-        self.render_arrangement_timed(plan, position, output, None);
+        self.render_arrangement_timed_params(plan, position, output, None, &[]);
     }
-    pub fn render_arrangement_timed(
+    pub fn render_arrangement_timed_params(
         &mut self,
         plan: &PreparedMidiArrangement,
         position: u64,
         output: &mut [[f32; 2]],
         time: Option<TransportContext>,
+        params: &[(u32, f64)],
     ) {
         if self.last_end.is_some_and(|end| end != position) {
             for (_, voice, _) in &mut self.voices {
@@ -347,9 +389,10 @@ impl PreparedVoices {
             for routed in plan.events_in(window) {
                 let offset = routed.event.sample_offset as usize;
                 if offset > written {
-                    self.render_timed(
+                    self.render_timed_params(
                         &mut block[written..offset],
                         time.map(|time| time.offset(index * 512 + written)),
+                        params,
                     );
                     written = offset;
                 }
@@ -371,9 +414,10 @@ impl PreparedVoices {
                 }
             }
             if written < block.len() {
-                self.render_timed(
+                self.render_timed_params(
                     &mut block[written..],
                     time.map(|time| time.offset(index * 512 + written)),
+                    params,
                 );
             }
         }

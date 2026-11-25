@@ -49,13 +49,24 @@ impl PreparedFxGain {
         frames: &mut [[f32; 2]],
         time: Option<super::vst3::TransportContext>,
     ) {
+        self.process_timed_automated(state, frames, time, None);
+    }
+    pub fn process_timed_automated(
+        &mut self,
+        state: &FxGain,
+        frames: &mut [[f32; 2]],
+        time: Option<super::vst3::TransportContext>,
+        automation: Option<(&elevate::musical::track_automation::TrackAutomation, f64)>,
+    ) {
         let target = state.get();
         if self.target != target {
             self.target = target;
             self.remaining = 256;
             self.step = (target - self.current) / 256.0;
         }
-        state.1.process_timed(frames, time, &mut self.history);
+        state
+            .1
+            .process_timed_automated(frames, time, &mut self.history, automation);
         for frame in frames {
             if self.remaining > 0 {
                 self.current += self.step;

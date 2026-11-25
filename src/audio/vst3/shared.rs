@@ -119,9 +119,21 @@ impl SharedInstrument {
         right: &mut [f32],
         time: Option<TransportContext>,
     ) {
+        self.render_params(route, left, right, time, &[]);
+    }
+    pub fn render_params(
+        &self,
+        route: Route,
+        left: &mut [f32],
+        right: &mut [f32],
+        time: Option<TransportContext>,
+        params: &[(u32, f64)],
+    ) {
         left.fill(0.);
         right.fill(0.);
-        self.with_engine(route, |engine| engine.render_timed(left, right, time));
+        self.with_engine(route, |engine| {
+            engine.render_timed_params(left, right, time, params)
+        });
     }
     pub fn failed(&self) -> bool {
         self.failed.load(Ordering::Acquire)
@@ -164,6 +176,16 @@ impl InstrumentVoice {
     }
     pub fn render(&self, left: &mut [f32], right: &mut [f32], time: Option<TransportContext>) {
         self.shared.render(self.route, left, right, time);
+    }
+    pub fn render_params(
+        &self,
+        left: &mut [f32],
+        right: &mut [f32],
+        time: Option<TransportContext>,
+        params: &[(u32, f64)],
+    ) {
+        self.shared
+            .render_params(self.route, left, right, time, params);
     }
     pub fn failed(&self) -> bool {
         self.shared.failed()

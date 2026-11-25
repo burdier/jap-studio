@@ -377,6 +377,7 @@ impl DawApp {
                         effects::Plan::Serial(vec![
                             plan,
                             effects::Plan::Observe(Box::new(effects::Plan::effect(
+                                elevate::musical::fx::FxId(0),
                                 tuner.effect.clone(),
                             ))),
                         ])

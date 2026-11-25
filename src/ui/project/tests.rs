@@ -249,7 +249,7 @@ fn subsequent_save_reconciles_existing_document_after_track_removal() {
 
 #[test]
 fn track_automation_round_trips_through_loro() {
-    use elevate::musical::track_automation::AutomationParam;
+    use elevate::musical::{fx::FxId, track::TrackId, track_automation::AutomationParam};
     let fixture = Fixture::new();
     let mut state = snapshot();
     let id = state.tracks[0].id;
@@ -265,6 +265,24 @@ fn track_automation_round_trips_through_loro() {
         .automation
         .lane_mut(id, AutomationParam::Pan)
         .upsert(2.0, 0.15);
+    state
+        .automation
+        .lane_mut(id, AutomationParam::Send(TrackId(9)))
+        .upsert(1.0, 0.65);
+    state
+        .automation
+        .lane_mut(
+            id,
+            AutomationParam::FxParam {
+                fx: FxId(55),
+                param: 2,
+            },
+        )
+        .upsert(3.0, 0.4);
+    state
+        .automation
+        .lane_mut(id, AutomationParam::InstrumentParam(11))
+        .upsert(0.5, 0.9);
     let path = fixture.0.join("auto_session.loro");
     state.document("Auto").unwrap().save(&path).unwrap();
     let (loaded, _, _) = Snapshot::load(&path).unwrap();

@@ -486,6 +486,8 @@ impl DawApp {
             "auto.pan" => {
                 self.set_automation_param(elevate::musical::track_automation::AutomationParam::Pan);
             }
+            "auto.next" => self.cycle_automation_param(),
+            "auto.vst" => self.automate_last_touched_vst(),
             "auto.clear" => self.clear_selected_track_automation(),
             "countin" | "count_in" => self.cycle_count_in(),
             other if other.starts_with("countin ") => {

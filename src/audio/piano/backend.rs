@@ -176,8 +176,17 @@ impl SynthBackend {
         right: &mut [f32],
         time: Option<crate::audio::vst3::TransportContext>,
     ) {
+        self.render_timed_params(left, right, time, &[]);
+    }
+    pub fn render_timed_params(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        time: Option<crate::audio::vst3::TransportContext>,
+        params: &[(u32, f64)],
+    ) {
         match self {
-            Self::Vst(v) => v.render(left, right, time),
+            Self::Vst(v) => v.render_params(left, right, time, params),
             Self::Sampler(s) => s.render(left, right),
             Self::Fluid(f) => f.render(left, right),
             Self::Rusty(r) => r.render(left, right),
