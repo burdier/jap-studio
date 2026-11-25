@@ -10,7 +10,7 @@ use elevate::musical::{
     drums::{DrumPiece, OffsetMode},
     model::NoteEvent,
     pitch::note_name,
-    time::{Meter, PPQ, Tick},
+    time::{Meter, PPQ},
 };
 use gpui::{
     Context, CursorStyle, Div, IntoElement, MouseButton, Stateful, canvas,
@@ -18,11 +18,6 @@ use gpui::{
 };
 
 const NAME_WIDTH: f32 = 190.0;
-const QUARTER_WIDTH: f32 = 128.0;
-
-fn tick_width(ticks: i64) -> f32 {
-    QUARTER_WIDTH * ticks as f32 / PPQ as f32
-}
 
 fn beat_surface(ds: &DesignSystem, meter: Meter, at: i64) -> u32 {
     let beat = (at % meter.ticks_per_bar()) / meter.ticks_per_beat();
@@ -42,19 +37,20 @@ impl DawApp {
         let ds = &self.ds;
         let editor = &self.pattern_editor;
         let playing = self.pattern_play_step();
-        let pattern = editor.session.active_pattern();
         let meter = self.timeline.meter;
-        let span = pattern.notes.length().0;
         let play_at = self
             .drum_pattern_playhead()
             .map(|beat| (beat * PPQ as f64) as i64);
 
-        // Regla unificada compacta de compases y pulsos, alineada exactamente en ticks.
-        let beat_stride = meter.ticks_per_beat();
-        let bar_ticks = meter.ticks_per_bar();
+        // Regla unificada compacta de compases y pulsos para la página visible (100% ancho, sin scroll horizontal).
+        let beat_stride = meter.ticks_per_beat().max(1);
+        let bar_ticks = meter.ticks_per_bar().max(1);
+        let (_, page_start, page_end) = editor.visible_step_window(meter, play_at);
+        let page_span = (page_end - page_start).max(1);
         let piece_count = editor.session.kit.pieces.len();
         let beat_ruler = div()
             .flex()
+            .w_full()
             .h(px(22.0))
             .flex_shrink_0()
             .bg(rgb(ds.panel))
@@ -71,47 +67,63 @@ impl DawApp {
                     .text_color(rgb(ds.muted))
                     .child(format!("KIT · {piece_count}")),
             )
-            .children(
-                (0..pattern.notes.length().0)
-                    .step_by(beat_stride as usize)
-                    .map(|at| {
-                        let active =
-                            play_at.is_some_and(|play| (at..at + beat_stride).contains(&play));
-                        let is_bar_start = at % bar_ticks == 0;
-                        let bar_num = at / bar_ticks + 1;
-                        let beat_num = (at % bar_ticks) / beat_stride + 1;
-                        let label = if is_bar_start {
-                            format!("{bar_num}")
-                        } else {
-                            format!("{bar_num}.{beat_num}")
-                        };
-                        div()
-                            .h_full()
-                            .w(px(tick_width(beat_stride.min(span - at))))
-                            .flex_shrink_0()
-                            .flex()
-                            .items_center()
-                            .px(px(6.0))
-                            .border_l_1()
-                            .border_color(rgb(beat_line(ds, meter, at)))
-                            .bg(rgb(beat_surface(ds, meter, at)))
-                            .font_family("monospace")
-                            .text_size(px(10.0))
-                            .font_weight(if is_bar_start || active {
-                                gpui::FontWeight::BOLD
-                            } else {
-                                gpui::FontWeight::NORMAL
-                            })
-                            .text_color(rgb(if active {
-                                ds.cyan
-                            } else if is_bar_start {
-                                ds.text
-                            } else {
-                                ds.muted
-                            }))
-                            .overflow_hidden()
-                            .child(label)
-                    }),
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .h_full()
+                    .flex()
+                    .items_center()
+                    .children(
+                        (page_start..page_end)
+                            .step_by(beat_stride as usize)
+                            .map(|at| {
+                                let active = play_at
+                                    .is_some_and(|play| (at..at + beat_stride).contains(&play));
+                                let is_bar_start = at % bar_ticks == 0;
+                                let is_bar_divider = at > page_start && is_bar_start;
+                                let bar_num = at / bar_ticks + 1;
+                                let beat_num = (at % bar_ticks) / beat_stride + 1;
+                                let label = if is_bar_start {
+                                    format!("{bar_num}")
+                                } else {
+                                    format!("{bar_num}.{beat_num}")
+                                };
+                                let frac = beat_stride.min(page_end - at) as f32 / page_span as f32;
+                                div()
+                                    .h_full()
+                                    .flex_grow(frac)
+                                    .flex_basis(px(0.0))
+                                    .min_w_0()
+                                    .flex()
+                                    .items_center()
+                                    .px(px(6.0))
+                                    .when(is_bar_divider, |el| el.border_l_2())
+                                    .when(!is_bar_divider, |el| el.border_l_1())
+                                    .border_color(rgb(if is_bar_divider {
+                                        ds.accent
+                                    } else {
+                                        beat_line(ds, meter, at)
+                                    }))
+                                    .bg(rgb(beat_surface(ds, meter, at)))
+                                    .font_family("monospace")
+                                    .text_size(px(10.0))
+                                    .font_weight(if is_bar_start || active {
+                                        gpui::FontWeight::BOLD
+                                    } else {
+                                        gpui::FontWeight::NORMAL
+                                    })
+                                    .text_color(rgb(if active {
+                                        ds.cyan
+                                    } else if is_bar_start {
+                                        ds.text
+                                    } else {
+                                        ds.muted
+                                    }))
+                                    .overflow_hidden()
+                                    .child(label)
+                            }),
+                    ),
             );
         div()
             .id("drum-steps")
@@ -120,15 +132,16 @@ impl DawApp {
             .flex_1()
             .min_h_0()
             .min_w_0()
-            .overflow_x_scroll()
+            .overflow_hidden()
             .text_xs()
             .child(
                 div()
                     .flex()
                     .flex_col()
                     .flex_1()
+                    .w_full()
                     .min_h_0()
-                    .min_w(px(NAME_WIDTH + tick_width(span)))
+                    .min_w_0()
                     .child(beat_ruler)
                     .child(
                         div()
@@ -136,13 +149,14 @@ impl DawApp {
                             .flex()
                             .flex_col()
                             .flex_1()
+                            .w_full()
                             .min_h_0()
+                            .min_w_0()
                             .overflow_y_scroll()
                             .track_scroll(&editor.steps_scroll)
-                            .children(
-                                (0..editor.session.kit.pieces.len())
-                                    .map(|lane| self.render_drum_step_lane(lane, playing, cx)),
-                            ),
+                            .children((0..editor.session.kit.pieces.len()).map(|lane| {
+                                self.render_drum_step_lane(lane, playing, page_start, page_end, cx)
+                            })),
                     ),
             )
     }
@@ -151,6 +165,8 @@ impl DawApp {
         &self,
         lane: usize,
         playing: Option<usize>,
+        page_start: i64,
+        page_end: i64,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let ds = &self.ds;
@@ -161,7 +177,8 @@ impl DawApp {
         let palette = [ds.accent, ds.orange, ds.cyan, ds.warning];
         let color = palette[lane % palette.len()];
         let root = piece.base_note();
-        let step_ticks = editor.ticks_per_step();
+        let step_ticks = editor.ticks_per_step().max(1);
+        #[cfg(feature = "p2p")]
         let length = editor.pattern().length();
         let meter = self.timeline.meter;
         let peak = self
@@ -177,7 +194,11 @@ impl DawApp {
             .collect();
         let showing_preview = notes.iter().any(|note| note.pitch != root)
             || notes.windows(2).any(|pair| pair[0].start == pair[1].start);
-        let steps = editor.step_count();
+        let total_steps = editor.step_count().max(1);
+        let first_step = ((page_start / step_ticks) as usize).min(total_steps);
+        let end_step = (((page_end + step_ticks - 1) / step_ticks) as usize).min(total_steps);
+        let visible_steps = end_step.saturating_sub(first_step).max(1);
+        let page_span = (page_end - page_start).max(1);
         let cursor = (editor.cursor_lane == lane).then_some(editor.cursor_step);
 
         let row = div()
@@ -185,7 +206,8 @@ impl DawApp {
             .id(("drum-step-lane", piece_id.0 as usize))
             .flex()
             .items_center()
-            .w(px(NAME_WIDTH + tick_width(length.0)))
+            .w_full()
+            .min_w_0()
             .h(px(40.0))
             .flex_shrink_0()
             .border_b_1()
@@ -422,9 +444,9 @@ impl DawApp {
             .child(if showing_preview {
                 div()
                     .relative()
-                    .w(px(tick_width(length.0)))
+                    .flex_1()
+                    .min_w_0()
                     .h_full()
-                    .flex_shrink_0()
                     .overflow_hidden()
                     .cursor_pointer()
                     .on_mouse_down(
@@ -434,16 +456,30 @@ impl DawApp {
                             cx.notify();
                         }),
                     )
-                    .child(drum_mini_roll(ds, notes, root, length, meter, color))
+                    .child(drum_mini_roll(
+                        ds,
+                        notes,
+                        root,
+                        page_start,
+                        page_end,
+                        meter,
+                        color,
+                    ))
                     .child(
                         div()
                             .absolute()
                             .inset_0()
                             .flex()
-                            .children((0..steps).map(|step| {
-                                let span = step_ticks.min(length.0 - step as i64 * step_ticks);
+                            .children((first_step..end_step).map(|step| {
+                                let at = step as i64 * step_ticks;
+                                let span = step_ticks.min(page_end - at).max(1);
+                                let frac = span as f32 / page_span as f32;
                                 self.with_drum_split(
-                                    div().w(px(tick_width(span))).h_full().flex_shrink_0(),
+                                    div()
+                                        .flex_grow(frac)
+                                        .flex_basis(px(0.0))
+                                        .min_w_0()
+                                        .h_full(),
                                     lane,
                                     step,
                                     cx,
@@ -451,17 +487,20 @@ impl DawApp {
                             })),
                     )
             } else {
-                let mut pending = notes.as_slice();
+                let first_idx = notes.partition_point(|note| note.start.0 < page_start);
+                let mut pending = &notes[first_idx..];
                 div()
                     .flex()
-                    .flex_shrink_0()
-                    .children((0..steps).map(|step| {
+                    .flex_1()
+                    .min_w_0()
+                    .h_full()
+                    .children((first_step..end_step).map(|step| {
                         let at = step as i64 * step_ticks;
                         let next = pending.partition_point(|note| note.start.0 < at + step_ticks);
                         let (hits, rest) = pending.split_at(next);
                         pending = rest;
                         let lead = playing.and_then(|play| {
-                            let dist = (step + steps - play) % steps;
+                            let dist = (step + total_steps - play) % total_steps;
                             (dist <= 2).then_some(dist as u8)
                         });
                         self.render_drum_pad(
@@ -471,33 +510,43 @@ impl DawApp {
                             color,
                             cursor == Some(step),
                             lead,
+                            page_start,
+                            page_end,
+                            visible_steps,
                             cx,
                         )
                     }))
             });
         #[cfg(feature = "p2p")]
-        let row = row.when_some(self.peer_drum_step(piece_id), |row, (alias, target)| {
-            let step = target.tick / step_ticks;
-            let start = step * step_ticks;
-            let width = tick_width(step_ticks.min(length.0 - start)).max(3.0);
-            let design = ds.clone();
-            row.child(
-                canvas(
-                    |_, _, _| (),
-                    move |bounds, _, window, cx| {
-                        let x = bounds.left() + px(NAME_WIDTH + tick_width(start) + 1.0);
-                        let cell = gpui::Bounds::new(
-                            point(x, bounds.top() + px(4.0)),
-                            size(px((width - 2.0).max(1.0)), px(31.0)),
-                        );
-                        paint_step_peer(bounds, cell, &alias, &design, window, cx);
-                    },
+        let row = row.when_some(
+            self.peer_drum_step(piece_id)
+                .filter(|(_, target)| target.tick >= page_start && target.tick < page_end),
+            |row, (alias, target)| {
+                let step = target.tick / step_ticks;
+                let start = step * step_ticks;
+                let rel_start = (start - page_start).max(0) as f32 / page_span as f32;
+                let rel_width = step_ticks.min(length.0 - start).max(1) as f32 / page_span as f32;
+                let design = ds.clone();
+                row.child(
+                    canvas(
+                        |_, _, _| (),
+                        move |bounds, _, window, cx| {
+                            let lane_w = (f32::from(bounds.size.width) - NAME_WIDTH).max(1.0);
+                            let x = bounds.left() + px(NAME_WIDTH + lane_w * rel_start + 1.0);
+                            let width = (lane_w * rel_width).max(3.0);
+                            let cell = gpui::Bounds::new(
+                                point(x, bounds.top() + px(4.0)),
+                                size(px((width - 2.0).max(1.0)), px(31.0)),
+                            );
+                            paint_step_peer(bounds, cell, &alias, &design, window, cx);
+                        },
+                    )
+                    .absolute()
+                    .inset_0()
+                    .size_full(),
                 )
-                .absolute()
-                .inset_0()
-                .size_full(),
-            )
-        });
+            },
+        );
         row
     }
 
@@ -523,6 +572,7 @@ impl DawApp {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn render_drum_pad(
         &self,
         lane: usize,
@@ -531,17 +581,22 @@ impl DawApp {
         color: u32,
         selected: bool,
         lead: Option<u8>,
+        page_start: i64,
+        page_end: i64,
+        visible_steps: usize,
         cx: &mut Context<Self>,
     ) -> Div {
         let ds = &self.ds;
         let occupied = !notes.is_empty();
         let hits = notes.len();
         let meter = self.timeline.meter;
-        let step_ticks = self.pattern_editor.ticks_per_step();
+        let step_ticks = self.pattern_editor.ticks_per_step().max(1);
         let at = step as i64 * step_ticks;
-        let span = step_ticks.min(self.pattern_editor.pattern().length().0 - at);
-        let width = tick_width(span);
-        let show_velocity = width >= 26.0;
+        let span = step_ticks.min(page_end - at).max(1);
+        let page_span = (page_end - page_start).max(1);
+        let frac = span as f32 / page_span as f32;
+        let show_velocity = visible_steps <= 16;
+        let is_bar_divider = at > page_start && at % meter.ticks_per_bar().max(1) == 0;
         let aligned = notes.first().is_some_and(|note| note.start.0 == at);
         let lead_1 = blend_color(ds.cyan, ds.accent, 45);
         let lead_2 = blend_color(ds.accent, ds.muted, 35);
@@ -581,14 +636,18 @@ impl DawApp {
         });
         div()
             .relative()
-            .w(px(width))
+            .flex_grow(frac)
+            .flex_basis(px(0.0))
+            .min_w_0()
             .h_full()
-            .flex_shrink_0()
             .flex()
             .items_center()
-            .px(px(if width >= 16.0 { 1.5 } else { 0.5 }))
+            .px(px(if visible_steps <= 16 { 2.0 } else { 1.0 }))
             .bg(rgb(beat_surface(ds, meter, at)))
-            .when(at % meter.ticks_per_beat() == 0, |column| {
+            .when(is_bar_divider, |column| {
+                column.border_l_2().border_color(rgb(ds.accent))
+            })
+            .when(!is_bar_divider && at % meter.ticks_per_beat() == 0, |column| {
                 column
                     .border_l_1()
                     .border_color(rgb(beat_line(ds, meter, at)))
@@ -681,10 +740,11 @@ impl DawApp {
                     })),
             )
             .children(notes.iter().map(|note| {
+                let rel = ((note.start.0 - at) as f32 / span as f32).clamp(0.05, 0.92);
                 div()
                     .absolute()
                     .bottom(px(6.0))
-                    .left(px(tick_width(note.start.0 - at).clamp(1.0, (width - 2.0).max(1.0))))
+                    .left(relative(rel))
                     .w(px(2.0))
                     .h(px(5.0))
                     .bg(rgb(border))
@@ -752,13 +812,15 @@ fn drum_mini_roll(
     ds: &DesignSystem,
     notes: Vec<NoteEvent>,
     root: u8,
-    length: Tick,
+    page_start: i64,
+    page_end: i64,
     meter: Meter,
     color: u32,
 ) -> impl IntoElement + use<> {
     let ds = ds.clone();
     let background = ds.panel_dark;
     let guide = ds.border;
+    let page_span = (page_end - page_start).max(1);
     let (low, high) = notes.iter().fold((root, root), |(low, high), note| {
         (low.min(note.pitch), high.max(note.pitch))
     });
@@ -766,15 +828,13 @@ fn drum_mini_roll(
         |_, _, _| (),
         move |bounds, (), window, _| {
             let width = f32::from(bounds.size.width);
-            let x_at = |tick| px(width * tick as f32 / length.0 as f32);
-            let beat = meter.ticks_per_beat();
-            for at in (0..length.0).step_by(beat as usize) {
+            let x_at = |tick: i64| px(width * (tick - page_start) as f32 / page_span as f32);
+            let beat = meter.ticks_per_beat().max(1);
+            for at in (page_start..page_end).step_by(beat as usize) {
                 let origin = point(bounds.left() + x_at(at), bounds.top());
+                let w = px(width * beat.min(page_end - at) as f32 / page_span as f32);
                 window.paint_quad(fill(
-                    gpui::Bounds::new(
-                        origin,
-                        size(x_at(beat.min(length.0 - at)), bounds.size.height),
-                    ),
+                    gpui::Bounds::new(origin, size(w, bounds.size.height)),
                     rgb(beat_surface(&ds, meter, at)),
                 ));
                 window.paint_quad(fill(
@@ -798,8 +858,13 @@ fn drum_mini_roll(
                 rgb(guide),
             ));
             for note in &notes {
-                let x = x_at(note.start.0);
-                let span = x_at(note.duration.0);
+                if note.start.0 + note.duration.0 <= page_start || note.start.0 >= page_end {
+                    continue;
+                }
+                let start = note.start.0.max(page_start);
+                let end = (note.start.0 + note.duration.0).min(page_end);
+                let x = x_at(start);
+                let span = px(width * (end - start) as f32 / page_span as f32);
                 let height = (row * 0.75).max(2.0);
                 window.paint_quad(
                     fill(

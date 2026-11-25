@@ -487,6 +487,156 @@ impl DawApp {
                     ),
             );
 
+        let total_bars = editor.step_total_bars(meter);
+        let bars_per_page = editor.step_bars_per_page();
+        let page_count = editor.step_page_count(meter);
+        let play_tick = self
+            .drum_pattern_playhead()
+            .map(|beat| (beat * elevate::musical::time::PPQ as f64) as i64);
+        let (visible_page, _, _) = editor.visible_step_window(meter, play_tick);
+        let playing_page = play_tick.map(|t| {
+            let page_ticks = bars_per_page as i64 * bar_ticks.max(1);
+            ((t.max(0) / page_ticks) as usize).min(page_count - 1)
+        });
+        let page_capsule = (total_bars > 1 && !editor.mixer_open).then(|| {
+            let mut cap = drum_capsule(ds);
+            for (bars, label) in [(1usize, "1c"), (2usize, "2c")] {
+                let active = bars_per_page == bars;
+                cap = cap.child(
+                    flat_control(ds, active, ds.cyan)
+                        .id(("drum-view-bars", bars))
+                        .h(px(22.0))
+                        .px(px(6.0))
+                        .rounded(px(ds.radius_sm))
+                        .font_family("monospace")
+                        .text_size(px(10.0))
+                        .font_weight(if active {
+                            FontWeight::SEMIBOLD
+                        } else {
+                            FontWeight::MEDIUM
+                        })
+                        .text_color(rgb(if active { ds.text } else { ds.muted }))
+                        .tooltip(move |window, cx| {
+                            Tooltip::new(if bars == 1 {
+                                "Ver 1 compás por página (pads grandes)"
+                            } else {
+                                "Ver 2 compases por página al ancho completo"
+                            })
+                            .build(window, cx)
+                        })
+                        .child(label)
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, _, _, cx| {
+                                let meter = this.timeline.meter;
+                                this.pattern_editor.set_bars_per_page(bars, meter);
+                                cx.stop_propagation();
+                                cx.notify();
+                            }),
+                        ),
+                );
+            }
+            cap = cap.child(
+                div()
+                    .w(px(1.0))
+                    .h(px(14.0))
+                    .mx(px(1.0))
+                    .bg(rgba(if ds.is_dark() { 0xffffff14 } else { 0x0f172a18 })),
+            );
+            for page in 0..page_count {
+                let first_bar = page * bars_per_page + 1;
+                let last_bar = (first_bar + bars_per_page - 1).min(total_bars);
+                let label = if first_bar == last_bar {
+                    format!("{first_bar}")
+                } else {
+                    format!("{first_bar}–{last_bar}")
+                };
+                let start_tick = (first_bar - 1) as i64 * bar_ticks;
+                let end_tick = (last_bar as i64 * bar_ticks).min(length);
+                let has_notes = editor.page_has_notes(start_tick, end_tick);
+                let is_visible = page == visible_page;
+                let is_playing = playing_page == Some(page);
+                let tip_label = label.clone();
+                cap = cap.child(
+                    flat_control(ds, is_visible, if is_playing { ds.cyan } else { ds.accent })
+                        .id(("drum-step-page", page))
+                        .min_w(px(24.0))
+                        .h(px(22.0))
+                        .px(px(6.0))
+                        .gap(px(4.0))
+                        .rounded(px(ds.radius_sm))
+                        .font_family("monospace")
+                        .text_size(px(10.0))
+                        .font_weight(if is_visible {
+                            FontWeight::BOLD
+                        } else {
+                            FontWeight::MEDIUM
+                        })
+                        .text_color(rgb(if is_visible {
+                            ds.text
+                        } else if has_notes {
+                            ds.accent
+                        } else {
+                            ds.muted
+                        }))
+                        .tooltip(move |window, cx| {
+                            Tooltip::new(format!("Ir a compás {tip_label}")).build(window, cx)
+                        })
+                        .when(is_playing, |el| el.child(led_dot(ds.cyan, 4.5, true)))
+                        .when(!is_playing && has_notes, |el| {
+                            el.child(led_dot(
+                                if is_visible { ds.accent } else { ds.muted },
+                                3.5,
+                                false,
+                            ))
+                        })
+                        .child(label)
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, _, _, cx| {
+                                this.pattern_editor.step_page = page;
+                                if this.player.is_some() {
+                                    this.pattern_editor.follow_playhead = false;
+                                }
+                                cx.stop_propagation();
+                                cx.notify();
+                            }),
+                        ),
+                );
+            }
+            let follow = editor.follow_playhead;
+            cap.child(
+                flat_control(ds, follow, ds.cyan)
+                    .id("drum-page-follow")
+                    .h(px(22.0))
+                    .px(px(7.0))
+                    .gap(px(4.0))
+                    .rounded(px(ds.radius_sm))
+                    .text_size(px(10.0))
+                    .font_weight(if follow {
+                        FontWeight::SEMIBOLD
+                    } else {
+                        FontWeight::MEDIUM
+                    })
+                    .text_color(rgb(if follow { ds.text } else { ds.muted }))
+                    .tooltip(|window, cx| {
+                        Tooltip::new("Cambiar de página automáticamente siguiendo el cabezal")
+                            .build(window, cx)
+                    })
+                    .when(follow, |el| el.child(led_dot(ds.cyan, 4.5, true)))
+                    .child("Seguir")
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, cx| {
+                            this.pattern_editor.follow_playhead =
+                                !this.pattern_editor.follow_playhead;
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    ),
+            )
+        });
+
         // 3. Cápsula de modo de reproducción (Patrón · Canción · Timeline)
         let mode_capsule = drum_capsule(ds).children(
             [
@@ -686,6 +836,7 @@ impl DawApp {
                     .flex_shrink_0()
                     .child(pattern_capsule)
                     .when(!editor.mixer_open, |row| row.child(rhythm_capsule))
+                    .when_some(page_capsule, |row, cap| row.child(cap))
                     .child(mode_capsule),
             )
             .child(kit_capsule)

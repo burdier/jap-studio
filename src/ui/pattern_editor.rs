@@ -35,7 +35,6 @@ pub(super) struct CopiedLane {
     pub notes: Vec<NoteEvent>,
 }
 
-#[derive(Default)]
 pub(super) struct PatternEditor {
     pub session: DrumSession,
     pub cursor_lane: usize,
@@ -44,6 +43,9 @@ pub(super) struct PatternEditor {
     pub lane_menu: Option<DrumLaneMenu>,
     pub copied_lane: Option<CopiedLane>,
     pub cursor_step: usize,
+    pub step_page: usize,
+    pub bars_per_page: usize,
+    pub follow_playhead: bool,
     pub song_page: i64,
     pub workspace_ratio: Option<f32>,
     pub inspector_open: bool,
@@ -59,6 +61,31 @@ pub(super) struct PatternEditor {
     offset_drag: Option<inspector::DrumOffsetDrag>,
 }
 
+impl Default for PatternEditor {
+    fn default() -> Self {
+        Self {
+            session: Default::default(),
+            cursor_lane: 0,
+            steps_scroll: ScrollHandle::new(),
+            options: None,
+            lane_menu: None,
+            copied_lane: None,
+            cursor_step: 0,
+            step_page: 0,
+            bars_per_page: 1,
+            follow_playhead: true,
+            song_page: 0,
+            workspace_ratio: None,
+            inspector_open: false,
+            mixer_open: false,
+            roll: Default::default(),
+            sample_task: None,
+            waveforms: Default::default(),
+            offset_drag: None,
+        }
+    }
+}
+
 impl PatternEditor {
     pub fn new() -> Self {
         Self::default()
@@ -66,6 +93,54 @@ impl PatternEditor {
 
     pub fn pattern(&self) -> &Pattern {
         &self.session.active_pattern().notes
+    }
+
+    pub fn step_bars_per_page(&self) -> usize {
+        self.bars_per_page.clamp(1, 2)
+    }
+
+    pub fn step_total_bars(&self, meter: Meter) -> usize {
+        let bar = meter.ticks_per_bar().max(1);
+        let span = self.pattern().length().0.max(bar);
+        ((span + bar - 1) / bar).max(1) as usize
+    }
+
+    pub fn step_page_count(&self, meter: Meter) -> usize {
+        self.step_total_bars(meter)
+            .div_ceil(self.step_bars_per_page())
+            .max(1)
+    }
+
+    /// Devuelve `(página_visible, tick_inicio, tick_fin)` para la rejilla paginada sin scroll horizontal.
+    pub fn visible_step_window(&self, meter: Meter, play_tick: Option<i64>) -> (usize, i64, i64) {
+        let bar = meter.ticks_per_bar().max(1);
+        let span = self.pattern().length().0.max(bar);
+        let page_ticks = self.step_bars_per_page() as i64 * bar;
+        let pages = self.step_page_count(meter);
+        let page = if self.follow_playhead
+            && let Some(tick) = play_tick
+        {
+            ((tick.max(0) / page_ticks) as usize).min(pages - 1)
+        } else {
+            self.step_page.min(pages - 1)
+        };
+        let start = page as i64 * page_ticks;
+        let end = (start + page_ticks).min(span);
+        (page, start, end)
+    }
+
+    pub fn page_has_notes(&self, start: i64, end: i64) -> bool {
+        let notes = self.pattern().notes();
+        let idx = notes.partition_point(|n| n.start.0 < start);
+        notes.get(idx).is_some_and(|n| n.start.0 < end)
+    }
+
+    pub fn set_bars_per_page(&mut self, bars: usize, meter: Meter) {
+        let old_bars = self.step_bars_per_page();
+        let first_bar = self.step_page * old_bars;
+        self.bars_per_page = bars.clamp(1, 2);
+        let pages = self.step_page_count(meter);
+        self.step_page = (first_bar / self.bars_per_page).min(pages - 1);
     }
 
     pub fn show_roll(&mut self, lane: usize) {
