@@ -22,13 +22,22 @@ impl DawApp {
         }
         match Tempo::new(bpm) {
             Ok(tempo) => {
-                self.stop_all();
                 self.timeline.tempo = tempo;
                 let bpm_f32 = bpm as f32;
                 for effect in self.lua_components.instances.values() {
                     effect.set_bpm(bpm_f32);
                 }
-                self.rewarp_audio_clips_for_tempo(bpm);
+                let dragging = self.timeline.tempo_drag.is_some_and(|d| d.moved);
+                if !dragging {
+                    self.rewarp_audio_clips_for_tempo(bpm);
+                }
+                if let Some(player) = &mut self.player {
+                    if let Err(err) = player.set_bpm(bpm, self.audio_loop) {
+                        self.status_message = err;
+                        return;
+                    }
+                    self.publish_clip_edit();
+                }
                 self.status_message = format!("Tempo: {bpm:.2} BPM");
             }
             Err(error) => self.status_message = error.to_string(),
@@ -88,6 +97,10 @@ impl DawApp {
             return false;
         };
         if !event.dragging() {
+            if drag.moved {
+                let bpm = self.timeline.tempo.bpm();
+                self.rewarp_audio_clips_for_tempo(bpm);
+            }
             self.timeline.tempo_drag = None;
             return true;
         }
@@ -113,7 +126,10 @@ impl DawApp {
         let Some(drag) = self.timeline.tempo_drag.take() else {
             return false;
         };
-        if !drag.moved {
+        if drag.moved {
+            let bpm = self.timeline.tempo.bpm();
+            self.rewarp_audio_clips_for_tempo(bpm);
+        } else {
             self.open_tempo_form(window, cx);
         }
         true

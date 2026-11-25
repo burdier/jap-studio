@@ -441,6 +441,11 @@ impl Mix {
     pub(super) fn timing_bpm(&self) -> f64 {
         self.timing.bpm
     }
+    pub(super) fn set_timing_bpm(&mut self, bpm: f64) {
+        if bpm.is_finite() && bpm > 0.0 {
+            self.timing.bpm = bpm;
+        }
+    }
     pub(super) fn timing_meter(&self) -> Meter {
         self.timing.meter
     }

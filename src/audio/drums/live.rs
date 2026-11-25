@@ -125,6 +125,16 @@ impl LiveDrums {
         }
     }
 
+    /// Recompila el patrón de batería al nuevo BPM en vivo sin cortar el transporte.
+    pub fn set_bpm(&mut self, bpm: f64) -> Result<(), String> {
+        let next_time = TimeBase::new(self.rate, bpm).map_err(|error| error.to_string())?;
+        self.time = next_time;
+        let plan = compile(self.score.as_ref(), &self.kit, self.time)?;
+        let kit = self.kit.clone();
+        self.publish(&kit, plan);
+        Ok(())
+    }
+
     fn publish(&mut self, kit: &DrumKit, plan: Option<Arc<DrumPlan>>) {
         if !same_voice_config(&self.kit, kit) {
             self.requested = self.requested.wrapping_add(1);

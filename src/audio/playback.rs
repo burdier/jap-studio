@@ -57,6 +57,7 @@ struct PlaybackState {
     utility: UtilitySlot,
     master_tap: Arc<Tap>,
     position: AtomicU64,
+    bpm: AtomicU64,
     counting_in: AtomicBool,
     finished: AtomicBool,
     stopping: AtomicBool,
@@ -186,6 +187,7 @@ impl PreparedPlayback {
             master_fx,
             utility,
             position: AtomicU64::new(start),
+            bpm: AtomicU64::new(bpm.to_bits()),
             counting_in: AtomicBool::new(starts_counting_in),
             finished: AtomicBool::new(false),
             stopping: AtomicBool::new(false),
@@ -452,7 +454,7 @@ impl Player {
             .prepare(ProcessSpec::new(f64::from(config.sample_rate)).map_err(|e| e.to_string())?)
             .map_err(|e| e.to_string())?;
         let mut master_fx = state.master_fx.prepare();
-        let bpm = mix.timing_bpm();
+        let mut bpm = mix.timing_bpm();
         let meter = mix.timing_meter();
         let rate = config.sample_rate;
         let clip_end = mix.end;
@@ -463,6 +465,12 @@ impl Player {
             .build_output_stream(
                 config,
                 move |output: &mut [T], _: &cpal::OutputCallbackInfo| {
+                    let live_bpm = f64::from_bits(state.bpm.load(Ordering::Relaxed));
+                    if live_bpm.is_finite() && live_bpm > 0.0 && (live_bpm - bpm).abs() > 1e-6 {
+                        bpm = live_bpm;
+                        mix.set_timing_bpm(bpm);
+                        metro.set_bpm(bpm, meter);
+                    }
                     let request = state.request.read(|r| *r);
                     let mut block = [[0.0_f32; 2]; 256];
                     for output_block in output.chunks_mut(256 * channels) {
@@ -657,6 +665,26 @@ impl Player {
         self.state.finished.store(false, Ordering::Relaxed);
         self.request.revision = self.request.revision.wrapping_add(1);
         self.state.request.publish(self.request);
+        Ok(())
+    }
+
+    /// Cambia el BPM en tiempo real sin pausar la reproducción ni cerrar el stream.
+    /// Conserva el beat musical actual, ajusta el bucle, el metrónomo, Drums y los FX Sync.
+    pub fn set_bpm(&mut self, bpm: f64, loop_range: Option<(f64, f64)>) -> Result<(), String> {
+        let new_bps = Tempo::new(bpm)
+            .map_err(|error| error.to_string())?
+            .beats_per_second();
+        let current_beat = self.beat();
+        self.beats_per_second = new_bps;
+        self.state.bpm.store(bpm.to_bits(), Ordering::Relaxed);
+        self.request.loop_range = loop_frames(loop_range, self.sample_rate, new_bps)?;
+        self.request.seek = beat_frame(current_beat, self.sample_rate, new_bps)?;
+        self.request.generation = self.request.generation.wrapping_add(1);
+        self.request.revision = self.request.revision.wrapping_add(1);
+        self.state.request.publish(self.request);
+        if let Some((drums, _)) = &mut self.drums {
+            drums.set_bpm(bpm)?;
+        }
         Ok(())
     }
     pub fn set_loop(&mut self, range: Option<(f64, f64)>) -> Result<(), String> {

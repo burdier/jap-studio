@@ -169,6 +169,17 @@ impl MetronomeSynth {
         self.count_in_elapsed < self.count_in_total_frames
     }
 
+    /// Actualiza el espaciado de pulsos en vivo sin reiniciar el stream de audio.
+    pub fn set_bpm(&mut self, bpm: f64, meter: Meter) {
+        if !bpm.is_finite() || bpm <= 0.0 {
+            return;
+        }
+        let bps = bpm / 60.0;
+        let beat_unit_quarters = 4.0 / f64::from(meter.denominator().max(1));
+        self.frames_per_pulse = ((f64::from(self.sample_rate) / bps) * beat_unit_quarters).max(1.0);
+        self.last_transport_pulse = None;
+    }
+
     /// Consume la porción del bloque correspondiente a pre-cuenta y devuelve cuántos frames ocupó.
     /// Durante la pre-cuenta el clic suena aunque el metrónomo normal esté apagado.
     pub fn render_count_in(
