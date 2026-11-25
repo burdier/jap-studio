@@ -11,7 +11,6 @@ use elevate::musical::{
 use gpui::{Context, Div, FontWeight, MouseButton, Stateful, div, prelude::*, px, rgb, rgba};
 
 const LABEL_WIDTH: f32 = 104.0;
-const CELL_WIDTH: f32 = 42.0;
 
 impl DawApp {
     pub(super) fn render_drum_song(&self, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -46,6 +45,7 @@ impl DawApp {
         let header = div()
             .flex()
             .w_full()
+            .min_w_0()
             .gap(px(4.0))
             .items_center()
             .flex_shrink_0()
@@ -57,14 +57,14 @@ impl DawApp {
                     .text_size(px(10.0))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(rgb(ds.muted))
-                    .child("SECUENCIA"),
+                    .child("CANCIÓN"),
             )
             .children(columns.iter().enumerate().map(|(index, &at)| {
                 let next = columns.get(index + 1).map_or(page_end, |next| next.0);
                 let playing = now.is_some_and(|tick| tick >= at.0 && tick < next);
                 div()
-                    .flex_shrink_0()
-                    .w(px(CELL_WIDTH))
+                    .flex_1()
+                    .min_w_0()
                     .h(px(18.0))
                     .font_family("monospace")
                     .text_size(px(10.0))
@@ -81,8 +81,9 @@ impl DawApp {
             .flex()
             .flex_col()
             .flex_shrink_0()
+            .w_full()
             .min_w_0()
-            .max_h(px(152.0))
+            .max_h(px(156.0))
             .px(px(10.0))
             .py(px(8.0))
             .gap(px(6.0))
@@ -95,8 +96,9 @@ impl DawApp {
                     .id("drum-song-cells")
                     .flex()
                     .flex_col()
+                    .w_full()
+                    .min_w_0()
                     .min_h_0()
-                    .overflow_x_scroll()
                     .overflow_y_scroll()
                     .gap(px(4.0))
                     .child(header)
@@ -104,6 +106,8 @@ impl DawApp {
                         let id = pattern.id;
                         div()
                             .flex()
+                            .w_full()
+                            .min_w_0()
                             .items_center()
                             .flex_shrink_0()
                             .gap(px(4.0))
@@ -115,6 +119,7 @@ impl DawApp {
                                     cx,
                                 )
                                 .justify_start()
+                                .flex_shrink_0()
                                 .w(px(LABEL_WIDTH)),
                             )
                             .children(columns.iter().map(|&at| {
@@ -131,7 +136,9 @@ impl DawApp {
                                     PatternAction::SongCell(cell),
                                     cx,
                                 )
-                                .w(px(CELL_WIDTH))
+                                .flex_1()
+                                .min_w_0()
+                                .px_0()
                             }))
                     })),
             )
@@ -139,6 +146,7 @@ impl DawApp {
                 div()
                     .flex()
                     .items_center()
+                    .justify_between()
                     .gap(px(6.0))
                     .flex_shrink_0()
                     .child(
@@ -152,23 +160,25 @@ impl DawApp {
                                 page_end / bar,
                             )),
                     )
-                    .children([("Ant", -1), ("Sig", 1)].into_iter().map(|(label, delta)| {
-                        flat_control(ds, false, ds.cyan)
-                            .h(px(20.0))
-                            .px(px(8.0))
-                            .rounded(px(ds.radius_sm))
-                            .text_size(px(10.0))
-                            .text_color(rgb(ds.muted))
-                            .child(label)
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(move |this, _, _, cx| {
-                                    let page = &mut this.pattern_editor.song_page;
-                                    *page = (*page + delta).clamp(0, last_page + 1);
-                                    cx.notify();
-                                }),
-                            )
-                    })),
+                    .child(div().flex().items_center().gap(px(4.0)).children(
+                        [("Ant", -1), ("Sig", 1)].into_iter().map(|(label, delta)| {
+                            flat_control(ds, false, ds.cyan)
+                                .h(px(20.0))
+                                .px(px(8.0))
+                                .rounded(px(ds.radius_sm))
+                                .text_size(px(10.0))
+                                .text_color(rgb(ds.muted))
+                                .child(label)
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(move |this, _, _, cx| {
+                                        let page = &mut this.pattern_editor.song_page;
+                                        *page = (*page + delta).clamp(0, last_page + 1);
+                                        cx.notify();
+                                    }),
+                                )
+                        }),
+                    )),
             )
     }
 }
