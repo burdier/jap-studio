@@ -5,9 +5,10 @@ use super::{
 };
 use crate::musical::{
     model::{InstrumentId, NoteEvent, NoteId, Pattern},
+    pitch_curve::{MAX_PITCH_POINTS, PitchCurve, PitchPoint},
     time::Tick,
 };
-use loro::{LoroDoc, LoroMap};
+use loro::{LoroDoc, LoroMap, LoroValue, ValueOrContainer};
 use std::collections::HashSet;
 
 pub(super) fn write(
@@ -47,6 +48,20 @@ pub(super) fn write(
             .map_err(err)?;
         map.insert("pan", i64::from(note.expression.pan))
             .map_err(err)?;
+        let points = note.pitch_curve.points();
+        if !points.is_empty() || map.get("pitch_curve").is_some() {
+            let values: Vec<_> = points
+                .iter()
+                .flat_map(|point| {
+                    [
+                        LoroValue::I64(i64::from(point.at)),
+                        LoroValue::I64(i64::from(point.cents)),
+                    ]
+                })
+                .collect();
+            map.insert("pitch_curve", LoroValue::List(values.into()))
+                .map_err(err)?;
+        }
         map.insert("velocity", i64::from(note.velocity))
             .map_err(err)?;
         map.insert("muted", muted_notes.contains(&note.id))
@@ -77,6 +92,7 @@ pub(super) fn read(
         }
         notes.push(NoteEvent {
             id: NoteId(note_id),
+            pitch_curve: read_pitch_curve(&note)?,
             instrument: InstrumentId(
                 u32::try_from(read_i64(&note, "instrument")?)
                     .map_err(|_| "Instrumento MIDI inválido")?,
@@ -114,6 +130,29 @@ pub(super) fn read(
             .map_err(|error| error.to_string())?;
     super::midi_controls::read(doc, prefix, id, map, &mut pattern)?;
     Ok((pattern, muted_notes))
+}
+
+fn read_pitch_curve(map: &LoroMap) -> Result<PitchCurve, String> {
+    let Some(value) = map.get("pitch_curve") else {
+        return Ok(PitchCurve::default());
+    };
+    let ValueOrContainer::Value(LoroValue::List(values)) = value else {
+        return Err("Curva de pitch por nota inválida".into());
+    };
+    if values.len() > MAX_PITCH_POINTS * 2 || values.len() % 2 != 0 {
+        return Err("Cantidad de puntos de pitch inválida".into());
+    }
+    let mut points = Vec::with_capacity(values.len() / 2);
+    for pair in values.chunks_exact(2) {
+        let [LoroValue::I64(at), LoroValue::I64(cents)] = pair else {
+            return Err("Punto de pitch inválido".into());
+        };
+        points.push(PitchPoint {
+            at: u16::try_from(*at).map_err(|_| "Posición de pitch fuera de rango")?,
+            cents: i16::try_from(*cents).map_err(|_| "Afinación fuera de rango")?,
+        });
+    }
+    PitchCurve::new(points).map_err(|error| error.to_string())
 }
 
 fn err(error: loro::LoroError) -> String {

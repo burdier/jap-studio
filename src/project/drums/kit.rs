@@ -28,6 +28,10 @@ pub(super) fn write(doc: &LoroDoc, kit: &DrumKit) -> Result<(), String> {
         map.insert("name", piece.name.as_str()).map_err(err)?;
         map.insert("choke_group", i64::from(piece.choke_group.unwrap_or(0)))
             .map_err(err)?;
+        map.insert("timing_offset", i64::from(piece.timing_offset))
+            .map_err(err)?;
+        map.insert("timing_mode", i64::from(piece.timing_mode.as_u8()))
+            .map_err(err)?;
         write_mix(&map, piece.mix)?;
         write_sampler(&map, &piece.sampler)?;
         map.insert("layer_count", piece.layers.len() as i64)
@@ -38,6 +42,10 @@ pub(super) fn write(doc: &LoroDoc, kit: &DrumKit) -> Result<(), String> {
             map.insert("velocity_min", i64::from(layer.velocity_min))
                 .map_err(err)?;
             map.insert("velocity_max", i64::from(layer.velocity_max))
+                .map_err(err)?;
+            map.insert("start_offset", i64::from(layer.start_offset))
+                .map_err(err)?;
+            map.insert("offset_mode", i64::from(layer.offset_mode.as_u8()))
                 .map_err(err)?;
         }
     }
@@ -62,8 +70,35 @@ pub(super) fn read(doc: &LoroDoc, id: DrumKitId) -> Result<DrumKit, String> {
                 source: read_string(&map, "source")?,
                 velocity_min: parse_id(&map, "velocity_min")?,
                 velocity_max: parse_id(&map, "velocity_max")?,
+                start_offset: if map.get("start_offset").is_some() {
+                    parse_id(&map, "start_offset")?
+                } else {
+                    0
+                },
+                offset_mode: if map.get("offset_mode").is_some() {
+                    crate::musical::drums::OffsetMode::from_u8(parse_id(&map, "offset_mode")?)
+                } else {
+                    crate::musical::drums::OffsetMode::Fixed
+                },
             });
         }
+        let timing_offset = if map.get("timing_offset").is_some() {
+            let raw = match map.get("timing_offset") {
+                Some(loro::ValueOrContainer::Value(loro::LoroValue::I64(v))) => v,
+                _ => 0,
+            };
+            raw.clamp(
+                -i64::from(DrumPiece::MAX_TIMING_OFFSET),
+                i64::from(DrumPiece::MAX_TIMING_OFFSET),
+            ) as i16
+        } else {
+            0
+        };
+        let timing_mode = if map.get("timing_mode").is_some() {
+            crate::musical::drums::OffsetMode::from_u8(parse_id(&map, "timing_mode")?)
+        } else {
+            crate::musical::drums::OffsetMode::Fixed
+        };
         pieces.push(DrumPiece {
             id,
             name: read_string(&map, "name")?,
@@ -71,6 +106,8 @@ pub(super) fn read(doc: &LoroDoc, id: DrumKitId) -> Result<DrumKit, String> {
             layers,
             choke_group: (choke_group != 0).then_some(choke_group),
             mix: read_mix(&map)?,
+            timing_offset,
+            timing_mode,
         });
     }
     Ok(DrumKit {
@@ -147,7 +184,13 @@ fn read_sampler(map: &LoroMap) -> Result<SamplerParams, String> {
     params.choke = read_bool(map, "choke")?;
     let mut values = [0.0; PARAMS.len()];
     for (index, spec) in PARAMS.iter().enumerate() {
-        let value = super::super::midi::read_f64(map, &format!("sample:{}", spec.key))? as f32;
+        let key = format!("sample:{}", spec.key);
+        let value =
+            if map.get(&key).is_none() && index >= crate::devices::sampler::FIRST_OPTIONAL_PARAM {
+                spec.default
+            } else {
+                super::super::midi::read_f64(map, &key)? as f32
+            };
         if !value.is_finite() || value < spec.min || value > spec.max {
             return Err(format!("Parámetro de batería inválido ({})", spec.name));
         }

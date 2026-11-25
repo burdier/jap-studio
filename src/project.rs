@@ -1,11 +1,12 @@
 //! Documento CRDT del proyecto. Solo datos editables; audio decodificado y vistas viven fuera.
-use crate::musical::track::{HiloMode, Track, TrackId, TrackKind};
+use crate::musical::track::{HiloMode, Track, TrackId, TrackKind, TrackSend};
 use crate::musical::weave::WeaveRule;
-use loro::{ExportMode, LoroDoc};
+use loro::{CommitOptions, ExportMode, Frontiers, ID, LoroDoc};
 use std::{
     collections::HashSet,
     fs::{self, OpenOptions},
     io::Write,
+    ops::ControlFlow,
     path::Path,
     sync::atomic::{AtomicU64, Ordering},
 };
@@ -14,12 +15,13 @@ mod audio;
 mod collect;
 mod drums;
 mod instruments;
-pub use instruments::ProjectPiano;
+pub use instruments::{ProjectPiano, ProjectSampler, ProjectVstInstrument};
 mod fx;
 mod midi;
 mod midi_controls;
 mod pattern;
 mod session_state;
+pub use session_state::ArrangementNavigation;
 mod track;
 pub use audio::ProjectAudioClip;
 pub use collect::CollectedAudio;
@@ -42,6 +44,7 @@ pub struct ProjectTrack {
     pub weave_rule: Option<WeaveRule>,
     pub muted: bool,
     pub solo: bool,
+    pub sends: Vec<TrackSend>,
 }
 
 impl From<&Track> for ProjectTrack {
@@ -56,6 +59,7 @@ impl From<&Track> for ProjectTrack {
             weave_rule: track.weave_rule.clone(),
             muted: track.muted,
             solo: track.solo,
+            sends: track.sends.clone(),
         }
     }
 }
@@ -64,7 +68,43 @@ pub struct ProjectDoc {
     doc: LoroDoc,
 }
 
+/// Entrada persistente del historial CRDT almacenada en el `OpLog` de Loro.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectCommit {
+    /// Frontera Loro codificada al final de este commit (para `checkout_commit`).
+    pub frontiers: Vec<u8>,
+    pub message: String,
+    /// Marca de tiempo Unix (segundos) guardada dentro del commit Loro.
+    pub timestamp: i64,
+    /// Número de operaciones CRDT contenidas en este commit.
+    pub ops: usize,
+}
+
 impl ProjectDoc {
+    #[cfg(feature = "p2p")]
+    pub fn append_edit_credit(&self, message: &str) -> Result<(), String> {
+        self.doc
+            .get_list("edit_credits")
+            .push(message)
+            .map_err(|e| e.to_string())
+    }
+
+    #[cfg(feature = "p2p")]
+    pub fn recent_edit_credits(&self, limit: usize) -> Vec<String> {
+        use loro::ToJson;
+        let list = self.doc.get_list("edit_credits");
+        (list.len().saturating_sub(limit)..list.len())
+            .rev()
+            .filter_map(|i| {
+                list.get(i)?
+                    .get_deep_value()
+                    .to_json_value()
+                    .as_str()
+                    .map(|s| s.chars().take(160).collect())
+            })
+            .collect()
+    }
+
     pub fn new(name: &str) -> Result<Self, String> {
         let project = Self {
             doc: LoroDoc::new(),
@@ -83,6 +123,50 @@ impl ProjectDoc {
 
     pub fn name(&self) -> Result<String, String> {
         read_string(&self.doc.get_map("project"), "name")
+    }
+
+    /// El autor del campo de esquema identifica el origen de las copias de esta versión.
+    #[cfg(feature = "p2p")]
+    pub fn collaboration_origin(&self) -> Result<u64, String> {
+        self.doc
+            .get_map("project")
+            .get_last_editor("schema")
+            .ok_or_else(|| "El proyecto no tiene un origen de colaboración".into())
+    }
+
+    #[cfg(feature = "p2p")]
+    pub fn collaboration_version(&self) -> loro::VersionVector {
+        self.doc.commit();
+        self.doc.oplog_vv()
+    }
+
+    #[cfg(feature = "p2p")]
+    pub fn collaboration_updates(&self, from: &loro::VersionVector) -> Result<Vec<u8>, String> {
+        self.validate()?;
+        self.doc
+            .export(ExportMode::updates(from))
+            .map_err(|error| error.to_string())
+    }
+
+    /// Prepara una transacción local sin alterar el documento publicado.
+    #[cfg(feature = "p2p")]
+    pub fn collaboration_fork(&self) -> Self {
+        Self {
+            doc: self.doc.fork(),
+        }
+    }
+
+    #[cfg(feature = "p2p")]
+    pub fn collaboration_frontiers(&self) -> loro::Frontiers {
+        self.doc.oplog_frontiers()
+    }
+
+    #[cfg(feature = "p2p")]
+    pub fn collaboration_fork_at(&self, frontiers: &loro::Frontiers) -> Result<Self, String> {
+        self.doc
+            .fork_at(frontiers)
+            .map(|doc| Self { doc })
+            .map_err(|error| error.to_string())
     }
 
     pub fn rename(&self, name: &str) -> Result<(), String> {
@@ -217,6 +301,21 @@ impl ProjectDoc {
         if read_bool(&map, "solo").ok() != Some(track.solo) {
             map.insert("solo", track.solo).map_err(|e| e.to_string())?;
         }
+        let sends_encoded = track
+            .sends
+            .iter()
+            .filter(|send| send.amount > 0)
+            .map(|send| format!("{}:{}", send.target.0, send.amount.min(100)))
+            .collect::<Vec<_>>()
+            .join(",");
+        let existing_sends = map
+            .get("sends")
+            .and_then(|_| read_string(&map, "sends").ok())
+            .unwrap_or_default();
+        if existing_sends != sends_encoded {
+            map.insert("sends", sends_encoded.as_str())
+                .map_err(|e| e.to_string())?;
+        }
         Ok(())
     }
 
@@ -265,6 +364,30 @@ impl ProjectDoc {
                 },
                 muted: read_bool(&map, "muted")?,
                 solo: read_bool(&map, "solo")?,
+                sends: if map.get("sends").is_some() {
+                    let raw = read_string(&map, "sends")?;
+                    let mut parsed = Vec::new();
+                    for part in raw.split(',').filter(|s| !s.is_empty()) {
+                        let (target, amount) = part
+                            .split_once(':')
+                            .ok_or_else(|| "Envío auxiliar inválido".to_string())?;
+                        let target = target
+                            .parse::<u32>()
+                            .map_err(|_| "ID de destino de envío inválido".to_string())?;
+                        let amount = amount
+                            .parse::<u8>()
+                            .map_err(|_| "Nivel de envío inválido".to_string())?;
+                        if amount > 0 {
+                            parsed.push(TrackSend {
+                                target: TrackId(target),
+                                amount: amount.min(100),
+                            });
+                        }
+                    }
+                    parsed
+                } else {
+                    Vec::new()
+                },
             });
         }
         validate_tracks(&tracks)?;
@@ -296,15 +419,7 @@ impl ProjectDoc {
             return Err("ID compartido entre clips MIDI y audio".into());
         }
         midi::write_clips(&self.doc, &self.tracks()?, clips)?;
-        let meta = self.doc.get_map("project");
-        let next = crate::musical::clip::ClipId::next_id().max(
-            u64::try_from(read_i64(&meta, "next_clip_id")?).map_err(|_| "ID de clip inválido")?,
-        );
-        meta.insert(
-            "next_clip_id",
-            i64::try_from(next).map_err(|_| "ID de clip agotado")?,
-        )
-        .map_err(|error| error.to_string())
+        self.persist_next_clip_id()
     }
 
     pub fn midi_clips(&self) -> Result<Vec<crate::musical::clip::MidiClip>, String> {
@@ -338,6 +453,27 @@ impl ProjectDoc {
             return Err("ID compartido entre clips MIDI y audio".into());
         }
         audio::write_clips(&self.doc, &self.tracks()?, clips)?;
+        self.persist_next_clip_id()
+    }
+
+    /// Reconcilia ambas colecciones tras un cambio de pistas o de kit.
+    /// Los clips obsoletos pueden referir a pistas ya eliminadas.
+    pub fn reconcile_session_clips(
+        &self,
+        midi: &[crate::musical::clip::MidiClip],
+        audio: &[ProjectAudioClip],
+    ) -> Result<(), String> {
+        let midi_ids: HashSet<_> = midi.iter().map(|clip| clip.id).collect();
+        if audio.iter().any(|clip| midi_ids.contains(&clip.id)) {
+            return Err("ID compartido entre clips MIDI y audio".into());
+        }
+        let tracks = self.tracks()?;
+        midi::write_clips(&self.doc, &tracks, midi)?;
+        audio::write_clips(&self.doc, &tracks, audio)?;
+        self.persist_next_clip_id()
+    }
+
+    fn persist_next_clip_id(&self) -> Result<(), String> {
         let meta = self.doc.get_map("project");
         let next = crate::musical::clip::ClipId::next_id().max(
             u64::try_from(read_i64(&meta, "next_clip_id")?).map_err(|_| "ID de clip inválido")?,
@@ -379,6 +515,7 @@ impl ProjectDoc {
                     muted: entry.muted,
                     solo: entry.solo,
                     parent: entry.parent,
+                    sends: entry.sends,
                     chain: fx::read_chain(&self.doc, entry.id)?,
                 })
             })
@@ -404,10 +541,13 @@ impl ProjectDoc {
     /// Importa en una copia y publica el resultado solo si el esquema sigue siendo válido.
     pub fn merge(&mut self, bytes: &[u8]) -> Result<(), String> {
         let candidate = Self::import(&self.snapshot()?)?;
-        candidate
+        let imported = candidate
             .doc
             .import(bytes)
             .map_err(|error| error.to_string())?;
+        if imported.pending.is_some() {
+            return Err("Faltan operaciones anteriores del proyecto".into());
+        }
         candidate.validate()?;
         *self = candidate;
         Ok(())
@@ -427,7 +567,10 @@ impl ProjectDoc {
         }
         self.name()?;
         self.timing()?;
+        self.master_utility()?;
         self.pianos()?;
+        self.samplers()?;
+        self.vst_instruments()?;
         self.drum_session()?;
         crate::musical::clip::ClipId::reserve_next_id(
             u64::try_from(read_i64(&self.doc.get_map("project"), "next_clip_id")?)
@@ -487,5 +630,147 @@ impl ProjectDoc {
     pub fn load(path: &Path) -> Result<Self, String> {
         let bytes = fs::read(path).map_err(|e| e.to_string())?;
         Self::import(&bytes)
+    }
+
+    /// Consolida las ediciones pendientes como un commit Loro etiquetado y persistente.
+    /// Si no hubo cambios reales en el documento, Loro omite el commit sin ensuciar el historial.
+    pub fn commit_change(&self, message: &str, timestamp_secs: i64) {
+        self.doc.commit_with(
+            CommitOptions::new()
+                .commit_msg(message)
+                .timestamp(timestamp_secs),
+        );
+    }
+
+    /// Devuelve la frontera Loro actual codificada tras consolidar cambios pendientes.
+    pub fn latest_frontiers(&self) -> Vec<u8> {
+        self.doc.commit();
+        self.doc.oplog_frontiers().encode()
+    }
+
+    /// Recorre el `OpLog` de Loro y devuelve el historial cronológico (del más antiguo al actual).
+    /// Conserva mensajes y timestamps persistidos dentro del archivo `.loro`.
+    pub fn history_commits(&self, limit: usize) -> Vec<ProjectCommit> {
+        self.doc.commit();
+        let tip = self.doc.oplog_frontiers();
+        if tip.is_empty() {
+            return Vec::new();
+        }
+        let mut raw = Vec::new();
+        let tip_ids = tip.to_vec();
+        let _ = self.doc.travel_change_ancestors(&tip_ids, &mut |meta| {
+            if meta.len == 0 {
+                return ControlFlow::Continue(());
+            }
+            let end_counter = meta.id.counter + (meta.len as i32) - 1;
+            let end_id = ID::new(meta.id.peer, end_counter);
+            let frontiers = Frontiers::from(end_id).encode();
+            let message = meta
+                .message
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_owned);
+            raw.push((frontiers, message, meta.timestamp, meta.len));
+            if raw.len() >= limit.saturating_mul(2).max(64) {
+                ControlFlow::Break(())
+            } else {
+                ControlFlow::Continue(())
+            }
+        });
+
+        // Filtrar solo commits etiquetados cuando el proyecto ya usa commits con mensaje;
+        // si es un archivo `.loro` antiguo sin mensajes, exponer el último estado válido.
+        let has_labeled = raw.iter().any(|(_, msg, _, _)| msg.is_some());
+        let mut commits: Vec<ProjectCommit> = if has_labeled {
+            raw.into_iter()
+                .filter_map(|(frontiers, msg, timestamp, ops)| {
+                    msg.map(|message| ProjectCommit {
+                        frontiers,
+                        message,
+                        timestamp,
+                        ops,
+                    })
+                })
+                .take(limit)
+                .collect()
+        } else {
+            raw.into_iter()
+                .take(1)
+                .map(|(frontiers, _, timestamp, ops)| ProjectCommit {
+                    frontiers,
+                    message: "Estado guardado".into(),
+                    timestamp,
+                    ops,
+                })
+                .collect()
+        };
+        // `travel_change_ancestors` recorre de más reciente a más antiguo; invertir a cronológico.
+        commits.reverse();
+        commits
+    }
+
+    /// Time-travel Loro: crea una vista aislada del documento en la frontera indicada
+    /// sin alterar ni truncar el historial completo.
+    pub fn checkout_commit(&self, frontiers: &[u8]) -> Result<Self, String> {
+        let decoded =
+            Frontiers::decode(frontiers).map_err(|e| format!("Frontera Loro inválida: {e}"))?;
+        let forked = self
+            .doc
+            .fork_at(&decoded)
+            .map_err(|e| format!("Loro checkout fallido: {e}"))?;
+        let project = Self { doc: forked };
+        project.validate()?;
+        Ok(project)
+    }
+}
+
+#[cfg(test)]
+mod history_tests {
+    use super::*;
+    use crate::musical::{
+        time::{Meter, Tempo},
+        track::{Track, TrackKind},
+    };
+
+    #[test]
+    fn loro_history_commits_persist_and_time_travel_restores_exact_states() {
+        let doc = ProjectDoc::new("Demo").unwrap();
+        doc.set_timing(Tempo::new(120.0).unwrap(), Meter::default())
+            .unwrap();
+        doc.reconcile_tracks(&[]).unwrap();
+        doc.commit_change("Inicio de sesión", 1_700_000_000);
+
+        let t1 = Track::new("Piano", TrackKind::Synth);
+        doc.reconcile_tracks(std::slice::from_ref(&t1)).unwrap();
+        doc.commit_change("Añadir pista «Piano»", 1_700_000_010);
+
+        doc.set_timing(Tempo::new(138.0).unwrap(), Meter::default())
+            .unwrap();
+        doc.commit_change("Tempo → 138.0 BPM", 1_700_000_020);
+
+        // Simular cierre y reapertura desde bytes `.loro`
+        let bytes = doc.snapshot().unwrap();
+        let reopened = ProjectDoc::import(&bytes).unwrap();
+        let commits = reopened.history_commits(64);
+        assert_eq!(commits.len(), 3);
+        assert_eq!(commits[0].message, "Inicio de sesión");
+        assert_eq!(commits[1].message, "Añadir pista «Piano»");
+        assert_eq!(commits[2].message, "Tempo → 138.0 BPM");
+        assert_eq!(commits[2].timestamp, 1_700_000_020);
+
+        // Time-travel a cada punto exacto del historial Loro
+        let at0 = reopened.checkout_commit(&commits[0].frontiers).unwrap();
+        assert!(at0.tracks().unwrap().is_empty());
+        assert_eq!(at0.timing().unwrap().0.bpm(), 120.0);
+
+        let at1 = reopened.checkout_commit(&commits[1].frontiers).unwrap();
+        assert_eq!(at1.tracks().unwrap().len(), 1);
+        assert_eq!(at1.tracks().unwrap()[0].name, "Piano");
+        assert_eq!(at1.timing().unwrap().0.bpm(), 120.0);
+
+        let at2 = reopened.checkout_commit(&commits[2].frontiers).unwrap();
+        assert_eq!(at2.tracks().unwrap().len(), 1);
+        assert_eq!(at2.timing().unwrap().0.bpm(), 138.0);
     }
 }

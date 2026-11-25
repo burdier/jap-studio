@@ -1,6 +1,6 @@
 //! Adaptador de topología FX; Loro conserva cada nodo y su lista de hijos por ID.
 use crate::musical::{
-    fx::{FxChain, FxId, FxKind, FxNode},
+    fx::{BranchMix, FxChain, FxId, FxKind, FxNode},
     track::{TrackDevice, TrackId},
 };
 use loro::{LoroDoc, LoroMovableList, ToJson};
@@ -45,6 +45,55 @@ fn write_children(
             .map_err(|error| error.to_string())?;
         map.insert("enabled", node.enabled)
             .map_err(|error| error.to_string())?;
+        if let Some(ir) = &node.cabinet_ir {
+            map.insert("ir_name", ir.name.as_str())
+                .map_err(|e| e.to_string())?;
+            map.insert("ir_rate", ir.rate as i64)
+                .map_err(|e| e.to_string())?;
+            if map.get("ir_pcm").is_none_or(|v| {
+                v.get_deep_value()
+                    .as_binary()
+                    .is_none_or(|b| b.as_slice() != ir.pcm.as_ref())
+            }) {
+                map.insert("ir_pcm", ir.pcm.to_vec())
+                    .map_err(|e| e.to_string())?;
+            }
+        } else if map.get("ir_pcm").is_some() {
+            for key in ["ir_name", "ir_rate", "ir_pcm"] {
+                map.delete(key).map_err(|e| e.to_string())?;
+            }
+        }
+        let stored = map.get("vst_state").map(|v| v.get_deep_value());
+        if let Some(preset) = &node.vst_preset {
+            if stored
+                .as_ref()
+                .and_then(|v| v.as_binary())
+                .is_none_or(|v| v.as_slice() != preset.bytes())
+            {
+                map.insert("vst_state", preset.bytes().to_vec())
+                    .map_err(|e| e.to_string())?;
+            }
+        } else if stored.is_some() {
+            map.delete("vst_state").map_err(|e| e.to_string())?;
+        }
+        let db10 = i64::from(node.branch_mix.db10);
+        if map
+            .get("branch_db10")
+            .and_then(|v| v.get_deep_value().to_json_value().as_i64())
+            .unwrap_or(0)
+            != db10
+        {
+            map.insert("branch_db10", db10).map_err(|e| e.to_string())?;
+        }
+        if map
+            .get("branch_solo")
+            .and_then(|v| v.get_deep_value().to_json_value().as_bool())
+            .unwrap_or(false)
+            != node.branch_mix.solo
+        {
+            map.insert("branch_solo", node.branch_mix.solo)
+                .map_err(|e| e.to_string())?;
+        }
         let (kind, plugin_type, plugin_id) = match &node.kind {
             FxKind::Effect {
                 plugin_id: TrackDevice::Hay { catalog_id },
@@ -54,6 +103,16 @@ fn write_children(
                 plugin_id: TrackDevice::Vst3 { class_id },
                 ..
             } => (0, 1, class_id.as_str()),
+            FxKind::Crossover { hz, .. } => {
+                let stored = map
+                    .get("hz")
+                    .and_then(|v| v.get_deep_value().to_json_value().as_u64());
+                if stored != Some(u64::from(*hz)) {
+                    map.insert("hz", i64::from(*hz))
+                        .map_err(|e| e.to_string())?;
+                }
+                (3, -1, "")
+            }
             FxKind::SerialChain { .. } => (1, -1, ""),
             FxKind::ParallelChain { .. } => (2, -1, ""),
         };
@@ -91,7 +150,7 @@ fn write_children(
             FxKind::SerialChain { children } => {
                 write_children(doc, track, Some(node.id), children)?
             }
-            FxKind::ParallelChain { branches } => {
+            FxKind::ParallelChain { branches } | FxKind::Crossover { branches, .. } => {
                 write_children(doc, track, Some(node.id), branches)?
             }
         }
@@ -179,6 +238,10 @@ fn read_children(
             1 => FxKind::SerialChain {
                 children: read_children(doc, track, Some(FxId(id)), depth + 1, ids)?,
             },
+            3 => FxKind::Crossover {
+                hz: u16::try_from(read_int("hz")?).map_err(|_| "Cruce fuera de rango")?,
+                branches: read_children(doc, track, Some(FxId(id)), depth + 1, ids)?,
+            },
             2 => FxKind::ParallelChain {
                 branches: read_children(doc, track, Some(FxId(id)), depth + 1, ids)?,
             },
@@ -192,6 +255,56 @@ fn read_children(
             id: FxId(id),
             name: read_text("name")?,
             enabled,
+            cabinet_ir: map
+                .get("ir_pcm")
+                .map(|v| {
+                    let value = v.get_deep_value();
+                    let data = value.as_binary().ok_or("PCM de IR inválido")?;
+                    if data.len() > 768000 {
+                        return Err("IR demasiado larga".into());
+                    }
+                    crate::musical::fx::cabinet::CabinetImpulse::new(
+                        read_text("ir_name")?,
+                        u32::try_from(read_int("ir_rate")?)
+                            .map_err(|_| "Frecuencia IR inválida")?,
+                        data.to_vec(),
+                    )
+                })
+                .transpose()?,
+            vst_preset: map
+                .get("vst_state")
+                .map(|v| {
+                    let v = v.get_deep_value();
+                    let bytes = v.as_binary().ok_or("Estado VST3 inválido")?;
+                    if bytes.len() > crate::musical::fx::VstPreset::LIMIT {
+                        return Err("Estado VST3 demasiado grande".into());
+                    }
+                    crate::musical::fx::VstPreset::new(bytes.to_vec())
+                })
+                .transpose()?,
+            branch_mix: BranchMix {
+                db10: map
+                    .get("branch_db10")
+                    .map(|v| {
+                        v.get_deep_value()
+                            .to_json_value()
+                            .as_i64()
+                            .and_then(|n| i16::try_from(n).ok())
+                            .ok_or("Nivel de rama inválido")
+                    })
+                    .transpose()?
+                    .unwrap_or(0),
+                solo: map
+                    .get("branch_solo")
+                    .map(|v| {
+                        v.get_deep_value()
+                            .to_json_value()
+                            .as_bool()
+                            .ok_or("Solo de rama inválido")
+                    })
+                    .transpose()?
+                    .unwrap_or(false),
+            },
             kind,
         });
     }
