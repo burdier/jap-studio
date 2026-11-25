@@ -10,6 +10,18 @@ En el [+] existente, busca **Hay Sampler**. También acepta `:sampler`. Se asign
 pista seleccionada, aparece en Track FX y abre el editor inferior. Carga un archivo con **Cargar sample…**, suéltalo
 sobre el panel o usa **Desde biblioteca** con un archivo seleccionado en el explorador.
 
+En el Explorador, **Detectar raíz** propone una nota y su desviación en cents a
+partir de varios tramos de la muestra. Puedes elegir la raíz con **− / +**.
+**Usar como raíz** carga el archivo en el Hay Sampler de la pista activa y
+compensa los cents detectados. **Preescuchar con la frase** usa el clip MIDI
+seleccionado, su recorte y el tempo del proyecto. La preescucha arranca desde
+el inicio del clip en una salida independiente y dura hasta 30 segundos.
+**Añadir al Hilo** incorpora el sample afinado como rama con su propio fader.
+Desde una pista raíz con instrumento crea un Hilo en modo Capas. En un Hilo
+existente conserva su modo y mantiene la identidad del clip MIDI. La edición
+estructural detiene Play. Guardar conserva la ruta del sample y los parámetros,
+incluida la raíz.
+
 El dispositivo conserva colores, tipografía, botones, perillas y teclado de Hay. La
 organización sigue la referencia de Simpler: modos a la izquierda, waveform arriba,
 región/afinación/voces debajo y filtro/ADSR/salida en una segunda fila.
@@ -38,11 +50,11 @@ región/afinación/voces debajo y filtro/ADSR/salida en una segunda fila.
 ## Límites de este incremento
 
 Varias instancias sampler pueden sonar juntas en el Arrangement. No incluye Warp,
-Slice, LFO ni MPE ni guardado de proyecto. La audición live conserva un adaptador
+Slice, LFO ni MPE. La audición live conserva un adaptador
 individual y al tocar interrumpe Play.
 El sampler conserva su stream de audición silencioso tras Stop para permitir volver
-a tocar sin cargar otra vez. El estado y el sample cargado duran la sesión. La
-exportación offline de más de un sampler se rechaza explícitamente por ahora.
+a tocar sin cargar otra vez. El proyecto guarda la referencia al archivo y restaura
+el sampler al abrirlo.
 
 La carga decodifica el archivo completo con Symphonia y prepara un WAV float temporal
 para sfizz. Así comparte los formatos de importación de Hay sin depender de los codecs
@@ -96,3 +108,8 @@ la muestra, y su duración audible se ajusta con el archivo y la envolvente.
 el anterior, incluso al cambiar de tono. **Grupo de corte** permite enlazar piezas.
 Las muestras nuevas traen activados Cola completa y Cortar al repetir.
 Para una muestra ya guardada, actívalos desde **Ajustes** de esa pieza.
+La ganancia inicial de una muestra nueva es 0 dB. Jap Studio inicializa
+la salida de sfizz y el volumen MIDI a ganancia unitaria. El nivel de
+cada golpe sigue respondiendo a la velocidad y al fader de la pieza.
+Los proyectos guardados conservan el valor de ganancia de cada muestra,
+aunque el nivel resultante puede subir al quitarse el recorte interno de sfizz.

@@ -45,16 +45,15 @@ independientes de dos copias; todavía no se conectan a gestos de la UI.
 Loro hace converger las operaciones que reciban las copias. Hay debe definir
 la respuesta musical a cambios concurrentes que puedan dejar referencias
 inválidas, como borrar una rama mientras otra copia dirige un clip hacia ella.
-El `merge` actual rechaza candidatos inválidos; antes de conectar red hay que
+El `merge` actual rechaza candidatos inválidos. Para editar en continuo hay que
 resolver o aplazar esos cambios de forma determinista y probar convergencia en
 ambos órdenes. El transporte de audio, las voces y los buffers no son datos CRDT.
 
 ## Apertura y guardado local
 
 `ui/project` captura el estado editable de la UI, conserva el documento del último
-archivo y reconcilia el siguiente guardado sobre él. No hay sincronización por gesto
-ni colaboración en red. Guardar como cambia la ubicación solo después del éxito.
-Las escrituras usan el reemplazo atómico de `ProjectDoc::save`.
+archivo y reconcilia el siguiente guardado sobre él. Guardar como cambia la ubicación
+solo después del éxito. Las escrituras usan el reemplazo atómico de `ProjectDoc::save`.
 
 La apertura valida el documento, resuelve recursos relativos al archivo, deduplica
 la decodificación de audio y comprueba SoundFonts/presets antes de publicar la sesión.
@@ -68,8 +67,79 @@ El alcance y exclusiones de este incremento están en README, «Abrir y guardar 
 La acción `audio.collect` conserva su alcance anterior; no se convierte en un guardado
 completo ni incorpora SoundFonts automáticamente.
 
+## Colaboración en vivo por Iroh
+
+Abre una copia guardada del mismo proyecto en cada ventana. En la primera, elige
+**Archivo → Compartir sesión** y pulsa **Copiar invitación** en el diálogo.
+También puedes seleccionar el código y copiarlo con Ctrl+C.
+En la segunda, copia esa invitación y elige **Archivo → Unirse**. El título muestra
+**En sesión** cuando entra el invitado. **Salir de la sesión** cierra la conexión.
+La prueba en Wayland leyó la invitación del portapapeles y la usó en la segunda
+ventana.
+
+Ambas ventanas intercambian el estado editable del `.loro` en vivo. Incluye
+pistas, grupos, Hilos y Utility de pista, tempo y compás, mezcla, clips de
+Arrangement, sus notas y controles MIDI, Drums Latex y Hay Piano. Un arrastre de
+varios clips se publica al soltar el ratón. Si el Piano Roll tiene abierto el
+mismo clip, conserva el foco mientras llegan sus notas.
+
+Al entrar, la ventana invitada recibe el estado del anfitrión. Después, ambas
+envían operaciones Loro con la versión desde la que editaron. Las ediciones sobre
+clips distintos se pueden combinar. Si las dos cambian el mismo clip de maneras
+incompatibles o la fusión deja referencias inválidas, la sesión se cierra y cada
+músico puede guardar sus cambios en su copia. Guardar sigue siendo una acción local.
+
+Las fuentes de audio, muestras y SoundFonts se comparten por referencia y deben
+estar disponibles en ambas copias. Sampler, el estado de plugins externos,
+MIDI Learn y Utility de salida quedan fuera del estado recuperable. Cada ventana
+controla su selección, su vista y su transporte.
+
+Con dos ventanas del mismo release, se movieron, duplicaron y borraron dos
+clips de pistas distintas en ambos sentidos. Con el mismo clip abierto en
+ambos Piano Rolls, el anfitrión duplicó notas y el invitado las borró y restauró.
+Los cambios se vieron antes de guardar. Los dos archivos guardados conservaron
+los mismos IDs, posiciones y notas, además del tempo y el mute compartidos.
+
+## Intercambio puntual desde terminal
+
+Con la feature `p2p`, el propio binario de Hay ofrece un intercambio puntual entre
+dos copias `.loro` del mismo proyecto. El anfitrión genera una invitación de un uso
+y los dos procesos se autentican con identidades Iroh distintas. Cada lado valida
+el origen de la sesión y fusiona las operaciones de su par antes de guardar
+atómicamente su propia copia. La invitación da acceso al historial y se comparte
+con el colaborador previsto. El límite del piloto es 16 MiB de operaciones por copia.
+
+```sh
+cargo build --release --bin daw-gpui --features p2p --locked -j 2
+target/release/daw-gpui --collab share anfitrion.loro
+target/release/daw-gpui --collab join invitado.loro '<invitación de HAY_INVITE>'
+```
+
+`share` usa Iroh en modo automático. Opcionalmente acepta `direct` sin relay o
+`relay` sin conexión IP directa. Después de `relay` se puede indicar la URL de
+un relay propio. La salida `HAY_SYNC` muestra la ruta seleccionada.
+
+Para verificar ambos sentidos, usar dos carpetas de salida nuevas. `probe` crea
+un proyecto de prueba, copia la base y hace un cambio en cada copia. Lanza dos
+procesos del mismo ejecutable y comprueba que los dos archivos recuperen ambos cambios.
+
+```sh
+target/release/daw-gpui --collab probe /tmp/hay-p2p-directo direct
+target/release/daw-gpui --collab probe /tmp/hay-p2p-relay relay
+```
+
+La prueba de release pasó primero por QUIC directo y luego por un
+`iroh-relay` oficial en local y por un relay público de Iroh. Las dos pruebas de
+relay desactivaron los sockets IP directos. En cada prueba las dos copias recuperaron
+el golpe de hi-hat del anfitrión y el nivel 53 del invitado.
+
+Los cambios del intercambio puntual se publican en los archivos `.loro` y se ven
+al abrirlos en Hay.
+
 ## Siguientes incrementos
 
 1. Estado de Sampler, plugins, Pattern, MIDI Learn y Utility de salida.
 2. Integrar colectar en el proyecto activo y recuperación de recursos faltantes.
-3. Operaciones de UI sobre el documento vivo, pruebas de concurrencia y transporte de red.
+3. Transferir los archivos de audio y SoundFonts asociados al proyecto compartido.
+
+Los nodos de efectos VST3 guardan su preset en el campo binario `vst_state`. Cada participante necesita la misma clase de efecto instalada. El volumen y Solo de las ramas se sincronizan por claves independientes y conservan la instancia que está sonando.

@@ -2,7 +2,11 @@
 
 Exporta el **Arrangement** en segundo plano con libsndfile, LAME y libsoxr.
 El comando y la acción «Exportar audio» del catálogo usan el mismo controlador.
-La acción está disponible al principio de la lista del botón SVG **+** de la barra.
+Abre **Archivo → Exportar audio…** y elige **Mezcla completa** o **Pistas separadas**.
+Puedes marcar varios formatos, escribir el nombre y elegir la carpeta.
+**Más opciones** reúne la selección de pistas, el rango y los ajustes de muestreo.
+Al terminar, **Mostrar en carpeta** te lleva al primer archivo generado.
+La acción también está disponible en el botón **+** de la barra.
 **Hay → Configuración → Exportación** permite editar y guardar sus valores predeterminados.
 La acción «Configurar exportación» (`:export.settings`) abre directamente esa categoría.
 Los cambios se mantienen como borrador hasta pulsar **Guardar valores predeterminados**;
@@ -11,6 +15,11 @@ Nombre y carpeta admiten espacios; clic selecciona el campo, Ctrl+A selecciona s
 Ctrl+V pega, Tab recorre los campos y Enter termina la edición.
 Los cambios posteriores en clips, niveles, mute/solo, parámetros de piano y Utility no
 alteran el snapshot que ya se está exportando. La reproducción puede continuar.
+
+En Linux, la suma de ramas paralelas usa la latencia en muestras que publica cada
+VST3 tras restaurar su preset. La duración automática incluye el tiempo de paso
+por el rack y la cola que declaran sus efectos. Un rango explícito termina en la
+posición solicitada más los segundos de `-tail`.
 
 ```text
 :export -n 93.[mp3,wave] -master
@@ -22,13 +31,26 @@ alteran el snapshot que ya se está exportando. La reproducción puede continuar
 :export.cancel
 ```
 
+## Prueba de cancelación en Linux
+
+Con el release instalado, ejecuta `python3 scripts/null-test.py --keep`.
+El script genera un kick y un bajo en dos pistas, exporta el máster como WAV
+de 32 bits flotantes y captura Play en un monitor privado de PipeWire.
+Alinea las dos señales por muestras, resta ambos canales y mide el pico y RMS
+del residuo. El límite de pico es −100 dBFS por defecto. Un residuo por encima
+del límite devuelve código 1 y un fallo al montar la prueba devuelve código 2.
+`--keep` conserva la captura, la exportación y `residuo.wav` en la carpeta indicada.
+`--bin` permite elegir otro ejecutable. Usa Python 3, Xwayland, xdotool, xmodmap,
+bubblewrap, PipeWire, WirePlumber y FFmpeg. Ejecuta el script desde una sesión
+gráfica de Linux con Wayland.
+
 ## Opciones
 
 | Opción | Valores / comportamiento |
 |---|---|
 | `-n` | Nombre y formato (`93.wav`) o lista (`93.[mp3,wave]`). `wave` es alias de `wav`; `aif` de `aiff`. No es tempo. |
 | `-master` | Una mezcla de las pistas incluidas; predeterminado. |
-| `-individuals` | Un archivo por pista que contiene clips, incluyendo las silenciadas como silencio. Igual inicio y duración para todos. |
+| `-individuals` | Un archivo por pista MIDI/audio con clips y por pieza programada del kit. Igual inicio y duración para todos. |
 | `-tracks 1,3` | Restringe ambos modos a esas pistas, numeradas desde 1. |
 | `-out "ruta"` | Carpeta de destino. Por defecto `exports/` bajo el directorio de ejecución; admite `~/` desde la UI. |
 | `-sr 48000` | Frecuencia final en Hz enteros; predeterminada 48000. PCM: 8000–384000, según codec/sintetizador. MP3: 8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100 o 48000. |
@@ -61,24 +83,30 @@ automáticamente y todavía no hay dither.
 - Todos los clips conservados de audio y MIDI del Arrangement, con posiciones, silencios,
   recortes, solapamientos, ganancia/mute de clip, nivel/mute/solo y balance de pista.
 - Audio se convierte con **libsoxr VHQ**, compensando el retardo mediante su API offline.
-- MIDI ordinario usa el SoundFont, preset y parámetros capturados del piano actual. Cada clip
-  tiene voces independientes para no cortar notas de otro clip solapado.
+- Play y Exportar usan la misma voz por pista de Hay Piano o Hay Sampler y la misma mezcla por bloques.
+- Drums Latex conserva las capas, el choke y la mezcla del kit. Los stems de las piezas se toman después del fader y paneo del bus.
 - Los clips MIDI de un **Hilo** usan el mismo reparto por rama de Play (capas o Tejer),
-  con una instancia offline de Hay Piano o Hay Sampler por rama. Master suma las ramas;
-  `-individuals` escribe un stem por rama, sin un stem vacío para la cabecera. Elegir
-  solo una rama exporta las notas que le corresponden en la secuencia completa.
+  con una instancia offline de Hay Piano o Hay Sampler por rama. Cada rama se suma en el bus
+  del Hilo. Elegir solo una rama exporta las notas que le corresponden en la secuencia completa.
+- El máster pasa por los FX y el fader de cada grupo. Los stems individuales de las hijas
+  se toman antes del grupo. Para incluir también un archivo con el grupo procesado,
+  selecciona su número con `-tracks` en una exportación `-individuals`.
 - Un rango con inicio posterior a cero se prepara renderizando lo anterior sin escribirlo,
   para conservar notas sostenidas y estado de efectos.
 - Utility se construye con su estado capturado y se aplica después de la mezcla.
 
-El patrón de percusión de la vista Pattern no forma parte del Arrangement y no se añade
-implícitamente. En clips ordinarios, loop interno/transposición aún se rechazan;
-el plan de Hilo aplica la transposición MIDI como Play y termina al final del clip.
+Desde Drums Latex se exporta la fuente activa (Patrón, Canción o Arrangement). Un patrón
+repetido se imprime durante el rango solicitado; con solo el kit se toma un ciclo y se deja
+caer el último one-shot. En Arrangement se incluyen los clips de batería del proyecto.
+`-tracks` filtra los clips de Arrangement por pista; para incluir un patrón o canción
+independiente usa todas las pistas. En el audio, loop interno y transposición siguen pendientes.
 Retornos, automatización, render como loop, normalización, LUFS y dither son
 incrementos posteriores.
-Las ramas con instrumentos VST3, las cadenas con FX VST3 y los componentes de
-audio Lua siguen rechazándose explícitamente: todavía no hay render offline
-de su estado.
+Los instrumentos y efectos VST3 de pistas de audio y MIDI usan copias privadas de las
+instancias abiertas, preparadas a la frecuencia de exportación. Al pulsar Exportar,
+cada editor captura el estado del procesador y del controlador. El máster y los stems
+recorren las cadenas con el orden, bypass y ramas de Play. Un error al recuperar el estado
+o durante el procesamiento cancela el lote. Los componentes de audio Lua siguen pendientes.
 
 MP3 escribe la etiqueta LAME de delay/padding; la alineación exacta depende de que el lector
 la respete. Usa PCM/FLAC para intercambio de stems sample-accurate.
@@ -106,3 +134,5 @@ distrobox enter gpui-dev -- cargo test --bin daw-gpui audio::export --locked
 Las pruebas nativas necesitan esas tres bibliotecas y el SoundFont incluido, pero no ventana
 ni dispositivo. Comprueban mezcla, recortes, rango/cola, stems, MIDI, frecuencias distintas,
 PCM entero/float, MP3 CBR/VBR, decodificación con Symphonia y limpieza ante errores/cancelación.
+
+Los WAV afinados desde el editor de muestras usan el mismo PCM estéreo preparado para preescucha, Arrangement y exportación. Los ajustes en semitonos y cents conservan el número de frames de la fuente.

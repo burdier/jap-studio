@@ -1,14 +1,27 @@
 # Guía de edición localizada
 
+Tejer EQ por bandas: `musical/fx/bands.rs` valida los cruces, `audio/effects/crossover.rs` procesa las dos ramas y `ui/views/tejer.rs` proyecta las bandas en las filas Z. El gráfico de selección y los gestos de corte viven en `ui/views/tejer/selector.rs`. El separador de Tejer EQ se monta en `ui/views/workspace.rs` y usa `SplitDrag` para ajustar su ancho local.
+
 ## Dónde cambiar cada cosa
 
 | Tarea | Archivo principal | Revisar también |
 |---|---|---|
+| Crossfade entre capas Z | `audio/crossfade.rs` | Play, exportación y medidor calculan los pesos por frame. `ui/views/arrangement.rs` edita la pareja y `project/audio.rs` la guarda en Loro. |
+| Fundidos de entrada y salida | `ui/timeline/fades.rs` | En la onda, arrastra el cuadrado para ajustar la duración o el punto central en vertical para cambiar la curva. Doble clic elimina el fundido o endereza la curva según el control. |
+| Ganancia en la onda y pico de solapamiento | `ui/timeline/overlap.rs` | Ctrl+Mayús y arrastre vertical sobre la onda ajusta la ganancia. `ui/timeline/paint.rs` marca el máximo de la suma estéreo de las capas. |
+| Afinación bajo el puntero en la onda | `audio/fundamental.rs` | `ui/timeline/pitch_probe.rs` analiza en segundo plano un tramo del PCM editado dentro del recorte visible. |
+| Editor contextual WAV/MIDI | `ui/sample_editor.rs`, `ui/views/sample_editor.rs` | `audio/sample_edit.rs` prepara el PCM. `audio/chord_slices.rs` detecta cambios armónicos para invertir cada tramo desde el menú del WAV. `project/audio.rs` conserva el EQ y los procesos por rango en Loro. |
+| Estado VST3 para exportación | `audio/vst3/editor/state.rs` | `audio/export/plugins.rs` captura y prepara instrumentos y cadenas FX privadas para el máster y las pistas |
+| Latencia en ramas FX paralelas | `audio/effects/{plan,pdc}.rs` | El host lee muestras de latencia al activar el VST3. El plan prepara el retardo de la rama más rápida para Play y Exportar. `audio/playback/score.rs` incluye el vaciado del rack al final del proyecto. |
 | Menús Archivo y Vista | `src/ui/views/menu_bar.rs` | `views/{chrome,palette}.rs`, `render.rs`; usan las tarjetas de Add y llaman a las acciones de proyecto, vista y barra existentes |
 | Ampliar panel / preferencia Vim | `src/ui/{workspace_focus,keyboard_preferences}.rs` | `views/{workspace_focus,workspace,piano_roll/mod,settings_shortcuts}.rs`, `input.rs`, `render.rs`, `detached.rs`; acciones `view.maximize` y `vim.toggle`, perfil `VIM_ENABLED`, conserva geometría y foco |
+| Reordenar pistas durante Play | `src/ui/track_commit.rs` | Una permutación conserva el stream y los buses por TrackId. Se republica el Arrangement con los índices nuevos. |
+| Mezcla de ediciones Z durante Play | `src/audio/playback/score.rs` | El worker prepara fuentes y planes MIDI. El callback conserva voces, efectos y cursor, y devuelve el plan anterior para retirarlo fuera del audio. |
+| Capas Z y cursor del Arrangement | `src/ui/track_layout.rs`, `src/ui/transport.rs` | `track_presentation.rs` y `timeline/rows.rs` comparten geometría de dibujo y puntero. `audio_actions.rs` conserva la última parada aparte del marcador. |
 | Spectrum insertable y vistas de análisis | `src/audio/analyzer{,/tap}.rs` | `audio/effects/plan.rs`, `devices/spectrum.rs`, `ui/fx/analyzers.rs`, `ui/spectrum.rs`, `ui/components/spectrum{,/plot}.rs`, `ui/views/fx_analyzers.rs`; mismo componente en piano y Track FX, captura acotada, sin FFT en RT |
 | Interfaz y preferencias de audio | `src/audio/{device,output,device_probe}.rs` | `audio/device/{inventory,aliases}.rs`, `ui/audio_preferences{,/commands,/profile,/probe}.rs`, `views/settings_audio.rs`, `actions/audio.rs`; `:list device`, `:use device`, IDs CPAL, PipeWire compartido, rutas por nombre/canales locales, Hz, buffer, pruebas y perfil |
 | Mezcla de WAV, MIDI y percusión en una salida (PR-05) | `src/audio/playback/mix.rs` | `playback.rs`, `ui/file_playback.rs`, `audio/drums/mix.rs`: preparación en worker, suma MIDI/WAV por pista antes de FX y percusión en master; un transporte por frames; `playback/mix/tests.rs` verifica fuentes simultáneas |
+| FX de grupos | `src/audio/playback/mix.rs` | `ui/file_playback.rs` resuelve el padre por TrackId. Play y Exportar alinean las hijas antes de sumarlas y procesan el rack y el fader del grupo sobre esa suma. |
 | Contexto temporal VST3 de la mezcla (PR-06, commit 1) | `src/audio/vst3/context.rs` | `vst3/process.rs`, `audio/{playback,effects,fx_gain}.rs`: frame absoluto, BPM, compás y loop por bloque de FX; flags válidos según Steinberg, sin reloj nuevo |
 | Instancia VST3 por pista (PR-06, commit 2) | `src/ui/vst.rs` | `instruments/vst.rs`, `ui/{audio_actions,track_commit,audio_preferences,render}.rs`, `ui/vst/effects.rs`: ID, foco MIDI, editor, FX, retiro y recarga por pista; la audición aún usa streams individuales |
 | Instrumentos VST3 en Play común (PR-06, commit 3) | `src/audio/vst3/shared.rs` | `audio/piano/{backend,voice,render,prepare}.rs`, `audio/playback{,/mix}.rs`, `ui/file_playback.rs`: misma instancia/editora cambia de audición a Arrangement; CAS y cola MIDI acotada, eventos por frame y contexto temporal, cola de sonido limitada; `examples/vst3_probe.rs --shared` |
@@ -17,15 +30,19 @@
 | Fuente de clip sin stream (PR-04, commit 1) | `src/audio/clip_source.rs` | Fuente inmutable con render por posición absoluta; pruebas de recortes, particiones, seek y buffer remuestreado. `audio/playback.rs` conserva CPAL, transporte y FX del reproductor actual |
 | Preparación y remuestreo de clips para salida | `src/ui/file_playback.rs` | `audio/playback.rs`, `audio/export/soxr.rs`; worker cancelable, Stop cancela el arranque, snapshots de audio/MIDI/patrón y voz por instancia |
 | Documento CRDT de proyecto, pistas, FX, MIDI, audio, tiempo y mezcla | `src/project.rs` | `src/project/{track,fx,midi,audio,session_state}.rs`, `audio/assets.rs`, `ui/track_batch.rs`, `docs/LORO_SESSION.md`: esquema 4, IDs estables, metadata WAV por TrackId y ruta, tempo/compás, snapshots/updates; abrir/guardar local mediante `ui/project/` |
-| Abrir/guardar proyecto local | `src/ui/project/{mod,snapshot,dialogs,install}.rs` | `project/instruments.rs`, `instruments/piano/persistence.rs`, `input.rs`, `render.rs`, `views/chrome.rs`; candidato completo en worker, selector nativo, dirty, guardado atómico, pruebas `ui::project::tests` |
+| Abrir/guardar proyecto local | `src/ui/project/{mod,snapshot,dialogs,install,location}.rs` | `project/instruments.rs`, `instruments/piano/persistence.rs`, `input.rs`, `render.rs`, `views/chrome.rs`; candidato completo en worker, selector nativo, extensión `.loro`, guardado atómico, pruebas `ui::project::tests` |
+| Colaboración P2P | `src/collaboration/{mod,live,probe}.rs`, `src/ui/project/live{,/apply,/presence}.rs` | La feature `p2p` activa los comandos de Archivo y el intercambio puntual `--collab`. En vivo se comparte el snapshot editable mediante operaciones Loro y se preparan los recursos recibidos antes de actualizar la UI. Archivo → Nombre e historial de edición permite cambiar el nombre de la sesión y consultar los últimos ocho cambios atribuidos. La presencia indica en vivo el clip por ID y se limpia al desconectar. El historial se guarda en el proyecto |
 | Colectar fuentes de audio | `src/project/collect.rs` | `ui/collect.rs`, `actions.rs`, `catalog.rs`, `tests/project_audio.rs`: copia deduplicada a carpeta nueva `Audio/`, snapshot Loro con rutas relativas y publicación tras completar; no abre la sesión completa |
 | Expresión por nota y probabilidad | `src/musical/note_expression.rs` | `scheduler.rs`, `project/midi.rs`, `scripting/{actions,output}.rs`, `ui/piano_roll/lane.rs`, `audio/piano/{render,fluidsynth/voices}.rs`; release sfizz, pan FluidSynth, probabilidad por vuelta |
 | Controles MIDI, CC, pitch bend y presión | `src/musical/automation.rs` | `scheduler.rs`, `project/midi_controls.rs`, `scripting/controls.rs`, `ui/piano_roll/control_actions.rs`, `views/piano_roll/control_lane.rs`; puntos por ID, acciones y mensajes por frame |
 | Drums Latex: Canción, Pads y Piano Roll Light | `src/ui/pattern_editor{,/action,/roll,/inspector}.rs` | `ui/views/pattern/`, `workspace_focus.rs`, `musical/drums.rs`: matriz en ticks, foco propio de Session, rejilla por patrón, arrastre de audio desde `ui/explorer/` y notas de la pieza por ID |
+| Compás, rejilla y duración de Drums Latex | `src/ui/views/pattern.rs` | `ui/views/pattern/steps.rs` sitúa regla, pads y golpes en ticks. Compás reagrupa la regla, Rejilla divide el pulso y Duración cambia el final del patrón. |
 | Tiras de mezcla del proyecto y Drums Latex | `src/ui/views/mixer{,/channel,/fader}.rs` | `ui/mixer.rs`, `ui/audio_actions.rs`, `ui/file_playback.rs` y `ui/components/meter.rs`: gestos por ID, nivel/pan/M/S y picos del Player |
 | Acciones e inventario del piano roll | `src/ui/piano_roll/{actions,commands,properties,choices,keyboard,paint,edit}.rs` | `docs/PIANO_ROLL_ACTIONS.md`, `views/piano_roll/{toolbar,grid,inspector}.rs`, `musical/{model,clip}.rs`; botones, teclado y canvas comparten controlador |
 | Secuencia y audición de acordes | `src/musical/chord.rs` | `ui/piano_roll/chord_sequence.rs`, `ui/views/piano_roll/chord_sequence.rs`: posiciones por compás/tiempo, plan de notas y NoteOn/NoteOff reutilizables; ratón libera al soltar, inserción completa en copia del patrón |
 | Escala y feedback de notas | `src/musical/scale.rs` | `views/piano_roll/{grid,grid_background}.rs`: Escala mayor/menor y tónica editables, iluminación del borde de duración y color `danger` fuera de escala |
+| Marcadores y región de loop | `src/ui/timeline/navigation.rs`, `src/ui/views/arrangement_navigation.rs` | Añade marcadores en la regla y arrastra la franja de loop. Mayús ajusta a subdivisiones. Loro guarda marcadores y límites, y el botón Loop controla el estado de reproducción en cada ventana. |
+| Zoom de onda | `src/ui/timeline/waveform.rs` | Ctrl+rueda acerca el tiempo hasta ver el PCM. Onda −/+ ajusta el dibujo en vertical y Ver clip encuadra el audio seleccionado. |
 | Franjas por compás | `src/ui/components/bar_grid.rs`, `src/ui/time_grid.rs` | `timeline/paint.rs`, `views/piano_roll/grid_background.rs`; alternancia por índice absoluto, divisiones independientes del snap y firma real |
 | Eje e intervalos temporales compartidos Arrangement/piano roll | `src/ui/time_grid.rs` | `timeline/{viewport,trim}.rs`, `piano_roll/{geometry,edit}.rs`, `views/piano_roll/grid_background.rs`: beats/píxeles, snap, densidad, borde, mover/recortar; ejes verticales distintos |
 | Overlay 2D de curvas y formas (`CurveOverlay`) | `src/ui/components/curve_overlay.rs` | `curve_overlay/{paint,shapes}.rs`, `views/lua_component/response.rs`, `sampler/controls.rs`, `views/piano_roll/control_lane.rs`: curva decidida por el implementador, arrastre continuo con Shift/rueda/reset y contornos sobre palitos del piano roll |
@@ -45,6 +62,7 @@
 | Despacho MIDI live por destino (PR-05, commit 4) | `src/musical/midi.rs` | `ui/audio_actions.rs`, `ui/views/tracks.rs`, `ui/sampler/audio.rs`, `ui/vst.rs`: pistas activadas por ID, varios destinos a la vez, NoteOff al ID original en cambios de foco, descarte de liberaciones tardías y limpieza al detener; ratón libera su propio instrumento |
 | Sampler: panel y carga | `src/ui/sampler/` | Catálogo `[+]`, perillas/teclado existentes, carga en background, waveform de 1024 picos |
 | Insertar pista sampler (`:sa`) | `src/ui/sampler/input.rs` | Cada inserción crea una pista e instancia nueva; `ui/sampler/audio.rs` cambia la instancia activa sin mezclar muestras, `ui/track_commit.rs` retira las eliminadas |
+| Explorador → Añadir al Hilo | `src/ui/sampler/hilo.rs` | Prepara sfizz fuera del hilo de UI, conserva el clip MIDI y guarda la muestra y el dispositivo en `project/instruments.rs`. |
 | Sampler: exportación | `src/audio/export/sources.rs` | Snapshot por tipo de instrumento; `docs/SAMPLER.md` |
 | Arranque/ventana | `src/ui/app.rs` | `src/main.rs` solo llama `ui::run()` |
 | GPUI Kit, tema y atajos de integración | `src/ui/kit.rs` | `Cargo.toml`: alias `gpui` → `gpui-kit =0.9.0`; una sola familia GPUI `0.3.11`; `Root` en las tres ventanas |
@@ -52,7 +70,8 @@
 | Interpretación MIDI/Espacio con instrumento abierto | `src/ui/transport.rs` | `render.rs`, `input.rs`, `detached.rs`, `fx/host.rs`; prioridad en focos musicales, preserva formularios y menús |
 | Shift + arrastrar contenido de clip | `src/ui/timeline/slip.rs` | Slip continuo audio/MIDI mediante offsets de fuente; bordes y pista fijos; `views/arrangement.rs` inicia, `timeline/interaction.rs` mueve/finaliza |
 | Indicador MIDI del icono asignado | `src/ui/views/toolbar.rs` | `icons.rs` recibe estado activo; refleja `controller.enabled()`, incluida acción personalizada `midi`/`kbd`; M funciona también desde OFF |
-| Movimiento visual del playhead/cursor | `src/ui/timeline/visual_transport.rs` | Interpolación acotada por frames de audio; ruler, Arrangement y piano roll comparten dibujo, sin modificar el transporte |
+| LUFS y espectro del máster | `src/audio/analyzer/loudness.rs` | `audio/playback.rs` toma el estéreo tras Utility. Transporte muestra M (400 ms) y Utility también muestra S (3 s) y el espectro del máster. |
+| Movimiento visual del playhead/cursor | `src/ui/timeline/visual_transport.rs` | Interpolación acotada por frames de audio; Regla y Arrangement comparten posición con el piano roll. El dibujo y Follow del piano roll convierten la posición al tramo activo del clip MIDI, incluido su recorte |
 | Teclas y comandos | `src/ui/input.rs` | Controlador que ejecuta la acción |
 | Sugerencias del modo `:` | `src/ui/command_suggestions.rs` | `ui/views/command_bar.rs`, `ui/input.rs`, `ui/kit.rs`, `ui/render.rs`, `ui/piano_roll/window.rs`; catálogo + alias, flechas, Tab, clic y Enter |
 | Teclado del ordenador como MIDI (teclas, octava, velocity, sustain, bend, mod) | `src/musical/controller.rs` | `ui/audio_actions.rs`, `ui/input.rs` |
@@ -63,6 +82,7 @@
 | Motor SoundFont C aislado (`libfluidsynth` vía `dlopen` + respaldo `RustySynth`) | `src/audio/piano/fluidsynth.rs` | `audio/piano/render.rs`, `instruments/piano.rs` |
 | Componente `MidiClip` y captura/grabación MIDI | `src/musical/clip.rs` | `ui/audio_actions.rs`, `ui/timeline/waveform.rs` |
 | Materialize MIDI y selección múltiple por identidad | `src/musical/materialize.rs` | `ui/timeline/materialize.rs`, `tests/materialize.rs`, `ui/clip_menu/` |
+| Editar clips MIDI en grupo | `src/ui/timeline/midi_edit.rs` | `clip_actions.rs`, `views/arrangement.rs`, `timeline/interaction.rs`. Selección por ClipId, arrastre, portapapeles y undo compartido con las ediciones básicas del Piano Roll |
 | Rango del teclado (C3–B5) | `src/instruments/piano.rs` | `musical/keyboard.rs` |
 | Geometría y etiquetas de octava | `src/musical/keyboard.rs` | `ui/components/keyboard.rs` |
 | Teclado MIDI reutilizable (UI) | `src/ui/components/keyboard.rs` | `views/instrument.rs` |
@@ -86,14 +106,17 @@
 | Add contextual, menú y comandos FX | `src/ui/fx/{host,commands,menu}.rs` | `palette.rs`, `actions/fx.rs`, `action_form.rs`; reutiliza catálogo, menú plano y formulario; destino TrackId/FxId |
 | Audio de cadenas Utility | `src/devices/fx_gain.rs`, `src/audio/fx_gain.rs` | Compilación lineal fuera del callback, publicación atómica y rampa de 256 frames; `ui/fx/audio.rs`, streams audio/piano y snapshot export |
 | Preescucha de bibliotecas | `src/ui/explorer/preview.rs` | `src/audio/sample_preview.rs`: decodificación en background, volumen independiente y reproducción por frames en la salida elegida |
+| Buscar y preescuchar en el Explorador | `src/ui/explorer/{search,input}.rs` | Ctrl+F busca por nombre o ruta dentro de las bibliotecas, incluidas carpetas cerradas. Enter devuelve el foco a los resultados y → reproduce la muestra seleccionada desde el inicio en cada pulsación. |
 | Explorador visual independiente | `src/ui/explorer/` | Entidad GPUI propia, `uniform_list`, E/S en workers y guardados serializados |
 | Atajo e, ancho y acción insertar archivo | `src/ui/explorer_host.rs` | `input.rs`, `views/workspace.rs`, `render.rs`, `catalog.rs`, `actions.rs`; acción compartida con doble clic e iconos |
 | Catálogo de instrumentos/acciones | `src/catalog.rs`, `src/catalog/{entry,tools}.rs` | `tests/catalog.rs`, `tests/lua_tools.rs`; entradas nativas estáticas y metadatos Lua propios, sin VM |
 | Plugins VST3 instalados en el buscador | `src/catalog/plugins.rs` | `ui/palette/plugins.rs`, `ui/palette.rs`; enumera bundles; `audio/vst3/scan.rs` consulta fábricas en proceso separado y clasifica sus clases |
 | Host VST3 de instrumento | `src/audio/vst3/{mod,lifecycle,module,buffers,events,parameters,process,host}.rs` | `instruments/vst.rs`, `ui/vst{,/commands,/view}.rs`, `audio/piano/{backend,prepare}.rs`; lifecycle COM, MIDI y audio estéreo; límites en `docs/VST3.md` |
+| Estado de efectos VST3 en Loro | `src/ui/project/effects.rs`, `src/project/fx.rs`, `src/audio/vst3/editor/state.rs` | El hilo propietario captura componente, controlador y parámetros pendientes. Abrir y colaboración resuelven la clase instalada y preparan las instancias modificadas en segundo plano. |
 | Efectos VST3 en pistas | `src/audio/effects/{mod,plan}.rs`, `src/audio/publication.rs`, `src/ui/vst/effects.rs` | Plan de audio publicado por RCU; FX Tree, catálogo y comandos `fx.vst3.load/editor`; alcance en `docs/VST3.md` |
-| Editor original VST3 | `src/audio/vst3/editor/{session,window,x11,frame,handler,stream}.rs` | `ui/fx/host.rs`, `ui/vst/commands.rs`; IPlugView/IRunLoop, cola de parámetros, ventana externa; diagnóstico `vst3_probe --editor` |
-| Espacio en ventana original VST3 | `src/audio/vst3/editor/{x11,window,shortcut}.rs` | `editor/{mod,session}.rs`, `ui/{vst,render,transport}.rs`: X11 captura Espacio del editor hijo, filtra repetición y entrega solicitud al transporte común en UI |
+| Editor original VST3 | `src/audio/vst3/editor/{session,window,x11,frame,handler,stream}.rs` | `ui/fx/host.rs` abre la ventana original X11/XWayland desde Track FX. IPlugView/IRunLoop y cola de parámetros |
+| Teclado en editor VST3 | `src/audio/vst3/editor/{x11,window,shortcut}.rs` | `ui/vst.rs` drena Espacio y teclas musicales del hijo X11. El controlador compartido conserva las notas, repeticiones y liberaciones al cambiar el foco |
+| Pitch MPE por nota | `src/musical/{pitch_curve,scheduler}.rs` | `ui/piano_roll/pitch.rs`, `views/piano_roll/grid.rs`, `project/pattern.rs`, `audio/vst3/note_pitch.rs`: curvas en cents, guardado, rampas por frames y canales independientes |
 | Wine del host desde distrobox | `scripts/wine-host.sh` | `scripts/run.sh`, `audio/vst3/environment.rs`, `ui/app.rs`; WINELOADER, prefijo compartido, diagnóstico `examples/vst3_probe.rs` |
 | Contrato/registro de parámetros de acciones | `src/actions.rs` | `CatalogAction::parameters()`, `export/action.rs`; texto, cantidades con unidad y booleanos |
 | Herramientas Lua para MIDI | `src/scripting.rs`, `src/scripting/{actions,builtin,output}.rs` | `ui/scripting.rs`, `assets/scripts/midi/`, `assets/scripts/tools/midi/`, `tests/scripting.rs`, `docs/LUA.md`; paquetes generan notas desde una fuente seleccionada con escala activa; Acentuar/Subdividir mantienen aliases; cortes y notas nuevas validados por ID |
@@ -133,7 +156,8 @@
 | Carga y dibujo de SVG, estado de iconos asignados | `src/ui/icons.rs` | `assets/icons/toolbar/`, `views/toolbar.rs` |
 | Acciones asignables y persistencia del toolbar | `src/ui/toolbar/{catalog,dispatch,picker,persistence}.rs` | `src/ui/profile.rs`, `src/catalog.rs`, `views/icon_picker{,_browser}.rs`, `toolbar/tests.rs`; perfil guarda ambos ámbitos y comandos personalizados |
 | Estado del piano | `src/instruments/piano.rs` | `audio/piano/`, `views/instrument.rs` |
-| Editar pasos/velocity | `src/ui/pattern_editor.rs` | `src/musical/model.rs` |
+| Editar pasos, rolls y velocity | `src/ui/pattern_editor/action.rs` | `src/musical/model.rs`, `ui/views/pattern/steps.rs`: clic derecho subdivide dentro del paso y la rueda ajusta sus golpes |
+| Importar Hydrogen | `src/ui/pattern_editor/hydrogen.rs` | Archivo → Importar Hydrogen, Explorador, selector + Muestra, arrastre a Drums Latex y `:hydrogen.import ruta.h2song [carpeta-de-samples]`. Lee .h2song o drumkit.xml descomprimido y avisa si hay muestras ausentes. |
 | Dibujar pasos | `src/ui/views/pattern.rs` | Controlador anterior |
 | Layout y contraste del Arrangement | `src/ui/views/arrangement.rs` | `views/tracks.rs`, `timeline/{appearance,paint}.rs`; la superficie y la selección se derivan del tema activo |
 | Fader, paneo y pico por pista | `src/ui/views/tracks/mix_controls.rs` | `views/tracks.rs`, `components/meter.rs`, `audio/playback{,/mix}.rs`: valores de mezcla compartidos, pico post-fader publicado al render sin procesar audio en la UI |
@@ -151,7 +175,7 @@
 | Título/estado | `src/ui/views/chrome.rs` | `views/transport.rs` para botones |
 | Zoom y conversión visual | `src/ui/timeline/viewport.rs` | `timeline/mod.rs` |
 | Drag/scroll/picking | `src/ui/timeline/interaction.rs` | `timeline/tests.rs` |
-| Sombra al importar MIDI/audio por drag & drop | `src/ui/timeline/import_preview.rs` | `views/arrangement.rs`, `timeline/paint.rs`; guía de entrada de un compás, sin leer archivos durante el arrastre |
+| Arrastre de audio y MIDI al Arrangement | `src/ui/file_import.rs` | La guía en `ui/timeline/import_preview.rs` marca el inicio. Varios audios desde el gestor de archivos se alinean al soltar y crean una pista por archivo debajo del destino. |
 | Gestos de touchpad (pinch, dos ejes, Ctrl/Shift+rueda) | `src/ui/navigation.rs` | `timeline/interaction.rs`, `views/arrangement.rs`; `PinchEvent` nativo de GPUI, sin dependencia adicional |
 | Zoom, desplazamiento y picking del piano roll | `src/ui/piano_roll/navigation.rs` | Super+scroll: altura; Ctrl+scroll/pellizco: ancho; Alt+scroll/Shift+pellizco: subdividir selección. `geometry.rs`, `navigation_tests.rs`, `views/piano_roll/{grid,grid_background}.rs` |
 | Recorte no destructivo y solapamiento de clips | `src/ui/timeline/trim.rs` | `midi_clips.rs`, `waveform.rs`, `timeline/tests.rs` |
@@ -178,7 +202,7 @@
 | Kit, patrones y Canción de batería | `src/musical/drums.rs` | `musical/drums/kit.rs`, `project/drums.rs`, `ui/pattern_editor.rs`, `ui/project/`: IDs persistentes, patrones en ticks y selector de audición |
 | Enviar y editar clips de Drums en Arrangement | `src/ui/timeline/drum_clips.rs` | `musical/drums/arrangement.rs`, `project/midi.rs` y `ui/file_playback.rs`: enlace por pieza, desacople al editar notas y plan absoluto en el bus del kit |
 | Reproducir el kit | `src/audio/drums/mix.rs` | Loop por frames en el mezclador común; `live.rs` publica ediciones durante Play |
-| Muestras, mezcla y picos de batería | `src/audio/drums/kit.rs` | Sampler sfizz con capas, cortes entre piezas y bus Drums; `voice.rs` aporta la síntesis de respaldo |
+| Muestras, mezcla y picos de batería | `src/audio/drums/kit.rs` | Sampler sfizz con capas y offset de inicio guardado en `project/drums/kit.rs`, cortes entre piezas y bus Drums. `voice.rs` aporta la síntesis de respaldo |
 | Resaltar paso sonando | `src/ui/pattern_editor.rs` | `views/pattern.rs` |
 | Ejecutar la app | `scripts/run.sh` | `scripts/check.sh` |
 | Descargar bancos FreePats | `scripts/fetch_soundfonts.sh` | `scripts/soundfonts.txt`, `assets/soundfonts/freepats/` |
@@ -261,3 +285,8 @@ No añadir librerías para conseguir una comprobación que ya resuelve Cargo o l
 Biblioteca `elevate`, contratos DSP, SoundFont y comandos de ejecución conservan sus nombres.
 
 Backend PipeWire: instalar `pipewire-devel clang-devel` en gpui-dev; `cargo run --example audio_devices -- SSL PipeWire` enumera nombres/canales sin emitir audio. `cargo run --example audio_devices -- "Line Outputs 3 + 4" PipeWire --connect-silent` abre ocho segundos de silencio y comprueba actividad del callback; no cambia la salida del sistema.
+
+Para la acción `track.tuner`, consulta `src/ui/vst/effects.rs` (monitor local de la pista del cursor), `src/audio/vst3/buffers.rs` (entrada mono) y `src/audio/vst3/editor/session.rs` (publicación de la frecuencia del VST3) y `src/ui/views/chrome.rs` (lectura integrada y toggle). El corte de audio en Arrangement entra por `src/ui/clip_actions.rs`; las curvas de cruce compartidas por las dos mitades viven en `src/audio/crossfade.rs`.
+
+La vista Ruta de Track FX vive en `src/ui/fx/route.rs`. Lee el árbol de la pista y usa los mismos eventos del panel para añadir, seleccionar y editar nodos.
+El nivel posterior a los FX y el solo de cada rama se guardan por ID. `musical/fx` define la ganancia compartida por `devices/fx_gain.rs` y `audio/effects/plan.rs`.

@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Hay · Roadmap de Drums Latex y motor</title>
+    <title>Jap Studio · Roadmap de Drums Latex y motor</title>
     <style>
       :root {
         color-scheme: dark;
@@ -300,7 +300,7 @@
       <header>
         <div>
           <p class="eyebrow">Hay / Elevate · Roadmap</p>
-          <h1>Drums Latex y el motor de Hay</h1>
+          <h1>Drums Latex y el motor de Jap Studio</h1>
           <p class="intro">
             Drums Latex es la prioridad actual. Su plan concentra la batería, su editor y
             su mezcla en pocas entregas. Abajo se conserva el historial del motor.
@@ -653,10 +653,12 @@
         <h2>4 · Motor completo</h2>
         <p class="phase-note">Fidelidad, routing, exportación y capacidad.</p>
         <div class="grid">
-          <article data-pr="PR-11" data-status="pending">
-            <div class="pr-head"><span class="pr-number">PR-11</span><span class="status">Pendiente</span></div>
+          <article data-pr="PR-11" data-status="progress">
+            <div class="pr-head"><span class="pr-number">PR-11</span><span class="status">En curso</span></div>
             <h3>Compensación de latencia</h3>
-            <p>Alinear pistas y ramas que atraviesan plugins con retraso.</p>
+            <p>Play y Exportar compensan la latencia declarada por los efectos VST3 al sumar ramas del mismo rack en Linux. El Arrangement reajusta la compensación entre pistas durante Play cuando un VST3 anuncia otra latencia. Con Granite, los ataques de dos pistas de 808 siguieron alineados al pasar de 48 a 248 muestras y en los dos másteres exportados. Prueba en Linux con dos pistas independientes de 808 y 2048 muestras compensadas en Play y en el máster. Queda indicar la latencia de monitorización.</p>
+            <p><strong>Pendiente · Mapeo del LFO.</strong> Asignar un modulador al parámetro de un dispositivo y guardar el destino y la profundidad.</p>
+            <p>Prueba a 48 kHz con un 808 limpio y una rama con calfNXT Harmonics y Denoiser. La captura de Play y el máster WAV recuperaron las 2048 muestras de latencia del Denoiser.</p>
             <div class="depends">Depende de PR-07</div>
             <details class="commit-plan">
               <summary>3 commits · 4–8 días · latencia declarada a audio alineado</summary>

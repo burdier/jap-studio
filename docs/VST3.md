@@ -3,19 +3,20 @@
 Inicia Hay desde el acceso del escritorio o `bash scripts/run.sh`. En una pista MIDI,
 abre `[+]` → Instrumentos, busca **Pianoteq** y pulsa Enter. La carga ocurre en background;
 la pista se asigna solo después de preparar el plugin y abrir la salida correctamente.
-La fila del instrumento aparece en el árbol FX y abre su **editor original** en una
-ventana X11/XWayland. Al cargarlo también se solicita abrir esa ventana. Cerrarla no
-elimina el instrumento ni detiene su audio.
-`M` activa el teclado MIDI; el controlador físico usa la misma ruta. Espacio reproduce
-el clip MIDI seleccionado y vuelve a detenerlo. Volumen, pan, mute/solo y Hay Utility
-usan la mezcla y el scheduler existentes.
+Hay abre el **editor original** en una ventana separada. La fila del instrumento
+en Track FX permite reabrirlo. Cerrar la ventana conserva la instancia y su audio.
+En Wayland, Hay usa el backend nativo y los editores VST3 de tipo X11 como Vital
+usan XWayland.
+Activa el teclado MIDI con **M** en Hay antes de tocar. Las teclas musicales siguen
+llegando a Hay cuando el editor VST3 tiene el foco. Con el teclado MIDI desactivado
+puedes escribir en los campos del plugin. Espacio controla el transporte.
 
 Acciones: `instrument.vst3.load 'ruta/Plugin.vst3'` (formulario de ruta desde catálogo),
 `instrument.vst3.remove`, `instrument.vst3.editor` y `instrument.vst3.editor.close`. Cada pista MIDI
 puede conservar un VST3 distinto. Seleccionar una pista cambia el editor y el destino
 MIDI; retirar el instrumento de una pista conserva las demás instancias. Play
 procesa los VST3 cargados en el mismo transporte y salida que WAV y los demás
-instrumentos MIDI, con el sonido ya editado en cada ventana. Stop devuelve cada
+instrumentos MIDI, con el sonido ya editado en cada instrumento. Stop devuelve cada
 VST3 a su audición en vivo.
 
 Lua puede solicitar cargas y configurar las opciones admitidas por el host mediante
@@ -90,19 +91,15 @@ una escucha física ni a una comprobación de todos sus controles.
 
 ## Diagnóstico de StandardCLIP
 
-StandardCLIP instalado en `~/.vst3/yabridge/SIR Audio Tools/StandardCLIP.vst3`
-se reconoce como efecto y procesa la senoide del probe a 48 kHz: pico `0.100001`,
-sin error. Con yabridge 5.1.1 y Wine Staging 11.20 su editor se dibuja y el usuario
-confirmó subir y bajar controles. El log de la prueba registra `beginEdit`,
-`performEdit` con valores cambiantes y `endEdit`: las interacciones llegan al host.
-Los intentos automatizados iniciales no mostraron respuesta; eso no demuestra una
-incompatibilidad del puente. La última prueba incluyó mover la ventana a la esquina
-superior izquierda; queda comprobar la interacción después de moverla a otras posiciones.
+StandardCLIP en `~/.vst3/yabridge/SIR Audio Tools/StandardCLIP.vst3` se carga como
+efecto mediante Wine. Con Wine Staging 11.20 y yabridge 5.1.1, el editor dibujaba
+los controles y los clics quedaban fuera de sus posiciones al mover la ventana.
+Con la compilación de yabridge `5.1.1-72-g7529c2d6`, Gain y Ceiling respondieron en
+dos posiciones distintas en XWayland. El log confirmó cambios de parámetros
+recibidos por el host con el mismo binario de Jap Studio.
+[Registro de cambios de yabridge](https://github.com/robbert-vdh/yabridge/blob/master/CHANGELOG.md#unreleased)
 
-El host espera ahora `MapNotify` antes de solicitar foco X11. Solicitarlo justo
-después de `XMapRaised` provocaba `BadMatch (X_SetInputFocus)` cuando el gestor
-todavía no había mostrado la ventana. El probe ya abre y termina correctamente;
-la interacción manual está confirmada en la sesión de diagnóstico.
+Jap Studio solicita foco X11 tras recibir `MapNotify`, cuando el gestor ya mostró la ventana.
 
 ## Implementación
 
@@ -124,6 +121,18 @@ la interacción manual está confirmada en la sesión de diagnóstico.
   procesador. No hay acceso a GPUI ni bloqueos de UI en el callback. Las acciones
   Lua de carga y configuración del host usan el controlador compartido; los
   parámetros internos del plugin siguen fuera del contrato Lua.
+## Pitch por nota
+
+En el piano roll, activa **Pitch MPE**, selecciona una nota y arrastra su curva.
+Shift ajusta en cents, el doble clic retira un punto y Alt+clic reinicia la curva.
+Hay guarda la curva junto con la nota y usa canales MPE independientes para cada
+nota con pitch en un VST3 que mapea pitch bend por canal. En Vital, activa
+**Advanced → MPE Enabled** para usar el rango de ±48 semitonos. Cada instancia
+dispone de hasta 15 canales de expresión simultáneos. Los canales usados por clips
+MIDI convencionales de esa instancia quedan reservados para sus mensajes.
+
+## Wine para plugins de Windows
+
 - En gpui-dev sin Wine, `scripts/run.sh` configura `WINELOADER=scripts/wine-host.sh`.
   El arranque del binario también prepara un lanzador en caché antes de crear hilos;
   funciona desde cargo y con lanzamiento directo. Reconoce el enlace absoluto del

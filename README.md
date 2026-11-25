@@ -63,9 +63,12 @@ comparte el mismo componente. [Alcance y acciones](docs/VISUAL_MODULATION.md).
 En `[+]` están **Abrir proyecto…**, **Guardar proyecto** y **Guardar proyecto como…**.
 Atajos en la ventana principal: **Ctrl+O**, **Ctrl+S** y **Ctrl+Shift+S**;
 comandos `:project.open`, `:project.save` y `:project.save_as`.
-La primera vez se elige un archivo (nombre sugerido `session.loro`); Guardar reutiliza
-esa ubicación. El título muestra `*` si hay cambios pendientes. Al abrir otro proyecto
-o cerrar la ventana se puede cancelar, guardar (la ventana permanece abierta) o descartar.
+La primera vez se eligen el nombre y la ubicación. Hay guarda `Mi canción.loro`
+directamente en la carpeta elegida y añade la extensión si falta. Guardar reutiliza
+esa ruta y la muestra en la barra de estado. Para encontrar el archivo, usa **Archivo →
+Mostrar carpeta del proyecto** (`:project.reveal`). El título muestra `*`
+si hay cambios pendientes. Al abrir otro proyecto o cerrar la ventana se puede cancelar,
+guardar (la ventana permanece abierta) o descartar.
 
 Este incremento recupera el Arrangement: pistas/grupos/Hilos, mute/solo, clips MIDI y
 sus controles, clips de audio con recortes, tempo/compás, niveles/panorama, cadenas
@@ -79,6 +82,10 @@ Sampler, VST3 y FX que requieren un procesador no tienen todavía restauración 
 Guardar los rechaza explícitamente; también rechaza Pattern, MIDI Learn o Utility de
 salida modificados, para no marcar como guardado contenido que no puede recuperar.
 Distribución visual, selección, transporte/loop y ventanas no se persisten.
+Con la feature `p2p`, **Archivo → Compartir sesión** y **Unirse** sincronizan ese
+estado editable entre dos ventanas. Las fuentes se resuelven desde las copias
+locales. [Uso y alcance de la colaboración](docs/LORO_SESSION.md#colaboración-en-vivo-por-iroh).
+
 La recolección sigue siendo una acción independiente y sus paquetes antiguos con
 instrumentos sin estado no equivalen a un proyecto recuperable.
 
@@ -325,6 +332,8 @@ Los headers y carriles comparten el desplazamiento vertical de GPUI; la regla pe
   inicial; alturas, colores y tipografía de la regla también proceden del perfil.
 - **Configuración → Apariencia → Contraste de selección** ajusta y guarda la intensidad.
   En el perfil: `SELECTION_CONTRAST=0.18` (rango `0.0–0.4`; mayor valor, mayor contraste).
+- **Grafito Ámbar** combina grafito y grises fríos con azul, turquesa y ámbar.
+  Elígelo en Configuración → Apariencia o escribe `:theme grafito-ambar`.
 - **Ableton Live Dark** está en Configuración → Apariencia. Su perfil completo está en
   [`assets/themes/ableton-live-dark.profile`](assets/themes/ableton-live-dark.profile): la
   paleta y los tamaños que la UI reconoce se aplican al elegir el tema y se guardan en

@@ -1,5 +1,5 @@
 [Desktop Entry]
-Name=Elevate
+Name=Jap Studio
 GenericName=Digital Audio Workstation
 Comment=A modern, modular digital audio workstation built with Rust and GPUI
 Exec=daw-gpui %F

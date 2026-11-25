@@ -31,6 +31,8 @@ Las preferencias visuales se conservan al cambiar de clip durante la sesión.
 | Seleccionar todo / despejar | `midi.select.all` / `midi.select.clear`; Ctrl+A / Ctrl+Shift+A, también con Vim desactivado |
 | Caja / lápiz / longitud | `midi.tool.box`, `.draw`, `.length` |
 | Copiar / cortar / pegar | `midi.copy`, `midi.cut`, `midi.paste`; Ctrl+C/X/V, selección completa con offsets y mute. Pegar rechaza una selección que no cabe sin aplicar cambios parciales |
+| Selección aditiva | Ctrl+clic conmuta una nota y Ctrl+arrastre en vacío suma una región |
+| Duplicar y deshacer | Ctrl+D repite la selección después de su última nota. Ctrl+Z y Ctrl+Shift+Z comparten el historial MIDI del Arrangement para las operaciones registradas de inserción, arrastre, borrado y portapapeles |
 | Scale / Key | `midi.scale.mode major\|minor`, `midi.scale.root C\|C#\|Db…`; menús de escala y doce tónicas |
 | Velocity… | `midi.velocity <1–127>`; transforma selección o todas las notas si no hay selección |
 | Gate… | `midi.gate <0–100>`; porcentaje de duración, mínimo un tick |

@@ -104,6 +104,13 @@ mismo contrato interno de puertos y eventos.
 
 ## Contrato de modulación
 
+El MIDI Learn actual ya asigna notas y CC a varios controles del mixer y del piano.
+Para ampliar el mapeo, un botón físico dispara una acción en su flanco de pulsación
+y una perilla escribe el valor base de una dirección de parámetro. Un LFO puede
+apuntar a esa misma dirección con su propia profundidad. Loro guardará la ruta,
+la división rítmica y la profundidad. Cada motor evaluará la curva con su reloj de
+audio, también al exportar. Así bastará enviar una edición al cambiar el LFO.
+
 Una fuente LFO no es un efecto de audio ni una visualización. Vive en el estado de
 proyecto y produce un control bipolar normalizado `[-1, 1]` según frames del transporte.
 Su identidad es estable (`ModSourceId`), igual que la dirección de destino:

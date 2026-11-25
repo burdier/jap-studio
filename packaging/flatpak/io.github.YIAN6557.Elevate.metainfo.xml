@@ -3,12 +3,12 @@
   <id>io.github.YIAN6557.Elevate</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
-  <name>Elevate</name>
+  <name>Jap Studio</name>
   <summary>Modern, modular digital audio workstation built with Rust and GPUI</summary>
   
   <description>
     <p>
-      Elevate is a fast, keyboard-driven digital audio workstation (DAW) designed for fluid music production, recording, and sequencing.
+      Jap Studio is a fast, keyboard-driven digital audio workstation (DAW) designed for fluid music production, recording, and sequencing.
     </p>
     <p>Key highlights:</p>
     <ul>

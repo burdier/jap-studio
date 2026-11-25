@@ -1,5 +1,19 @@
 # Estado del prototipo y siguiente incremento
 
+El botón FX de un grupo procesa la suma de las pistas de audio e instrumentos del Arrangement. Play y Exportar comparten la ruta y compensan la latencia antes del rack del grupo y antes del máster. El kit de Drums Latex conserva su propio bus.
+
+En Linux, al mezclar dos ramas del mismo rack, Play y Exportar alinean las ramas según la latencia que declara cada efecto VST3. Esto permite mezclar un 808 limpio con su copia saturada aunque una rama use anticipación (*lookahead*). Cuando un VST3 cambia su latencia durante Play, el mezclador actualiza en bloque los retardos entre pistas del Arrangement y conserva el transporte. Exportar prepara la compensación con el ajuste del plugin que se captura al pedir el máster. La indicación de latencia de monitorización sigue pendiente.
+
+Tejer EQ divide el bus de una pista WAV o instrumento desde **+ Banda**. El panel Tejer EQ permite seleccionar una banda desde el gráfico, su nombre o su fila Z. Arrastrar el separador derecho ajusta el ancho del módulo. Un doble clic restaura el ancho inicial. Cada fila admite FX y otro corte. El clip original controla el tiempo de todas las bandas. Los cruces comparten el rack de Play y Exportar y se guardan en Loro con los FX recuperables.
+
+Para cruzar dos clips de audio solapados en la misma pista, selecciónalos con Ctrl+clic y pulsa **Crear cruce**. El deslizador **Centro del cruce** desplaza la transición dentro del tramo común durante Play. **Quitar cruce** recupera la suma original. El proyecto guarda el cruce por identidad de clip.
+
+Mantén Ctrl+Mayús y arrastra verticalmente sobre una onda para ajustar su ganancia durante Play. Al señalar un solapamiento de audio en una pista, la regla inferior muestra el pico sumado en dBFS antes de los FX y su instante. Una marca lo sitúa en las ondas. Ctrl+clic en los clips fija la medición a su tramo común.
+
+En el Arrangement, pasar el puntero sobre la onda de un clip muestra la fundamental estimada de ese tramo en Hz, la nota y su desviación en cents.
+
+En Arrangement, Espacio inicia en el marcador de edición y detiene la reproducción. Al detener el transporte se libera el MIDI, los clips de audio salen con un fundido corto y el motor deja decaer las colas de instrumentos y efectos. Mayús+Espacio retoma la última parada. Los clips coincidentes se distribuyen en filas Z dentro de su pista. El control Z de la cabecera pliega o expande las filas. Al soltar o borrar un clip, cada participante que está en Play recibe el arreglo editado en el siguiente bloque disponible de su propio transporte.
+
 Plan de visualizaciones por pista y rutas LFO: [VISUAL_MODULATION.md](VISUAL_MODULATION.md).
 
 **PR-08 cerrado con alcance revisado:** el [perfil Lua musical live](LUA_LIVE_PROFILE.md)
@@ -14,6 +28,13 @@ de PR-09 ya prepara [reglas Tejer](TEJER.md) en Lua y ejecuta solo una secuencia
 acotada de selección por NoteOn durante la reproducción.
 
 ## Disponible
+
+- Pulsar un WAV en el Arrangement abre su editor a la izquierda. El WAV conserva EQ de campana y operaciones de rango por instancia en Loro y en la sesión compartida. Al seleccionar un clip MIDI, el piano roll se abre debajo del Arrangement. La afinación por clip admite ±24 semitonos y ±100 cents, conserva la duración y se escucha también al exportar. La selección, el zoom y el transporte de preescucha (pausa, volver al inicio y bucle del rango) son locales.
+
+- Los instrumentos VST3 con editor X11 abren en una ventana separada, incluso en una sesión Wayland.
+  Las teclas musicales llegan al controlador de Hay mientras el plugin tiene el foco.
+- **Pitch MPE** edita curvas por nota en el piano roll. Se guardan en el proyecto
+  y se reproducen mediante pitch bend por canal en VST3 con mapeos independientes.
 
 - **PR-09, Tejer:** **Tejer pistas seleccionadas** agrupa los
   instrumentos elegidos y activa el reparto de notas desde la interfaz. Una
@@ -112,7 +133,9 @@ acotada de selección por NoteOn durante la reproducción.
   en el quinto incremento.
 
 - **PR-04, cuarto incremento:** reloj `musical::time::Transport` compartido por
-  todos los clips de audio. `transport.seek <negras>` salta durante Play;
+  todos los clips de audio. Durante Play, las reglas de compases y de tiempo permiten saltar
+  a otra posición. Seleccionar clips en los carriles mantiene la reproducción.
+  `transport.seek <negras>` también salta durante Play;
   Home y ⏮ comparten la operación de volver a cero. `transport.loop <inicio> <fin>`
   define el rango, `transport.loop off` lo desactiva y el botón **↻ Audio** alterna
   el loop de todo el arreglo. Stop conserva el frame observado como cursor de edición.
@@ -317,7 +340,9 @@ acotada de selección por NoteOn durante la reproducción.
   Atajos Ctrl+O/Ctrl+S/Ctrl+Shift+S y acciones `project.open/save/save_as`.
   Dirty y confirmación antes de abrir/cerrar; los estados aún no soportados se rechazan
   al guardar (Sampler/VST3/FX de host, MIDI Learn/Utility de salida modificados).
-  No persiste presentación ni transporte. Pruebas: `ui::project::tests`.
+  Loro guarda los marcadores del Arrangement y los límites del loop. El zoom,
+  el cursor y la activación del loop pertenecen a cada ventana.
+  Pruebas: `ui::project::tests`.
 
 - **Colectar audio:** `[+]` → **Colectar audio en carpeta…** o
   `:audio.collect '/ruta/carpeta-nueva'` copia las fuentes utilizadas a `Audio/`
@@ -539,7 +564,18 @@ acotada de selección por NoteOn durante la reproducción.
   solapadas. Sustituye solo los seleccionados después de preparar el resultado completo.
   Requiere clips desbloqueados con igual ganancia, mute, pitch y loop, que se conservan;
   nombre/color proceden del primero cronológico. El resultado queda sin recorte: es la nueva
-  fuente MIDI, no un render de audio ni un guardado del proyecto. Undo/redo sigue pendiente.
+  fuente MIDI, no un render de audio ni un guardado del proyecto.
+
+- **Selección MIDI en Arrangement.** Ctrl+clic añade o quita clips. Arrastrar en
+  un carril vacío selecciona por rectángulo y Ctrl+arrastre suma a la selección.
+  Shift+clic en el cuerpo de un clip extiende la selección entre clips.
+  Shift+arrastre conserva el desplazamiento del contenido. Arrastrar un clip
+  seleccionado mueve el grupo con sus offsets y el snap del clip agarrado.
+  Delete, Ctrl+C/X/V y Ctrl+D actúan sobre la selección. Pegar conserva las pistas
+  y sitúa el primer clip en el cursor. Duplicar coloca el grupo tras su último borde.
+  El menú permite silenciar, bloquear y colorear la selección. Ctrl+Z y Ctrl+Shift+Z
+  deshacen o rehacen las operaciones MIDI registradas, incluido mover o recortar
+  desde el puntero. La edición de pistas inicia un historial de clips nuevo.
 
 - Arrangement: clips de audio/MIDI conservados en sus carriles, arrastre, recorte no destructivo
   desde ambos bordes, cursor, zoom y scroll. Los clips se pueden solapar sin borrarse; en pantalla
@@ -586,7 +622,9 @@ acotada de selección por NoteOn durante la reproducción.
   Arrangement. La matriz organiza ocurrencias por compás. Clic en una pieza reemplaza
   los pasos con el Piano Roll Light para editar tono, duración y velocidad.
   **+ Patrón** crea un compás vacío con el compás y la subdivisión del patrón activo.
-  La rejilla distingue compases, pulsos y pasos. El secuenciador arranca sin piezas.
+  La rejilla distingue compases, pulsos y pasos. Clic derecho sobre un golpe lo divide
+  dentro de su celda. Repite para programar rolls de hasta ocho golpes y usa la rueda
+  sobre el pad para ajustar su velocidad. El secuenciador arranca sin piezas.
   Suelta audio del Explorador en el espacio vacío para crear una fila. Suéltalo
   sobre una fila para cambiar su primera capa y conservar sus notas y ajustes.
   **+ Muestra** también crea una fila. **Ajustes** permite elegir qué capa cambiar.
@@ -595,7 +633,9 @@ acotada de selección por NoteOn durante la reproducción.
   transporte compartido. Una pieza con muestras usa sfizz y sus capas por velocidad.
   Las muestras nuevas arrancan con **Cola completa** y **Cortar al repetir**.
   En **Ajustes**, cada pieza tiene su envolvente de amplitud y puede dejar que sus
-  golpes se superpongan. En Arrangement el fin automático espera las colas one-shot.
+  golpes se superpongan. La perilla **Offset** salta un porcentaje del inicio de cada
+  muestra. El ajuste se guarda por capa. En Arrangement el fin automático espera las
+  colas one-shot.
   Los kits anteriores conservan sus voces sintetizadas. Los picos de pieza y bus
   se miden después de sus faders.
 - **Mixers reales:** la mesa del proyecto y el panel Mixer de Drums Latex comparten
@@ -739,3 +779,9 @@ Rate en partículas/segundo; vida en segundos; tamaño/velocidad/gravedad en pí
 píxeles/segundo y píxeles/segundo². Rate 0 desactiva emisión. Pool máximo: 512.
 Solo emite al avanzar el playhead visible; al detenerse la estela se desvanece.
 Su reloj visual está separado del transporte musical.
+
+La acción **Afinar pista · StompTuner** (`track.tuner`) activa una lectura de nota, Hz y cents en la barra superior con la señal de la pista del cursor después de sus FX. El mismo botón cierra la lectura y retira el monitor. El monitor es local y temporal. Al cortar un WAV durante Play, el editor sigue al nuevo fragmento y las dos mitades contiguas conservan la curva de cruce original.
+
+Track FX abre en Ruta. Se recorre cada cadena en serie o por ramas paralelas, con su entrada y salida. Cada rama paralela tiene nivel propio y Solo. Los solos activos se suman dentro de ese paralelo; Play y Exportar usan la misma mezcla. Doble clic en el fader restaura 0 dB. Árbol permite reordenar los nodos por arrastre.
+
+**Hey Convolver** se inserta desde Track FX o con `:fx.convolver`. Los tres gabinetes de fábrica son modelos sintéticos. El panel usa una veta de madera teñida con la paleta activa. En el dibujo del altavoz puedes elegir el centro, el cono o el borde. El borde suaviza los agudos. Una captura importada conserva la posición de micrófono del WAV. La zona de carga acepta una IR WAV de hasta un segundo desde el Explorer y guarda su PCM estéreo dentro del proyecto. Cada rama y cada render offline preparan su propia historia de convolución.
