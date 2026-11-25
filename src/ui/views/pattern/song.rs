@@ -1,7 +1,7 @@
 //! Matriz de ocurrencias de Canción. Cada celda conserva su posición en ticks.
 use crate::ui::{
     DawApp,
-    components::button::flat_control,
+    components::button::{flat_control, led_dot},
     pattern_editor::{PatternAction, SONG_BARS_PER_PAGE},
 };
 use elevate::musical::{
@@ -42,6 +42,7 @@ impl DawApp {
         } else {
             None
         };
+        let dark = ds.is_dark();
         let header = div()
             .flex()
             .w_full()
@@ -122,7 +123,7 @@ impl DawApp {
                                 .flex_shrink_0()
                                 .w(px(LABEL_WIDTH)),
                             )
-                            .children(columns.iter().map(|&at| {
+                            .children(columns.iter().enumerate().map(|(col_idx, &at)| {
                                 let cell = DrumSongCell { at, pattern: id };
                                 let occupied = session
                                     .song
@@ -130,15 +131,39 @@ impl DawApp {
                                         (entry.at, entry.pattern)
                                     })
                                     .is_ok();
-                                self.drum_action_chip(
-                                    if occupied { "●" } else { "·" },
-                                    occupied,
-                                    PatternAction::SongCell(cell),
-                                    cx,
-                                )
-                                .flex_1()
-                                .min_w_0()
-                                .px_0()
+                                let next = columns.get(col_idx + 1).map_or(page_end, |next| next.0);
+                                let playing = now.is_some_and(|tick| tick >= at.0 && tick < next);
+                                let alt_group = (col_idx / 4) % 2 == 1;
+                                let cell_bg = if playing {
+                                    rgba((ds.cyan << 8) | if dark { 0x16 } else { 0x18 })
+                                } else if dark {
+                                    rgba(if alt_group { 0xffffff04 } else { 0xffffff07 })
+                                } else {
+                                    rgba(if alt_group { 0x0f172a06 } else { 0x0f172a0b })
+                                };
+                                let hover_bg = rgba(if dark { 0xffffff12 } else { 0x0f172a14 });
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .h(px(22.0))
+                                    .rounded(px(ds.radius_sm))
+                                    .bg(cell_bg)
+                                    .hover(move |style| style.bg(hover_bg))
+                                    .cursor_pointer()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .when(occupied, |el| el.child(led_dot(ds.accent, 9.5, true)))
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(move |this, _, _, cx| {
+                                            this.apply_pattern_action(PatternAction::SongCell(
+                                                cell,
+                                            ));
+                                            cx.stop_propagation();
+                                            cx.notify();
+                                        }),
+                                    )
                             }))
                     })),
             )
