@@ -3,6 +3,7 @@ mod controls;
 mod kit;
 mod live;
 mod mix;
+mod sampler;
 mod voice;
 
 pub(crate) use controls::DrumBlock;

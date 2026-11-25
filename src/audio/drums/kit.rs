@@ -1,9 +1,6 @@
 //! Voces por pieza, mezcla y pico del bus de percusión.
-use super::{controls::DrumBlock, voice::DrumKit as BuiltinDrums};
-use crate::audio::{
-    sampler::{SampleAsset, SfizzEngine},
-    stereo_pan::StereoPan,
-};
+use super::{controls::DrumBlock, sampler::DrumSampler, voice::DrumKit as BuiltinDrums};
+use crate::audio::{sampler::SampleAsset, stereo_pan::StereoPan};
 use elevate::{
     Primitive, ProcessSpec, StereoFrame,
     devices::sampler::TUNE,
@@ -19,7 +16,7 @@ const BLOCK: usize = 256;
 const MAX_LAYERS: usize = 128;
 
 enum Sound {
-    Samples(SfizzEngine),
+    Samples(DrumSampler),
     Builtin(Box<BuiltinDrums>),
     Silent,
 }
@@ -67,16 +64,18 @@ impl Piece {
                     ))
                 })
                 .collect::<Result<Vec<_>, String>>()?;
-            Sound::Samples(SfizzEngine::prepare_layers(
-                layers,
-                piece.sampler.clone(),
-                rate,
-            )?)
+            Sound::Samples(DrumSampler::prepare(layers, piece.sampler.clone(), rate)?)
         };
+        let mut volume = Volume::new(spec);
+        // Precalienta el suavizador de ganancia fuera de RT para no atenuar el golpe en el frame 0.
+        let mut warmup = [[0.0; 2]; BLOCK];
+        for _ in 0..4 {
+            volume.process(&mut warmup);
+        }
         Ok(Self {
             id: piece.id,
             sound,
-            volume: Volume::new(spec),
+            volume,
             pan: StereoPan::new(0.0),
             buffer: [[0.0; 2]; BLOCK],
         })
@@ -93,14 +92,7 @@ impl Piece {
     fn render(&mut self, start: usize, end: usize, dt: f64) {
         let output = &mut self.buffer[start..end];
         match &mut self.sound {
-            Sound::Samples(engine) => {
-                let mut left = [0.0; BLOCK];
-                let mut right = [0.0; BLOCK];
-                engine.render(&mut left[..output.len()], &mut right[..output.len()]);
-                for (frame, (l, r)) in output.iter_mut().zip(left.into_iter().zip(right)) {
-                    *frame = [l, r];
-                }
-            }
+            Sound::Samples(engine) => engine.render(output),
             Sound::Builtin(engine) => engine.render(output, dt),
             Sound::Silent => output.fill([0.0; 2]),
         }
@@ -142,9 +134,14 @@ impl PreparedKit {
             .iter()
             .map(|piece| Piece::prepare(piece, &mut assets, spec, rate))
             .collect::<Result<Vec<_>, _>>()?;
+        let mut volume = Volume::new(spec);
+        let mut warmup = [[0.0; 2]; BLOCK];
+        for _ in 0..4 {
+            volume.process(&mut warmup);
+        }
         Ok(Self {
             pieces,
-            volume: Volume::new(spec),
+            volume,
             pan: StereoPan::new(0.0),
             assets: Arc::new(assets),
             dt: 1.0 / f64::from(rate),
@@ -209,11 +206,11 @@ impl PreparedKit {
         }
     }
 
-    pub fn note_off(&mut self, id: InstrumentId, pitch: u8, velocity: u8) {
+    pub fn note_off(&mut self, id: InstrumentId, pitch: u8, _velocity: u8) {
         if let Some(piece) = self.pieces.iter_mut().find(|piece| piece.id == id)
             && let Sound::Samples(engine) = &mut piece.sound
         {
-            engine.note_off_velocity(pitch, velocity);
+            engine.note_off(pitch);
         }
     }
 

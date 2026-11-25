@@ -1,6 +1,6 @@
 //! Piezas y capas del kit. Las rutas aún no representan muestras decodificadas.
 use crate::{
-    devices::sampler::{ROOT, SamplerParams},
+    devices::sampler::{ATTACK, ROOT, SamplerParams},
     musical::{model::InstrumentId, track::TrackMix},
 };
 use std::{collections::HashSet, path::Path};
@@ -216,6 +216,9 @@ impl DrumKit {
         let mut sampler = SamplerParams::default();
         sampler.apply_drum_preset();
         sampler.play_full_sample();
+        // Transparente por defecto (igual que la preescucha del Explorer): sin recorte de agudos ni ataque suavizado.
+        sampler.filter = false;
+        sampler.set(ATTACK, 0.0);
         sampler.keytrack = true;
         sampler.set(ROOT, 36.0);
         self.pieces.push(DrumPiece {

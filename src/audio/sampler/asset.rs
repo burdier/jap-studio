@@ -22,6 +22,27 @@ impl Drop for SampleAsset {
     }
 }
 impl SampleAsset {
+    #[cfg(test)]
+    pub(crate) fn from_frames(frames: Vec<elevate::StereoFrame>, sample_rate: u32) -> Arc<Self> {
+        let max_peak = frames
+            .iter()
+            .flatten()
+            .fold(0.0_f32, |m, &x| m.max(x.abs()));
+        Arc::new(Self {
+            file: AudioFile {
+                name: "test_sample".into(),
+                source_path: None,
+                frames,
+                sample_rate,
+                peaks: Vec::new(),
+                max_peak,
+            },
+            source: PathBuf::from("test_sample.wav"),
+            display_peaks: Vec::new(),
+            wave: PathBuf::new(),
+        })
+    }
+
     pub fn load(path: &Path) -> Result<Arc<Self>, String> {
         let file = AudioFile::decode(path)?;
         if file.frames.is_empty() {

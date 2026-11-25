@@ -1,7 +1,7 @@
 //! Estado inmutable del bloque de percusión y picos observables desde el mixer.
 use elevate::{
     StereoFrame,
-    devices::sampler::{PARAMS, SamplerParams, live_control},
+    devices::sampler::SamplerParams,
     musical::{
         drums::{DrumKit, DrumMix},
         model::InstrumentId,
@@ -116,20 +116,12 @@ fn pan(mix: DrumMix) -> f32 {
     (mix.fader.pan as f32 - 50.0) / 50.0
 }
 
-/// Las diferencias en CC, corte, mezcla o nombre no requieren volver a cargar un SFZ.
+/// El sampler nativo actualiza parámetros, filtro y modo en vivo; solo recarga al cambiar capas.
 pub(super) fn same_voice_config(a: &DrumKit, b: &DrumKit) -> bool {
     a.id == b.id
         && a.pieces.len() == b.pieces.len()
-        && a.pieces.iter().zip(&b.pieces).all(|(a, b)| {
-            if a.id != b.id || a.layers != b.layers {
-                return false;
-            }
-            let mut params = a.sampler.clone();
-            for id in 0..PARAMS.len() {
-                if live_control(&params, id).is_some() {
-                    params.set(id, b.sampler.get(id));
-                }
-            }
-            params == b.sampler
-        })
+        && a.pieces
+            .iter()
+            .zip(&b.pieces)
+            .all(|(a, b)| a.id == b.id && a.layers == b.layers)
 }
