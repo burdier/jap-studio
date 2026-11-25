@@ -14,14 +14,16 @@ pub(super) enum SettingsCategory {
     Audio,
     Tracks,
     Export,
+    MidiMap,
     Shortcuts,
 }
 impl SettingsCategory {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Appearance,
         Self::Audio,
         Self::Tracks,
         Self::Export,
+        Self::MidiMap,
         Self::Shortcuts,
     ];
     pub fn label(self) -> &'static str {
@@ -30,6 +32,7 @@ impl SettingsCategory {
             Self::Appearance => "Apariencia",
             Self::Tracks => "Pistas",
             Self::Export => "Exportación",
+            Self::MidiMap => "MIDI Learn",
             Self::Shortcuts => "Atajos",
         }
     }
@@ -93,6 +96,11 @@ impl DawApp {
 
     pub(super) fn show_shortcuts(&mut self) {
         self.settings.show_shortcuts();
+    }
+
+    pub(super) fn open_midi_map_settings(&mut self) {
+        self.settings.open();
+        self.settings.category = SettingsCategory::MidiMap;
     }
 
     pub(super) fn close_settings_overlay(&mut self) {

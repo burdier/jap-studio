@@ -547,6 +547,9 @@ impl DawApp {
             "learn.vst" | "midi.learn.vst" => {
                 self.arm_last_touched_vst_learn();
             }
+            "learn.list" | "midi.map" => {
+                self.open_midi_map_settings();
+            }
             "freeze" => {
                 self.toggle_freeze_track(self.cursor_row);
             }

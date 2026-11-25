@@ -79,6 +79,8 @@ const KNOWN: &[(&str, &str)] = &[
     ("instrument", "Abrir editor de instrumento"),
     ("kbd", "Activar/desactivar teclado MIDI"),
     ("learn", "Activar MIDI Learn"),
+    ("learn.list", "Abrir panel de gestión de enlaces MIDI Learn"),
+    ("midi.map", "Abrir panel de gestión de enlaces MIDI Learn"),
     ("materialize", "Materializar selección MIDI"),
     ("master.fx", "Abrir cadena de efectos del Bus Master (M-FX)"),
     ("mfx", "Abrir cadena de efectos del Bus Master (M-FX)"),

@@ -30,7 +30,7 @@ acotada de selección por NoteOn durante la reproducción.
 ## Disponible
 
 - **Buses auxiliares Send / Return (FX)**: las pistas pueden enviar señal post-fader (`0–100%`) a uno o varios buses Return (`:return` o menú de pista / Mixer). `Mix::render_block` procesa en 3 fases deterministas (hojas → grupos → returns) con actualización sin bloqueos (`Publication`) durante Play, soporte *Solo Safe* para buses Return, exportación offline y persistencia en Loro (limpiando envíos huérfanos al borrar un Return).
-- **Mapeo unificado de parámetros y Automatización (Fases 1 y 2)**: `MidiBindTarget` y `AutomationParam` direccionan por IDs estables (`TrackId`, `FxId`, `InstrumentId`) volumen, pan, envíos Return (`Send`), parámetros de FX Lua/Hay (`FxParam`) y parámetros VST3 (efectos e instrumentos, `InstrumentParam`). El motor VST3 expone `last_touched()` global, `list_parameters()` y `set_parameter()` bidireccional sin bloquear RT (`:learn.vst`, `:auto.vst`, botones *MIDI Learn* y *⚡ Automatizar último VST3*). Las curvas se evalúan sin asignaciones en RT y en exportación offline (incluso con envíos estáticos en 0%) y se guardan/restauran en `.loro`.
+- **Mapeo unificado de parámetros y Automatización (Fases 1 y 2)**: `MidiBindTarget` y `AutomationParam` direccionan por IDs estables (`TrackId`, `FxId`, `InstrumentId`) volumen, pan, envíos Return (`Send`), parámetros de FX Lua/Hay (`FxParam`) y parámetros VST3 (efectos e instrumentos, `InstrumentParam`). El motor VST3 expone `last_touched()` global, `list_parameters()` y `set_parameter()` bidireccional sin bloquear RT (`:learn.vst`, `:auto.vst`, botones *MIDI Learn* y *⚡ Automatizar último VST3*). **Configuración → MIDI Learn** (`:midi.map` / `:learn.list`) permite inspeccionar todos los enlaces con nombres reales, ajustar rango `min/max`, invertirlo y desvincular controles concretos. Las curvas y enlaces se guardan/restauran en `.loro`.
 - **Freeze / Unfreeze de pistas**: congelado pre-fader / post-FX en segundo plano a WAV 32-bit float (`:freeze`, `:unfreeze`, menú contextual de pista o insignia `❄` en cabecera). Durante Play la pista congelada libera la CPU de su instrumento y su rack FX conservando vivos volumen, pan, mute, solo, automatización, grupo y envíos Return.
 - **Export Pro (LUFS / True Peak)**: medición EBU R128 (`ebur128`) al exportar máster o stems con reporte final (`LUFS-I`, `dBTP`, `LRA`, ganancia y reducción del limitador) en el diálogo y la barra de estado; normalización de sonoridad objetivo en 2 pasadas con RAM acotada (`-lufs -14|off`), limitador True Peak 4× con lookahead compensado sin perder frames (`-tp -1|off`), presets rápidos en «Exportar audio» y persistencia en `EXPORT_DEFAULTS`.
 - **Flujo de trabajo, Transporte, Drums y Piano Roll**:
@@ -725,7 +725,6 @@ acotada de selección por NoteOn durante la reproducción.
 
 ## Todavía pendiente
 
-- **Panel de gestión MIDI Learn**: vista compacta para inspeccionar enlaces activos, ajustar rango `min/max` y desvincular controles concretos.
 - **Freeze persistente en proyecto**: guardar la referencia del audio congelado (o re-congelar bajo demanda) dentro del proyecto `.loro`.
 - **Tempo map y chase de notas sostenidas** al saltar el playhead dentro de un acorde o nota larga.
 - **Exportación offline de ramas Hilo con VST3** y soporte CLAP.
@@ -733,8 +732,9 @@ acotada de selección por NoteOn durante la reproducción.
 
 ## Próximos incrementos recomendados
 
-1. **Panel de gestión MIDI Learn** (inspección, rango `min/max` y borrado selectivo).
-2. **Freeze persistente + tempo map / chase de notas** y actualización del manifiesto Flatpak.
+1. **Freeze persistente en `.loro`**.
+2. **Tempo map y chase de notas sostenidas**.
+3. **Exportación offline de ramas Hilo con VST3** y actualización del manifiesto Flatpak.
 
 La futura arquitectura completa se mantiene como dirección; estos puntos son tareas
 concretas, no módulos vacíos ya creados.

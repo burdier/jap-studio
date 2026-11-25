@@ -226,6 +226,44 @@ impl MidiMapper {
         self.bindings.len() != before
     }
 
+    pub fn remove_at(&mut self, index: usize) -> Option<MidiBinding> {
+        if index < self.bindings.len() {
+            Some(self.bindings.remove(index))
+        } else {
+            None
+        }
+    }
+
+    pub fn set_range(&mut self, index: usize, min: f32, max: f32) -> bool {
+        let Some(binding) = self.bindings.get_mut(index) else {
+            return false;
+        };
+        if !min.is_finite() || !max.is_finite() {
+            return false;
+        }
+        binding.min = min.clamp(0.0, 1.0);
+        binding.max = max.clamp(0.0, 1.0);
+        true
+    }
+
+    pub fn invert_range(&mut self, index: usize) -> bool {
+        let Some(binding) = self.bindings.get_mut(index) else {
+            return false;
+        };
+        std::mem::swap(&mut binding.min, &mut binding.max);
+        true
+    }
+
+    pub fn clear_all(&mut self) {
+        self.bindings.clear();
+        self.armed_target = None;
+        self.learn_mode = false;
+    }
+
+    pub fn reset_defaults(&mut self) {
+        *self = Self::new();
+    }
+
     /// Evalúa un mensaje MIDI entrante. Si hay un destino armado en modo Learn,
     /// vincula el origen al destino; si no, dispara todos los destinos mapeados (1 a N).
     pub fn process(&mut self, message: MidiMessage) -> Vec<MappedEffect> {
@@ -334,5 +372,55 @@ mod tests {
         assert_eq!(mapper.source_for(vst_target), Some(MidiSource::Cc(15)));
         // El bus Return #2 fue eliminado -> su envío huérfano se limpia automáticamente.
         assert_eq!(mapper.source_for(send_target), None);
+    }
+
+    #[test]
+    fn range_scaling_inversion_and_selective_removal_work() {
+        let mut mapper = MidiMapper::from_bindings(Vec::new());
+        let target = MidiBindTarget::TrackVolume(TrackId(3));
+        mapper.bind(MidiSource::Cc(20), target);
+        assert!(mapper.set_range(0, 0.2, 0.8));
+
+        // Entrada 0 -> 0.2; entrada 127 -> 0.8
+        assert_eq!(
+            mapper.process(MidiMessage::ControlChange { cc: 20, value: 0 }),
+            vec![MappedEffect::SetNormalized {
+                target,
+                fraction: 0.2
+            }]
+        );
+        assert_eq!(
+            mapper.process(MidiMessage::ControlChange { cc: 20, value: 127 }),
+            vec![MappedEffect::SetNormalized {
+                target,
+                fraction: 0.8
+            }]
+        );
+
+        // Invertir rango: 0.8 -> 0.2
+        assert!(mapper.invert_range(0));
+        match mapper.process(MidiMessage::ControlChange { cc: 20, value: 0 })[0] {
+            MappedEffect::SetNormalized {
+                target: t,
+                fraction,
+            } => {
+                assert_eq!(t, target);
+                assert!((fraction - 0.8).abs() < 1e-5);
+            }
+            other => panic!("esperado SetNormalized, obtuvo {other:?}"),
+        }
+        match mapper.process(MidiMessage::ControlChange { cc: 20, value: 127 })[0] {
+            MappedEffect::SetNormalized {
+                target: t,
+                fraction,
+            } => {
+                assert_eq!(t, target);
+                assert!((fraction - 0.2).abs() < 1e-5);
+            }
+            other => panic!("esperado SetNormalized, obtuvo {other:?}"),
+        }
+
+        assert!(mapper.remove_at(0).is_some());
+        assert!(mapper.bindings().is_empty());
     }
 }

@@ -142,6 +142,7 @@ impl DawApp {
                                     }
                                     SettingsCategory::Tracks => self.render_track_settings(cx),
                                     SettingsCategory::Export => self.render_export_settings(cx),
+                                    SettingsCategory::MidiMap => self.render_midi_settings(cx),
                                     SettingsCategory::Shortcuts => self.render_shortcut_help(cx),
                                 }),
                         ),
