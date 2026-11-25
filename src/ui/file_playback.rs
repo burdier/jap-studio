@@ -1,5 +1,5 @@
 //! Preparación de mezcla cancelable; fuentes y remuestreo fuera del callback.
-mod lua;
+
 use super::DawApp;
 use crate::audio::drums::{DrumInput, DrumPreview, DrumScore};
 use crate::audio::piano::VoiceSource;
@@ -15,7 +15,7 @@ use elevate::musical::{
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 pub(super) struct PendingPlayback {
     result: Receiver<Result<PreparedPlayback, String>>,
-    beat: f64,
+    pub(super) beat: f64,
     bpm: f64,
     meter: elevate::musical::time::Meter,
     clips: Vec<AudioClip>,
@@ -24,26 +24,33 @@ pub(super) struct PendingPlayback {
     audio: crate::audio::device::AudioConfig,
     lua_preplay: bool,
     drums_enabled: bool,
+    count_in_bars: u32,
 }
 impl DawApp {
-    fn audio_snapshot(&self) -> Vec<AudioClip> {
-        self.timeline
+    pub(super) fn audio_snapshot(&self) -> Vec<AudioClip> {
+        let mut clips: Vec<AudioClip> = self
+            .timeline
             .clip
             .iter()
             .chain(&self.timeline.other_audio_clips)
             .cloned()
-            .collect()
+            .collect();
+        clips.sort_unstable_by_key(|clip| clip.id.value());
+        clips
     }
-    fn midi_snapshot(&self) -> Vec<MidiClip> {
-        self.timeline
+    pub(super) fn midi_snapshot(&self) -> Vec<MidiClip> {
+        let mut clips: Vec<MidiClip> = self
+            .timeline
             .midi_clip
             .iter()
             .chain(&self.timeline.other_midi_clips)
             .filter(|clip| clip.drum_target.is_none())
             .cloned()
-            .collect()
+            .collect();
+        clips.sort_unstable_by_key(|clip| clip.id.value());
+        clips
     }
-    fn has_drum_clips(&self) -> bool {
+    pub(super) fn has_drum_clips(&self) -> bool {
         self.timeline
             .midi_clip
             .iter()
@@ -52,6 +59,13 @@ impl DawApp {
     }
 
     fn drum_score(&self) -> Result<Option<DrumScore>, String> {
+        self.drum_score_for_tracks(|_| true)
+    }
+
+    pub(super) fn drum_score_for_tracks(
+        &self,
+        includes: impl Fn(usize) -> bool,
+    ) -> Result<Option<DrumScore>, String> {
         let session = &self.pattern_editor.session;
         if session.source == DrumPlaybackSource::Arrangement {
             let clips = self
@@ -60,8 +74,10 @@ impl DawApp {
                 .iter()
                 .chain(&self.timeline.other_midi_clips)
                 .filter(|clip| {
-                    clip.drum_target
-                        .is_some_and(|target| target.kit == session.kit.id)
+                    includes(clip.track)
+                        && clip
+                            .drum_target
+                            .is_some_and(|target| target.kit == session.kit.id)
                 });
             let pattern = arrangement_pattern(clips, |clip| self.drum_track_audible(clip.track))?;
             return Ok(pattern.map(|pattern| DrumScore {
@@ -91,30 +107,12 @@ impl DawApp {
         effective_mix(&self.tracks, &self.track_levels, &self.track_pans, index).audible
     }
 
-    pub(super) fn request_file_playback(&mut self, beat: f64) {
-        self.sync_vst_effects();
-        let clips = self.audio_snapshot();
-        let midi_clips = self.midi_snapshot();
-        let bpm = self.timeline.tempo.bpm();
-        let meter = self.timeline.meter;
-        let drums_enabled = self.pattern_loop_beats.is_some() || self.has_drum_clips();
-        let drums = if drums_enabled {
-            match self.drum_score() {
-                Ok(score) => Some(DrumInput {
-                    score,
-                    kit: self.pattern_editor.session.kit.clone(),
-                }),
-                Err(error) => {
-                    self.status_message = error;
-                    self.pattern_loop_beats = None;
-                    return;
-                }
-            }
-        } else {
-            None
-        };
-        self.pattern_loop_beats = loop_beats(drums.as_ref().and_then(|input| input.score.as_ref()));
-
+    pub(super) fn arrangement_inputs(
+        &self,
+        clips: &[AudioClip],
+        midi_clips: &[MidiClip],
+        selected: Option<&elevate::export::ExportOptions>,
+    ) -> Result<Vec<TrackInput>, String> {
         let mut hilo_plans = Vec::new();
         for (index, group) in self.tracks.iter().enumerate() {
             if let Some(mode) = group.hilo {
@@ -124,8 +122,7 @@ impl DawApp {
                             match self.rule_for_hilo(group.id) {
                                 Ok(rule) => rule,
                                 Err(error) => {
-                                    self.status_message = error;
-                                    return;
+                                    return Err(error);
                                 }
                             }
                         } else {
@@ -135,30 +132,82 @@ impl DawApp {
                             && mode == elevate::musical::track::HiloMode::RoundRobin
                             && !rule.valid_for(plan.instruments().count())
                         {
-                            self.status_message =
-                                "Tejer: la regla menciona una rama inexistente".into();
-                            return;
+                            return Err("Tejer: la regla menciona una rama inexistente".into());
                         }
                         hilo_plans.push((index, plan, weave_rule));
                     }
                     Err(error) => {
-                        self.status_message = error;
-                        return;
+                        return Err(error);
                     }
                 }
             }
         }
         let mut inputs = Vec::new();
         for (index, track) in self.tracks.iter().enumerate() {
+            let include_sources = selected.is_none_or(|s| s.includes_track(index));
+            let needed_as_return = track.is_return()
+                && self.tracks.iter().enumerate().any(|(src_index, src)| {
+                    selected.is_some_and(|s| s.includes_track(src_index))
+                        && src.send_amount(track.id) > 0
+                });
+            if !include_sources
+                && !needed_as_return
+                && !self.tracks.iter().enumerate().any(|(child_index, child)| {
+                    child.parent == Some(track.id)
+                        && selected.is_some_and(|s| s.includes_track(child_index))
+                })
+            {
+                continue;
+            }
+            if let Some(frozen) = self.frozen_tracks.get(&track.id) {
+                let (gain, pan, source_audible, audible) = self.arrangement_track_mix(index);
+                let is_return = track.is_return();
+                let sends = if is_return {
+                    Vec::new()
+                } else {
+                    track
+                        .sends
+                        .iter()
+                        .filter(|send| send.amount > 0)
+                        .map(|send| (send.target, send.gain()))
+                        .collect()
+                };
+                let sources = if include_sources {
+                    let mut clip = frozen.clip.clone();
+                    clip.track = index;
+                    vec![clip]
+                } else {
+                    Vec::new()
+                };
+                inputs.push(TrackInput {
+                    id: track.id,
+                    parent: track.parent,
+                    is_return,
+                    sends,
+                    source_audible,
+                    audible,
+                    clips: sources,
+                    gain,
+                    pan,
+                    fx_gain: 1.0,
+                    rack: None,
+                    midi: None,
+                    automation: self.timeline.automation.track_or_default(track.id),
+                });
+                continue;
+            }
             let sources: Vec<_> = clips
                 .iter()
-                .filter(|c| c.track == index && !c.props.muted)
+                .filter(|c| include_sources && c.track == index && !c.props.muted)
                 .cloned()
                 .collect();
             let notes: Vec<_> = midi_clips
                 .iter()
                 .filter(|clip| {
-                    clip.track == index && clip.hilo_target.is_none() && !clip.props.muted
+                    include_sources
+                        && clip.track == index
+                        && clip.hilo_target.is_none()
+                        && !clip.props.muted
                 })
                 .cloned()
                 .collect();
@@ -198,8 +247,7 @@ impl DawApp {
                 .is_some_and(|id| self.is_piano_id(id) || self.is_sampler_id(id));
             let midi = if notes.is_empty()
                 && hilo.as_ref().is_none_or(|hilo| hilo.clips.is_empty())
-                && !live_vst
-                && !live_internal
+                && (selected.is_some() || (!live_vst && !live_internal))
             {
                 None
             } else {
@@ -233,39 +281,130 @@ impl DawApp {
                         hilo,
                     }),
                     None if has_hilo_notes => {
-                        self.status_message = "Falta el instrumento de una rama del Hilo".into();
-                        return;
+                        return Err("Falta el instrumento de una rama del Hilo".into());
                     }
                     None => None,
                     Some(Err(_)) if notes.is_empty() && !has_hilo_notes => None,
                     Some(Err(error)) => {
-                        self.status_message = error;
-                        return;
+                        return Err(error);
                     }
                 }
             };
-            if sources.is_empty() && midi.is_none() {
-                continue;
-            }
+            let (gain, pan, source_audible, audible) = self.arrangement_track_mix(index);
+            let is_return = track.is_return();
+            let sends = if is_return {
+                Vec::new()
+            } else {
+                track
+                    .sends
+                    .iter()
+                    .filter(|send| send.amount > 0)
+                    .map(|send| (send.target, send.gain()))
+                    .collect()
+            };
             inputs.push(TrackInput {
                 id: track.id,
+                parent: track.parent,
+                is_return,
+                sends,
+                source_audible,
+                audible,
                 clips: sources,
-                gain: self.track_gain(index),
-                pan: self.track_pan(index),
-                fx_gain: self.track_fx_gain(index),
-                rack: self.effect_rack(index),
+                gain,
+                pan,
+                fx_gain: self.own_track_fx_gain(index),
+                rack: if selected.is_none() {
+                    self.effect_rack(index)
+                } else {
+                    None
+                },
                 midi,
+                automation: self.timeline.automation.track_or_default(track.id),
             });
         }
-        if inputs.iter().all(|input| {
-            input.clips.is_empty()
-                && input.midi.as_ref().is_none_or(|midi| {
-                    midi.clips.is_empty()
-                        && midi.hilo.as_ref().is_none_or(|hilo| hilo.clips.is_empty())
-                })
-        }) && drums.as_ref().is_none_or(|input| input.score.is_none())
+        Ok(inputs)
+    }
+
+    pub(in crate::ui) fn publish_clip_edit(&mut self) {
+        if self.player.is_none() {
+            if let Some(pending) = &self.file_playback {
+                let beat = pending.beat;
+                self.request_file_playback(beat);
+            }
+            return;
+        }
+        self.publish_drum_edit();
+        let inputs = self.arrangement_inputs(&self.audio_snapshot(), &self.midi_snapshot(), None);
+        match inputs {
+            Ok(inputs) => self.player.as_mut().unwrap().queue_arrangement(inputs),
+            Err(error) => self.status_message = error,
+        }
+    }
+
+    pub(super) fn finish_arrangement_drag(&mut self) -> bool {
+        let moved = self.timeline.clip_moved();
+        let finished = self.timeline.end_clip_drag();
+        if moved {
+            self.publish_clip_edit();
+        }
+        if let Some(kind) = self.timeline.sample_editor.pending.take()
+            && !moved
         {
-            self.status_message = "No hay clips de audio o MIDI para reproducir".into();
+            self.show_selected_editor(kind);
+            return true;
+        }
+        moved || finished
+    }
+    pub(super) fn request_file_playback(&mut self, beat: f64) {
+        self.request_file_playback_with_count_in(beat, 0);
+    }
+
+    pub(super) fn request_file_playback_with_count_in(&mut self, beat: f64, count_in_bars: u32) {
+        self.sync_vst_effects();
+        let clips = self.audio_snapshot();
+        let midi_clips = self.midi_snapshot();
+        let bpm = self.timeline.tempo.bpm();
+        let meter = self.timeline.meter;
+        let drums_enabled = self.pattern_loop_beats.is_some() || self.has_drum_clips();
+        let drums = if drums_enabled {
+            match self.drum_score() {
+                Ok(score) => Some(DrumInput {
+                    score,
+                    kit: self.pattern_editor.session.kit.clone(),
+                }),
+                Err(error) => {
+                    self.status_message = error;
+                    self.pattern_loop_beats = None;
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+        self.pattern_loop_beats = loop_beats(drums.as_ref().and_then(|input| input.score.as_ref()));
+
+        let inputs = match self.arrangement_inputs(&clips, &midi_clips, None) {
+            Ok(inputs) => inputs,
+            Err(error) => {
+                self.status_message = error;
+                return;
+            }
+        };
+        let metro_or_rec =
+            self.metronome.is_enabled() || count_in_bars > 0 || self.is_any_recording();
+        if !metro_or_rec
+            && inputs.iter().all(|input| {
+                input.clips.is_empty()
+                    && input.midi.as_ref().is_none_or(|midi| {
+                        midi.clips.is_empty()
+                            && midi.hilo.as_ref().is_none_or(|hilo| hilo.clips.is_empty())
+                    })
+            })
+            && drums.as_ref().is_none_or(|input| input.score.is_none())
+        {
+            self.status_message =
+                "No hay clips para reproducir (activa ♩ Clic para ensayar o grabar con metrónomo)"
+                    .into();
             return;
         }
         let (tx, rx) = mpsc::sync_channel(1);
@@ -286,16 +425,17 @@ impl DawApp {
             audio: audio.clone(),
             lua_preplay: lua_script.is_some(),
             drums_enabled,
+            count_in_bars,
         });
-        self.status_message = "Preparando mezcla de clips…".into();
+        self.status_message = if count_in_bars > 0 {
+            format!("Preparando pre-cuenta ({count_in_bars} comp.)…")
+        } else {
+            "Preparando mezcla de clips…".into()
+        };
         std::thread::spawn(move || {
             let result = (|| {
                 let mut inputs = inputs;
-                if let Some(path) = lua_script {
-                    let source = std::fs::read_to_string(&path)
-                        .map_err(|error| format!("Lua pre-Play ({}): {error}", path.display()))?;
-                    lua::transform_inputs(&mut inputs, &source)?;
-                }
+                crate::audio::apply_preplay(&mut inputs)?;
                 PreparedPlayback::load(inputs, drums, bpm, meter, audio, vsts)
             })();
             let _ = tx.send(result);
@@ -303,7 +443,7 @@ impl DawApp {
     }
     pub(super) fn poll_file_playback(&mut self) {
         if let Some(player) = &mut self.player
-            && let Err(error) = player.poll_drums()
+            && let Err(error) = player.poll_edits()
         {
             self.status_message = error;
         }
@@ -336,16 +476,45 @@ impl DawApp {
                 prepared.update_drums(&self.pattern_editor.session.kit, score.as_ref())?;
                 self.pattern_loop_beats = loop_beats(score.as_ref());
             }
+            self.metronome.set_keep_running(self.is_any_recording());
             prepared.start(
                 pending.beat,
                 pending.bpm,
+                pending.meter,
                 self.utility.clone(),
+                self.master_fx_gain(),
+                self.master_effect_rack(),
                 self.audio_loop,
+                self.metronome.clone(),
+                pending.count_in_bars,
             )
         }) {
             Ok(player) => {
+                let counting = player.is_counting_in();
                 self.player = Some(player);
-                self.status_message = if self.pattern_loop_beats.is_some() {
+                self.status_message = if counting {
+                    format!(
+                        "● Pre-cuenta ({} comp.) · prepárate para entrar…",
+                        pending.count_in_bars
+                    )
+                } else if let Some(active) = &self.audio_recorder {
+                    let mode = if active.recorder.stereo {
+                        "Estéreo"
+                    } else {
+                        "Mono"
+                    };
+                    format!(
+                        "🎙 Grabando audio en «{}» ({mode}) · pulsa 🎙 o ■ para guardar",
+                        active.track_name
+                    )
+                } else if self.midi_capture.is_recording() {
+                    format!(
+                        "● Grabando MIDI en {} · pulsa ● o Espacio para finalizar",
+                        self.tracks
+                            .get(self.cursor_row)
+                            .map_or("pista", |t| t.name.as_ref())
+                    )
+                } else if self.pattern_loop_beats.is_some() {
                     if pending.lua_preplay {
                         "Patrón y MIDI · Lua aplicado antes de Play".into()
                     } else {

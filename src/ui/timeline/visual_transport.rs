@@ -84,6 +84,16 @@ impl super::Timeline {
     pub(crate) fn visual_playhead(&self) -> Option<f64> {
         self.visual_transport.playhead(self.playhead)
     }
+    /// Convierte la posición del Arrangement al tiempo de la fuente MIDI.
+    pub(crate) fn clip_visual_playhead(
+        &self,
+        clip: &elevate::musical::clip::MidiClip,
+    ) -> Option<f64> {
+        let beat = self.visual_playhead()?;
+        (clip.start_beat..clip.end_beat())
+            .contains(&beat)
+            .then(|| beat - clip.start_beat + clip.trim_start)
+    }
     pub(crate) fn visual_edit_beat(&self) -> f64 {
         self.visual_transport.cursor()
     }

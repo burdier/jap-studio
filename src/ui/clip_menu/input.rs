@@ -153,11 +153,33 @@ impl DawApp {
         let Some(kind) = menu.clip_kind else { return };
         let beat = menu.beat;
         match action {
+            A::ReverseChords => {
+                self.show_selected_editor(kind);
+                self.analyze_chords(cx);
+            }
             A::EditMidi => {
                 if kind == crate::ui::timeline::DragKind::Midi {
                     self.open_piano_roll();
                     self.focus_piano_roll(window, cx);
                 }
+            }
+            A::Bounce => {
+                if kind == crate::ui::timeline::DragKind::Midi {
+                    self.bounce_midi_to_audio();
+                }
+            }
+            A::ExportMidi => {
+                if kind == crate::ui::timeline::DragKind::Midi {
+                    self.export_midi_clip_dialog(cx);
+                }
+            }
+            A::AudioToMidi => {
+                if kind == crate::ui::timeline::DragKind::Audio {
+                    self.convert_audio_clip_to_midi(cx);
+                }
+            }
+            A::SendToSampler => {
+                self.drop_arrangement_clip_into_sampler(kind, cx);
             }
             A::Rename => {
                 let name = menu.rename.clone();
@@ -167,33 +189,42 @@ impl DawApp {
                 self.rename_active_clip(kind, &name);
             }
             A::Duplicate => self.duplicate_active_clip(kind),
+            A::Consolidate => self.consolidate_selection(cx),
             A::Materialize => self.materialize_midi_selection(),
-            A::Split => {
-                self.stop_audio();
-                self.timeline.split_clip(kind, beat);
-            }
+            A::Split => self.split_arrangement_clip(kind, beat),
             A::RestoreTrim => {
                 self.stop_audio();
                 self.timeline.restore_clip_trim(kind);
             }
             A::Mute => self.toggle_clip_mute(kind),
+            A::Loop => self.toggle_clip_loop(kind),
             A::Lock => self.toggle_clip_lock(kind),
             A::Color(color) => {
-                if let Some(props) = self.active_clip_props_mut(kind) {
+                if kind == crate::ui::timeline::DragKind::Midi {
+                    self.timeline
+                        .change_selected_midi(|clip| clip.props.color_index = color);
+                } else if let Some(props) = self.active_clip_props_mut(kind) {
                     props.color_index = color;
                 }
             }
             A::Gain(delta) => {
-                self.stop_audio();
+                if kind == crate::ui::timeline::DragKind::Midi {
+                    self.stop_audio();
+                }
                 if let Some(props) = self.active_clip_props_mut(kind) {
                     props.gain_db =
                         delta.map_or(0.0, |delta| (props.gain_db + delta).clamp(-24.0, 12.0));
+                }
+                if kind == crate::ui::timeline::DragKind::Audio {
+                    self.publish_clip_edit();
                 }
                 return;
             }
             A::Move(delta) => self.move_active_clip_track(kind, delta),
             A::RouteMidi(target) => self.route_active_midi_clip(target),
             A::Delete => self.delete_active_clip(kind),
+            A::Copy => self.copy_arrangement_midi(false),
+            A::Cut => self.copy_arrangement_midi(true),
             A::Page(_) | A::InsertMidi | A::InsertCapture => unreachable!(),
         }
         self.clip_menu = None;

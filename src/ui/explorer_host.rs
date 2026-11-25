@@ -16,7 +16,7 @@ pub(super) enum ImportSource {
 
 struct ImportRequest {
     source: ImportSource,
-    track: TrackId,
+    track: Option<TrackId>,
     beat: f64,
 }
 
@@ -38,10 +38,40 @@ impl ExplorerDock {
                     this.request_file_import(ImportSource::Path(path.clone()));
                     this.flush_file_import(cx);
                 }
+                ExplorerEvent::PreviewPhrase(path, root, cents) => {
+                    if let Some(clip) = this.timeline.midi_clip.clone()
+                        && let Some(track) = this.tracks.get(clip.track).cloned()
+                    {
+                        let bpm = this.timeline.tempo.bpm();
+                        this.explorer.view.update(cx, |explorer, cx| {
+                            explorer.preview_phrase(
+                                path.clone(),
+                                clip,
+                                track,
+                                bpm,
+                                (*root, *cents),
+                                cx,
+                            );
+                        });
+                    }
+                }
+                ExplorerEvent::LoadRoot(path, root, cents) => {
+                    if let Some(id) = this.tracks.get(this.cursor_row).and_then(|t| t.instrument)
+                        && this.is_sampler_id(id)
+                    {
+                        this.activate_sampler(id);
+                        this.load_sample_with_root(path.clone(), Some((*root, *cents)), cx);
+                    } else {
+                        this.status_message =
+                            "Selecciona una pista con Hay Sampler para cargar la raíz".into();
+                    }
+                }
+                ExplorerEvent::AddToHilo(path, root, cents) => {
+                    this.add_sample_to_hilo(path.clone(), *root, *cents, cx);
+                }
                 ExplorerEvent::Close => this.hide_explorer(),
                 ExplorerEvent::Focused => {
                     this.workspace_focus.active = super::workspace_focus::Panel::Explorer;
-                    this.track_delete_pending = false;
                     this.release_explorer_keyboard();
                 }
             }
@@ -117,14 +147,19 @@ impl DawApp {
         let style = ExplorerStyle::from(&self.ds);
         let audio = &self.settings.audio.saved;
         let visible = self.explorer_visible();
+        let has_phrase = self
+            .timeline
+            .midi_clip
+            .as_ref()
+            .is_some_and(|clip| !clip.notes().is_empty());
         let explorer = self.explorer.view.read(cx);
-        if explorer.style != style
-            || explorer.vim_enabled != self.vim_enabled
+        if explorer.has_phrase != has_phrase
+            || explorer.style != style
             || explorer.preview_needs_sync(audio, visible)
         {
             self.explorer.view.update(cx, |explorer, cx| {
+                explorer.has_phrase = has_phrase;
                 explorer.style = style;
-                explorer.vim_enabled = self.vim_enabled;
                 explorer.sync_preview(audio, visible);
                 cx.notify();
             });
@@ -141,18 +176,14 @@ impl DawApp {
 
     /// Operación compartida: doble clic, :file.import y acciones asignables a iconos.
     pub(super) fn request_file_import(&mut self, source: ImportSource) {
-        let Some(track) = self.tracks.get(self.cursor_row) else {
-            self.status_message = "Añade y selecciona una pista para insertar el archivo".into();
-            return;
-        };
-        if !self.track_accepts_clips(self.cursor_row) {
-            self.status_message =
-                "Selecciona una pista de audio/MIDI dentro del grupo para insertar".into();
-            return;
-        }
+        let track = self
+            .tracks
+            .get(self.cursor_row)
+            .filter(|_| self.track_accepts_clips(self.cursor_row))
+            .map(|track| track.id);
         self.explorer.pending_import = Some(ImportRequest {
             source,
-            track: track.id,
+            track,
             beat: self.timeline.edit_beat(),
         });
     }
@@ -169,7 +200,12 @@ impl DawApp {
             self.status_message = "Selecciona un archivo MIDI o audio en el explorador".into();
             return;
         };
-        if !EntryKind::for_file(&path).importable() {
+        let kind = EntryKind::for_file(&path);
+        if kind == EntryKind::Hydrogen {
+            self.import_hydrogen(path, None, cx);
+            return;
+        }
+        if !kind.importable() {
             self.status_message =
                 "Formato no compatible: usa MIDI, WAV, FLAC, MP3, Ogg, AAC o M4A".into();
             return;
@@ -177,11 +213,12 @@ impl DawApp {
         if let Some(track) = self
             .tracks
             .iter()
-            .position(|track| track.id == request.track)
+            .position(|track| Some(track.id) == request.track)
         {
             self.import_audio(path, track, request.beat, cx);
         } else {
-            self.status_message = "La pista de destino ya no existe".into();
+            self.status_message =
+                "Selecciona una pista de audio/MIDI para insertar el archivo".into();
         }
     }
 }

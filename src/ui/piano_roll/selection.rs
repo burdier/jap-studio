@@ -51,7 +51,7 @@ impl DawApp {
             .notes()
             .iter()
             .filter(|note| !ids.contains(&note.id))
-            .copied()
+            .cloned()
             .collect();
         let count = clip.notes().len() - remaining.len();
         if count == 0 {
@@ -62,11 +62,14 @@ impl DawApp {
         let Ok(pattern) = clip.pattern.with_notes(remaining, clip.pattern.next_id()) else {
             return;
         };
+        let edited = [clip.id];
+        let before = self.timeline.midi_edit_draft(&edited);
         self.stop_audio();
         if let Some(clip) = self.timeline.midi_clip.as_mut() {
             clip.replace_pattern(pattern);
             clip.muted_notes.retain(|id| !ids.contains(id));
         }
+        self.timeline.commit_midi_edit(before, &edited);
         self.piano_roll
             .selected_notes
             .retain(|id| !ids.contains(id));

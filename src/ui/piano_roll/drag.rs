@@ -15,24 +15,33 @@ impl DawApp {
         let grid = self.piano_roll.grid.get();
         match self.piano_roll.drag.as_mut() {
             Some(RollDrag::Box {
-                origin, current, ..
+                origin,
+                current,
+                additive,
+                ..
             }) => {
                 *current = position;
                 let left = origin.x.min(position.x);
                 let right = origin.x.max(position.x);
                 let top = origin.y.min(position.y);
                 let bottom = origin.y.max(position.y);
-                self.piano_roll.selected_notes = clip
-                    .notes()
+                self.piano_roll.selected_notes = additive
                     .iter()
-                    .filter(|note| {
-                        let bounds = grid.note_bounds(note.start, note.duration, note.pitch);
-                        bounds.left() <= right
-                            && bounds.right() >= left
-                            && bounds.top() <= bottom
-                            && bounds.bottom() >= top
-                    })
-                    .map(|note| note.id)
+                    .copied()
+                    .chain(
+                        clip.notes()
+                            .iter()
+                            .filter(|note| {
+                                let bounds =
+                                    grid.note_bounds(note.start, note.duration, note.pitch);
+                                bounds.left() <= right
+                                    && bounds.right() >= left
+                                    && bounds.top() <= bottom
+                                    && bounds.bottom() >= top
+                                    && !additive.contains(&note.id)
+                            })
+                            .map(|note| note.id),
+                    )
                     .collect();
                 self.piano_roll.selected = self.piano_roll.selected_notes.first().copied();
             }
@@ -45,6 +54,9 @@ impl DawApp {
     }
 
     pub(in crate::ui) fn finish_roll_drag(&mut self, position: Point<Pixels>) {
+        if self.finish_roll_pitch() {
+            return;
+        }
         self.piano_roll.paint_stroke = None;
         self.piano_roll.control_drag = false;
         self.piano_roll.lane_span = None;
@@ -76,6 +88,7 @@ impl DawApp {
                 origin,
                 current,
                 erase,
+                ..
             } => {
                 if erase
                     && ((current.x - origin.x).abs() >= gpui::px(2.0)
@@ -142,10 +155,13 @@ impl DawApp {
             if clip.pattern == pattern {
                 return;
             }
+            let ids = [clip.id];
+            let before = self.timeline.midi_edit_draft(&ids);
             self.stop_audio();
             if let Some(clip) = self.timeline.midi_clip.as_mut() {
                 clip.replace_pattern(pattern);
             }
+            self.timeline.commit_midi_edit(before, &ids);
         } else {
             self.piano_roll.motion.borrow_mut().clear();
         }
@@ -157,6 +173,7 @@ impl DawApp {
         self.piano_roll.control_drag = false;
         self.piano_roll.lane_span = None;
         self.piano_roll.drag = None;
+        self.piano_roll.pitch_drag = None;
         self.piano_roll.push = None;
         self.piano_roll.push_error = None;
         self.piano_roll.motion.borrow_mut().clear();

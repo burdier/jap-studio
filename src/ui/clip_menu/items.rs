@@ -94,8 +94,30 @@ impl DawApp {
                             .and_then(|clip| clip.drum_target)
                     })
                     .flatten();
+                if kind == DragKind::Audio {
+                    items.push(
+                        MenuItem::new("Audio → MIDI (Polifónico)", A::AudioToMidi)
+                            .enabled(self.audio_to_midi_task.is_none()),
+                    );
+                    items.push(MenuItem::new("Enviar a Hay Sampler", A::SendToSampler));
+                    items.push(
+                        MenuItem::new("Invertir por acordes…", A::ReverseChords)
+                            .enabled(!props.locked),
+                    );
+                }
                 if kind == DragKind::Midi {
                     items.push(MenuItem::new("Editar en Piano Roll", A::EditMidi));
+                    items.push(
+                        MenuItem::new("Bounce a Audio (WAV) · Ctrl+B", A::Bounce)
+                            .enabled(self.export_job.is_none()),
+                    );
+                    items.push(
+                        MenuItem::new("Bounce → Hay Sampler", A::SendToSampler)
+                            .enabled(self.export_job.is_none()),
+                    );
+                    items.push(MenuItem::new("Exportar MIDI (.mid)…", A::ExportMidi));
+                    items.push(MenuItem::new("Copiar selección · Ctrl+C", A::Copy));
+                    items.push(MenuItem::new("Cortar selección · Ctrl+X", A::Cut));
                     let destination = self
                         .timeline
                         .midi_clip
@@ -134,6 +156,7 @@ impl DawApp {
                 items.extend([
                     MenuItem::new("Renombrar…", A::Page(MenuPage::Rename)),
                     MenuItem::new("Duplicar a continuación", A::Duplicate),
+                    MenuItem::new("Consolidar · Ctrl+J", A::Consolidate),
                     MenuItem::new("Dividir en el cursor", A::Split)
                         .enabled(!props.locked && self.timeline.can_split_clip(kind, menu.beat)),
                     MenuItem::new("Restaurar recorte", A::RestoreTrim).enabled(
@@ -146,6 +169,7 @@ impl DawApp {
                     MenuItem::new("Silenciar", A::Mute)
                         .checked(props.muted)
                         .separated(),
+                    MenuItem::new("Bucle interno (Loop)", A::Loop).checked(props.looped),
                     MenuItem::new("Bloquear posición y tamaño", A::Lock).checked(props.locked),
                     MenuItem::new(
                         format!("Ganancia · {:+.1} dB  ›", props.gain_db),

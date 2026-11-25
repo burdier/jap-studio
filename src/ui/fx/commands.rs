@@ -43,6 +43,7 @@ impl DawApp {
                 .ok_or_else(|| "Selecciona un efecto o contenedor".to_string())
         };
         let edit = match command {
+            "fx.convolver" => return self.insert_fx(target, elevate::musical::fx::cabinet::ID),
             "fx.spectrum" => {
                 return self.insert_fx(target, elevate::devices::spectrum::ID);
             }
@@ -56,7 +57,12 @@ impl DawApp {
                 }
                 if command == "fx.spectrum.reset" {
                     self.fx.analyzers.reset(id);
-                } else if let Some(view) = self.fx.analyzers.views.get_mut(&id) {
+                } else if let Some(view) = self
+                    .fx
+                    .analyzers
+                    .views
+                    .get_mut(&crate::audio::analyzer::tap::TapPoint::Output(id))
+                {
                     view.mode = if command == "fx.spectrum.next" {
                         view.mode.next()
                     } else {
@@ -94,12 +100,8 @@ impl DawApp {
                 return Ok(());
             }
             "fx.serial" | "fx.parallel" => {
-                let track = self
-                    .tracks
-                    .iter()
-                    .find(|t| t.id == target.track)
-                    .ok_or("La pista ya no existe")?;
-                if target.node.is_some_and(|id| track.chain.find(id).is_none()) {
+                let chain = self.fx_chain(target.track).ok_or("La pista ya no existe")?;
+                if target.node.is_some_and(|id| chain.find(id).is_none()) {
                     return Err("El destino ya no existe".into());
                 }
                 let kind = if command == "fx.serial" {
@@ -120,7 +122,7 @@ impl DawApp {
                         },
                         kind,
                     ),
-                    track.chain.insertion_after(target.node),
+                    chain.insertion_after(target.node),
                 )
             }
             "fx.rename" => {

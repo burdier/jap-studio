@@ -3,6 +3,8 @@ mod action_form;
 mod app;
 mod audio_actions;
 mod audio_preferences;
+mod audio_record;
+mod audio_to_midi;
 mod clip_actions;
 mod clip_menu;
 mod collect;
@@ -19,9 +21,9 @@ mod file_import;
 mod file_playback;
 mod fx;
 mod general_note;
+mod history;
 mod icons;
 mod input;
-mod keyboard_preferences;
 mod kit;
 mod lua_components;
 mod lua_tools;
@@ -34,6 +36,7 @@ mod piano_roll;
 mod profile;
 mod project;
 mod render;
+mod sample_editor;
 mod sampler;
 mod scripting;
 mod settings;
@@ -81,13 +84,6 @@ use timeline::Timeline;
 pub(crate) use app::run;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum VimMode {
-    Normal,
-    Insert,
-    Command,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
 enum CenterView {
     Arrangement,
     Session,
@@ -97,9 +93,14 @@ enum CenterView {
 // Privado al árbol UI: las vistas no exponen este estado a audio o al núcleo musical.
 struct DawApp {
     player: Option<Player>,
+    tail_player: Option<Player>,
     file_playback: Option<file_playback::PendingPlayback>,
     audio_loop: Option<(f64, f64)>,
     pattern_loop_beats: Option<f64>,
+    metronome: std::sync::Arc<crate::audio::metronome::MetronomeControl>,
+    recording_waiting_count_in: bool,
+    audio_recorder: Option<audio_record::ActiveAudioRecording>,
+    audio_record_stereo: bool,
     instrument: Piano,
     piano_instances: HashMap<elevate::musical::model::InstrumentId, Piano>,
     sampler: crate::instruments::sampler::Sampler,
@@ -136,13 +137,19 @@ struct DawApp {
     piano_ui: views::instrument_params::PianoUi,
     import_task: Option<gpui::Task<()>>,
     collect_task: Option<gpui::Task<()>>,
+    audio_to_midi_task: Option<gpui::Task<()>>,
+    history: history::ProjectHistory,
     project: project::ProjectUi,
     script_task: Option<gpui::Task<()>>,
     lua_tools: lua_tools::LuaTools,
     lua_components: lua_components::LuaComponents,
     export_job: Option<crate::audio::export::ExportJob>,
+    bounce_pending: Option<export::BounceTarget>,
+    freeze_pending: Option<export::FreezeTarget>,
+    frozen_tracks: std::collections::HashMap<elevate::musical::track::TrackId, export::FrozenTrack>,
     utility: elevate::devices::utility_slot::UtilitySlot,
     utility_open: bool,
+    master_chain: elevate::musical::fx::FxChain,
     ds: DesignSystem,
     focus_handle: FocusHandle,
     timeline: Timeline,
@@ -160,15 +167,14 @@ struct DawApp {
     bar_menu: Option<views::menu_bar::BarMenu>,
     track_menu: Option<track_menu::TrackMenu>,
     track_presentation: std::collections::HashMap<TrackId, track_layout::TrackPresentation>,
-    track_delete_pending: bool,
     track_levels: Vec<i32>,
     track_pans: Vec<i32>,
     track_control_drag: Option<views::tracks::TrackControlDrag>,
     mixer_drag: Option<mixer::MixerDrag>,
     track_reorder_drag: Option<track_drag::TrackReorderDrag>,
     track_scroll: ScrollHandle,
-    mode: VimMode,
-    vim_enabled: bool,
+    tap_tempo: Vec<Instant>,
+    command_open: bool,
     workspace_focus: workspace_focus::WorkspaceFocus,
     center_view: CenterView,
     cursor_row: usize,

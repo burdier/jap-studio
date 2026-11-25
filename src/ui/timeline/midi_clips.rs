@@ -6,6 +6,7 @@ use gpui::{Pixels, Point};
 
 impl Timeline {
     pub(crate) fn insert_midi_clip(&mut self, clip: MidiClip) {
+        self.focused_audio = None;
         self.selected_midi = vec![clip.id];
         if let Some(previous) = self.midi_clip.replace(clip) {
             self.other_midi_clips.push(previous);
@@ -13,6 +14,7 @@ impl Timeline {
     }
 
     pub(crate) fn insert_audio_clip(&mut self, clip: AudioClip) {
+        self.focused_audio = Some(clip.id);
         if let Some(previous) = self.clip.replace(clip) {
             self.other_audio_clips.push(previous);
         }
@@ -30,14 +32,19 @@ impl Timeline {
         let beat = self
             .viewport
             .beat_at(f64::from(f32::from(position.x - bounds.left())));
-        let Some(row) = self.row_at_y(f32::from(position.y - bounds.top()), track_height) else {
+        let y = f32::from(position.y - bounds.top());
+        let Some(row) = self.row_at_y(y, track_height) else {
             return false;
         };
         let track = row.track;
         let hit = |clip: &AudioClip| {
-            track == clip.track && beat >= clip.start_beat && beat < clip.end_beat(self.tempo.bpm())
+            self.hits_layer(row, y, clip.id)
+                && track == clip.track
+                && beat >= clip.start_beat
+                && beat < clip.end_beat(self.tempo.bpm())
         };
-        if self.clip.as_ref().is_some_and(hit) {
+        if let Some(clip) = self.clip.as_ref().filter(|clip| hit(clip)) {
+            self.focused_audio = Some(clip.id);
             return true;
         }
         if let Some(index) = self.other_audio_clips.iter().rposition(hit) {
@@ -60,14 +67,19 @@ impl Timeline {
         let beat = self
             .viewport
             .beat_at(f64::from(f32::from(position.x - bounds.left())));
-        let Some(row) = self.row_at_y(f32::from(position.y - bounds.top()), track_height) else {
+        let y = f32::from(position.y - bounds.top());
+        let Some(row) = self.row_at_y(y, track_height) else {
             return false;
         };
         let track = row.track;
         let hit = |clip: &MidiClip| {
-            track == clip.track && beat >= clip.start_beat && beat < clip.end_beat()
+            self.hits_layer(row, y, clip.id)
+                && track == clip.track
+                && beat >= clip.start_beat
+                && beat < clip.end_beat()
         };
         if self.midi_clip.as_ref().is_some_and(hit) {
+            self.focused_audio = None;
             return true;
         }
         if let Some(index) = self.other_midi_clips.iter().rposition(hit) {
@@ -92,7 +104,7 @@ impl Timeline {
         }
         let rel_y = f32::from(position.y - bounds.top());
         let row = self.row_at_y(rel_y, track_height)?;
-        let local_y = rel_y - row.top;
+        let local_y = rel_y - Self::lane_top(row, rel_y);
         // La cápsula comienza en el borde superior del carril.
         let top = super::clip_frame::CONTROL_TOP;
         if !(top..=top + super::clip_frame::CONTROL_HEIGHT).contains(&local_y) {

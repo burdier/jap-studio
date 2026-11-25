@@ -157,18 +157,11 @@ impl DawApp {
             .get(id)
             .cloned()
             .ok_or("Componente Lua no registrado")?;
-        let track = self
-            .tracks
-            .iter()
-            .find(|t| t.id == target.track)
-            .ok_or("Pista inexistente")?;
-        if track.kind == elevate::musical::track::TrackKind::Group || !track.accepts_clips() {
-            return Err("Los buses de grupo aún no procesan FX".into());
-        }
-        if target.node.is_some_and(|id| track.chain.find(id).is_none()) {
+        let chain = self.fx_chain(target.track).ok_or("Pista inexistente")?;
+        if target.node.is_some_and(|id| chain.find(id).is_none()) {
             return Err("Destino FX inexistente".into());
         }
-        let placement = track.chain.insertion_after(target.node);
+        let placement = chain.insertion_after(target.node);
         let parameters = descriptor
             .controls
             .iter()

@@ -1,33 +1,35 @@
-//! Ubicación de un proyecto nuevo y limpieza si falla el primer guardado.
+//! Nombre de archivo para Guardar y Guardar como.
 use std::{
-    fs,
+    fs, io,
     path::{Path, PathBuf},
 };
 
-pub(super) fn save_in_new_folder<T>(
-    selected: &Path,
-    save: impl FnOnce(&Path) -> Result<T, String>,
-) -> Result<(PathBuf, T), String> {
+pub(super) fn project_file_path(selected: &Path) -> Result<PathBuf, String> {
     if !selected.is_absolute() {
         return Err("Elige una ubicación absoluta para el proyecto".into());
     }
-    let name = match selected.extension().and_then(|ext| ext.to_str()) {
-        Some(ext) if ext.eq_ignore_ascii_case("loro") => selected.file_stem(),
-        _ => selected.file_name(),
+    let name = selected
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.trim().is_empty() && !name.starts_with('.'))
+        .ok_or("Escribe un nombre visible para el proyecto")?;
+    if selected
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("loro"))
+    {
+        return Ok(selected.to_owned());
     }
-    .and_then(|name| name.to_str())
-    .filter(|name| !name.trim().is_empty() && !name.starts_with('.'))
-    .ok_or("Escribe un nombre visible para el proyecto")?;
-    let folder = selected.with_file_name(name);
-    fs::create_dir(&folder)
-        .map_err(|error| format!("No se pudo crear la carpeta {}: {error}", folder.display()))?;
-    let file = folder.join(format!("{name}.loro"));
-    match save(&file) {
-        Ok(result) => Ok((file, result)),
-        Err(error) => {
-            let _ = fs::remove_dir(&folder);
-            Err(error)
-        }
+
+    let file = selected.with_file_name(format!("{name}.loro"));
+    // El selector pudo confirmar el nombre original, pero no el nombre con la extensión añadida.
+    match fs::symlink_metadata(&file) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(file),
+        Ok(_) => Err(format!(
+            "Ya existe {}. Selecciona ese archivo explícitamente o elige otro nombre",
+            file.display()
+        )),
+        Err(error) => Err(format!("{}: {error}", file.display())),
     }
 }
 
@@ -36,24 +38,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn creates_a_named_project_without_reusing_existing_folders() {
+    fn keeps_the_selected_directory_and_checks_conflicts_when_adding_loro() {
         let root =
             std::env::temp_dir().join(format!("hay-project-location-{}", std::process::id()));
         fs::create_dir(&root).unwrap();
         let result = (|| {
             let selected = root.join("Mi canción.loro");
-            let (file, ()) = save_in_new_folder(&selected, |file| {
-                fs::write(file, b"session").map_err(|e| e.to_string())
-            })?;
-            assert_eq!(file, root.join("Mi canción/Mi canción.loro"));
-            assert!(save_in_new_folder(&selected, |_| Ok(())).is_err());
-            let failed = root.join("Fallido.loro");
-            assert!(
-                save_in_new_folder::<()>(&failed, |_| Err("escritura fallida".into())).is_err()
+            assert_eq!(project_file_path(&selected)?, selected);
+            assert_eq!(project_file_path(&root.join("Mi canción"))?, selected);
+            assert_eq!(
+                project_file_path(&root.join("Mi canción.v2"))?,
+                root.join("Mi canción.v2.loro")
             );
-            assert!(!root.join("Fallido").exists());
-            assert!(!selected.exists());
-            assert_eq!(fs::read(&file).unwrap(), b"session");
+            fs::write(&selected, b"session").unwrap();
+            assert!(project_file_path(&root.join("Mi canción")).is_err());
+            assert_eq!(project_file_path(&selected)?, selected);
+            assert_eq!(fs::read(&selected).unwrap(), b"session");
             Ok::<_, String>(())
         })();
         fs::remove_dir_all(&root).unwrap();

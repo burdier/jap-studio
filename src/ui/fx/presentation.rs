@@ -65,6 +65,7 @@ impl FxTree {
         if !changed
             && self.name == name
             && self.chain.revision() == chain.revision()
+            && self.chain.nodes() == chain.nodes()
             && self.instrument == instrument
             && self.instrument_name == instrument_name
         {

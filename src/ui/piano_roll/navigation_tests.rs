@@ -171,3 +171,16 @@ fn vertical_zoom_limits_keep_all_rows_within_midi_range_and_reset_restores_both_
     assert_eq!(view.vertical_zoom, 1.0);
     assert_eq!(grid(view).row_height, initial.row_height);
 }
+
+#[test]
+fn for_clip_frames_four_bars_and_chord_register() {
+    // Clip largo de 16 compases (64 negras en 4/4): encuadra 4 compases (zoom = 4.0) y ~22 filas.
+    let long = RollViewport::for_clip(64.0, 4.0, &[]);
+    assert!((long.zoom - 4.0).abs() < 1e-6);
+    assert!((long.visible_rows() - 22.0).abs() < 0.25);
+    assert_eq!(long.first_beat, 0.0);
+
+    // Clip corto de 4 compases (16 negras): ocupa todo el ancho (zoom = 1.0).
+    let short = RollViewport::for_clip(16.0, 4.0, &[]);
+    assert_eq!(short.zoom, 1.0);
+}

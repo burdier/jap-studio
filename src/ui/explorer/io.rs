@@ -22,6 +22,7 @@ impl Explorer {
                         }
                         this.ready = true;
                         this.status = None;
+                        this.invalidate_search(cx);
                     }
                     Err(error) => {
                         this.status = Some(format!(
@@ -114,11 +115,11 @@ impl Explorer {
                 }
                 if changed {
                     this.mappings_changed(cx);
+                    this.invalidate_search(cx);
                 }
                 this.scan_pending(cx);
                 if let Some(index) = this
-                    .tree
-                    .rows()
+                    .visible_rows()
                     .iter()
                     .position(|row| Some(&row.entry.path) == this.selected.as_ref())
                 {
@@ -143,6 +144,7 @@ impl Explorer {
             self.selected = None;
         }
         self.mappings_changed(cx);
+        self.invalidate_search(cx);
         cx.notify();
     }
 
@@ -154,6 +156,7 @@ impl Explorer {
         self.generation = self.generation.wrapping_add(1);
         self.scans.clear();
         self.tree.refresh();
+        self.invalidate_search(cx);
         self.stop_preview();
         self.selected = None;
         self.status = None;

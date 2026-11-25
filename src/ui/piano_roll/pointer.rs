@@ -50,6 +50,8 @@ impl DawApp {
             .get(clip.track)
             .and_then(|track| track.instrument)
             .unwrap_or(self.instrument.id());
+        let ids = [clip.id];
+        let before = self.timeline.midi_edit_draft(&ids);
         self.stop_audio();
         if let Some(clip) = self.timeline.midi_clip.as_mut() {
             if let Ok(id) = clip.edit_pattern(|pattern| {
@@ -61,5 +63,6 @@ impl DawApp {
                 self.piano_roll.hint = "Nota insertada".into();
             }
         }
+        self.timeline.commit_midi_edit(before, &ids);
     }
 }

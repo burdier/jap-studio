@@ -7,6 +7,7 @@ mod host;
 mod input;
 mod menu;
 mod presentation;
+mod route;
 mod view;
 use super::components::tree::TreeStyle;
 use elevate::musical::{
@@ -23,9 +24,11 @@ pub(super) struct FxTarget {
     pub track: TrackId,
     pub node: Option<FxId>,
 }
+#[derive(Clone)]
 pub(super) enum FxEvent {
     Focused,
     Selection(FxTarget),
+    Reveal(FxTarget),
     Instrument(TrackId),
     Close,
     Add(FxTarget),
@@ -72,8 +75,8 @@ pub(super) struct FxTree {
     hilo_branches: Vec<HiloBranchView>,
     views: HashMap<TrackId, Presentation>,
     rows: Vec<Row>,
+    tree_mode: bool,
     suspended: bool,
-    vim_enabled: bool,
 }
 impl EventEmitter<FxEvent> for FxTree {}
 impl FxTree {
@@ -89,8 +92,8 @@ impl FxTree {
             hilo_branches: Vec::new(),
             views: HashMap::new(),
             rows: Vec::new(),
+            tree_mode: false,
             suspended: false,
-            vim_enabled: true,
         }
     }
 }

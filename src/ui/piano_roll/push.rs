@@ -17,6 +17,8 @@ pub(super) struct PushGesture {
     min_pitch: i32,
     max_pitch: i32,
     resize: bool,
+    #[cfg(feature = "p2p")]
+    projected: Option<(i64, i32)>,
 }
 
 impl PushGesture {
@@ -52,6 +54,8 @@ impl PushGesture {
             min_pitch: i32::from(notes.iter().map(|n| n.pitch).min().unwrap()),
             max_pitch: i32::from(notes.iter().map(|n| n.pitch).max().unwrap()),
             resize,
+            #[cfg(feature = "p2p")]
+            projected: None,
         })
     }
 
@@ -103,6 +107,10 @@ impl PushGesture {
             free
         };
         let result = self.session.project(delta, free_pitch, self.resize)?;
+        #[cfg(feature = "p2p")]
+        {
+            self.projected = Some((result.delta.round() as i64, free_pitch));
+        }
         let y = if self.resize {
             px(0.0)
         } else {
@@ -132,6 +140,32 @@ impl PushGesture {
 }
 
 impl DawApp {
+    #[cfg(feature = "p2p")]
+    pub(in crate::ui) fn dragged_note_presence(
+        &self,
+    ) -> Option<crate::collaboration::live::NotePresence> {
+        let roll = &self.piano_roll;
+        if roll.push_error.is_some() {
+            return None;
+        }
+        let (delta, pitch) = roll.push.as_ref()?.projected?;
+        let (original, anchor, resize) = match roll.drag.as_ref()? {
+            RollDrag::Move { original, .. } => (original, roll.selected?, false),
+            RollDrag::Length { original, note, .. } => (original, *note, true),
+            _ => return None,
+        };
+        let note = original.notes().iter().find(|n| n.id == anchor)?;
+        Some(crate::collaboration::live::NotePresence {
+            id: anchor.0,
+            start: note.start.0.checked_add(if resize { 0 } else { delta })?,
+            duration: note
+                .duration
+                .0
+                .checked_add(if resize { delta } else { 0 })?,
+            pitch: u8::try_from(i32::from(note.pitch) + pitch).ok()?,
+        })
+    }
+
     pub(super) fn update_roll_push(&mut self) {
         if self.piano_roll.push_error.is_some() {
             return;

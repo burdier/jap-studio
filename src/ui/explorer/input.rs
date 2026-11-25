@@ -1,10 +1,10 @@
 use super::{Explorer, ExplorerEvent};
 use elevate::explorer::EntryKind;
-use gpui::{Context, KeyDownEvent, ScrollStrategy};
+use gpui::{Context, KeyDownEvent, ScrollStrategy, Window};
 
 impl Explorer {
     pub(super) fn activate_row(&mut self, index: usize, double: bool, cx: &mut Context<Self>) {
-        let Some(row) = self.tree.rows().get(index).cloned() else {
+        let Some(row) = self.visible_rows().get(index).cloned() else {
             return;
         };
         self.selected = Some(row.entry.path.clone());
@@ -27,7 +27,12 @@ impl Explorer {
         cx.notify();
     }
 
-    pub(super) fn handle_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
+    pub(super) fn handle_key(
+        &mut self,
+        event: &KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let key = event
             .keystroke
             .key_char
@@ -35,54 +40,46 @@ impl Explorer {
             .unwrap_or(&event.keystroke.key);
         let modifiers = event.keystroke.modifiers;
         let unmodified = !modifiers.control && !modifiers.alt && !modifiers.platform;
-        if unmodified {
-            if key == "escape" || (self.vim_enabled && key == "e") {
+        if modifiers.control && !modifiers.alt && !modifiers.platform && event.keystroke.key == "f"
+        {
+            self.focus_search(window, cx);
+            cx.stop_propagation();
+            return;
+        }
+        if self.search_has_focus(window, cx) {
+            if key == "escape" {
+                window.focus(&self.focus, cx);
                 cx.stop_propagation();
-                if !event.is_held {
-                    cx.emit(ExplorerEvent::Close);
-                }
-                return;
             }
-            if key == "backspace" {
-                self.search.pop();
-                self.selected = None;
-                cx.notify();
-                return;
+            return;
+        }
+        if unmodified && key == "escape" {
+            cx.stop_propagation();
+            if !event.is_held {
+                cx.emit(ExplorerEvent::Close);
             }
-            if let Some(character) = event.keystroke.key_char.as_deref()
-                && !character.chars().any(char::is_control)
-                && !matches!(character, " " | "space")
-            {
-                self.search.push_str(character);
-                self.selected = None;
-                cx.notify();
-                return;
-            }
+            return;
         }
         // El transporte del workspace recibe Espacio aunque el árbol conserve el foco.
         if matches!(key, " " | "space") {
             return;
         }
         cx.stop_propagation();
-        if !self.vim_enabled && matches!(key, "h" | "j" | "k" | "l" | "e") {
-            return;
-        }
         if !unmodified {
             return;
         }
         let current = self
-            .tree
-            .rows()
+            .visible_rows()
             .iter()
             .position(|row| Some(&row.entry.path) == self.selected.as_ref());
         match key {
-            "j" | "down" | "k" | "up" => {
-                if self.tree.rows().is_empty() {
+            "down" | "up" => {
+                if self.visible_rows().is_empty() {
                     return;
                 }
-                let last = self.tree.rows().len() - 1;
+                let last = self.visible_rows().len() - 1;
                 let index = match current {
-                    Some(index) if matches!(key, "k" | "up") => index.saturating_sub(1),
+                    Some(index) if key == "up" => index.saturating_sub(1),
                     Some(index) => (index + 1).min(last),
                     None => 0,
                 };
@@ -90,19 +87,22 @@ impl Explorer {
             }
             "enter" if !event.is_held => {
                 if let Some(index) = current {
-                    let file = self.tree.rows()[index].entry.kind != EntryKind::Directory;
+                    let file = self.visible_rows()[index].entry.kind != EntryKind::Directory;
                     self.activate_row(index, file, cx);
                 }
             }
-            "l" | "right" => {
+            "right" => {
                 if let Some(index) = current {
-                    let row = &self.tree.rows()[index];
-                    if row.entry.kind == EntryKind::Directory && !row.expanded {
+                    let row = &self.visible_rows()[index];
+                    if row.entry.kind == EntryKind::Audio {
+                        if !event.is_held {
+                            self.restart_sample_preview(row.entry.path.clone(), cx);
+                        }
+                    } else if row.entry.kind == EntryKind::Directory && !row.expanded {
                         self.activate_row(index, false, cx);
                     } else if row.expanded
                         && self
-                            .tree
-                            .rows()
+                            .visible_rows()
                             .get(index + 1)
                             .is_some_and(|next| next.depth > row.depth)
                     {
@@ -110,14 +110,14 @@ impl Explorer {
                     }
                 }
             }
-            "h" | "left" => {
+            "left" => {
                 if let Some(index) = current {
-                    let row = &self.tree.rows()[index];
+                    let row = &self.visible_rows()[index];
                     if row.expanded {
                         self.activate_row(index, false, cx);
                     } else if let Some(parent) = (0..index)
                         .rev()
-                        .find(|&i| self.tree.rows()[i].depth < row.depth)
+                        .find(|&i| self.visible_rows()[i].depth < row.depth)
                     {
                         self.select_and_scroll(parent, cx);
                     }
@@ -128,7 +128,7 @@ impl Explorer {
         cx.notify();
     }
     fn select_and_scroll(&mut self, index: usize, cx: &mut Context<Self>) {
-        let entry = &self.tree.rows()[index].entry;
+        let entry = &self.visible_rows()[index].entry;
         let path = entry.path.clone();
         let audio = (entry.kind == EntryKind::Audio).then_some(path.clone());
         self.selected = Some(path);

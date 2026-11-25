@@ -1,16 +1,21 @@
 //! Render raíz y ciclo visual. El refresco de GPUI nunca avanza el transporte musical.
 use super::{
-    DawApp, VimMode,
+    DawApp,
     components::splitter::{SplitDrag, horizontal_splitter},
 };
 use gpui::{
-    Context, IntoElement, KeyDownEvent, KeyUpEvent, MouseButton, Render, SharedString, Window, div,
-    prelude::*, px, rgb,
+    Context, IntoElement, KeyDownEvent, KeyUpEvent, MouseButton, Render, Window, div, prelude::*,
+    px, rgb,
 };
 
 impl Render for DawApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.shown_sample().is_none() || self.center_view != super::CenterView::Arrangement {
+            self.timeline.sample_editor.silence();
+        }
         self.refresh_project_dirty();
+        self.tick_history();
+        self.tick_autosave(cx);
         super::kit::sync_theme(&self.ds, cx);
         self.validate_workspace_focus();
         self.sync_explorer(window, cx);
@@ -18,11 +23,13 @@ impl Render for DawApp {
         self.sync_vst_effects();
         self.poll_fx_analyzers();
         self.refresh_track_layout();
+        self.sync_wave_pitch(window, cx);
+        self.sync_overlap(window, cx);
         if !cx.has_active_drag() {
             self.timeline.import_preview = None;
         }
         self.poll_live_midi();
-        self.poll_vst_transport_shortcuts();
+        self.sync_vst_editors();
         if self.vst_task.is_none()
             && let Some((track, bundle, class)) = self.vst_reloads.pop_front()
         {
@@ -53,9 +60,10 @@ impl Render for DawApp {
                 self.status_message = message;
             }
         }
-        self.poll_export();
+        self.poll_export(cx);
         self.poll_audio_probe();
         self.poll_file_playback();
+        self.poll_audio_recording();
         self.scan_palette_plugins(cx);
         if (self.fx.editor_track.is_some_and(|id| {
             self.arrangement_visible()
@@ -87,9 +95,40 @@ impl Render for DawApp {
                 }
             }
         }
-        if let Some(player) = &self.player {
-            self.timeline.playhead = Some(player.beat());
+        if let Some(tail) = &mut self.tail_player
+            && (tail.finished() || tail.failed())
+        {
+            self.tail_player = None;
+        }
+        let mut audio_count_in_done = None;
+        if let Some(player) = &mut self.player {
+            player.poll_master_meter(
+                self.utility_open
+                    || self.center_view == super::CenterView::Mixer
+                    || self.piano_roll_window.is_some(),
+            );
+            let counting_in = player.is_counting_in();
+            let current_beat = player.beat();
+            if !counting_in {
+                audio_count_in_done = Some(current_beat);
+            }
+            if self.recording_waiting_count_in && !counting_in {
+                self.recording_waiting_count_in = false;
+                if self.midi_capture.is_recording() && !self.midi_capture.has_notes() {
+                    self.midi_capture.start_recording();
+                }
+                self.status_message = format!(
+                    "● Grabando MIDI en {} · pulsa ● o Espacio para finalizar",
+                    self.tracks
+                        .get(self.cursor_row)
+                        .map_or("pista", |t| t.name.as_ref())
+                );
+            }
+            self.timeline.playhead = Some(current_beat);
             if player.failed() || player.finished() {
+                if player.finished() && self.pattern_loop_beats.is_none() {
+                    self.timeline.last_stop_beat = Some(current_beat);
+                }
                 self.status_message = if player.failed() {
                     "La salida de audio falló; consulta la consola"
                 } else {
@@ -132,6 +171,9 @@ impl Render for DawApp {
                 self.stop_audio();
             }
         }
+        if let Some(beat) = audio_count_in_done {
+            self.on_count_in_finished_for_audio(beat);
+        }
         let cursor_animating = self.timeline.advance_visual_transport();
         if self.vst.failed() {
             self.vst.unload();
@@ -165,6 +207,14 @@ impl Render for DawApp {
             .advance_particles(&self.ds, arrangement_visible);
         let cursor_fx_alive = self.cursor_fx.advance();
         if self.player.is_some()
+            || self.tail_player.is_some()
+            || self.is_audio_recording()
+            || self
+                .timeline
+                .sample_editor
+                .audition
+                .as_ref()
+                .is_some_and(|a| !a.paused() && a.finished() == Ok(false))
             || self.instrument.clip_playing()
             || self.sampler.clip_playing()
             || self.vst_any_clip_playing()
@@ -172,7 +222,7 @@ impl Render for DawApp {
             || self.vst_task.is_some()
             || !self.vst_reloads.is_empty()
             || !self.vst_effects.instances.is_empty()
-            || (self.fx.width > 0. && !self.fx.analyzers.views.is_empty())
+            || self.fx.analyzers.visible()
             || self.file_playback.is_some()
             || self.midi_hw.has_ports()
             || cursor_animating
@@ -188,13 +238,11 @@ impl Render for DawApp {
             window.request_animation_frame();
         }
         self.sync_audio_selectors(window, cx);
+        #[cfg(feature = "p2p")]
+        let share_invite = self.render_shared_invite(window, cx);
+        #[cfg(not(feature = "p2p"))]
+        let share_invite: Option<gpui::Div> = None;
         let ds = &self.ds;
-        let mode_label = SharedString::from(self.mode_label());
-        let mode_color = match self.mode {
-            VimMode::Normal => ds.success,
-            VimMode::Insert => ds.accent,
-            VimMode::Command => ds.pink,
-        };
         let palette = self
             .palette
             .is_open()
@@ -245,8 +293,14 @@ impl Render for DawApp {
             .track_color_menu
             .is_some()
             .then(|| self.render_track_color_menu(cx).into_any_element());
-        let command_bar =
-            (self.mode == VimMode::Command).then(|| self.render_command_bar(cx).into_any_element());
+        let drum_lane_menu = self
+            .pattern_editor
+            .lane_menu
+            .is_some()
+            .then(|| self.render_drum_lane_menu(window, cx).into_any_element());
+        let command_bar = self
+            .command_open
+            .then(|| self.render_command_bar(cx).into_any_element());
         div()
             .id("hay")
             .key_context(if self.action_form.is_some() {
@@ -274,7 +328,6 @@ impl Render for DawApp {
             .flex_col()
             .bg(rgb(ds.gutter_color()))
             .text_color(rgb(ds.text))
-            .font_family("monospace")
             .capture_any_mouse_down(cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
                 this.cursor_fx.on_mouse_down(event.position);
                 cx.notify();
@@ -283,12 +336,28 @@ impl Render for DawApp {
                 MouseButton::Left,
                 cx.listener(|this, _: &gpui::MouseDownEvent, window, cx| {
                     this.bar_menu = None;
-                    this.track_delete_pending = false;
+                    this.history.open = false;
                     window.focus(&this.focus_handle, cx);
                     cx.notify();
                 }),
             )
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                if this.arrangement_marker_key(event, window, cx) {
+                    return;
+                }
+                if this.explorer_visible()
+                    && this.explorer.view.read(cx).search_has_focus(window, cx)
+                {
+                    return;
+                }
+                #[cfg(feature = "p2p")]
+                if this.shared_invite_open() {
+                    if event.keystroke.key == "escape" {
+                        this.close_shared_invite(window, cx);
+                        cx.stop_propagation();
+                    }
+                    return;
+                }
                 if this.bar_menu_key(event, window, cx) || this.workspace_key(event, window, cx) {
                     cx.stop_propagation();
                     cx.notify();
@@ -302,6 +371,14 @@ impl Render for DawApp {
                 }
             }))
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                if this.timeline.marker_edit.is_some() {
+                    return;
+                }
+                if this.explorer_visible()
+                    && this.explorer.view.read(cx).search_has_focus(window, cx)
+                {
+                    return;
+                }
                 this.handle_key(event, window, cx);
                 this.sync_windows(cx);
                 cx.notify();
@@ -310,31 +387,76 @@ impl Render for DawApp {
                 this.handle_key_up(event);
                 cx.notify();
             }))
-            .child(self.render_title_bar(mode_label.clone(), mode_color, cx))
+            .child(self.render_title_bar(window, cx))
             .on_mouse_move(
                 cx.listener(|this, event: &gpui::MouseMoveEvent, window, cx| {
+                    if event.dragging()
+                        && let Some((track_id, msg)) = this.timeline.move_automation_drag(
+                            event.position,
+                            event.modifiers.shift,
+                            this.ds.track_header_height,
+                        )
+                    {
+                        this.publish_track_automation(track_id);
+                        this.status_message = msg;
+                        cx.notify();
+                        return;
+                    }
+                    if event.dragging() && this.timeline.move_loop_drag(event.position) {
+                        cx.notify();
+                        return;
+                    }
+                    if event.dragging() && this.timeline.move_region_drag(event.position) {
+                        cx.notify();
+                        return;
+                    }
+                    if event.dragging() && this.move_clip_fade(event.position) {
+                        cx.notify();
+                        return;
+                    }
+                    if event.dragging() && this.move_wave_gain(event.position) {
+                        cx.notify();
+                        return;
+                    }
                     this.update_tempo_drag(event);
-                    if this.update_mixer_drag(
-                        event.position.y,
-                        event.dragging(),
-                        event.modifiers.shift,
-                    ) {
+                    if this.update_drum_offset_drag(event)
+                        || this.update_mixer_drag(
+                            event.position.y,
+                            event.dragging(),
+                            event.modifiers.shift,
+                        )
+                    {
                         cx.notify();
                         return;
                     }
                     this.update_track_control_drag(event.position, event.dragging());
                     let track_drag_changed =
                         this.update_track_reorder_drag(event.position, event.dragging());
-                    if let Some((id, bounds)) = this.sampler_ui.wave_drag {
-                        if event.dragging() {
-                            let percent = f32::from(event.position.x - bounds.left())
-                                / f32::from(bounds.size.width).max(1.)
-                                * 100.;
-                            this.set_sample_param(id, percent, cx);
-                        } else {
-                            this.finish_sample_drag(cx);
-                        }
+                    let sampler_visible = this.arrangement_visible()
+                        && !this.instrument_detached()
+                        && this.fx.editor_track.is_some_and(|id| {
+                            this.tracks
+                                .iter()
+                                .find(|t| t.id == id)
+                                .and_then(|t| t.instrument)
+                                .is_some_and(|inst| this.is_sampler_id(inst))
+                        });
+                    if !sampler_visible {
+                        this.sampler_ui.panel_bounds.set(None);
+                        this.sampler_ui.drop_hover = None;
+                    } else if event.dragging()
+                        && let Some(kind) = this.timeline.active_clip_drag_kind()
+                        && this
+                            .sampler_ui
+                            .panel_bounds
+                            .get()
+                            .is_some_and(|b| b.contains(&event.position))
+                    {
+                        this.sampler_ui.drop_hover = Some(kind);
+                    } else {
+                        this.sampler_ui.drop_hover = None;
                     }
+                    this.update_sampler_wave_drag(event.position, event.dragging(), cx);
                     if let Some((id, origin, fraction)) = this.sampler_ui.drag {
                         if event.dragging() {
                             let delta = f32::from(origin - event.position.y)
@@ -375,6 +497,16 @@ impl Render for DawApp {
                                 start_width,
                             } => {
                                 this.resize_fx(start_width + f32::from(event.position.x) - start_x);
+                            }
+                            SplitDrag::Tejer {
+                                start_x,
+                                start_width,
+                                max_width,
+                            } => {
+                                let dx = f32::from(event.position.x) - start_x;
+                                this.fx.tejer_width = Some(
+                                    (start_width + dx).clamp(210.0_f32.min(max_width), max_width),
+                                );
                             }
                             SplitDrag::Explorer {
                                 start_x,
@@ -425,15 +557,33 @@ impl Render for DawApp {
                         return;
                     }
                     let hover_changed = this.arrangement_visible()
-                        && this.timeline.update_hover(
+                        && (this.timeline.update_hover(
                             event.position,
                             event.dragging(),
                             this.ds.track_header_height,
                             this.tracks.len(),
-                        );
+                        ) || this.timeline.update_automation_hover(
+                            event.position,
+                            this.ds.track_header_height,
+                            &this.tracks,
+                        ));
                     if !event.dragging() {
-                        this.timeline.end_clip_drag();
+                        let dropped_to_sampler = this.sampler_ui.drop_hover.take().filter(|_| {
+                            this.sampler_ui
+                                .panel_bounds
+                                .get()
+                                .is_some_and(|b| b.contains(&event.position))
+                        });
+                        if let Some(kind) = dropped_to_sampler {
+                            this.timeline.restore_clip_drag_origin();
+                            this.timeline.end_clip_drag();
+                            this.drop_arrangement_clip_into_sampler(kind, cx);
+                            cx.notify();
+                            return;
+                        }
+                        let clip_dragged = this.finish_arrangement_drag();
                         if track_drag_changed
+                            || clip_dragged
                             || hover_changed
                             || this.cursor_fx.mode() != super::cursor_fx::CursorFxMode::Off
                         {
@@ -469,22 +619,51 @@ impl Render for DawApp {
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(|this, event: &gpui::MouseUpEvent, window, cx| {
+                    if let Some(track_id) = this.timeline.end_automation_drag() {
+                        this.publish_track_automation(track_id);
+                        this.refresh_project_dirty();
+                        cx.notify();
+                        return;
+                    }
+                    if this.finish_arrangement_loop(event.position)
+                        || this.finish_arrangement_region(event.position)
+                    {
+                        cx.notify();
+                        return;
+                    }
                     let tempo_dragged = this.end_tempo_drag(window, cx);
                     let track_dragged = this.track_reorder_drag.is_some();
                     this.finish_track_reorder_drag(event.position);
                     let control_dragged = this.end_track_control_drag();
                     let mixer_dragged = this.mixer_drag.take().is_some();
+                    let offset_dragged = this.finish_drum_offset_drag();
                     this.finish_sample_drag(cx);
+                    this.timeline.sample_editor.anchor = None;
                     this.piano_ui.drag = None;
                     this.release_mouse_note();
                     this.release_chord_audition();
-                    this.timeline.end_clip_drag();
+                    let dropped_to_sampler = this.sampler_ui.drop_hover.take().filter(|_| {
+                        this.sampler_ui
+                            .panel_bounds
+                            .get()
+                            .is_some_and(|b| b.contains(&event.position))
+                    });
+                    if let Some(kind) = dropped_to_sampler {
+                        this.timeline.restore_clip_drag_origin();
+                        this.timeline.end_clip_drag();
+                        this.drop_arrangement_clip_into_sampler(kind, cx);
+                        cx.notify();
+                        return;
+                    }
+                    let clip_dragged = this.finish_arrangement_drag();
                     let split_dragged = this.split_drag.take().is_some();
                     if tempo_dragged
                         || track_dragged
                         || split_dragged
                         || control_dragged
                         || mixer_dragged
+                        || offset_dragged
+                        || clip_dragged
                     {
                         cx.notify();
                     }
@@ -493,22 +672,51 @@ impl Render for DawApp {
             .on_mouse_up_out(
                 MouseButton::Left,
                 cx.listener(|this, event: &gpui::MouseUpEvent, window, cx| {
+                    if let Some(track_id) = this.timeline.end_automation_drag() {
+                        this.publish_track_automation(track_id);
+                        this.refresh_project_dirty();
+                        cx.notify();
+                        return;
+                    }
+                    if this.finish_arrangement_loop(event.position)
+                        || this.finish_arrangement_region(event.position)
+                    {
+                        cx.notify();
+                        return;
+                    }
                     let tempo_dragged = this.end_tempo_drag(window, cx);
                     let track_dragged = this.track_reorder_drag.is_some();
                     this.finish_track_reorder_drag(event.position);
                     let control_dragged = this.end_track_control_drag();
                     let mixer_dragged = this.mixer_drag.take().is_some();
+                    let offset_dragged = this.finish_drum_offset_drag();
                     this.finish_sample_drag(cx);
+                    this.timeline.sample_editor.anchor = None;
                     this.piano_ui.drag = None;
                     this.release_mouse_note();
                     this.release_chord_audition();
-                    this.timeline.end_clip_drag();
+                    let dropped_to_sampler = this.sampler_ui.drop_hover.take().filter(|_| {
+                        this.sampler_ui
+                            .panel_bounds
+                            .get()
+                            .is_some_and(|b| b.contains(&event.position))
+                    });
+                    if let Some(kind) = dropped_to_sampler {
+                        this.timeline.restore_clip_drag_origin();
+                        this.timeline.end_clip_drag();
+                        this.drop_arrangement_clip_into_sampler(kind, cx);
+                        cx.notify();
+                        return;
+                    }
+                    let clip_dragged = this.finish_arrangement_drag();
                     let split_dragged = this.split_drag.take().is_some();
                     if tempo_dragged
                         || track_dragged
                         || split_dragged
                         || control_dragged
                         || mixer_dragged
+                        || offset_dragged
+                        || clip_dragged
                     {
                         cx.notify();
                     }
@@ -544,19 +752,38 @@ impl Render for DawApp {
                 self.utility_open && self.workspace_focus.expanded.is_none(),
                 |root| root.child(self.render_utility(cx)),
             )
+            .when_some(self.render_recovery_banner(cx), |root, banner| {
+                root.child(banner)
+            })
             .child(self.render_center(cx))
-            .child(self.render_status_bar(mode_label, mode_color))
+            .child(self.render_status_bar())
+            .when_some(self.render_history_panel(cx), |root, panel| {
+                root.child(panel)
+            })
             .when_some(clip_menu, |root, menu| root.child(menu))
             .when_some(track_menu, |root, menu| root.child(menu))
             .when_some(track_color_menu, |root, menu| root.child(menu))
+            .when_some(drum_lane_menu, |root, menu| root.child(menu))
             .when_some(fx_menu, |root, menu| root.child(menu))
             .when_some(bar_menu, |root, menu| root.child(menu))
             .when_some(palette, |root, palette| root.child(palette))
             .when_some(settings_overlay, |root, overlay| root.child(overlay))
             .when_some(icon_picker_overlay, |root, overlay| root.child(overlay))
             .when_some(action_form, |root, overlay| root.child(overlay))
+            .when_some(
+                self.render_arrangement_marker_editor(cx),
+                |root, overlay| root.child(overlay),
+            )
             .when_some(general_note, |root, overlay| root.child(overlay))
+            .when_some(share_invite, |root, overlay| root.child(overlay))
             .when_some(command_bar, |root, bar| root.child(bar))
             .when_some(cursor_overlay, |root, cursor| root.child(cursor))
+            .when(
+                matches!(
+                    window.window_decorations(),
+                    gpui::Decorations::Client { .. }
+                ),
+                |root| root.children(Self::window_resize_edges()),
+            )
     }
 }

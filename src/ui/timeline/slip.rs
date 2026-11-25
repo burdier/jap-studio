@@ -4,7 +4,7 @@ use gpui::{Pixels, Point, px};
 
 #[derive(Clone, Copy)]
 pub(super) struct SlipDrag {
-    kind: DragKind,
+    pub(super) kind: DragKind,
     pointer: Point<Pixels>,
     source_offset: f64,
     visible_length: f64,
@@ -17,11 +17,10 @@ impl Timeline {
         if !bounds.contains(&position) {
             return None;
         }
-        let row = self.row_at_y(f32::from(position.y - bounds.top()), height)?;
+        let y = f32::from(position.y - bounds.top());
+        let row = self.row_at_y(y, height)?;
         // Mantener disponibles los controles de la cabecera.
-        if f32::from(position.y - bounds.top()) - row.top
-            <= clip_frame::CONTROL_TOP + clip_frame::CONTROL_HEIGHT
-        {
+        if y - Self::lane_top(row, y) <= clip_frame::CONTROL_TOP + clip_frame::CONTROL_HEIGHT {
             return None;
         }
         let track = row.track;
@@ -58,9 +57,22 @@ impl Timeline {
             moved: false,
         });
         if midi {
-            self.select_active_midi(false);
+            let id = self.midi_clip.as_ref()?.id;
+            self.begin_midi_gesture(&[id]);
         }
         Some(track)
+    }
+
+    pub(super) fn finish_slip_selection(&mut self) -> bool {
+        let Some(drag) = self.slip_drag.filter(|drag| drag.kind == DragKind::Midi) else {
+            return false;
+        };
+        if drag.moved {
+            self.select_active_midi(false);
+        } else {
+            self.select_midi_range();
+        }
+        true
     }
     pub(super) fn apply_slip(&mut self, position: Point<Pixels>) -> Option<usize> {
         let drag = self.slip_drag?;

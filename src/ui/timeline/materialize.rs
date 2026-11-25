@@ -26,6 +26,8 @@ impl Timeline {
             .collect();
         let count = clips.len();
         let result = materialize(&clips)?;
+        let before = self.midi_edit_draft(&self.selected_midi);
+        let id = result.id;
         self.other_midi_clips
             .retain(|clip| !self.selected_midi.contains(&clip.id));
         if self
@@ -37,6 +39,7 @@ impl Timeline {
         }
         self.edit_beat = result.start_beat;
         self.insert_midi_clip(result);
+        self.commit_midi_edit(before, &[id]);
         Ok(count)
     }
 }

@@ -38,6 +38,10 @@ impl Timeline {
         }
         match kind {
             DragKind::Midi => {
+                let Some(id) = self.midi_clip.as_ref().map(|clip| clip.id) else {
+                    return false;
+                };
+                let before = self.midi_edit_draft(&[id]);
                 let Some(left) = self.midi_clip.as_mut().filter(|c| !c.props.locked) else {
                     return false;
                 };
@@ -46,8 +50,10 @@ impl Timeline {
                 right.trim_start += length;
                 right.trim_len = Some(left.end_beat() - beat);
                 right.start_beat = beat;
+                let new_id = right.id;
                 left.trim_len = Some(length);
                 self.insert_midi_clip(right);
+                self.commit_midi_edit(before, &[id, new_id]);
             }
             DragKind::Audio => {
                 let beats_per_second = self.tempo.beats_per_second();
@@ -55,6 +61,18 @@ impl Timeline {
                     return false;
                 };
                 let mut right = left.duplicate();
+                let root = left.crossfade_root();
+                if left.processing.edit.crossfade_root.is_some()
+                    || left.processing.edit.crossfade.is_some()
+                    || self
+                        .other_audio_clips
+                        .iter()
+                        .any(|c| c.processing.edit.crossfade.is_some_and(|f| f.from == root))
+                {
+                    left.processing.edit.crossfade_root = Some(root);
+                    right.processing.edit.crossfade_root = Some(root);
+                    right.processing.edit.crossfade = left.processing.edit.crossfade;
+                }
                 let length = (beat - left.start_beat) / beats_per_second;
                 right.trim_start += length;
                 right.trim_len = Some(left.length_seconds() - length);
@@ -72,12 +90,17 @@ impl Timeline {
         let beats_per_second = self.tempo.beats_per_second();
         match kind {
             DragKind::Midi => {
+                let Some(id) = self.midi_clip.as_ref().map(|clip| clip.id) else {
+                    return;
+                };
+                let before = self.midi_edit_draft(&[id]);
                 if let Some(c) = self.midi_clip.as_mut().filter(|c| !c.props.locked) {
                     let recovered = c.trim_start.min(c.start_beat);
                     c.start_beat -= recovered;
                     c.trim_start -= recovered;
                     c.trim_len = None;
                 }
+                self.commit_midi_edit(before, &[id]);
             }
             DragKind::Audio => {
                 if let Some(c) = self.clip.as_mut().filter(|c| !c.props.locked) {

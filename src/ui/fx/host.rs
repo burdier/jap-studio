@@ -12,7 +12,11 @@ pub(in crate::ui) struct FxDock {
     focus_request: bool,
     track_ids: Vec<TrackId>,
     pub current: Option<FxTarget>,
+    pub master_focus: bool,
     pub editor_track: Option<TrackId>,
+    pub tejer: Option<FxTarget>,
+    pub tejer_width: Option<f32>,
+    pub cut_draft: Option<(elevate::musical::fx::FxId, u16)>,
     pub menu: Option<super::menu::FxMenu>,
     pending: Option<(FxTarget, &'static str)>,
     pub form_target: Option<FxTarget>,
@@ -26,13 +30,18 @@ impl FxDock {
         let subscription = cx.subscribe(&view, |this, _, event, cx| {
             match event {
                 FxEvent::Focused => {
-                    this.track_delete_pending = false;
                     this.sync_midi_focus();
                 }
                 FxEvent::Close => this.fx.width = 0.0,
                 FxEvent::Selection(target) => {
                     this.fx.current = Some(*target);
                     this.workspace_focus.active = crate::ui::workspace_focus::Panel::Fx;
+                }
+                FxEvent::Reveal(target) => this.fx.select_request = Some(*target),
+                FxEvent::Action(target, command @ ("fx.serial" | "fx.parallel")) => {
+                    if let Err(error) = this.execute_fx_at(*target, command) {
+                        this.status_message = error;
+                    }
                 }
                 FxEvent::Instrument(track) => this.open_track_instrument(*track),
                 FxEvent::Add(target) => this.open_fx_palette(*target),
@@ -75,7 +84,11 @@ impl FxDock {
             focus_request: false,
             track_ids: Vec::new(),
             current: None,
+            master_focus: false,
             editor_track: None,
+            tejer: None,
+            tejer_width: None,
+            cut_draft: None,
             menu: None,
             pending: None,
             form_target: None,
@@ -106,13 +119,15 @@ impl DawApp {
         else {
             return;
         };
+        self.fx.tejer = None;
+        self.fx.cut_draft = None;
         self.select_track(index, false, false);
         if self.vst_selected() {
+            if let Some(id) = self.tracks[index].instrument {
+                self.activate_vst(id);
+            }
             self.fx.editor_track = None;
-            self.focus_midi_instrument();
             self.fx.instrument_select_request = Some(track);
-            self.show_fx();
-            self.fx.focus_request = false;
             self.vst.open_editor();
             return;
         }
@@ -140,7 +155,72 @@ impl DawApp {
             self.fx.width = self.fx.last_width;
         }
     }
+    pub(in crate::ui) fn fx_chain(&self, id: TrackId) -> Option<&elevate::musical::fx::FxChain> {
+        if id == elevate::musical::track::MASTER_TRACK_ID {
+            Some(&self.master_chain)
+        } else {
+            self.tracks.iter().find(|t| t.id == id).map(|t| &t.chain)
+        }
+    }
+    pub(in crate::ui) fn fx_chain_mut(
+        &mut self,
+        id: TrackId,
+    ) -> Option<&mut elevate::musical::fx::FxChain> {
+        if id == elevate::musical::track::MASTER_TRACK_ID {
+            Some(&mut self.master_chain)
+        } else {
+            self.tracks
+                .iter_mut()
+                .find(|t| t.id == id)
+                .map(|t| &mut t.chain)
+        }
+    }
+    pub(in crate::ui) fn fx_owner_name(&self, id: TrackId) -> Option<&str> {
+        if id == elevate::musical::track::MASTER_TRACK_ID {
+            Some("Master")
+        } else {
+            self.tracks
+                .iter()
+                .find(|t| t.id == id)
+                .map(|t| t.name.as_ref())
+        }
+    }
+    pub(in crate::ui) fn active_fx_track_id(&self) -> Option<TrackId> {
+        if self.fx.master_focus {
+            Some(elevate::musical::track::MASTER_TRACK_ID)
+        } else {
+            self.tracks.get(self.cursor_row).map(|t| t.id)
+        }
+    }
+    pub(in crate::ui) fn show_master_fx(&mut self) {
+        self.fx.master_focus = true;
+        self.fx.editor_track = None;
+        self.fx.tejer = None;
+        self.fx.cut_draft = None;
+        self.fx.current = Some(
+            self.fx
+                .current
+                .filter(|t| t.track == elevate::musical::track::MASTER_TRACK_ID)
+                .unwrap_or(FxTarget {
+                    track: elevate::musical::track::MASTER_TRACK_ID,
+                    node: None,
+                }),
+        );
+        self.show_fx();
+        self.status_message =
+            "Master FX · añade EQ, Compresor, Limitador VST3 o Lua con [+]".into();
+    }
     pub(in crate::ui) fn open_fx_palette(&mut self, target: FxTarget) {
+        if target.track == elevate::musical::track::MASTER_TRACK_ID {
+            self.palette.open_for_track(0);
+            self.palette.fx_target = Some(target);
+            self.palette.set_category(None);
+            self.fx.master_focus = true;
+            self.fx.current = Some(target);
+            self.show_fx();
+            self.status_message = "Buscador · añadir efecto al Bus Master".into();
+            return;
+        }
         let Some(index) = self
             .tracks
             .iter()
@@ -202,16 +282,31 @@ impl DawApp {
         let select = self.fx.select_request.take();
         let instrument_select = self.fx.instrument_select_request.take();
         self.fx.view.update(cx, |tree, cx| {
-            tree.vim_enabled = self.vim_enabled;
             if tree.style != style || tree.suspended != suspended {
                 tree.style = style;
                 tree.suspended = suspended;
                 cx.notify();
             }
             if tracks_changed {
-                tree.views.retain(|id, _| self.fx.track_ids.contains(id));
+                tree.views.retain(|id, _| {
+                    *id == elevate::musical::track::MASTER_TRACK_ID
+                        || self.fx.track_ids.contains(id)
+                });
             }
-            if let Some(track) = track {
+            if self.fx.master_focus {
+                tree.sync(
+                    elevate::musical::track::MASTER_TRACK_ID,
+                    "Master",
+                    &self.master_chain,
+                    None,
+                    "",
+                    cx,
+                );
+                if !tree.hilo_branches.is_empty() {
+                    tree.hilo_branches.clear();
+                    cx.notify();
+                }
+            } else if let Some(track) = track {
                 let instrument_name = match track.instrument {
                     Some(id) if self.is_vst_id(id) => self.vst_name(id),
                     Some(id) if self.is_sampler_id(id) => "Hay Sampler",
@@ -248,6 +343,7 @@ impl DawApp {
             if let Some(target) = select {
                 if let Some(view) = tree.views.get_mut(&target.track) {
                     view.selected = target.node;
+                    view.instrument_selected = false;
                 }
                 if tree.track == Some(target.track) {
                     // Mostrar siempre el resultado de Add/duplicar/mover, incluso en un padre cerrado.
@@ -282,27 +378,27 @@ impl DawApp {
         self.fx.current = self.fx.view.read(cx).target();
     }
     pub(in crate::ui) fn edit_fx(&mut self, track: TrackId, edit: FxEdit) -> Result<(), String> {
-        let index = self
-            .tracks
-            .iter()
-            .position(|t| t.id == track)
-            .ok_or("La pista ya no existe")?;
+        let mut chain = self.fx_chain(track).ok_or("La pista ya no existe")?.clone();
         let preserve = matches!(
             edit,
-            FxEdit::Toggle(_) | FxEdit::Parameter(..) | FxEdit::Rename(..) | FxEdit::Remove(_)
+            FxEdit::Toggle(_)
+                | FxEdit::Parameter(..)
+                | FxEdit::Rename(..)
+                | FxEdit::Remove(_)
+                | FxEdit::BranchLevel(..)
+                | FxEdit::BranchSolo(..)
+                | FxEdit::Cabinet(..)
         );
-        let mut chain = self.tracks[index].chain.clone();
         let parameter_change = match &edit {
             FxEdit::Parameter(id, parameter, value) => Some((*id, *parameter, *value)),
             _ => None,
         };
         let duplicate_source = match &edit {
-            FxEdit::Duplicate(id) => self.lua_components.instances.get(id).map(|effect| {
-                (
-                    effect.descriptor().clone(),
-                    self.tracks[index].chain.find(*id).cloned(),
-                )
-            }),
+            FxEdit::Duplicate(id) => self
+                .lua_components
+                .instances
+                .get(id)
+                .map(|effect| (effect.descriptor().clone(), chain.find(*id).cloned())),
             _ => None,
         };
         let selected = chain.apply(edit)?;
@@ -318,18 +414,13 @@ impl DawApp {
             component_instances.insert(id, effect);
         }
         if crate::audio::effects::needs_rack(&chain) {
-            if self.tracks[index].kind == elevate::musical::track::TrackKind::Group
-                || !self.tracks[index].accepts_clips()
-            {
-                return Err("Spectrum/VST3 requieren una pista de audio o MIDI; los buses de grupo aún no están implementados".into());
-            }
             let rate = self
                 .vst_effects
                 .instances
                 .iter()
                 .find(|(id, _)| chain.find(**id).is_some())
                 .map_or(0, |(_, e)| e.rate);
-            self.fx.analyzers.prepare(&chain);
+            self.fx.analyzers.prepare(&chain, &component_instances);
             crate::audio::effects::compile(
                 &chain,
                 &self.vst_effects.instances,
@@ -346,7 +437,11 @@ impl DawApp {
             }
         }
         self.lua_components.instances = component_instances;
-        self.tracks[index].chain = chain;
+        let is_crossover = matches!(
+            selected.and_then(|id| chain.find(id)).map(|n| &n.kind),
+            Some(elevate::musical::fx::FxKind::Crossover { .. })
+        );
+        *self.fx_chain_mut(track).ok_or("La pista ya no existe")? = chain;
         self.track_revision = self.track_revision.wrapping_add(1);
         if !preserve {
             self.fx.select_request = Some(FxTarget {
@@ -354,23 +449,20 @@ impl DawApp {
                 node: selected,
             });
         }
-        if !preserve {
+        if !preserve && !is_crossover {
             self.show_fx();
         }
         self.sync_vst_effects();
         self.publish_track_fx();
-        self.status_message = format!("FX · {}", self.tracks[index].name);
+        let owner_name = self.fx_owner_name(track).unwrap_or("Master").to_owned();
+        self.status_message = format!("FX · {owner_name}");
         Ok(())
     }
     pub(in crate::ui) fn fx_node(&self, target: FxTarget) -> Option<&elevate::musical::fx::FxNode> {
-        self.tracks
-            .iter()
-            .find(|t| t.id == target.track)?
-            .chain
-            .find(target.node?)
+        self.fx_chain(target.track)?.find(target.node?)
     }
     pub(in crate::ui) fn selected_fx_target(&self) -> Option<FxTarget> {
-        let track = self.tracks.get(self.cursor_row)?.id;
+        let track = self.active_fx_track_id()?;
         Some(
             self.fx
                 .current
@@ -379,28 +471,27 @@ impl DawApp {
         )
     }
     pub(in crate::ui) fn insert_fx(&mut self, target: FxTarget, id: &str) -> Result<(), String> {
-        let descriptor =
-            elevate::devices::find(id).ok_or("Este plugin aún no dispone de procesador")?;
-        let track = self
-            .tracks
-            .iter()
-            .find(|t| t.id == target.track)
-            .ok_or("La pista ya no existe")?;
-        if target.node.is_some_and(|id| track.chain.find(id).is_none()) {
+        let (name, parameters) = if id == elevate::musical::fx::cabinet::ID {
+            ("Hey Convolver", std::collections::BTreeMap::from([(0, 0.)]))
+        } else {
+            let d = elevate::devices::find(id).ok_or("Este plugin aún no dispone de procesador")?;
+            (
+                d.name,
+                d.parameters.iter().map(|p| (p.id.0, p.default)).collect(),
+            )
+        };
+        let chain = self.fx_chain(target.track).ok_or("La pista ya no existe")?;
+        if target.node.is_some_and(|id| chain.find(id).is_none()) {
             return Err("El destino FX ya no existe".into());
         }
-        let placement = track.chain.insertion_after(target.node);
+        let placement = chain.insertion_after(target.node);
         let node = elevate::musical::fx::FxNode::new(
-            descriptor.name,
+            name,
             elevate::musical::fx::FxKind::Effect {
                 plugin_id: elevate::musical::track::TrackDevice::Hay {
                     catalog_id: id.into(),
                 },
-                parameters: descriptor
-                    .parameters
-                    .iter()
-                    .map(|p| (p.id.0, p.default))
-                    .collect(),
+                parameters,
             },
         );
         self.edit_fx(target.track, FxEdit::Insert(node, placement))?;

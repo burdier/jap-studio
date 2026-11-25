@@ -4,6 +4,11 @@ use gpui::{Context, IntoElement, MouseButton, div, prelude::*, rgb};
 impl DawApp {
     pub(in crate::ui) fn render_vst(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let ds = &self.ds;
+        let last_touched = self.last_touched_vst_target();
+        let learn_label = last_touched
+            .as_ref()
+            .map(|(_, label)| format!("MIDI Learn · {label}"))
+            .unwrap_or_else(|| "MIDI Learn último VST3".into());
         div()
             .flex_1()
             .flex()
@@ -19,16 +24,32 @@ impl DawApp {
                     .map_or("VST3", |id| self.vst_name(id))
                     .to_string(),
             )
-            .child("Usa la ventana original del plugin para editar su sonido.")
+            .child("Usa la ventana original del plugin para editar su sonido. Mueve cualquier perilla y pulsa MIDI Learn para mapearla a un controlador.")
             .child(
                 div()
                     .flex()
+                    .flex_wrap()
                     .gap_2()
                     .child(
                         pill_button(ds, "Abrir editor original", false, ds.accent).on_mouse_down(
                             MouseButton::Left,
                             cx.listener(|this, _, _, cx| {
                                 this.execute_vst_command("instrument.vst3.editor", cx);
+                                cx.notify();
+                            }),
+                        ),
+                    )
+                    .child(
+                        pill_button(
+                            ds,
+                            learn_label,
+                            self.midi_mapper.learn_mode(),
+                            ds.cyan,
+                        )
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|this, _, _, cx| {
+                                this.arm_last_touched_vst_learn();
                                 cx.notify();
                             }),
                         ),

@@ -1,5 +1,6 @@
 //! Acciones comunes de seek/loop de la mezcla de audio, invocables desde UI y comandos.
 use crate::ui::DawApp;
+use elevate::musical::time::PPQ;
 impl DawApp {
     pub(in crate::ui) fn seek_audio(&mut self, beat: f64) -> Result<(), String> {
         if !beat.is_finite() || beat < 0. {
@@ -8,8 +9,8 @@ impl DawApp {
         if let Some(player) = self.player.as_mut() {
             player.seek(beat)?;
             self.all_notes_off();
-        } else {
-            self.stop_all();
+        } else if let Some(pending) = &mut self.file_playback {
+            pending.beat = beat;
         }
         if beat == 0. {
             self.timeline.go_to_start();
@@ -19,7 +20,10 @@ impl DawApp {
         self.status_message = format!("Posición solicitada: {beat:.2} negras");
         Ok(())
     }
-    fn set_audio_loop(&mut self, range: Option<(f64, f64)>) -> Result<(), String> {
+    pub(in crate::ui) fn set_audio_loop(
+        &mut self,
+        range: Option<(f64, f64)>,
+    ) -> Result<(), String> {
         if let Some((start, end)) = range {
             if !start.is_finite() || !end.is_finite() || start < 0. || start >= end {
                 return Err("Loop requiere 0 ≤ inicio < fin (negras)".into());
@@ -29,6 +33,13 @@ impl DawApp {
             player.set_loop(range)?;
         }
         self.audio_loop = range;
+        if let Some((start, end)) = range {
+            let tick = |beat: f64| (beat * PPQ as f64).round() as i64;
+            let (start, end) = (tick(start), tick(end));
+            if start < end {
+                self.timeline.navigation.loop_region = Some((start, end));
+            }
+        }
         self.status_message = match range {
             Some((a, b)) => format!("Loop de audio: {a:.2}–{b:.2} negras"),
             None => "Loop de audio desactivado".into(),
@@ -38,15 +49,32 @@ impl DawApp {
     pub(in crate::ui) fn toggle_audio_loop(&mut self) {
         let range = if self.audio_loop.is_some() {
             None
+        } else if let Some(region) = self.timeline.navigation.loop_region {
+            Some(crate::ui::timeline::loop_beats(region))
         } else {
+            let bpm = self.timeline.tempo.bpm();
             let end = self
                 .timeline
                 .clip
                 .iter()
                 .chain(&self.timeline.other_audio_clips)
-                .map(|c| c.end_beat(self.timeline.tempo.bpm()))
+                .map(|c| c.end_beat(bpm))
+                .chain(
+                    self.timeline
+                        .midi_clip
+                        .iter()
+                        .chain(&self.timeline.other_midi_clips)
+                        .map(|clip| clip.end_beat()),
+                )
                 .fold(0_f64, f64::max);
-            Some((0., end))
+            Some((
+                0.,
+                if end > 0.0 {
+                    end
+                } else {
+                    self.timeline.meter.beats_per_bar()
+                },
+            ))
         };
         if let Err(e) = self.set_audio_loop(range) {
             self.status_message = e;

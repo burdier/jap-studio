@@ -1,5 +1,5 @@
 //! Regla, carriles, rejilla y cursores. La waveform se dibuja en waveform.rs.
-use super::{DesignSystem, DragKind, Timeline, TimelineArea, waveform};
+use super::{DesignSystem, Timeline, TimelineArea, waveform};
 use crate::ui::track_drag::TrackReorderVisual;
 use crate::ui::{
     components::bar_grid,
@@ -17,6 +17,8 @@ impl Timeline {
         selected_tracks: Vec<bool>,
         track_visual: Option<&TrackReorderVisual>,
         hilo_names: Vec<(elevate::musical::track::TrackId, String)>,
+        track_defaults: Vec<(elevate::musical::track::TrackId, f32, f32)>,
+        live_record: Option<super::LiveRecordPreview>,
         design: &DesignSystem,
     ) -> impl IntoElement {
         if area == TimelineArea::TimeRuler {
@@ -27,6 +29,7 @@ impl Timeline {
         let beats_per_bar = self.meter.beats_per_bar();
         let meter = self.meter;
         let bpm = self.tempo.bpm();
+        let wave_zoom = self.wave_zoom;
         let original_layout = self.layout.clone().unwrap_or_else(|| {
             crate::ui::track_layout::TrackLayout::uniform(track_count, design.track_header_height)
         });
@@ -44,6 +47,8 @@ impl Timeline {
         });
         let floating_area =
             track_visual.map(|visual| (visual.floating_top, visual.floating_height));
+        let peak_marker = self.overlap.marker(bpm);
+        let peak_selection = self.overlap.selected.clone();
         let import_preview = self.import_preview.clone();
         let edit_beat = self.visual_edit_beat();
         let design = design.clone();
@@ -52,7 +57,33 @@ impl Timeline {
         let other_audio_clips = self.other_audio_clips.clone();
         let midi_clip = self.midi_clip.clone();
         let other_midi_clips = self.other_midi_clips.clone();
+        #[cfg(feature = "p2p")]
+        let (clip, other_audio_clips, midi_clip, other_midi_clips) = {
+            let (mut clip, mut audio, mut midi_clip, mut midi) =
+                (clip, other_audio_clips, midi_clip, other_midi_clips);
+            if let Some((id, alias)) = &self.peer_clip {
+                for item in clip
+                    .iter_mut()
+                    .chain(&mut audio)
+                    .filter(|c| c.id.value() == *id)
+                {
+                    item.name = format!("● {alias} · {}", item.name);
+                }
+                for item in midi_clip
+                    .iter_mut()
+                    .chain(&mut midi)
+                    .filter(|c| c.id.value() == *id)
+                {
+                    item.name = format!("● {alias} · {}", item.name);
+                }
+            }
+            (clip, audio, midi_clip, midi)
+        };
         let selected_midi = self.selected_midi.clone();
+        let selected_audio = self.selected_audio.clone();
+        let midi_box = self.midi_box_bounds();
+        let time_selection = self.visible_time_selection().map(super::loop_beats);
+        let loop_guides = self.visible_loop().map(super::loop_beats);
         let playhead = self.visual_playhead();
         let hover_track = if track_visual.is_some() {
             None
@@ -65,8 +96,53 @@ impl Timeline {
         } else {
             self.hover_clip
         };
+        let fade_id = self
+            .fade_drag
+            .map(|drag| drag.id)
+            .or(hover_clip.map(|h| h.id));
+        let focus_span = self
+            .clip
+            .iter()
+            .chain(&self.other_audio_clips)
+            .find(|c| Some(c.id) == fade_id)
+            .map(|c| (c.track, c.start_beat, c.end_beat(bpm)));
+        let show_fades = move |c: &crate::audio::AudioClip| {
+            Some(c.id) == fade_id
+                || focus_span.is_some_and(|(track, start, end)| {
+                    track == c.track
+                        && ((start - c.end_beat(bpm)).abs() < 0.00001
+                            || (end - c.start_beat).abs() < 0.00001)
+                        && c.processing.edit.fades.iter().any(|f| f.active())
+                })
+        };
+        let over_fade = self
+            .probe
+            .pointer
+            .is_some_and(|p| self.fade_handle_at(p, &design).is_some());
+        let pitch_label = (self.fade_drag.is_none()
+            && !over_fade
+            && area == TimelineArea::Lanes
+            && track_visual.is_none()
+            && !self.overlap.dragging())
+        .then(|| self.probe.pointer.zip(self.probe.label.clone()))
+        .flatten();
         let floating_color = track_visual.map(|visual| design.track_color(visual.source_track));
         let snap_guide = self.snap_guide.clone();
+        let automation = self.automation.clone();
+        let automation_mode = self.automation_mode;
+        let automation_param = self.automation_param;
+        let automation_hover = self.automation_hover;
+        let automation_drag = self.automation_drag;
+        let track_defaults: Vec<_> = track_defaults
+            .into_iter()
+            .map(
+                |(id, vol_norm, pan_norm)| super::automation::PaintTrackDefaults {
+                    id,
+                    vol_norm,
+                    pan_norm,
+                },
+            )
+            .collect();
         let particles = if area == TimelineArea::Lanes {
             self.particles.snapshot()
         } else {
@@ -119,6 +195,40 @@ impl Timeline {
                             };
                             if let Some(color) = color {
                                 window.paint_quad(fill(lane, rgb(color)));
+                            }
+                            if row.bands > 0 {
+                                let height = row.height / row.lanes as f32;
+                                for band in 0..row.bands {
+                                    let y =
+                                        top + px((row.lanes - row.bands + band) as f32 * height);
+                                    let tint = design.band_color(row.selected_band == Some(band));
+                                    window.paint_quad(fill(
+                                        Bounds::new(
+                                            point(bounds.left(), y),
+                                            size(bounds.size.width, px(1.)),
+                                        ),
+                                        rgba((tint << 8) | 0x38),
+                                    ));
+                                    for (_, start, end, _) in
+                                        layout.spans.iter().filter(|s| s.0 == track)
+                                    {
+                                        let x = viewport.x_at(*start).max(0.) as f32;
+                                        let end = (viewport.x_at(*end) as f32)
+                                            .min(f32::from(bounds.size.width));
+                                        if end > x {
+                                            window.paint_quad(fill(
+                                                Bounds::new(
+                                                    point(
+                                                        bounds.left() + px(x),
+                                                        y + px(height * 0.32),
+                                                    ),
+                                                    size(px(end - x), px(height * 0.36)),
+                                                ),
+                                                rgba((tint << 8) | 0x38),
+                                            ));
+                                        }
+                                    }
+                                }
                             }
                             if hover_track == Some(track) {
                                 let t_color = design.track_color(track);
@@ -220,11 +330,12 @@ impl Timeline {
                                 waveform::paint(
                                     item,
                                     bpm,
-                                    false,
-                                    hover_clip.and_then(|hover| {
-                                        hover.edge_for(DragKind::Audio, item.track, item.start_beat)
-                                    }),
+                                    peak_selection.contains(&item.id)
+                                        || selected_audio.contains(&item.id),
+                                    show_fades(item),
+                                    hover_clip.and_then(|hover| hover.edge_for(item.id)),
                                     viewport,
+                                    wave_zoom,
                                     bounds,
                                     clip_layout,
                                     &design,
@@ -240,10 +351,10 @@ impl Timeline {
                                     item,
                                     bpm,
                                     true,
-                                    hover_clip.and_then(|hover| {
-                                        hover.edge_for(DragKind::Audio, item.track, item.start_beat)
-                                    }),
+                                    show_fades(item),
+                                    hover_clip.and_then(|hover| hover.edge_for(item.id)),
                                     viewport,
+                                    wave_zoom,
                                     bounds,
                                     clip_layout,
                                     &design,
@@ -258,9 +369,7 @@ impl Timeline {
                                 waveform::paint_midi(
                                     item,
                                     selected_midi.contains(&item.id),
-                                    hover_clip.and_then(|hover| {
-                                        hover.edge_for(DragKind::Midi, item.track, item.start_beat)
-                                    }),
+                                    hover_clip.and_then(|hover| hover.edge_for(item.id)),
                                     viewport,
                                     bounds,
                                     clip_layout,
@@ -277,9 +386,7 @@ impl Timeline {
                                 waveform::paint_midi(
                                     item,
                                     selected_midi.contains(&item.id),
-                                    hover_clip.and_then(|hover| {
-                                        hover.edge_for(DragKind::Midi, item.track, item.start_beat)
-                                    }),
+                                    hover_clip.and_then(|hover| hover.edge_for(item.id)),
                                     viewport,
                                     bounds,
                                     clip_layout,
@@ -289,6 +396,71 @@ impl Timeline {
                                     cx,
                                 );
                             }
+                        }
+                        if let Some(rec) = live_record
+                            && let Some(row) = layout.row(rec.track)
+                        {
+                            let left_x = viewport.x_at(rec.start_beat).max(0.0);
+                            let right_x = viewport
+                                .x_at(rec.end_beat.max(rec.start_beat + 0.15))
+                                .min(width);
+                            if right_x > left_x {
+                                let rect = Bounds::new(
+                                    point(
+                                        bounds.left() + px(left_x as f32),
+                                        bounds.top() + px(row.top + 2.0),
+                                    ),
+                                    size(
+                                        px((right_x - left_x).max(6.0) as f32),
+                                        px((row.height - 4.0).max(8.0)),
+                                    ),
+                                );
+                                let color = if rec.counting_in {
+                                    design.warning
+                                } else {
+                                    design.danger
+                                };
+                                window.paint_quad(
+                                    fill(rect, rgba((color << 8) | 0x38)).corner_radii(px(4.0)),
+                                );
+                                window.paint_quad(fill(
+                                    Bounds::new(rect.origin, size(rect.size.width, px(2.0))),
+                                    rgb(color),
+                                ));
+                                // Barra de pico del micrófono en tiempo real dentro del clip en grabación.
+                                let meter_h =
+                                    ((row.height - 10.0) * rec.peak.clamp(0.0, 1.0)).max(2.0);
+                                window.paint_quad(fill(
+                                    Bounds::new(
+                                        point(
+                                            rect.right() - px(4.0),
+                                            rect.bottom() - px(meter_h + 2.0),
+                                        ),
+                                        size(px(3.0), px(meter_h)),
+                                    ),
+                                    rgb(if rec.peak > 0.92 {
+                                        design.warning
+                                    } else {
+                                        design.danger
+                                    }),
+                                ));
+                            }
+                        }
+                        if automation_mode || !automation.is_empty() {
+                            super::automation::paint(
+                                &automation,
+                                automation_mode,
+                                automation_param,
+                                automation_hover,
+                                automation_drag,
+                                &track_defaults,
+                                viewport,
+                                bounds,
+                                &layout,
+                                &design,
+                                window,
+                                cx,
+                            );
                         }
                     }
                     if area == TimelineArea::Lanes && cx.has_active_drag() {
@@ -305,7 +477,67 @@ impl Timeline {
                         }
                     }
                     if area == TimelineArea::Lanes {
+                        if let Some((start, end)) = loop_guides {
+                            for beat in [start, end] {
+                                let x = viewport.x_at(beat);
+                                if (0.0..=width).contains(&x) {
+                                    window.paint_quad(fill(
+                                        Bounds::new(
+                                            point(bounds.left() + px(x as f32), bounds.top()),
+                                            size(px(1.0), bounds.size.height),
+                                        ),
+                                        rgba((design.cyan << 8) | 0x38),
+                                    ));
+                                }
+                            }
+                        }
+                        if let Some((start, end)) = time_selection {
+                            let left = viewport.x_at(start).max(0.0);
+                            let right = viewport.x_at(end).min(width);
+                            if right > left {
+                                window.paint_quad(fill(
+                                    Bounds::new(
+                                        point(bounds.left() + px(left as f32), bounds.top()),
+                                        size(px((right - left) as f32), bounds.size.height),
+                                    ),
+                                    rgba((design.accent << 8) | 0x20),
+                                ));
+                                for edge_beat in [start, end] {
+                                    let ex = viewport.x_at(edge_beat);
+                                    if (0.0..=width).contains(&ex) {
+                                        window.paint_quad(fill(
+                                            Bounds::new(
+                                                point(bounds.left() + px(ex as f32), bounds.top()),
+                                                size(px(1.5), bounds.size.height),
+                                            ),
+                                            rgba((design.accent << 8) | 0xcc),
+                                        ));
+                                    }
+                                }
+                            }
+                        }
                         snap_guide.paint(viewport.grid(), bounds, meter, &design, window, cx);
+                        if let Some(rect) = midi_box {
+                            window.paint_quad(fill(rect, rgba((design.accent << 8) | 0x28)));
+                            let line = px(1.);
+                            for (origin, size) in [
+                                (rect.origin, size(rect.size.width, line)),
+                                (
+                                    point(rect.left(), rect.bottom() - line),
+                                    size(rect.size.width, line),
+                                ),
+                                (rect.origin, size(line, rect.size.height)),
+                                (
+                                    point(rect.right() - line, rect.top()),
+                                    size(line, rect.size.height),
+                                ),
+                            ] {
+                                window.paint_quad(fill(
+                                    Bounds::new(origin, size),
+                                    rgb(design.accent),
+                                ));
+                            }
+                        }
                     }
                     for (origin, label) in labels {
                         if let Err(error) = label.paint(
@@ -347,14 +579,14 @@ impl Timeline {
                     if (0.0..width).contains(&cursor) {
                         let x = bounds.left() + px(cursor as f32);
                         window.paint_quad(fill(
-                            Bounds::new(point(x, bounds.top()), size(px(2.0), bounds.size.height)),
-                            rgb(design.accent),
+                            Bounds::new(point(x, bounds.top()), size(px(1.0), bounds.size.height)),
+                            rgba((design.accent << 8) | 0xa0),
                         ));
                         if area == TimelineArea::Ruler {
                             window.paint_quad(fill(
                                 Bounds::new(
-                                    point(x - px(3.0), bounds.bottom() - px(4.0)),
-                                    size(px(8.0), px(4.0)),
+                                    point(x - px(2.0), bounds.bottom() - px(3.0)),
+                                    size(px(5.0), px(3.0)),
                                 ),
                                 rgb(design.accent),
                             ));
@@ -371,6 +603,46 @@ impl Timeline {
                                 rgb(design.success),
                             ));
                         }
+                    }
+                    if lanes && let Some((beat, rows, over)) = &peak_marker {
+                        let x = viewport.x_at(*beat);
+                        if (0.0..width).contains(&x) {
+                            for &(track, id) in rows {
+                                if let Some(row) = layout.clip_row(track, id) {
+                                    let left = bounds.left() + px(x as f32);
+                                    let top = bounds.top()
+                                        + px(row.top
+                                            + super::clip_frame::title_height(&design)
+                                            + 2.);
+                                    let color = if *over { design.danger } else { design.warning };
+                                    window.paint_quad(fill(
+                                        Bounds::new(
+                                            point(left, top),
+                                            size(
+                                                px(1.),
+                                                px((row.height
+                                                    - super::clip_frame::title_height(&design)
+                                                    - 5.)
+                                                    .max(1.)),
+                                            ),
+                                        ),
+                                        rgba((color << 8) | 0xaf),
+                                    ));
+                                    window.paint_quad(fill(
+                                        Bounds::new(
+                                            point(left - px(2.), top),
+                                            size(px(5.), px(3.)),
+                                        ),
+                                        rgb(color),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                    if let Some((pointer, label)) = pitch_label {
+                        super::pitch_probe::paint_label(
+                            pointer, label, bounds, &design, window, cx,
+                        );
                     }
                 });
             },

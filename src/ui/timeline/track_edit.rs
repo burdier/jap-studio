@@ -2,6 +2,30 @@
 use super::Timeline;
 
 impl Timeline {
+    #[cfg(feature = "p2p")]
+    pub(in crate::ui) fn replace_project_clips(
+        &mut self,
+        mut midi: Vec<elevate::musical::clip::MidiClip>,
+        mut audio: Vec<crate::audio::AudioClip>,
+    ) {
+        let midi_focus = self.midi_clip.as_ref().map(|clip| clip.id);
+        let audio_focus = self.clip.as_ref().map(|clip| clip.id);
+        self.selected_midi
+            .retain(|id| midi.iter().any(|clip| clip.id == *id));
+        self.midi_clip = midi
+            .iter()
+            .position(|clip| Some(clip.id) == midi_focus)
+            .map(|index| midi.remove(index))
+            .or_else(|| midi.pop());
+        self.clip = audio
+            .iter()
+            .position(|clip| Some(clip.id) == audio_focus)
+            .map(|index| audio.remove(index))
+            .or_else(|| audio.pop());
+        self.other_midi_clips = midi;
+        self.other_audio_clips = audio;
+    }
+
     pub(crate) fn remap_tracks_preserving_selection(
         &mut self,
         sources: &[Option<usize>],
@@ -32,6 +56,7 @@ impl Timeline {
     }
     pub(crate) fn remap_tracks(&mut self, sources: &[Option<usize>], original: &[Option<usize>]) {
         self.end_clip_drag();
+        self.reset_midi_history();
         self.import_preview = None;
         self.hover_track = None;
         self.hover_clip = None;
@@ -108,6 +133,7 @@ mod tests {
     fn duplicating_track_assigns_new_audio_clip_id() {
         let mut timeline = Timeline::new(64.0);
         let original = AudioClip {
+            processing: Default::default(),
             id: elevate::musical::clip::ClipId::fresh(),
             name: "Toma".into(),
             file: Arc::new(AudioFile {

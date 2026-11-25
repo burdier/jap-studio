@@ -4,12 +4,14 @@ use crate::ui::{
         button::pill_button,
         keyboard::{NotePress, midi_keyboard},
     },
+    explorer::ExplorerSampleDrag,
 };
 use elevate::devices::sampler::{
-    ATTACK, CUTOFF, DECAY, END, GAIN, HOLD, LOOP_START, PAN, PITCH_DECAY, PITCH_ENV, PlayMode,
-    RELEASE, RESONANCE, ROOT, START, SUSTAIN, TUNE, VEL_FILTER, VEL_VOLUME, VOICES,
+    ATTACK, CUTOFF, DECAY, END, EQ_HIGH_GAIN, EQ_LOW_GAIN, EQ_MID_GAIN, GAIN, HOLD, LOOP_END,
+    LOOP_START, LOOP_XFADE, PAN, PITCH_DECAY, PITCH_ENV, PlayMode, RELEASE, RESONANCE, ROOT, START,
+    SUSTAIN, TUNE, VEL_FILTER, VEL_VOLUME, VOICES,
 };
-use gpui::{Context, IntoElement, MouseButton, div, prelude::*, px, rgb};
+use gpui::{Context, IntoElement, MouseButton, canvas, div, prelude::*, px, rgb, rgba};
 use std::rc::Rc;
 
 impl DawApp {
@@ -151,7 +153,7 @@ impl DawApp {
             .flex_1()
             .min_w_0()
             .relative()
-            .h(px(175.))
+            .h(px(210.))
             .bg(rgb(ds.bg))
             .child(self.sample_waveform(cx))
             .when(!loaded, |el| {
@@ -188,6 +190,8 @@ impl DawApp {
                     START,
                     END,
                     LOOP_START,
+                    LOOP_END,
+                    LOOP_XFADE,
                     TUNE,
                     ROOT,
                     VOICES,
@@ -209,8 +213,21 @@ impl DawApp {
                     .flex()
                     .flex_col()
                     .gap_2()
-                    .child(self.sample_knob(CUTOFF, cx))
-                    .child(self.sample_knob(RESONANCE, cx)),
+                    .child(
+                        div()
+                            .flex()
+                            .gap_2()
+                            .child(self.sample_knob(CUTOFF, cx))
+                            .child(self.sample_knob(RESONANCE, cx)),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .gap_2()
+                            .child(self.sample_knob(EQ_LOW_GAIN, cx))
+                            .child(self.sample_knob(EQ_MID_GAIN, cx))
+                            .child(self.sample_knob(EQ_HIGH_GAIN, cx)),
+                    ),
             );
         let envelope = div().flex().flex_wrap().gap_2().p_2().children(
             [ATTACK, HOLD, DECAY, SUSTAIN, RELEASE, GAIN, PAN]
@@ -228,18 +245,27 @@ impl DawApp {
             &|note| self.sampler.held(note),
             press,
         );
-        div().id("hay-sampler").flex_1().min_h_0().min_w_0().flex().flex_col().text_size(px(11.)).bg(rgb(ds.bg))
+        let panel_bounds = self.sampler_ui.panel_bounds.clone();
+        let drop_hover = self.sampler_ui.drop_hover;
+        div().id("hay-sampler").relative().flex_1().min_h_0().min_w_0().flex().flex_col().text_size(px(11.)).bg(rgb(ds.bg))
+            .child(
+                div()
+                    .absolute()
+                    .inset_0()
+                    .child(
+                        canvas(
+                            move |bounds, _, _| panel_bounds.set(Some(bounds)),
+                            |_, _, _, _| {},
+                        )
+                        .size_full(),
+                    ),
+            )
             .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
                 if !this.instrument_detached() {
                     return;
                 }
                 this.cursor_fx.on_mouse_move(event.position);
-                if let Some((id, bounds)) = this.sampler_ui.wave_drag {
-                    if event.dragging() {
-                        let percent = f32::from(event.position.x - bounds.left()) / f32::from(bounds.size.width).max(1.) * 100.;
-                        this.set_sample_param(id, percent, cx);
-                    } else { this.finish_sample_drag(cx); }
-                }
+                this.update_sampler_wave_drag(event.position, event.dragging(), cx);
                 if let Some((id, origin, fraction)) = this.sampler_ui.drag {
                     if event.dragging() {
                         let delta = f32::from(origin - event.position.y) / if event.modifiers.shift { 1600. } else { 160. };
@@ -254,14 +280,52 @@ impl DawApp {
                 else { this.status_message = "Carga un sample a la vez".into(); }
                 cx.stop_propagation(); cx.notify();
             }))
+            .on_drop(cx.listener(|this, sample: &ExplorerSampleDrag, _, cx| {
+                this.load_sample(sample.path.clone(), cx);
+                cx.stop_propagation();
+                cx.notify();
+            }))
             .child(header)
             .when(loaded, |el| el.child(div().px_3().py_1().text_color(rgb(ds.muted)).child(self.sampler.asset.as_ref().unwrap().source.display().to_string())))
             .child(div().id("sampler-body").overflow_y_scroll().flex_1().min_h_0().flex().flex_col()
                 .child(div().flex().flex_shrink_0().child(modes).child(wave))
                 .child(playback)
                 .child(div().flex().flex_wrap().border_t_1().border_color(rgb(ds.border)).bg(rgb(ds.panel)).child(filter).child(envelope))
-                .child(div().px_3().py_2().text_color(rgb(ds.muted)).child("Arrastra controles/marcadores · Alt: inicio del loop · Shift: precisión · doble clic: restablecer"))
+                .child(div().px_3().py_2().text_color(rgb(ds.muted)).child("Onda: rueda=zoom · Shift+arrastra=deslizar rango · Alt o zona inferior=Loop · Curva EQ: elige Flt/Low/Mid/High y arrastra Hz/dB"))
                 .child(div().h(px(135.)).flex_shrink_0().p_3().flex().child(keyboard)))
             .child(div().px_3().py_2().text_color(rgb(ds.muted)).child(self.status_message.clone()))
+            .when_some(drop_hover, |root, kind| {
+                let is_midi = kind == crate::ui::timeline::DragKind::Midi;
+                let border_col = if is_midi { ds.warning } else { ds.cyan };
+                let label = if is_midi {
+                    "⚡ Soltar clip MIDI → Bounce a WAV y cargar en Hay Sampler"
+                } else {
+                    "⬇ Soltar clip de audio en Hay Sampler"
+                };
+                root.child(
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .bg(rgba((border_col << 8) | 0x24))
+                        .border_2()
+                        .border_color(rgb(border_col))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(
+                            div()
+                                .px_4()
+                                .py_2()
+                                .rounded(px(ds.radius_md))
+                                .bg(rgb(ds.panel_dark))
+                                .border_1()
+                                .border_color(rgb(border_col))
+                                .text_sm()
+                                .font_weight(gpui::FontWeight::SEMIBOLD)
+                                .text_color(rgb(border_col))
+                                .child(label),
+                        ),
+                )
+            })
     }
 }

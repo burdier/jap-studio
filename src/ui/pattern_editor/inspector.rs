@@ -6,9 +6,10 @@ use crate::{
 };
 use elevate::{
     devices::sampler::PARAMS,
+    explorer::EntryKind,
     musical::{drums::DrumLayer, model::InstrumentId},
 };
-use gpui::{Context, PathPromptOptions, Window};
+use gpui::{Context, MouseMoveEvent, PathPromptOptions, Pixels, Window};
 use std::{
     future::{Future, ready},
     path::PathBuf,
@@ -20,7 +21,34 @@ pub(in crate::ui) enum DrumSampleTarget {
     ReplaceLayer(InstrumentId, usize, String),
 }
 
+pub(super) struct DrumOffsetDrag {
+    piece: InstrumentId,
+    layer: Option<usize>,
+    y: Pixels,
+    original: i16,
+    draft: f32,
+}
+
 impl PatternEditor {
+    pub(in crate::ui) fn layer_offset(
+        &self,
+        piece: InstrumentId,
+        layer: usize,
+        stored: u16,
+    ) -> u16 {
+        self.offset_drag
+            .as_ref()
+            .filter(|drag| drag.piece == piece && drag.layer == Some(layer))
+            .map_or(stored, |drag| drag.draft.round().max(0.0) as u16)
+    }
+
+    pub(in crate::ui) fn piece_timing_offset(&self, piece: InstrumentId, stored: i16) -> i16 {
+        self.offset_drag
+            .as_ref()
+            .filter(|drag| drag.piece == piece && drag.layer.is_none())
+            .map_or(stored, |drag| drag.draft.round() as i16)
+    }
+
     pub(super) fn apply_inspector(
         &mut self,
         action: PatternAction,
@@ -32,6 +60,10 @@ impl PatternEditor {
             | AddSample { piece, .. }
             | ReplaceSample { piece, .. }
             | RemoveSample { piece, .. }
+            | LayerOffset { piece, .. }
+            | CycleLayerOffsetMode { piece, .. }
+            | PieceTimingOffset { piece, .. }
+            | CyclePieceTimingMode { piece, .. }
             | LayerVelocity { piece, .. }
             | Filter(piece)
             | FullSample(piece)
@@ -92,6 +124,8 @@ impl PatternEditor {
                     source: path,
                     velocity_min: min,
                     velocity_max: max,
+                    start_offset: 0,
+                    offset_mode: elevate::musical::drums::OffsetMode::Fixed,
                 });
                 layers.sort_by_key(|layer| layer.velocity_min);
                 Ok("Capa añadida")
@@ -113,6 +147,33 @@ impl PatternEditor {
             RemoveSample { layer, .. } if layer < piece.layers.len() => {
                 piece.layers.remove(layer);
                 Ok("Capa eliminada")
+            }
+            LayerOffset { layer, value, .. } => {
+                let layer = piece.layers.get_mut(layer).ok_or("La capa ya no existe")?;
+                layer.start_offset = value.min(DrumLayer::MAX_START_OFFSET);
+                Ok("Offset de la muestra ajustado")
+            }
+            CycleLayerOffsetMode { layer, .. } => {
+                let layer = piece.layers.get_mut(layer).ok_or("La capa ya no existe")?;
+                layer.offset_mode = layer.offset_mode.next();
+                Ok(match layer.offset_mode {
+                    elevate::musical::drums::OffsetMode::Fixed => "Offset: Fijo",
+                    elevate::musical::drums::OffsetMode::EachNote => "Offset: Cada nota",
+                    elevate::musical::drums::OffsetMode::Random => "Offset: Random",
+                })
+            }
+            PieceTimingOffset { value, .. } => {
+                let max = elevate::musical::drums::DrumPiece::MAX_TIMING_OFFSET;
+                piece.timing_offset = value.clamp(-max, max);
+                Ok("Offset de tiempo ajustado")
+            }
+            CyclePieceTimingMode { .. } => {
+                piece.timing_mode = piece.timing_mode.next();
+                Ok(match piece.timing_mode {
+                    elevate::musical::drums::OffsetMode::Fixed => "Timing: Fijo",
+                    elevate::musical::drums::OffsetMode::EachNote => "Timing: Cada nota",
+                    elevate::musical::drums::OffsetMode::Random => "Timing: Random",
+                })
             }
             LayerVelocity {
                 layer,
@@ -138,6 +199,132 @@ impl PatternEditor {
 }
 
 impl DawApp {
+    /// Picos de la muestra para dibujarla; decodifica fuera del hilo de UI la primera vez.
+    pub(in crate::ui) fn drum_wave(
+        &self,
+        source: &str,
+        cx: &mut Context<Self>,
+    ) -> std::sync::Arc<Vec<[f32; 2]>> {
+        let cache = self.pattern_editor.waveforms.clone();
+        if let Some(entry) = cache.borrow().get(source) {
+            return entry.clone().unwrap_or_default();
+        }
+        cache.borrow_mut().insert(source.to_owned(), None);
+        let key = source.to_owned();
+        let background = cx.background_executor().clone();
+        cx.spawn(async move |this, cx| {
+            let decode_key = key.clone();
+            let peaks = background
+                .spawn(async move {
+                    let file = AudioFile::decode(std::path::Path::new(&decode_key)).ok()?;
+                    let scale = file.max_peak.max(0.01);
+                    let group = file.peaks.len().div_ceil(480).max(1);
+                    Some(
+                        file.peaks
+                            .chunks(group)
+                            .map(|chunk| {
+                                let [lo, hi] = chunk
+                                    .iter()
+                                    .fold([0f32, 0f32], |p, a| [p[0].min(a[0]), p[1].max(a[1])]);
+                                [lo / scale, hi / scale]
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if let Some(peaks) = peaks {
+                    this.pattern_editor
+                        .waveforms
+                        .borrow_mut()
+                        .insert(key, Some(std::sync::Arc::new(peaks)));
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+        Default::default()
+    }
+
+    pub(in crate::ui) fn begin_drum_offset_drag(
+        &mut self,
+        piece: InstrumentId,
+        layer: usize,
+        value: u16,
+        y: Pixels,
+    ) {
+        self.pattern_editor.offset_drag = Some(DrumOffsetDrag {
+            piece,
+            layer: Some(layer),
+            y,
+            original: value as i16,
+            draft: f32::from(value),
+        });
+    }
+
+    pub(in crate::ui) fn begin_drum_timing_drag(
+        &mut self,
+        piece: InstrumentId,
+        value: i16,
+        x: Pixels,
+    ) {
+        self.pattern_editor.offset_drag = Some(DrumOffsetDrag {
+            piece,
+            layer: None,
+            y: x,
+            original: value,
+            draft: f32::from(value),
+        });
+    }
+
+    pub(in crate::ui) fn update_drum_offset_drag(&mut self, event: &MouseMoveEvent) -> bool {
+        let Some(drag) = &mut self.pattern_editor.offset_drag else {
+            return false;
+        };
+        if !event.dragging() {
+            self.finish_drum_offset_drag();
+            return true;
+        }
+        if drag.layer.is_some() {
+            let scale = if event.modifiers.shift { 0.5 } else { 5.0 };
+            drag.draft = (drag.draft + f32::from(drag.y - event.position.y) * scale)
+                .clamp(0.0, f32::from(DrumLayer::MAX_START_OFFSET));
+            drag.y = event.position.y;
+        } else {
+            let max = f32::from(elevate::musical::drums::DrumPiece::MAX_TIMING_OFFSET);
+            let scale = if event.modifiers.shift { 0.5 } else { 3.0 };
+            drag.draft =
+                (drag.draft + f32::from(event.position.x - drag.y) * scale).clamp(-max, max);
+            drag.y = event.position.x;
+            let piece = drag.piece;
+            let live = drag.draft.round() as i16;
+            self.apply_pattern_action(PatternAction::PieceTimingOffset { piece, value: live });
+        }
+        true
+    }
+
+    pub(in crate::ui) fn finish_drum_offset_drag(&mut self) -> bool {
+        let Some(drag) = self.pattern_editor.offset_drag.take() else {
+            return false;
+        };
+        let value = drag.draft.round() as i16;
+        if value != drag.original {
+            if let Some(layer) = drag.layer {
+                self.apply_pattern_action(PatternAction::LayerOffset {
+                    piece: drag.piece,
+                    layer,
+                    value: value.max(0) as u16,
+                });
+            } else {
+                self.apply_pattern_action(PatternAction::PieceTimingOffset {
+                    piece: drag.piece,
+                    value,
+                });
+            }
+        }
+        true
+    }
+
     pub(in crate::ui) fn choose_drum_sample(
         &mut self,
         target: DrumSampleTarget,
@@ -177,6 +364,11 @@ impl DawApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if EntryKind::for_file(&path) == EntryKind::Hydrogen {
+            self.import_hydrogen(path, None, cx);
+            cx.notify();
+            return;
+        }
         if self.pattern_editor.sample_task.is_some() {
             self.status_message = "Espera a que termine la carga de la muestra".into();
             cx.notify();
@@ -211,6 +403,21 @@ impl DawApp {
         cx.notify();
     }
 
+    pub(in crate::ui) fn drop_drum_files(
+        &mut self,
+        paths: &[PathBuf],
+        piece: Option<InstrumentId>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let [path] = paths {
+            self.drop_drum_sample(path.clone(), piece, window, cx);
+        } else {
+            self.status_message = "Suelta una muestra o un proyecto de Hydrogen a la vez".into();
+            cx.notify();
+        }
+    }
+
     fn prepare_drum_sample(
         &mut self,
         target: DrumSampleTarget,
@@ -220,6 +427,14 @@ impl DawApp {
         let background = cx.background_executor().clone();
         self.pattern_editor.sample_task = Some(cx.spawn(async move |this, cx| {
             let result = match selection.await {
+                Ok(Some(path)) if EntryKind::for_file(&path) == EntryKind::Hydrogen => {
+                    let _ = this.update(cx, |this, cx| {
+                        this.pattern_editor.sample_task = None;
+                        this.import_hydrogen(path, None, cx);
+                        cx.notify();
+                    });
+                    return;
+                }
                 Ok(Some(path)) => {
                     background
                         .spawn(async move {

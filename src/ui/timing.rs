@@ -4,6 +4,8 @@ use elevate::musical::time::{DEFAULT_BPM, Meter, Tempo};
 use gpui::{Context, MouseMoveEvent, Pixels, Window};
 
 const STUDIO_METERS: [(u8, u8); 7] = [(4, 4), (3, 4), (2, 4), (6, 8), (5, 4), (7, 8), (12, 8)];
+const TAP_TIMEOUT_SECS: f64 = 2.2;
+const TAP_WINDOW: usize = 8;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct TempoDrag {
@@ -35,6 +37,37 @@ impl DawApp {
 
     pub(super) fn reset_tempo(&mut self) {
         self.set_tempo(DEFAULT_BPM);
+    }
+
+    pub(super) fn tap_tempo(&mut self) {
+        let now = std::time::Instant::now();
+        if let Some(&last) = self.tap_tempo.last()
+            && now.duration_since(last).as_secs_f64() > TAP_TIMEOUT_SECS
+        {
+            self.tap_tempo.clear();
+        }
+        self.tap_tempo.push(now);
+        if self.tap_tempo.len() > TAP_WINDOW {
+            let excess = self.tap_tempo.len() - TAP_WINDOW;
+            self.tap_tempo.drain(0..excess);
+        }
+        if let Some(bpm) = tap_tempo_bpm(&self.tap_tempo) {
+            self.set_tempo(bpm);
+            self.status_message = format!("TAP ({} pulsos): {bpm:.1} BPM", self.tap_tempo.len());
+        } else {
+            self.status_message = "TAP · sigue pulsando al ritmo…".into();
+        }
+    }
+
+    pub(super) fn reset_tap_tempo(&mut self) {
+        self.tap_tempo.clear();
+        self.status_message = "Tap Tempo reiniciado".into();
+    }
+
+    pub(super) fn tap_tempo_active(&self) -> bool {
+        self.tap_tempo
+            .last()
+            .is_some_and(|last| last.elapsed().as_secs_f64() <= TAP_TIMEOUT_SECS)
     }
 
     pub(super) fn begin_tempo_drag(&mut self, start_y: Pixels) {
@@ -123,6 +156,9 @@ impl DawApp {
         match Meter::new(numerator, denominator) {
             Ok(meter) => {
                 self.timeline.meter = meter;
+                for pattern in &mut self.pattern_editor.session.patterns {
+                    pattern.meter = meter;
+                }
                 self.status_message = format!("Compás: {}", meter.label());
             }
             Err(error) => self.status_message = error.to_string(),
@@ -160,7 +196,46 @@ impl DawApp {
                 }
                 true
             }
+            Some("tap" | "tempo.tap") => {
+                self.tap_tempo();
+                true
+            }
             _ => false,
         }
+    }
+}
+
+fn tap_tempo_bpm(taps: &[std::time::Instant]) -> Option<f64> {
+    if taps.len() < 2 {
+        return None;
+    }
+    let span = taps.last()?.duration_since(*taps.first()?).as_secs_f64();
+    if span <= 0.05 {
+        return None;
+    }
+    let avg = span / (taps.len() - 1) as f64;
+    Some(((60.0 / avg).clamp(30.0, 300.0) * 10.0).round() / 10.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tap_tempo_bpm;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn tap_tempo_averages_quarter_note_intervals_accurately() {
+        let t0 = Instant::now();
+        assert_eq!(tap_tempo_bpm(&[t0]), None);
+        // 500 ms entre golpes = 120.0 BPM exactos.
+        let taps = [
+            t0,
+            t0 + Duration::from_millis(500),
+            t0 + Duration::from_millis(1000),
+            t0 + Duration::from_millis(1500),
+        ];
+        assert_eq!(tap_tempo_bpm(&taps), Some(120.0));
+        // 468.75 ms ≈ 128.0 BPM.
+        let fast = [t0, t0 + Duration::from_micros(468_750)];
+        assert_eq!(tap_tempo_bpm(&fast), Some(128.0));
     }
 }

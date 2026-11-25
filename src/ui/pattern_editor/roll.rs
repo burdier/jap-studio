@@ -28,7 +28,7 @@ pub(in crate::ui) struct DrumRoll {
     pub preview: Option<NoteEvent>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum DrumRollDrag {
     Velocity(NoteId),
     Note {
@@ -40,6 +40,11 @@ enum DrumRollDrag {
 }
 
 impl DrumRoll {
+    #[cfg(feature = "p2p")]
+    pub(super) fn dragging(&self) -> bool {
+        self.drag.is_some()
+    }
+
     pub(super) fn focus(&mut self, piece: &DrumPiece, pattern: &Pattern) {
         self.piece = Some(piece.id);
         self.reset_selection();
@@ -69,6 +74,27 @@ impl DrumRoll {
         self.selected = None;
         self.drag = None;
         self.preview = None;
+    }
+}
+
+#[cfg(feature = "p2p")]
+impl super::PatternEditor {
+    pub(in crate::ui) fn dragged_drum_step(
+        &self,
+    ) -> Option<crate::collaboration::live::DrumStepPresence> {
+        let note = match self.roll.drag.as_ref()? {
+            DrumRollDrag::Note { pattern, .. } if *pattern == self.session.active => {
+                self.roll.preview.as_ref()?
+            }
+            DrumRollDrag::Velocity(id) => self.pattern().notes().iter().find(|n| n.id == *id)?,
+            _ => return None,
+        };
+        Some(crate::collaboration::live::DrumStepPresence {
+            pattern: self.session.active.0,
+            piece: note.instrument.0,
+            tick: note.start.0,
+            pitch: note.pitch,
+        })
     }
 }
 
@@ -112,8 +138,8 @@ impl DawApp {
                 grid.note_bounds(note.start, note.duration, note.pitch)
                     .contains(&position)
             })
-            .copied();
-        editor.roll.selected = hit.map(|note| note.id);
+            .cloned();
+        editor.roll.selected = hit.as_ref().map(|note| note.id);
         if let Some(note) = hit {
             if clicks == 2 {
                 self.apply_pattern_action(PatternAction::DeleteNote(note.id));
@@ -142,7 +168,7 @@ impl DawApp {
     pub(in crate::ui) fn move_drum_roll_input(&mut self, position: Point<Pixels>) -> bool {
         let editor = &mut self.pattern_editor;
         let grid = editor.roll.grid.get();
-        let Some(drag) = editor.roll.drag else {
+        let Some(drag) = editor.roll.drag.clone() else {
             return false;
         };
         if let DrumRollDrag::Velocity(id) = drag {
@@ -203,11 +229,14 @@ impl DawApp {
     }
 
     pub(in crate::ui) fn finish_drum_roll_input(&mut self, position: Point<Pixels>) -> bool {
-        let drag = self.pattern_editor.roll.drag;
-        if matches!(drag, Some(DrumRollDrag::Note { .. })) {
+        if matches!(
+            self.pattern_editor.roll.drag,
+            Some(DrumRollDrag::Note { .. })
+        ) {
             self.move_drum_roll_input(position);
         }
-        self.pattern_editor.roll.drag = None;
+        let drag = self.pattern_editor.roll.drag.take();
+        let active = drag.is_some();
         let preview = self.pattern_editor.roll.preview.take();
         if let (Some(DrumRollDrag::Note { pattern, note, .. }), Some(edit)) = (drag, preview)
             && pattern == self.pattern_editor.session.active
@@ -216,7 +245,7 @@ impl DawApp {
         {
             self.apply_pattern_action(PatternAction::MoveNote(edit));
         }
-        drag.is_some()
+        active
     }
 
     pub(super) fn handle_drum_roll_key(&mut self, key: &str) -> bool {
@@ -235,11 +264,11 @@ impl DawApp {
             .notes()
             .iter()
             .find(|note| Some(note.id) == editor.roll.selected)
-            .copied()
+            .cloned()
         else {
             return false;
         };
-        let original = note;
+        let original = note.clone();
         match key {
             "delete" | "backspace" => {
                 self.apply_pattern_action(PatternAction::DeleteNote(note.id));

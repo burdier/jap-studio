@@ -17,14 +17,38 @@ pub(in crate::ui) mod navigation;
 #[cfg(test)]
 mod navigation_tests;
 mod paint;
+pub(super) mod pitch;
 mod pointer;
 mod properties;
 mod push;
 mod selection;
 mod window;
 
-pub(in crate::ui) use crate::ui::components::curve_overlay::shapes::ContourShape;
+pub(in crate::ui) use crate::ui::components::curve_overlay::shapes::{ContourShape, LanePreset};
 pub(in crate::ui) use lane::{RollLane, RollLaneMenu};
+
+/// Alcance de un patrón de carril.
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+pub(in crate::ui) enum LaneScope {
+    /// Una sola forma a lo largo de todas las notas.
+    #[default]
+    All,
+    /// La forma se reinicia y repite en cada compás.
+    PerBar,
+    /// Solo el compás donde se hizo clic derecho.
+    ThisBar,
+}
+
+impl LaneScope {
+    pub const ALL: [Self; 3] = [Self::All, Self::PerBar, Self::ThisBar];
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::All => "Todo",
+            Self::PerBar => "Cada compás",
+            Self::ThisBar => "Este compás",
+        }
+    }
+}
 
 #[derive(Clone, Copy)]
 pub(in crate::ui) struct LaneSpanDrag {
@@ -55,6 +79,7 @@ pub(super) enum RollTool {
     Box,
     EraseRegion,
     Length,
+    Pitch,
 }
 
 pub(super) enum RollDrag {
@@ -62,6 +87,7 @@ pub(super) enum RollDrag {
         origin: Point<Pixels>,
         current: Point<Pixels>,
         erase: bool,
+        additive: Vec<NoteId>,
     },
     Move {
         origin: Point<Pixels>,
@@ -87,6 +113,8 @@ pub(super) enum RollAction {
     SetLane(RollLane),
     CycleLaneContour,
     SetLaneContour(ContourShape),
+    SetLaneScope(LaneScope),
+    ApplyLanePreset(LanePreset),
     HighlightScale,
     ResetView,
     ZoomWidth(f64),
@@ -152,6 +180,7 @@ pub(super) struct PianoRoll {
     pub hovered_note: Option<NoteId>,
     pub hovered_resize_edge: bool,
     pub drag: Option<RollDrag>,
+    pub pitch_drag: Option<pitch::PitchDrag>,
     pub motion: Rc<RefCell<motion::NoteMotion>>,
     push: Option<push::PushGesture>,
     push_error: Option<String>,
@@ -166,6 +195,11 @@ pub(super) struct PianoRoll {
     pub lane_contour: ContourShape,
     pub lane_span: Option<LaneSpanDrag>,
     pub lane_menu: Option<RollLaneMenu>,
+    /// Posición del menú de patrones (clic derecho en el carril de propiedades).
+    pub lane_preset_menu: Option<Point<Pixels>>,
+    pub lane_scope: LaneScope,
+    /// Pulso (negras) bajo el clic derecho, para `LaneScope::ThisBar`.
+    pub lane_preset_beat: f64,
     pub choices: Option<choices::RollChoices>,
     pub highlight_scale: bool,
     pub show_scale_keyboard: bool,
@@ -197,6 +231,7 @@ impl Default for PianoRoll {
             hovered_note: None,
             hovered_resize_edge: false,
             drag: None,
+            pitch_drag: None,
             motion: Rc::default(),
             push: None,
             push_error: None,
@@ -211,6 +246,9 @@ impl Default for PianoRoll {
             lane_contour: ContourShape::Smooth,
             lane_span: None,
             lane_menu: None,
+            lane_preset_menu: None,
+            lane_scope: LaneScope::All,
+            lane_preset_beat: 0.0,
             choices: None,
             highlight_scale: true,
             show_scale_keyboard: true,

@@ -92,6 +92,7 @@ fn trimming_audio_keeps_the_decoded_source_and_limits_the_visible_region() {
         max_peak: 0.25,
     });
     timeline.clip = Some(AudioClip {
+        processing: Default::default(),
         id: elevate::musical::clip::ClipId::fresh(),
         name: source.name.clone(),
         file: source.clone(),
@@ -126,7 +127,7 @@ fn zoom_preserves_the_time_under_the_pointer_including_at_scale_limits() {
         viewport.zoom_at(384.0, factor);
         assert!((viewport.beat_at(384.0) - anchor).abs() < 1e-9);
         assert!((viewport.x_at(anchor) - 384.0).abs() < 1e-9);
-        assert!((8.0..=256.0).contains(&viewport.pixels_per_beat));
+        assert!((8.0..=super::viewport::MAX_SCALE).contains(&viewport.pixels_per_beat));
     }
 }
 #[test]

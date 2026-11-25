@@ -141,10 +141,17 @@ impl DawApp {
             };
             order.splice(insert_at..insert_at, source_indices);
         }
-        let mut layout = TrackLayout::default();
+        let mut layout = TrackLayout {
+            slots: original.slots.clone(),
+            counts: original.counts.clone(),
+            ..Default::default()
+        };
         for index in order {
             if let Some(row) = original.row(index) {
                 layout.rows.push(TrackRow {
+                    lanes: row.lanes,
+                    bands: row.bands,
+                    selected_band: row.selected_band,
                     track: index,
                     top: layout.height,
                     height: row.height,

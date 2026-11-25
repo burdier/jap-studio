@@ -1,15 +1,8 @@
 //! Arranque, carga del perfil y cambios de vista. El render vive en render.rs.
 use super::{
-    CenterView, DawApp, DesignSystem, VimMode,
-    cursor_fx::CursorFx,
-    icons::ToolbarBindings,
-    palette::Palette,
-    pattern_editor::PatternEditor,
-    piano_roll::PianoRoll,
-    settings::SettingsUi,
-    timeline::Timeline,
-    views::tracks::{DEMO_LEVELS, DEMO_PANS},
-    workspace_focus::Panel,
+    CenterView, DawApp, DesignSystem, cursor_fx::CursorFx, icons::ToolbarBindings,
+    palette::Palette, pattern_editor::PatternEditor, piano_roll::PianoRoll, settings::SettingsUi,
+    timeline::Timeline, workspace_focus::Panel,
 };
 use crate::audio::MidiHardwareIn;
 use crate::instruments::Piano;
@@ -18,12 +11,11 @@ use elevate::musical::{
     controller::ComputerKeyboard,
     midi::{MidiServer, MidiTarget},
     midi_map::MidiMapper,
-    track::DEMO_TRACKS,
 };
 use gpui::application;
 use gpui::{
-    App, AppContext, Bounds, Context, ScrollHandle, TitlebarOptions, WindowBounds, WindowOptions,
-    point, px, size,
+    App, AppContext, Bounds, Context, ScrollHandle, TitlebarOptions, WindowBounds,
+    WindowDecorations, WindowOptions, point, px, size,
 };
 use std::time::Instant;
 
@@ -44,9 +36,12 @@ pub(crate) fn run() {
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     titlebar: Some(TitlebarOptions {
-                        title: Some("Hay DAW".into()),
+                        title: Some("Jap Studio".into()),
+                        appears_transparent: true,
                         ..Default::default()
                     }),
+                    // Sin borde del compositor: la barra propia dibuja los botones.
+                    window_decorations: Some(WindowDecorations::Client),
                     app_id: Some("hay-daw".to_string()),
                     ..Default::default()
                 },
@@ -103,23 +98,27 @@ impl DawApp {
             track_color_menu: None,
             piano_roll_focus: cx.focus_handle(),
             piano_roll_window: None,
-            tracks: DEMO_TRACKS.to_vec(),
+            tracks: Vec::new(),
             track_revision: 0,
             selected_tracks: vec![],
             track_anchor: None,
             bar_menu: None,
             track_menu: None,
             track_presentation: Default::default(),
-            track_delete_pending: false,
-            track_levels: DEMO_LEVELS.to_vec(),
-            track_pans: DEMO_PANS.to_vec(),
+            track_levels: Vec::new(),
+            track_pans: Vec::new(),
             track_control_drag: None,
             mixer_drag: None,
             track_reorder_drag: None,
             player: None,
+            tail_player: None,
             file_playback: None,
             audio_loop: None,
             pattern_loop_beats: None,
+            metronome: std::sync::Arc::new(crate::audio::metronome::MetronomeControl::new()),
+            recording_waiting_count_in: false,
+            audio_recorder: None,
+            audio_record_stereo: false,
             instrument,
             piano_instances: Default::default(),
             controller: ComputerKeyboard::default(),
@@ -143,7 +142,9 @@ impl DawApp {
             piano_ui: Default::default(),
             import_task: None,
             collect_task: None,
-            project: Default::default(),
+            audio_to_midi_task: None,
+            history: Default::default(),
+            project: super::project::ProjectUi::new(),
             script_task: None,
             lua_tools,
             lua_components: super::lua_components::LuaComponents::new(),
@@ -157,13 +158,17 @@ impl DawApp {
             vst_task: None,
             vst_effects: Default::default(),
             export_job: None,
+            bounce_pending: None,
+            freeze_pending: None,
+            frozen_tracks: Default::default(),
             utility: elevate::devices::utility_slot::UtilitySlot::new(),
             utility_open: false,
+            master_chain: elevate::musical::fx::FxChain::new(),
             ds,
             focus_handle: cx.focus_handle(),
             track_scroll: ScrollHandle::new(),
-            mode: VimMode::Normal,
-            vim_enabled: super::keyboard_preferences::load_vim(),
+            tap_tempo: Vec::with_capacity(8),
+            command_open: false,
             workspace_focus: Default::default(),
             center_view: CenterView::Arrangement,
             cursor_row: 0,
@@ -174,10 +179,6 @@ impl DawApp {
         }
     }
     pub(super) fn reload(&mut self) {
-        self.vim_enabled = super::keyboard_preferences::load_vim();
-        if !self.vim_enabled {
-            self.set_mode(VimMode::Normal);
-        }
         self.settings.export = super::export_preferences::ExportPreferences::load();
         let colors = std::mem::take(&mut self.ds.track_color_override);
         self.ds = DesignSystem::load();
@@ -185,36 +186,26 @@ impl DawApp {
         self.cursor_fx.set_mode(self.ds.cursor_fx);
         self.timeline.set_scale(self.ds.timeline_pixels_per_beat);
     }
-    pub(super) fn set_mode(&mut self, mode: VimMode) {
-        self.track_delete_pending = false;
-        self.mode = if self.vim_enabled {
-            mode
-        } else {
-            VimMode::Normal
-        };
-        if self.mode != VimMode::Command {
-            self.command_buffer.clear();
-            self.cmd_selected = None;
-        } else {
-            self.cmd_selected = None;
-        }
+    pub(in crate::ui) fn open_command_bar(&mut self) {
+        self.command_open = true;
+        self.cmd_selected = None;
+    }
+    pub(in crate::ui) fn close_command_bar(&mut self) {
+        self.command_open = false;
+        self.command_buffer.clear();
+        self.cmd_selected = None;
     }
     pub(super) fn set_center_view(&mut self, view: CenterView) {
         if view != self.center_view {
             self.mixer_drag = None;
             self.workspace_focus = Default::default();
         }
-        self.track_delete_pending = false;
-        if self.center_view == CenterView::Session && view != CenterView::Session {
-            self.stop_pattern();
-        }
-        if view == CenterView::Session && self.center_view != CenterView::Session {
-            self.stop_audio();
-        }
         if view != CenterView::Arrangement {
             self.timeline.end_clip_drag();
         }
         if view == CenterView::Session && self.center_view != view {
+            self.workspace_focus.active = Panel::Center;
+        } else if view == CenterView::Mixer {
             self.workspace_focus.active = Panel::Center;
         }
         self.cursor_row = self.cursor_row.min(self.tracks.len().saturating_sub(1));

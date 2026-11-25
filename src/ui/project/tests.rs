@@ -50,9 +50,18 @@ fn snapshot() -> Snapshot {
         midi: vec![MidiClip::new("Melodía", 1, 3.0, pattern)],
         audio: vec![],
         pianos: vec![],
+        samplers: vec![],
+        vsts: vec![],
         drums: Default::default(),
         tempo: Tempo::new(97.5).unwrap(),
         meter: Meter::new(7, 8).unwrap(),
+        utility: Default::default(),
+        master_chain: Default::default(),
+        navigation: Default::default(),
+        automation: Default::default(),
+        midi_bindings: elevate::musical::midi_map::MidiMapper::new()
+            .bindings()
+            .to_vec(),
         levels: vec![63, 82],
         pans: vec![12, 74],
     }
@@ -84,6 +93,7 @@ fn saved_arrangement_reopens_after_folder_move_with_shared_audio_and_stable_ids(
     let mut before = snapshot();
     for beat in [2., 8.] {
         before.audio.push(ProjectAudioClip {
+            edit: Default::default(),
             id: ClipId::fresh(),
             track: before.tracks[0].id,
             source: "take.wav".into(),
@@ -175,11 +185,40 @@ fn unsupported_instrument_and_corrupt_project_fail_before_publication() {
         state
             .validate_support()
             .unwrap_err()
-            .contains("Sampler/VST3")
+            .contains("instrumento")
     );
     let path = fixture.0.join("bad.loro");
     std::fs::write(&path, b"not a project").unwrap();
     assert!(Snapshot::load(&path).is_err());
+}
+
+#[test]
+fn vst_instrument_and_master_utility_round_trip_through_loro() {
+    let fixture = Fixture::new();
+    let mut state = snapshot();
+    let vst_id = InstrumentId::fresh();
+    state.tracks[1].instrument = Some(vst_id);
+    state.vsts.push(elevate::project::ProjectVstInstrument {
+        id: vst_id,
+        name: "Vital".into(),
+        class_id: "0123456789abcdef0123456789abcdef".into(),
+        bundle: "/tmp/Vital.vst3".into(),
+        preset: elevate::musical::fx::VstPreset::new(
+            b"JVS1\xff\xff\xff\xff\xff\xff\xff\xff".to_vec(),
+        )
+        .unwrap(),
+    });
+    state.utility = elevate::devices::utility_slot::UtilityState {
+        inserted: true,
+        gain: 1.25,
+        bypassed: false,
+    };
+    state.validate_support().unwrap();
+    let path = fixture.0.join("vst_session.loro");
+    state.document("VST").unwrap().save(&path).unwrap();
+    let (loaded, _, _) = Snapshot::load(&path).unwrap();
+    assert_eq!(loaded.vsts, state.vsts);
+    assert_eq!(loaded.utility, state.utility);
 }
 
 #[test]
@@ -206,4 +245,137 @@ fn subsequent_save_reconciles_existing_document_after_track_removal() {
             .unwrap(),
         "Segundo"
     );
+}
+
+#[test]
+fn track_automation_round_trips_through_loro() {
+    use elevate::musical::track_automation::AutomationParam;
+    let fixture = Fixture::new();
+    let mut state = snapshot();
+    let id = state.tracks[0].id;
+    state
+        .automation
+        .lane_mut(id, AutomationParam::Volume)
+        .upsert(0.0, 0.25);
+    state
+        .automation
+        .lane_mut(id, AutomationParam::Volume)
+        .upsert(4.0, 0.85);
+    state
+        .automation
+        .lane_mut(id, AutomationParam::Pan)
+        .upsert(2.0, 0.15);
+    let path = fixture.0.join("auto_session.loro");
+    state.document("Auto").unwrap().save(&path).unwrap();
+    let (loaded, _, _) = Snapshot::load(&path).unwrap();
+    assert_eq!(loaded.automation, state.automation);
+}
+
+#[test]
+fn master_chain_round_trips_through_loro() {
+    use elevate::musical::{
+        fx::{FxEdit, FxKind, FxNode, FxPlacement},
+        track::TrackDevice,
+    };
+    let fixture = Fixture::new();
+    let mut state = snapshot();
+    let node = FxNode::new(
+        "Hay Filter",
+        FxKind::Effect {
+            plugin_id: TrackDevice::Hay {
+                catalog_id: "hay.fx.filter".into(),
+            },
+            parameters: std::collections::BTreeMap::from([(0, 1200.0), (1, 0.7)]),
+        },
+    );
+    state
+        .master_chain
+        .apply(FxEdit::Insert(node, FxPlacement::Inside(None)))
+        .unwrap();
+    let path = fixture.0.join("master_fx.loro");
+    state.document("MasterFX").unwrap().save(&path).unwrap();
+    let (loaded, _, _) = Snapshot::load(&path).unwrap();
+    assert_eq!(loaded.master_chain.nodes(), state.master_chain.nodes());
+}
+
+#[test]
+fn track_sends_round_trip_through_loro() {
+    use elevate::musical::track::{Track, TrackKind, TrackSend};
+    let fixture = Fixture::new();
+    let mut state = snapshot();
+    let ret = Track::new("Return A", TrackKind::Effect);
+    let ret_id = ret.id;
+    state.tracks[0].set_send(ret_id, 65);
+    state.tracks.push(ret);
+    state.levels.push(75);
+    state.pans.push(50);
+
+    let path = fixture.0.join("sends_session.loro");
+    state.document("Sends").unwrap().save(&path).unwrap();
+    let (loaded, _, _) = Snapshot::load(&path).unwrap();
+    assert_eq!(
+        loaded.tracks[0].sends,
+        vec![TrackSend {
+            target: ret_id,
+            amount: 65,
+        }]
+    );
+    assert!(loaded.tracks.last().unwrap().is_return());
+}
+
+#[test]
+fn midi_bindings_round_trip_through_loro() {
+    use elevate::musical::{
+        fx::FxId,
+        midi_map::{MidiBindTarget, MidiBinding, MidiSource},
+        model::InstrumentId,
+    };
+    let fixture = Fixture::new();
+    let mut state = snapshot();
+    let track_id = state.tracks[0].id;
+    let target_id = state.tracks[1].id;
+    state.midi_bindings = vec![
+        MidiBinding {
+            source: MidiSource::Cc(21),
+            target: MidiBindTarget::TrackVolume(track_id),
+            min: 0.0,
+            max: 1.0,
+        },
+        MidiBinding {
+            source: MidiSource::Cc(22),
+            target: MidiBindTarget::TrackSend {
+                track: track_id,
+                target: target_id,
+            },
+            min: 0.1,
+            max: 0.9,
+        },
+        MidiBinding {
+            source: MidiSource::Cc(23),
+            target: MidiBindTarget::FxParam {
+                track: track_id,
+                fx: FxId(77),
+                param: 3,
+            },
+            min: 0.0,
+            max: 1.0,
+        },
+        MidiBinding {
+            source: MidiSource::Cc(24),
+            target: MidiBindTarget::VstInstrumentParam {
+                instrument: InstrumentId(5),
+                param: 1024,
+            },
+            min: 0.0,
+            max: 1.0,
+        },
+    ];
+
+    let path = fixture.0.join("midi_bindings_session.loro");
+    state.document("MidiLearn").unwrap().save(&path).unwrap();
+    let (loaded, _, _) = Snapshot::load(&path).unwrap();
+    assert_eq!(loaded.midi_bindings.len(), state.midi_bindings.len());
+    for expected in &state.midi_bindings {
+        assert!(loaded.midi_bindings.contains(expected));
+    }
 }

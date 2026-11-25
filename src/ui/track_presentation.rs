@@ -4,11 +4,67 @@ use elevate::musical::track::TrackKind;
 
 impl DawApp {
     pub(in crate::ui) fn track_layout(&self) -> TrackLayout {
-        TrackLayout::build(
+        let mut layout = TrackLayout::build(
             &self.tracks,
             &self.track_presentation,
             self.ds.track_header_height,
-        )
+        );
+        let midi = self
+            .timeline
+            .midi_clips()
+            .map(|c| (c.track, c.start_beat, c.end_beat(), c.id));
+        let audio = self
+            .timeline
+            .clip
+            .iter()
+            .chain(&self.timeline.other_audio_clips)
+            .map(|c| {
+                (
+                    c.track,
+                    c.start_beat,
+                    c.end_beat(self.timeline.tempo.bpm()),
+                    c.id,
+                )
+            });
+        let spans = midi.chain(audio);
+        if let Some(old) = &self.timeline.layout
+            && (self.timeline.holds_clip_layout() || old.spans.iter().copied().eq(spans.clone()))
+        {
+            layout.counts = old.counts.clone();
+            layout.slots = old.slots.clone();
+            layout.spans = old.spans.clone();
+        } else {
+            let spans: Vec<_> = spans.collect();
+            layout.assign_layers(spans.clone());
+            layout.spans = std::rc::Rc::new(spans);
+        }
+        layout.height = 0.0;
+        for row in &mut layout.rows {
+            let folded = self
+                .track_presentation
+                .get(&self.tracks[row.track].id)
+                .is_some_and(|p| p.z_folded);
+            if !folded {
+                let track = &self.tracks[row.track];
+                let bands = track.chain.bands();
+                row.bands = bands.len();
+                row.selected_band = self
+                    .fx
+                    .tejer
+                    .filter(|target| target.track == track.id && !bands.is_empty())
+                    .map(|target| {
+                        bands
+                            .iter()
+                            .position(|b| Some(b.chain) == target.node)
+                            .unwrap_or(0)
+                    });
+                row.lanes = layout.counts.get(&row.track).copied().unwrap_or(1) + row.bands;
+            }
+            row.top = layout.height;
+            row.height *= row.lanes as f32;
+            layout.height += row.height;
+        }
+        layout
     }
 
     pub(in crate::ui) fn refresh_track_layout(&mut self) {

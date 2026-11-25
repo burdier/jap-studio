@@ -6,7 +6,7 @@ use crate::ui::{
 use elevate::musical::fx::{FxEdit, FxPlacement};
 use gpui::{
     Context, Div, IntoElement, MouseButton, MouseDownEvent, Render, Stateful, Window, div,
-    prelude::*, rgb,
+    prelude::*, px, rgb,
 };
 
 impl Render for FxTree {
@@ -36,6 +36,36 @@ impl Render for FxTree {
                             .text_color(rgb(style.muted))
                             .child("TRACK FX"),
                     )
+                    .children([("Ruta", false), ("Árbol", true)].into_iter().map(
+                        |(label, tree)| {
+                            div()
+                                .id(label)
+                                .px_2()
+                                .py_1()
+                                .rounded(px(style.radius))
+                                .cursor_pointer()
+                                .bg(rgb(if self.tree_mode == tree {
+                                    style.selected
+                                } else {
+                                    style.panel
+                                }))
+                                .text_color(rgb(if self.tree_mode == tree {
+                                    style.text
+                                } else {
+                                    style.muted
+                                }))
+                                .child(label)
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(move |this, _, window, cx| {
+                                        this.tree_mode = tree;
+                                        window.focus(&this.focus, cx);
+                                        cx.stop_propagation();
+                                        cx.notify();
+                                    }),
+                                )
+                        },
+                    ))
                     .child(
                         div()
                             .id("close-fx")
@@ -75,7 +105,7 @@ impl Render for FxTree {
                                 .child(
                                     div()
                                         .text_color(rgb(style.text))
-                                        .child("+ Add · Instrumento / Efecto FX"),
+                                        .child("+ Instrumento / efecto"),
                                 ),
                         )
                         .child(div().text_color(rgb(style.muted)).child("A"))
@@ -179,20 +209,28 @@ impl Render for FxTree {
                         .child("Selecciona una pista para administrar sus efectos."),
                 )
             })
-            .child(tree::list(
-                "fx-nodes",
-                self.rows.len(),
-                &scroll,
-                cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
-                    range.map(|i| this.render_row(i, cx)).collect()
-                }),
-            ))
-            .child(
-                tree::footer(style)
-                    .child("Doble clic / Enter: parámetros · A: Add")
-                    .child("B: bypass · Delete: quitar · F2: nombre")
-                    .child("Arrastra: borde para ordenar, centro para entrar"),
-            )
+            .when(!self.tree_mode, |panel| {
+                panel.when_some(self.target(), |panel, target| {
+                    panel.child(self.render_route(target, cx))
+                })
+            })
+            .when(self.tree_mode, |panel| {
+                panel
+                    .child(tree::list(
+                        "fx-nodes",
+                        self.rows.len(),
+                        &scroll,
+                        cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
+                            range.map(|i| this.render_row(i, cx)).collect()
+                        }),
+                    ))
+                    .child(
+                        tree::footer(style)
+                            .child("Doble clic / Enter: parámetros · A: Add")
+                            .child("B: bypass · Delete: quitar · F2: nombre")
+                            .child("Arrastra: borde para ordenar, centro para entrar"),
+                    )
+            })
     }
 }
 impl FxTree {

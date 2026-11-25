@@ -384,7 +384,7 @@ impl ToolbarAction {
             Self::Catalog(id) | Self::RollCatalog(id) => match id {
                 "action.fx.parallel" => "Chain",
                 "action.track.group" => "Group",
-                "action.vim.toggle" => "Vim",
+                "action.track.tuner" => "Afinador",
                 "action.export" => "Exportar",
                 "action.export.settings" => "Exportación",
                 "action.play" => "Play",

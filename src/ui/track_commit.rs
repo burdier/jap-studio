@@ -44,7 +44,20 @@ impl DawApp {
         select_new: bool,
         revision: Option<u64>,
     ) {
-        let retired = if revision.is_none()
+        // El mezclador conserva sus voces, racks y buses por TrackId. El orden
+        // visual únicamente cambia los índices que usa el próximo plan musical.
+        let reordered = tracks.len() == self.tracks.len()
+            && tracks.len() == sources.len()
+            && tracks.iter().zip(&sources).all(|(track, source)| {
+                source.and_then(|index| self.tracks.get(index)) == Some(track)
+            })
+            && tracks
+                .iter()
+                .map(|track| track.id)
+                .ne(self.tracks.iter().map(|track| track.id));
+        let retired = if reordered {
+            0
+        } else if revision.is_none()
             && self.pattern_loop_beats.is_none()
             && let Some(player) = &self.player
             && !player.finished()
@@ -83,7 +96,15 @@ impl DawApp {
             .collect();
         self.timeline
             .remap_tracks_preserving_selection(&sources, &original, preserve_midi);
-        self.midi_mapper.remap_tracks(&original);
+        self.prune_midi_bindings_for(&tracks);
+        self.frozen_tracks
+            .retain(|id, _| tracks.iter().any(|t| t.id == *id));
+        if reordered
+            && let Some(clip) = &mut self.piano_roll.opened_clip
+            && let Some(Some(track)) = original.get(clip.track)
+        {
+            clip.track = *track;
+        }
         self.track_levels = levels;
         self.track_pans = pans;
         self.ds.track_color_override = sources
@@ -207,7 +228,11 @@ impl DawApp {
         self.sync_midi_focus();
         self.apply_track_gains();
         self.track_revision = revision.unwrap_or_else(|| self.track_revision.wrapping_add(1));
-        self.status_message = if retired > 0 {
+        self.status_message = if reordered
+            && (self.player.is_some() || self.file_playback.is_some())
+        {
+            "Pista reordenada · Play continúa".into()
+        } else if retired > 0 {
             format!(
                 "Ramas retiradas: {retired} · Play continúa · el reparto de clips se actualiza al volver a pulsar Play"
             )
@@ -217,5 +242,8 @@ impl DawApp {
                 self.tracks.len()
             )
         };
+        if reordered {
+            self.publish_clip_edit();
+        }
     }
 }

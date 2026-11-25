@@ -71,6 +71,10 @@ impl DawApp {
         let Some(clip) = &self.timeline.midi_clip else {
             return;
         };
+        self.fx.editor_track = None;
+        self.timeline.sample_editor.silence();
+        self.timeline.sample_editor.id = None;
+        self.timeline.sample_editor.draft = None;
         self.cursor_row = clip.track;
         let cursor = Tick(
             (((self.timeline.edit_beat() - clip.start_beat + clip.trim_start) * PPQ as f64).round()
@@ -93,8 +97,14 @@ impl DawApp {
         self.piano_roll.control_drag = false;
         self.piano_roll.selected_control = None;
         self.piano_roll.lane_menu = None;
+        self.piano_roll.lane_preset_menu = None;
         self.piano_roll.choices = None;
-        self.piano_roll.viewport = Default::default();
+        let bar_beats = f64::from(self.timeline.meter.ticks_per_bar() as f32 / PPQ as f32);
+        self.piano_roll.viewport = super::navigation::RollViewport::for_clip(
+            clip.pattern_beats(),
+            bar_beats,
+            clip.pattern.notes(),
+        );
         self.timeline.end_clip_drag();
     }
 
@@ -114,6 +124,11 @@ impl DawApp {
                         .position(|item| item.lane == self.piano_roll.active_lane)
                         .unwrap_or(0),
                 });
+            }
+            RollAction::SetLaneScope(scope) => self.piano_roll.lane_scope = scope,
+            RollAction::ApplyLanePreset(preset) => {
+                self.piano_roll.lane_preset_menu = None;
+                self.apply_lane_preset(preset);
             }
             RollAction::TrackSolo => {
                 if let Some(clip) = &self.timeline.midi_clip {
@@ -138,7 +153,19 @@ impl DawApp {
                     .viewport
                     .zoom_vertical_at(grid, grid.notes.center(), factor);
             }
-            RollAction::ResetView => self.piano_roll.viewport = Default::default(),
+            RollAction::ResetView => {
+                if let Some(clip) = &self.timeline.midi_clip {
+                    let bar_beats =
+                        f64::from(self.timeline.meter.ticks_per_bar() as f32 / PPQ as f32);
+                    self.piano_roll.viewport = super::navigation::RollViewport::for_clip(
+                        clip.pattern_beats(),
+                        bar_beats,
+                        clip.pattern.notes(),
+                    );
+                } else {
+                    self.piano_roll.viewport = Default::default();
+                }
+            }
             RollAction::Close if self.piano_roll_window.is_some() => {
                 self.toggle_piano_roll_window(cx)
             }
@@ -152,11 +179,17 @@ impl DawApp {
             RollAction::NextClip => self.step_roll_clip(1),
             RollAction::Tool(tool) => {
                 self.end_roll_drag();
+                let tool = if tool == RollTool::Pitch && self.piano_roll.tool == tool {
+                    RollTool::Select
+                } else {
+                    tool
+                };
                 self.piano_roll.tool = tool;
                 self.piano_roll.hint = match tool {
                     RollTool::Select => "Pointer: clic selecciona · arrastra para mover · doble clic crea / borra · Delete elimina selección",
                     RollTool::Box => "Arrastra una región para seleccionar · Delete: borrar · Esc: cancelar",
                     RollTool::EraseRegion => "Arrastra una región; al soltar se eliminan sus notas · Esc: cancelar",
+                    RollTool::Pitch => "Arrastra sobre la curva · Shift: cents · doble clic: quitar punto · Alt+clic: restablecer nota",
                     _ => "Herramienta MIDI activa",
                 }.into();
             }

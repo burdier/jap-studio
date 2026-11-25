@@ -1,5 +1,6 @@
 //! Formulario declarativo: estado de controles Kit y validación del contrato headless.
 mod defaults;
+mod export;
 mod input;
 mod submit;
 
@@ -20,6 +21,7 @@ pub(super) struct ActionForm {
     pub scroll: ScrollHandle,
     pub focus: FocusHandle,
     pub window_id: WindowId,
+    pub export: Option<export::ExportForm>,
     fx_target: Option<super::fx::FxTarget>,
     tool: Option<PackageForm>,
     return_focus: Option<FocusHandle>,
@@ -54,6 +56,7 @@ impl ActionForm {
             scroll: ScrollHandle::new(),
             focus: cx.focus_handle(),
             window_id: window.window_handle().window_id(),
+            export: None,
             fx_target: None,
             tool: None,
             return_focus: window.focused(cx),
@@ -75,7 +78,11 @@ impl ActionForm {
     }
 
     fn command(&self, cx: &App) -> Result<String, String> {
-        self.spec.command_with(&self.values(cx)?)
+        let mut values = self.values(cx)?;
+        if let Some(export) = &self.export {
+            export.add_formats(&mut values)?;
+        }
+        self.spec.command_with(&values)
     }
 }
 
@@ -95,9 +102,11 @@ impl DawApp {
         } else {
             None
         };
-        let defaults = self.action_defaults(spec.command, fx_target);
+        let mut defaults = self.action_defaults(spec.command, fx_target);
+        let export = (spec.command == "export").then(|| self.init_export_form(&mut defaults));
         let mut form = ActionForm::new(entry.name.into(), spec.to_owned(), defaults, window, cx);
         form.fx_target = fx_target;
+        form.export = export;
         self.show_action_form(form, window, cx);
     }
 
@@ -119,7 +128,6 @@ impl DawApp {
     }
 
     fn show_action_form(&mut self, form: ActionForm, window: &mut Window, cx: &mut Context<Self>) {
-        self.track_delete_pending = false;
         let released = self.controller.release_all();
         self.apply_midi(released);
         window.focus(&form.focus, cx);

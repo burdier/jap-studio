@@ -6,6 +6,10 @@ impl DawApp {
         command: &str,
         cx: &mut Context<Self>,
     ) -> bool {
+        if command.trim() == "track.tuner" {
+            self.toggle_track_tuner(cx);
+            return true;
+        }
         if !command.starts_with("instrument.vst3.") && !command.starts_with("fx.vst3.") {
             return false;
         }
@@ -38,16 +42,15 @@ impl DawApp {
                 self.remove_vst()
             }
             Ok([name]) if name == "instrument.vst3.editor" && self.vst_selected() => {
-                if let Some(id) = self.tracks.get(self.cursor_row).and_then(|t| t.instrument) {
-                    self.activate_vst(id);
+                if let Some(track) = self.tracks.get(self.cursor_row) {
+                    self.open_track_instrument(track.id);
                 }
-                self.vst.open_editor()
             }
             Ok([name]) if name == "instrument.vst3.editor.close" && self.vst_selected() => {
                 if let Some(id) = self.tracks.get(self.cursor_row).and_then(|t| t.instrument) {
                     self.activate_vst(id);
                 }
-                self.vst.close_editor()
+                self.vst.close_editor();
             }
             Ok([name]) if name == "instrument.vst3.remove" => {
                 self.status_message = "Selecciona la pista con el VST3".into()

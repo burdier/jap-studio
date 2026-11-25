@@ -13,6 +13,21 @@ impl DawApp {
         let Some(form) = self.action_form.as_ref() else {
             return;
         };
+        if form
+            .export
+            .as_ref()
+            .is_some_and(|export| export.running || export.choosing_folder)
+        {
+            return;
+        }
+        if form
+            .export
+            .as_ref()
+            .is_some_and(|export| export.completed.is_some())
+        {
+            self.close_action_form(window, cx);
+            return;
+        }
         if let Some(tool) = &form.tool {
             let result = tool
                 .validate_generation(&self.lua_tools.registry)
@@ -107,6 +122,22 @@ impl DawApp {
         });
         match result {
             Ok(command) => {
+                if form.export.is_some() {
+                    let already_running = self.export_job.is_some();
+                    self.start_export(&command);
+                    if let Some(form) = &mut self.action_form
+                        && let Some(export) = &mut form.export
+                    {
+                        export.running = !already_running && self.export_job.is_some();
+                        form.error = (!export.running).then(|| self.status_message.clone());
+                    }
+                    if self.export_job.is_some() && !already_running {
+                        let focus = self.action_form.as_ref().unwrap().focus.clone();
+                        window.focus(&focus, cx);
+                    }
+                    cx.notify();
+                    return;
+                }
                 if let Some(target) = fx_target {
                     if let Err(error) = self.execute_fx_at(target, &command) {
                         if let Some(form) = self.action_form.as_mut() {

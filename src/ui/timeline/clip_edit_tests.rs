@@ -18,6 +18,7 @@ fn timeline_with_clips() -> Timeline {
     midi.trim_len = Some(6.0);
     timeline.insert_midi_clip(midi);
     timeline.insert_audio_clip(AudioClip {
+        processing: Default::default(),
         id: elevate::musical::clip::ClipId::fresh(),
         name: "Audio".into(),
         file: Arc::new(AudioFile {

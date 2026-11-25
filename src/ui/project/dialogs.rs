@@ -16,10 +16,18 @@ impl DawApp {
                     cx.reveal_path(path);
                     self.status_message = path.display().to_string();
                 } else {
-                    self.status_message = "Guarda el proyecto para crear su carpeta".into();
+                    self.status_message = "Guarda el proyecto para mostrar su ubicación".into();
                 }
             }
             "project.open" => self.confirm_project_open(window, cx),
+            #[cfg(feature = "p2p")]
+            "project.share" => self.share_project(window, cx),
+            #[cfg(feature = "p2p")]
+            "project.join" => self.join_shared_project(cx),
+            #[cfg(feature = "p2p")]
+            "project.leave" => self.leave_shared_project(),
+            #[cfg(feature = "p2p")]
+            "project.identity" => self.open_identity_dialog(window, cx),
             _ => return false,
         }
         cx.notify();
@@ -40,15 +48,7 @@ impl DawApp {
             .project
             .path
             .as_ref()
-            .and_then(|p| {
-                p.parent().and_then(|folder| {
-                    if folder.file_name() == p.file_stem() {
-                        folder.parent()
-                    } else {
-                        Some(folder)
-                    }
-                })
-            })
+            .and_then(|path| path.parent())
             .map(ToOwned::to_owned)
             .or_else(dirs::document_dir)
             .or_else(dirs::home_dir)
@@ -131,6 +131,7 @@ impl DawApp {
         self.project.checked = None;
         self.refresh_project_dirty();
         if !self.project.dirty {
+            autosave::clear_autosave_file();
             return true;
         }
         let prompt = window.prompt(
@@ -150,6 +151,7 @@ impl DawApp {
                 }
             });
             if answer == Ok(2) {
+                autosave::clear_autosave_file();
                 let _ = handle.update(cx, |_, window, _| window.remove_window());
             }
         }));

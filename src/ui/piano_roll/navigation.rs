@@ -26,6 +26,45 @@ impl Default for RollViewport {
 }
 
 impl RollViewport {
+    /// Encuadre cómodo por defecto: muestra ~4 compases (4 acordes) a lo ancho y ~1.8 octavas
+    /// centradas en el registro del clip para evitar tener que hacer zoom al abrir.
+    pub fn for_clip(
+        clip_beats: f64,
+        bar_beats: f64,
+        notes: &[elevate::musical::model::NoteEvent],
+    ) -> Self {
+        let target_beats = (bar_beats.max(1.0) * 4.0).max(4.0);
+        let zoom = if clip_beats.is_finite() && clip_beats > target_beats {
+            (clip_beats / target_beats).clamp(1.0, 64.0)
+        } else {
+            1.0
+        };
+        let total_rows = f32::from(LAST_PITCH - FIRST_PITCH + 1);
+        let (vertical_zoom, top_pitch) = if let (Some(min_p), Some(max_p)) = (
+            notes.iter().map(|n| n.pitch).min(),
+            notes.iter().map(|n| n.pitch).max(),
+        ) {
+            let span = f32::from(max_p.saturating_sub(min_p) + 1);
+            let desired_rows = (span + 8.0).clamp(18.0, 28.0);
+            let vzoom = (total_rows / desired_rows).clamp(1.0, 4.0);
+            let center = (f32::from(min_p) + f32::from(max_p)) * 0.5;
+            let top = center + desired_rows * 0.5;
+            (vzoom, top)
+        } else {
+            // Registro cómodo para acordes (C3..E5 aprox., ~22 filas legibles)
+            let desired_rows = 22.0_f32;
+            ((total_rows / desired_rows).clamp(1.0, 4.0), 76.0)
+        };
+        let mut viewport = Self {
+            zoom,
+            vertical_zoom,
+            first_beat: 0.0,
+            top_pitch,
+        };
+        viewport.top_pitch = viewport.bounded_top_pitch();
+        viewport
+    }
+
     /// Super controla la altura; Ctrl controla el ancho. El resto conserva la
     /// navegación común, incluidos Ctrl+rueda y el desplazamiento con dos dedos.
     pub fn scroll(&mut self, grid: Grid, beats: f64, event: &ScrollEvent) {
@@ -109,14 +148,7 @@ impl DawApp {
         let Some(clip) = self.timeline.midi_clip.as_ref() else {
             return;
         };
-        if !self.instrument.clip_playing() && !self.sampler.clip_playing() {
-            return;
-        }
-        let Some(beat) = self
-            .timeline
-            .visual_playhead()
-            .map(|beat| beat - clip.start_beat + clip.trim_start)
-        else {
+        let Some(beat) = self.timeline.clip_visual_playhead(clip) else {
             return;
         };
         let beats = clip.pattern_beats();
@@ -128,7 +160,7 @@ impl DawApp {
     }
 
     pub(in crate::ui) fn scroll_piano_roll(&mut self, event: &ScrollEvent, cx: &mut Context<Self>) {
-        if self.action_form.is_some() || self.mode == crate::ui::VimMode::Command {
+        if self.action_form.is_some() || self.command_open {
             return;
         }
         if event.modifiers.alt && !event.modifiers.platform && !event.modifiers.control {
@@ -159,7 +191,7 @@ impl DawApp {
     }
 
     pub(in crate::ui) fn pinch_piano_roll(&mut self, event: &PinchEvent, cx: &mut Context<Self>) {
-        if self.action_form.is_some() || self.mode == crate::ui::VimMode::Command {
+        if self.action_form.is_some() || self.command_open {
             return;
         }
         if event.modifiers.shift

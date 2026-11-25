@@ -1,6 +1,6 @@
 //! Atajo compartido de transporte; reutiliza los controladores de Play y Stop existentes.
 mod audio;
-use super::{DawApp, VimMode};
+use super::DawApp;
 use gpui::KeyDownEvent;
 
 impl DawApp {
@@ -10,7 +10,7 @@ impl DawApp {
         if self.handle_transport_key(event) {
             return true;
         }
-        if self.mode == VimMode::Command
+        if self.command_open
             || self.action_form.is_some()
             || self.palette.is_open()
             || self.settings.is_visible()
@@ -43,11 +43,11 @@ impl DawApp {
             return false;
         }
         let modifiers = key.modifiers;
-        if modifiers.control || modifiers.alt || modifiers.platform || modifiers.shift {
+        if modifiers.control || modifiers.alt || modifiers.platform {
             return false;
         }
         // Estos contextos usan Espacio para editar texto o activar sus propios controles.
-        if self.mode == VimMode::Command
+        if self.command_open
             || self.action_form.is_some()
             || self.palette.is_open()
             || self.settings.is_visible()
@@ -59,22 +59,31 @@ impl DawApp {
             return false;
         }
         if !event.is_held {
-            self.track_delete_pending = false;
             self.last_key = "space".into();
-            self.toggle_playback();
+            self.toggle_transport(modifiers.shift);
         }
         true
     }
 
     pub(in crate::ui) fn toggle_playback(&mut self) {
+        self.toggle_transport(false);
+    }
+
+    fn toggle_transport(&mut self, resume: bool) {
         if self.player.is_some()
             || self.file_playback.is_some()
+            || self.is_audio_recording()
             || self.instrument.clip_playing()
             || self.sampler.clip_playing()
             || self.vst_any_clip_playing()
         {
-            self.stop_all();
-            self.status_message = "Detenido".into();
+            self.stop_transport();
+        } else if resume && self.center_view == super::CenterView::Arrangement {
+            self.play_audio_from(
+                self.timeline
+                    .last_stop_beat
+                    .unwrap_or(self.timeline.edit_beat()),
+            );
         } else {
             self.play_context();
         }

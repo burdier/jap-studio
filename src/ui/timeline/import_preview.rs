@@ -1,5 +1,6 @@
 //! Sombra de inserción de archivos externos. No carga archivos ni modifica clips/cursor.
 use super::{DesignSystem, Timeline, viewport::Viewport};
+use elevate::explorer::EntryKind;
 use gpui::{
     App, Bounds, ContentMask, Pixels, TextAlign, TextRun, Window, fill, point, px, rgb, rgba, size,
 };
@@ -8,22 +9,16 @@ use std::path::PathBuf;
 #[derive(Clone)]
 pub(crate) struct ImportPreview {
     label: String,
+    stacked: bool,
 }
 
 impl Timeline {
     pub(crate) fn preview_import(&mut self, paths: &[PathBuf]) {
         self.import_preview = match paths {
             [path] => {
-                let extension = path
-                    .extension()
-                    .and_then(|value| value.to_str())
-                    .unwrap_or("")
-                    .to_ascii_lowercase();
-                let kind = match extension.as_str() {
-                    "mid" | "midi" => "MIDI",
-                    "wav" | "wave" | "flac" | "mp3" | "ogg" | "oga" | "aac" | "m4a" | "mp4" => {
-                        "Audio"
-                    }
+                let kind = match EntryKind::for_file(path) {
+                    EntryKind::Midi => "MIDI",
+                    EntryKind::Audio => "Audio",
                     _ => {
                         self.import_preview = None;
                         return;
@@ -34,6 +29,18 @@ impl Timeline {
                         "{kind} · {}",
                         path.file_name().unwrap_or_default().to_string_lossy()
                     ),
+                    stacked: false,
+                })
+            }
+            paths
+                if paths.len() > 1
+                    && paths
+                        .iter()
+                        .all(|path| EntryKind::for_file(path) == EntryKind::Audio) =>
+            {
+                Some(ImportPreview {
+                    label: format!("{} audios · pistas nuevas", paths.len()),
+                    stacked: true,
                 })
             }
             _ => None,
@@ -78,22 +85,29 @@ impl ImportPreview {
         if !bounds.contains(&position) {
             return;
         }
-        let Some(row) = layout.at_y(f32::from(position.y - bounds.top())) else {
-            return;
+        let local_y = f32::from(position.y - bounds.top());
+        let (color, row_top, row_height) = match layout.at_y(local_y) {
+            Some(row) => (design.track_color(row.track), row.top, row.height),
+            None if self.stacked => (
+                design.accent,
+                layout
+                    .height
+                    .min((f32::from(bounds.size.height) - 36.0).max(0.0)),
+                36.0,
+            ),
+            None => return,
         };
-        let track = row.track;
         let beat = viewport
             .beat_at(f64::from(f32::from(position.x - bounds.left())))
             .max(0.0);
-        let color = design.track_color(track);
         let x = bounds.left() + px(viewport.x_at(beat) as f32);
-        let y = bounds.top() + px(row.top + 4.0);
+        let y = bounds.top() + px(row_top + 4.0);
         // Marca de entrada de un compás, no una estimación de duración del archivo.
         let rect = Bounds::new(
             point(x, y),
             size(
                 px((viewport.pixels_per_beat * beats_per_bar) as f32),
-                px((row.height - 8.0).max(1.0)),
+                px((row_height - 8.0).max(1.0)),
             ),
         );
         window.paint_quad(fill(rect, rgba((color << 8) | 0x38)));
@@ -174,5 +188,12 @@ mod tests {
         assert!(timeline.import_preview.is_none());
         timeline.preview_import(&[PathBuf::from("one.mid"), PathBuf::from("two.wav")]);
         assert!(timeline.import_preview.is_none());
+        timeline.preview_import(&[PathBuf::from("one.wav"), PathBuf::from("two.FLAC")]);
+        assert!(
+            timeline
+                .import_preview
+                .as_ref()
+                .is_some_and(|preview| preview.stacked)
+        );
     }
 }

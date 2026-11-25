@@ -14,13 +14,39 @@ use gpui::{AppContext, Context};
 use std::path::PathBuf;
 
 impl DawApp {
-    pub(in crate::ui) fn poll_vst_transport_shortcuts(&mut self) {
-        let mut toggles = self.vst.take_transport_toggles();
-        for vst in self.vst_instances.values() {
-            toggles = toggles.wrapping_add(vst.take_transport_toggles());
+    pub(super) fn sync_vst_editors(&mut self) {
+        use crate::audio::vst3::EditorMidiKey;
+        let midi = self.controller.enabled();
+        let mut keys = Vec::new();
+        let mut toggles = 0u32;
+        for vst in std::iter::once(&self.vst).chain(self.vst_instances.values()) {
+            if let Some(editor) = vst.editor() {
+                editor.set_midi_enabled(midi);
+                editor.drain_midi_keys(&mut keys);
+                toggles = toggles.wrapping_add(editor.take_transport_toggles());
+            }
         }
         for effect in self.vst_effects.instances.values() {
+            effect.editor.set_midi_enabled(midi);
+            effect.editor.drain_midi_keys(&mut keys);
             toggles = toggles.wrapping_add(effect.editor.take_transport_toggles());
+        }
+        for event in keys {
+            match event {
+                EditorMidiKey::Key { key, down, repeat } => {
+                    let mut text = [0; 4];
+                    let key = char::from(key).encode_utf8(&mut text);
+                    if down {
+                        self.controller_key_down(key, repeat);
+                    } else if let Some(message) = self.controller.key_up(key) {
+                        self.apply_midi([message]);
+                    }
+                }
+                EditorMidiKey::Release => {
+                    let messages = self.controller.release_all();
+                    self.apply_midi(messages);
+                }
+            }
         }
         if toggles % 2 == 1 {
             self.toggle_playback();
@@ -116,7 +142,15 @@ impl DawApp {
             .map(|track| track.instrument);
         let expected = config.clone();
         let path = bundle.clone();
-        self.status_message = "Cargando instrumento VST3 mediante yabridge…".into();
+        let format = if bundle
+            .components()
+            .any(|part| part.as_os_str() == "yabridge")
+        {
+            "mediante yabridge"
+        } else {
+            "nativo"
+        };
+        self.status_message = format!("Cargando instrumento VST3 {format}…");
         let work =
             cx.background_spawn(async move { VstInstrument::prepare(&path, &config, class) });
         self.vst_task = Some(cx.spawn(async move |this, cx| {

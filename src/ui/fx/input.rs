@@ -46,9 +46,6 @@ impl FxTree {
             return;
         }
         cx.stop_propagation();
-        if !self.vim_enabled && matches!(key, "h" | "j" | "k" | "l") {
-            return;
-        }
         let Some(target) = self.target() else {
             return;
         };
@@ -74,21 +71,16 @@ impl FxTree {
             .unwrap_or(0);
         match key {
             "escape" => cx.emit(FxEvent::Close),
-            "a" | "insert" if !event.is_held => cx.emit(FxEvent::Add(target)),
+            "insert" if !event.is_held => cx.emit(FxEvent::Add(target)),
             "delete" if !event.is_held => {
                 if let Some(id) = target.node {
                     cx.emit(FxEvent::Edit(target.track, FxEdit::Remove(id)));
                 }
             }
-            "b" if !event.is_held => {
-                if let Some(id) = target.node {
-                    cx.emit(FxEvent::Edit(target.track, FxEdit::Toggle(id)));
-                }
-            }
             "f2" if !event.is_held => cx.emit(FxEvent::Action(target, "fx.rename")),
             "enter" if !event.is_held => self.activate(current, !self.rows[current].container, cx),
-            "up" | "k" | "down" | "j" => {
-                let index = if matches!(key, "up" | "k") {
+            "up" | "down" => {
+                let index = if key == "up" {
                     current.saturating_sub(1)
                 } else {
                     (current + 1).min(self.rows.len().saturating_sub(1))
@@ -98,12 +90,12 @@ impl FxTree {
                 view.instrument_selected = self.rows.get(index).is_some_and(|row| row.instrument);
                 view.scroll.scroll_to_item(index, ScrollStrategy::Nearest);
             }
-            "right" | "l" | "left" | "h" => {
+            "right" | "left" => {
                 let view = self.views.get(&target.track).unwrap();
                 let closed = target
                     .node
                     .map_or(view.root_closed, |id| view.collapsed.contains(&id));
-                let opening = matches!(key, "right" | "l");
+                let opening = key == "right";
                 if self.rows[current].container && closed == opening {
                     self.activate(current, false, cx);
                 } else {

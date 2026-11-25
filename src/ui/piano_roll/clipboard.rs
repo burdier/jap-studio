@@ -3,6 +3,23 @@ use crate::ui::DawApp;
 use elevate::musical::time::Tick;
 
 impl DawApp {
+    pub(super) fn duplicate_roll_notes(&mut self) {
+        let clipboard = std::mem::take(&mut self.piano_roll.copied_notes);
+        self.roll_copy(false);
+        if let Some(end) = self
+            .piano_roll
+            .copied_notes
+            .iter()
+            .map(|(note, _)| note.start.0 + note.duration.0)
+            .max()
+        {
+            let cursor = std::mem::replace(&mut self.piano_roll.cursor, Tick(end));
+            self.roll_paste();
+            self.piano_roll.cursor = cursor;
+        }
+        self.piano_roll.copied_notes = clipboard;
+    }
+
     pub(in crate::ui) fn roll_copy(&mut self, cut: bool) {
         let Some(clip) = self.timeline.midi_clip.as_ref() else {
             return;
@@ -20,7 +37,7 @@ impl DawApp {
                     || (self.piano_roll.selected_notes.is_empty()
                         && self.piano_roll.selected == Some(note.id))
             })
-            .map(|note| (*note, clip.muted_notes.contains(&note.id)))
+            .map(|note| (note.clone(), clip.muted_notes.contains(&note.id)))
             .collect();
         if notes.is_empty() {
             self.piano_roll.hint = "Selecciona notas para copiar".into();
@@ -28,6 +45,8 @@ impl DawApp {
         }
         let count = notes.len();
         if cut {
+            let ids = [clip.id];
+            let before = self.timeline.midi_edit_draft(&ids);
             self.stop_audio();
             if let Some(clip) = self.timeline.midi_clip.as_mut() {
                 clip.edit_pattern(|pattern| {
@@ -41,6 +60,7 @@ impl DawApp {
             }
             self.piano_roll.selected = None;
             self.piano_roll.selected_notes.clear();
+            self.timeline.commit_midi_edit(before, &ids);
         }
         self.piano_roll.copied_notes = notes;
         self.piano_roll.hint = format!(
@@ -77,7 +97,7 @@ impl DawApp {
                 .and_then(|track| track.instrument)
                 .unwrap_or(note.instrument);
             match pattern.add_note_copy(
-                *note,
+                note,
                 Tick(note.start.0 + offset),
                 note.duration,
                 instrument,
@@ -95,11 +115,14 @@ impl DawApp {
                 }
             }
         }
+        let ids = [clip.id];
+        let before = self.timeline.midi_edit_draft(&ids);
         self.stop_audio();
         if let Some(clip) = self.timeline.midi_clip.as_mut() {
             clip.replace_pattern(pattern);
             clip.muted_notes = muted;
         }
+        self.timeline.commit_midi_edit(before, &ids);
         self.piano_roll.hint = format!("{} notas pegadas", selected.len());
         self.piano_roll.selected = selected.first().copied();
         self.piano_roll.selected_notes = selected;

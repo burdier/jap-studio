@@ -1,5 +1,5 @@
 //! Operaciones de pistas compartidas por menú, catálogo y comandos.
-use super::{CenterView, DawApp, VimMode};
+use super::{CenterView, DawApp};
 use elevate::musical::track::{HiloMode, TrackEdit, TrackKind, edit_tracks};
 
 impl DawApp {
@@ -197,14 +197,10 @@ impl DawApp {
         }
     }
 
-    /// Operador Vim dd y Delete usan la misma eliminación que menú/catálogo.
-    pub(in crate::ui) fn handle_track_delete_key(
-        &mut self,
-        event: &gpui::KeyDownEvent,
-        pending: bool,
-    ) -> bool {
+    /// Delete usa la misma eliminación de pistas que el menú y el catálogo.
+    pub(in crate::ui) fn handle_track_delete_key(&mut self, event: &gpui::KeyDownEvent) -> bool {
         let modifiers = event.keystroke.modifiers;
-        if self.mode != VimMode::Normal
+        if self.command_open
             || self.center_view != CenterView::Arrangement
             || modifiers.control
             || modifiers.alt
@@ -218,39 +214,25 @@ impl DawApp {
             .key_char
             .as_deref()
             .unwrap_or(&event.keystroke.key);
-        match key {
-            "delete" => {
-                if !event.is_held {
-                    self.execute_command("track.delete");
-                }
-                true
+        if key == "delete" {
+            if !event.is_held {
+                self.execute_command("track.delete");
             }
-            "d" if self.vim_enabled => {
-                if self.controller.enabled() {
-                    self.track_delete_pending = false;
-                    return false;
-                }
-                if event.is_held {
-                    self.track_delete_pending = pending;
-                } else if pending {
-                    self.execute_command("track.delete");
-                } else {
-                    self.track_delete_pending = true;
-                    self.status_message =
-                        "d · pulsa d para eliminar las pistas seleccionadas · Esc cancela".into();
-                }
-                true
-            }
-            _ => false,
+            return true;
         }
+        false
     }
 
     pub(in crate::ui) fn select_track(&mut self, index: usize, toggle: bool, range: bool) {
-        self.track_delete_pending = false;
+        self.fx.master_focus = false;
         let Some(track) = self.tracks.get(index) else {
             return;
         };
         let id = track.id;
+        if self.fx.tejer.is_some_and(|t| t.track != id) {
+            self.fx.tejer = None;
+            self.fx.cut_draft = None;
+        }
         if range {
             let anchor = self
                 .track_anchor
@@ -279,7 +261,6 @@ impl DawApp {
     }
 
     pub(in crate::ui) fn edit_track_structure(&mut self, edit: TrackEdit) {
-        self.track_delete_pending = false;
         let mut selected = self.selected_tracks.clone();
         if selected.is_empty() {
             if let Some(track) = self.tracks.get(self.cursor_row) {

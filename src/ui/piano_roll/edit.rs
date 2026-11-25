@@ -134,6 +134,7 @@ impl DawApp {
                     origin: position,
                     current: position,
                     erase: self.piano_roll.tool == RollTool::EraseRegion,
+                    additive: Vec::new(),
                 });
             } else if let Some(note) = hit {
                 if clip.props.locked {

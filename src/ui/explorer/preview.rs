@@ -1,17 +1,29 @@
 //! Preescucha de una sola muestra. Una selección nueva cancela cualquier carga anterior.
 use super::Explorer;
 use crate::audio::{
+    AudioFile,
     device::AudioConfig,
+    fundamental,
     sample_preview::{PreparedSamplePreview, SamplePreview},
 };
 use elevate::explorer::EntryKind;
+use elevate::musical::{clip::MidiClip, track::Track};
 use gpui::{Context, Task};
 use std::{
     path::{Path, PathBuf},
     time::Duration,
 };
 
+#[derive(Clone, Copy)]
+pub(super) struct Root {
+    pub detected: Option<(u8, i32)>,
+    pub chosen: (u8, i32),
+}
+
 pub(super) struct Preview {
+    pub root: Option<(PathBuf, Root)>,
+    pub phrase: bool,
+    pub analysing: Option<Task<()>>,
     pub automatic: bool,
     pub level: u8,
     pub path: Option<PathBuf>,
@@ -23,6 +35,9 @@ pub(super) struct Preview {
 impl Default for Preview {
     fn default() -> Self {
         Self {
+            root: None,
+            phrase: false,
+            analysing: None,
             automatic: false,
             level: 50,
             path: None,
@@ -46,27 +61,45 @@ impl Explorer {
     }
 
     pub(super) fn stop_preview(&mut self) {
+        self.preview.phrase = false;
         self.preview.pending = None;
         self.preview.stream = None;
         self.preview.path = None;
     }
 
     pub(super) fn toggle_sample_preview(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        if self.preview.path.as_ref() == Some(&path) {
+        if self.preview.path.as_ref() == Some(&path) && !self.preview.phrase {
             self.stop_preview();
             cx.notify();
         } else {
-            self.play_preview(path, false, cx);
+            self.play_preview(path, false, None, cx);
         }
     }
 
+    pub(super) fn restart_sample_preview(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        if self.preview.path.as_ref() == Some(&path) && !self.preview.phrase {
+            match &self.preview.stream {
+                Some(stream) if stream.finished().is_ok() => {
+                    stream.rewind();
+                    return;
+                }
+                None => return, // La carga en curso ya arrancará desde el inicio.
+                Some(_) => {}
+            }
+        }
+        self.play_preview(path, false, None, cx);
+    }
+
     pub(super) fn preview_selection(&mut self, audio: Option<PathBuf>, cx: &mut Context<Self>) {
+        if self.preview.phrase && self.preview.path != audio {
+            self.stop_preview();
+        }
         if !self.preview.automatic {
             return;
         }
         match audio {
             Some(path) if self.preview.path.as_ref() != Some(&path) => {
-                self.play_preview(path, true, cx)
+                self.play_preview(path, true, None, cx)
             }
             None => {
                 self.stop_preview();
@@ -93,10 +126,90 @@ impl Explorer {
         cx.notify();
     }
 
-    fn play_preview(&mut self, path: PathBuf, automatic: bool, cx: &mut Context<Self>) {
+    pub(super) fn selected_root(&self, path: &Path) -> Option<Root> {
+        self.preview
+            .root
+            .as_ref()
+            .filter(|(p, _)| p == path)
+            .map(|(_, root)| *root)
+    }
+
+    fn set_detected_root(&mut self, path: &Path, detected: Option<(u8, i32)>) {
+        let selected = self.selected_file().as_deref() == Some(path);
+        if selected && self.selected_root(path).is_none() {
+            self.preview.root = Some((
+                path.to_owned(),
+                Root {
+                    detected,
+                    chosen: detected.unwrap_or((60, 0)),
+                },
+            ));
+        }
+    }
+
+    pub(super) fn detect_root(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        self.preview.root = None;
+        self.status = None;
+        let work_path = path.clone();
+        let job = cx.background_executor().spawn(async move {
+            AudioFile::decode(&work_path)
+                .map(|file| fundamental::stable_root(&file.frames, file.sample_rate))
+        });
+        cx.notify();
+        self.preview.analysing = Some(cx.spawn(async move |this, cx| {
+            let result = job.await;
+            let _ = this.update(cx, |this, cx| {
+                if this.selected_file().as_ref() == Some(&path) {
+                    match result {
+                        Ok(root) => this.set_detected_root(&path, root),
+                        Err(error) => this.status = Some(format!("Nota raíz: {error}")),
+                    }
+                }
+                this.preview.analysing = None;
+                cx.notify();
+            });
+        }));
+    }
+
+    pub(super) fn step_root(&mut self, path: PathBuf, step: i16, cx: &mut Context<Self>) {
+        let mut root = self.selected_root(&path).unwrap_or(Root {
+            detected: None,
+            chosen: (60, 0),
+        });
+        root.chosen = ((i16::from(root.chosen.0) + step).clamp(0, 127) as u8, 0);
+        self.preview.root = Some((path, root));
+        self.stop_preview();
+        cx.notify();
+    }
+
+    pub(in crate::ui) fn preview_phrase(
+        &mut self,
+        path: PathBuf,
+        clip: MidiClip,
+        track: Track,
+        bpm: f64,
+        tuning: (u8, i32),
+        cx: &mut Context<Self>,
+    ) {
+        if self.preview.phrase && self.preview.path.as_ref() == Some(&path) {
+            self.stop_preview();
+            cx.notify();
+        } else {
+            self.play_preview(path, false, Some((clip, track, bpm, tuning)), cx);
+        }
+    }
+
+    fn play_preview(
+        &mut self,
+        path: PathBuf,
+        automatic: bool,
+        phrase: Option<(MidiClip, Track, f64, (u8, i32))>,
+        cx: &mut Context<Self>,
+    ) {
         self.stop_preview();
         self.status = None;
         self.preview.path = Some(path.clone());
+        self.preview.phrase = phrase.is_some();
         let audio = self.preview.audio.clone();
         let executor = cx.background_executor().clone();
         self.preview.pending = Some(cx.spawn(async move |this, cx| {
@@ -104,12 +217,28 @@ impl Explorer {
                 // Deja que las flechas recorran varias filas antes de decodificar.
                 executor.timer(Duration::from_millis(90)).await;
             }
+            let source = path.clone();
+            let is_phrase = phrase.is_some();
             let result = executor
-                .spawn(async move { PreparedSamplePreview::load(&path, &audio) })
+                .spawn(async move {
+                    if let Some((clip, track, bpm, (root, cents))) = phrase {
+                        PreparedSamplePreview::phrase(
+                            &source, clip, track, bpm, root, cents, &audio,
+                        )
+                        .map(|prepared| (prepared, None))
+                    } else {
+                        PreparedSamplePreview::load(&source, &audio)
+                    }
+                })
                 .await;
             let running = this
                 .update(cx, |this, cx| {
-                    match result.and_then(|preview| preview.start(this.preview.level)) {
+                    match result.and_then(|(preview, root)| {
+                        if !is_phrase {
+                            this.set_detected_root(&path, root);
+                        }
+                        preview.start(this.preview.level)
+                    }) {
                         Ok(stream) => {
                             this.preview.stream = Some(stream);
                             cx.notify();

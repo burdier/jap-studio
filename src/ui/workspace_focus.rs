@@ -1,5 +1,5 @@
 //! Ampliación visual reversible. No cambia tamaños guardados, editores ni transporte.
-use super::{CenterView, DawApp, VimMode};
+use super::{CenterView, DawApp};
 use gpui::{Context, KeyDownEvent, Window};
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
@@ -11,6 +11,23 @@ pub(super) enum Panel {
     Fx,
     Explorer,
     Center,
+}
+
+impl Panel {
+    pub(super) fn label(self, center: CenterView) -> &'static str {
+        match self {
+            Self::Arrangement => "Arrangement",
+            Self::PianoRoll => "Piano Roll",
+            Self::Instrument => "Instrumento",
+            Self::Fx => "Track FX",
+            Self::Explorer => "Explorador",
+            Self::Center => match center {
+                CenterView::Arrangement => "Arrangement",
+                CenterView::Session => "Drums",
+                CenterView::Mixer => "Mixer",
+            },
+        }
+    }
 }
 #[derive(Default)]
 pub(super) struct WorkspaceFocus {
@@ -50,7 +67,7 @@ impl DawApp {
             || self.fx.menu.is_some()
             || self.piano_roll.choices.is_some()
             || self.piano_roll.lane_menu.is_some()
-            || self.mode == VimMode::Command
+            || self.command_open
         {
             return false;
         }
@@ -63,7 +80,7 @@ impl DawApp {
             self.apply_roll_action(super::piano_roll::RollAction::ClearSelection, window, cx);
             return true;
         }
-        if key == "f11" || (self.vim_enabled && self.mode == VimMode::Normal && key == "f") {
+        if key == "f11" {
             if !event.is_held {
                 self.toggle_workspace_focus(window, cx);
             }
@@ -80,7 +97,6 @@ impl DawApp {
         false
     }
     pub(super) fn toggle_workspace_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.track_delete_pending = false;
         self.split_drag = None;
         if self.detached_window(window) {
             window.zoom_window();
@@ -112,7 +128,10 @@ impl DawApp {
                 _ => self.focus_handle.clone(),
             };
             window.focus(&focus, cx);
-            self.status_message = "Panel ampliado · f / F11 / Esc: restaurar".into();
+            self.status_message = format!(
+                "Panel ampliado: {} · F11 / Esc para restaurar",
+                panel.label(self.center_view)
+            );
         }
         cx.notify();
     }

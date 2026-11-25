@@ -147,6 +147,7 @@ mod tests {
     #[test]
     fn collection_rebinds_only_the_source_captured_at_start() {
         let mut clip = AudioClip {
+            processing: Default::default(),
             id: ClipId::fresh(),
             name: "Toma".into(),
             file: Arc::new(AudioFile {

@@ -1,5 +1,5 @@
 //! La ventana presenta el mismo editor y observa el mismo clip que el Arrangement.
-use crate::ui::{DawApp, VimMode};
+use crate::ui::DawApp;
 use gpui::{
     App, AppContext, Bounds, Context, Entity, FocusHandle, IntoElement, Render, Subscription,
     TitlebarOptions, Window, WindowBounds, WindowHandle, WindowOptions, div, prelude::*, px, size,
@@ -66,7 +66,8 @@ impl Render for DetachedPianoRoll {
                 .settings
                 .is_visible()
                 .then(|| app.render_settings_overlay(window, cx).into_any_element());
-            let command_bar = (app.mode == VimMode::Command)
+            let command_bar = app
+                .command_open
                 .then(|| app.render_command_bar(cx).into_any_element());
             div()
                 .relative()
@@ -132,7 +133,7 @@ fn open(app: Entity<DawApp>, cx: &mut App) {
         WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
             titlebar: Some(TitlebarOptions {
-                title: Some("Hay · Piano roll".into()),
+                title: Some("Jap Studio · Piano roll".into()),
                 ..Default::default()
             }),
             ..Default::default()

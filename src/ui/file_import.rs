@@ -3,7 +3,11 @@ use super::DawApp;
 use crate::audio::{AudioClip, AudioFile};
 use elevate::{
     explorer::EntryKind,
-    musical::{clip::MidiClip, smf::parse_smf_to_clip_with_meter, track::assign_instrument},
+    musical::{
+        clip::{ClipId, MidiClip},
+        smf::parse_smf_to_clip_with_meter,
+        track::{Track, TrackId, TrackKind, UNITY_LEVEL, assign_instrument},
+    },
 };
 use gpui::{AppContext, Context};
 use std::{path::PathBuf, sync::Arc};
@@ -14,6 +18,174 @@ enum ImportedFile {
 }
 
 impl DawApp {
+    /// La cabecera usa el marcador de edición. En la rejilla manda el punto de caída.
+    pub(super) fn drop_arrangement_files(
+        &mut self,
+        paths: &[PathBuf],
+        header: Option<usize>,
+        window: &mut gpui::Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.timeline.import_preview = None;
+        if self.tracks.is_empty()
+            && !paths.is_empty()
+            && paths
+                .iter()
+                .all(|path| EntryKind::for_file(path) == EntryKind::Audio)
+        {
+            self.import_audio_stack(paths, None, self.timeline.edit_beat(), cx);
+            cx.notify();
+            return;
+        }
+        if paths.len() > 1 {
+            if paths
+                .iter()
+                .any(|path| EntryKind::for_file(path) != EntryKind::Audio)
+            {
+                self.status_message =
+                    "Para importar en varias pistas, suelta solo archivos de audio".into();
+            } else if let Some(beat) = header.map(|_| self.timeline.edit_beat()).or_else(|| {
+                self.timeline.beat_at_position(
+                    window.mouse_position(),
+                    super::timeline::TimelineArea::Lanes,
+                )
+            }) {
+                let anchor = header.or_else(|| {
+                    self.timeline.place_cursor(
+                        window.mouse_position(),
+                        super::timeline::TimelineArea::Lanes,
+                        self.ds.track_header_height,
+                        self.tracks.len(),
+                    )
+                });
+                let anchor = anchor
+                    .and_then(|index| self.tracks.get(index))
+                    .map(|track| track.id);
+                self.import_audio_stack(paths, anchor, beat, cx);
+            }
+            cx.notify();
+            return;
+        }
+        let [path] = paths else { return };
+        if !EntryKind::for_file(path).importable() {
+            self.status_message = "Elige un archivo de audio o MIDI compatible".into();
+            cx.notify();
+            return;
+        }
+        if EntryKind::for_file(path) == EntryKind::Hydrogen {
+            self.import_hydrogen(path.clone(), None, cx);
+            return;
+        }
+        let track = header.or_else(|| {
+            self.timeline.place_cursor(
+                window.mouse_position(),
+                super::timeline::TimelineArea::Lanes,
+                self.ds.track_header_height,
+                self.tracks.len(),
+            )
+        });
+        if let Some(track) = track {
+            self.import_audio(path.clone(), track, self.timeline.edit_beat(), cx);
+        }
+        cx.notify();
+    }
+
+    fn import_audio_stack(
+        &mut self,
+        paths: &[PathBuf],
+        anchor: Option<TrackId>,
+        beat: f64,
+        cx: &mut Context<Self>,
+    ) {
+        if self.import_task.is_some() {
+            self.status_message = "Hay una importación en curso; espera a que termine".into();
+            return;
+        }
+        if self.tracks.len() + paths.len() > 256 {
+            self.status_message = "Arrangement admite hasta 256 pistas".into();
+            return;
+        }
+        let paths = paths.to_vec();
+        self.status_message = format!("Importando {} audios…", paths.len());
+        let decode = cx.background_spawn(async move {
+            paths
+                .iter()
+                .map(|path| {
+                    AudioFile::decode(path).map_err(|error| format!("{} · {error}", path.display()))
+                })
+                .collect::<Result<Vec<_>, _>>()
+        });
+        self.import_task = Some(cx.spawn(async move |this, cx| {
+            let files = decode.await;
+            let _ = this.update(cx, |this, cx| {
+                this.import_task = None;
+                this.status_message =
+                    match files.and_then(|files| this.install_audio_stack(files, anchor, beat)) {
+                        Ok(1) => "Audio importado en una pista nueva".into(),
+                        Ok(count) => format!("{count} audios importados · una pista por archivo"),
+                        Err(error) => format!("No se pudo importar: {error}"),
+                    };
+                cx.notify();
+            });
+        }));
+    }
+
+    fn install_audio_stack(
+        &mut self,
+        files: Vec<AudioFile>,
+        anchor: Option<TrackId>,
+        beat: f64,
+    ) -> Result<usize, String> {
+        let count = files.len();
+        let existing = self.tracks.len();
+        if existing + count > 256 {
+            return Err("Arrangement admite hasta 256 pistas".into());
+        }
+        let insert_at = if let Some(id) = anchor {
+            let index = self
+                .tracks
+                .iter()
+                .position(|track| track.id == id)
+                .ok_or("La pista de destino fue eliminada")?;
+            let group = self.tracks[index].parent.unwrap_or(id);
+            index
+                + 1
+                + self.tracks[index + 1..]
+                    .iter()
+                    .take_while(|track| track.parent == Some(group))
+                    .count()
+        } else {
+            existing
+        };
+        let new_tracks = files.iter().map(|file| {
+            let stem = std::path::Path::new(&file.name)
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or(&file.name);
+            Track::new(stem, TrackKind::Audio)
+        });
+        let mut tracks = self.tracks.clone();
+        tracks.splice(insert_at..insert_at, new_tracks);
+        let mut sources: Vec<_> = (0..existing).map(Some).collect();
+        sources.splice(insert_at..insert_at, std::iter::repeat_n(None, count));
+        let mut levels = self.track_levels.clone();
+        levels.splice(
+            insert_at..insert_at,
+            std::iter::repeat_n(UNITY_LEVEL, count),
+        );
+        let mut pans = self.track_pans.clone();
+        pans.splice(insert_at..insert_at, std::iter::repeat_n(50, count));
+        self.commit_track_plan(tracks, sources, levels, pans, Vec::new(), true, true, None);
+        self.timeline.selected_midi.clear();
+        for (index, file) in files.into_iter().enumerate().rev() {
+            self.timeline
+                .insert_audio_clip(imported_audio(file, insert_at + index, beat));
+        }
+        self.timeline.set_edit_beat(beat);
+        self.publish_clip_edit();
+        Ok(count)
+    }
+
     pub(super) fn import_audio(
         &mut self,
         path: PathBuf,
@@ -34,8 +206,6 @@ impl DawApp {
             .instrument
             .unwrap_or(self.instrument.id());
         let meter = self.timeline.meter;
-        self.stop_audio();
-        self.stop_pattern();
         self.status_message = format!("Importando {}…", path.display());
         let decode = cx.background_spawn(async move {
             if EntryKind::for_file(&path) == EntryKind::Midi {
@@ -64,8 +234,6 @@ impl DawApp {
                 };
                 match result {
                     Ok(file) => {
-                        this.stop_audio();
-                        this.stop_pattern();
                         match file {
                             ImportedFile::Midi(mut clip) => {
                                 clip.track = track;
@@ -94,22 +262,15 @@ impl DawApp {
                                     file.duration(),
                                     file.sample_rate
                                 );
-                                this.timeline.insert_audio_clip(AudioClip {
-                                    id: elevate::musical::clip::ClipId::fresh(),
-                                    name: file.name.clone(),
-                                    file: Arc::new(file),
-                                    source_path_override: None,
-                                    track,
-                                    start_beat,
-                                    props: Default::default(),
-                                    trim_start: 0.0,
-                                    trim_len: None,
-                                });
+                                this.timeline.selected_midi.clear();
+                                this.timeline
+                                    .insert_audio_clip(imported_audio(file, track, start_beat));
                             }
                         }
                         this.select_track(track, false, false);
                         this.timeline.set_edit_beat(start_beat);
                         this.sync_midi_focus();
+                        this.publish_clip_edit();
                     }
                     Err(error) => this.status_message = format!("No se pudo importar: {error}"),
                 }
@@ -117,5 +278,20 @@ impl DawApp {
             });
         }));
         cx.notify();
+    }
+}
+
+fn imported_audio(file: AudioFile, track: usize, start_beat: f64) -> AudioClip {
+    AudioClip {
+        processing: Default::default(),
+        id: ClipId::fresh(),
+        name: file.name.clone(),
+        file: Arc::new(file),
+        source_path_override: None,
+        track,
+        start_beat,
+        props: Default::default(),
+        trim_start: 0.0,
+        trim_len: None,
     }
 }

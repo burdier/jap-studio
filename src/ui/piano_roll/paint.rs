@@ -1,16 +1,50 @@
 //! Pincel continuo, una operación por celda de snap durante cada gesto.
 use super::RollTool;
 use crate::ui::DawApp;
+use elevate::musical::time::PPQ;
 use gpui::{MouseDownEvent, Pixels, Point};
 
 impl DawApp {
     pub(in crate::ui) fn begin_roll_input(&mut self, event: &MouseDownEvent) {
         self.end_roll_drag();
+        let grid = self.piano_roll.grid.get();
+        if event.modifiers.control
+            && self.piano_roll.tool == RollTool::Select
+            && grid.notes.contains(&event.position)
+            && let Some(clip) = &self.timeline.midi_clip
+        {
+            let hit = clip.notes().iter().rev().find(|note| {
+                grid.note_bounds(note.start, note.duration, note.pitch)
+                    .contains(&event.position)
+            });
+            if let Some(note) = hit {
+                let selected = &mut self.piano_roll.selected_notes;
+                if selected.contains(&note.id) {
+                    selected.retain(|id| *id != note.id);
+                } else {
+                    selected.push(note.id);
+                }
+                self.piano_roll.selected = selected.last().copied();
+                self.piano_roll.hint = format!("{} notas seleccionadas", selected.len());
+            } else {
+                self.piano_roll.drag = Some(super::RollDrag::Box {
+                    origin: event.position,
+                    current: event.position,
+                    erase: false,
+                    additive: self.piano_roll.selected_notes.clone(),
+                });
+            }
+            return;
+        }
         if self.handle_roll_pointer(event) {
             return;
         }
         let position = event.position;
         let grid = self.piano_roll.grid.get();
+        if self.piano_roll.tool == RollTool::Pitch && grid.notes.contains(&position) {
+            self.begin_roll_pitch(event);
+            return;
+        }
         if self.piano_roll.velocities
             && grid.velocity.contains(&position)
             && position.x >= grid.notes.left()
@@ -142,6 +176,84 @@ impl DawApp {
             "{} · {} moldeada sobre {count} notas",
             self.piano_roll.active_lane.short_label(),
             shape.label()
+        );
+    }
+
+    /// Abre el menú de patrones si el clic derecho cae en el carril de propiedades de nota.
+    pub(in crate::ui) fn open_lane_preset_menu(&mut self, position: Point<Pixels>) -> bool {
+        let grid = self.piano_roll.grid.get();
+        if !self.piano_roll.velocities
+            || !grid.velocity.contains(&position)
+            || position.x < grid.notes.left()
+            || self.piano_roll.active_lane.note_property().is_none()
+        {
+            return false;
+        }
+        self.piano_roll.lane_menu = None;
+        self.piano_roll.lane_preset_beat = grid.first_beat
+            + f64::from(f32::from(position.x - grid.notes.left()) / grid.pixels_per_beat);
+        self.piano_roll.lane_preset_menu = Some(position);
+        true
+    }
+
+    /// Moldea la propiedad activa como una onda sobre las notas seleccionadas (o todo el clip).
+    pub(in crate::ui) fn apply_lane_preset(&mut self, preset: super::LanePreset) {
+        let Some(property) = self.piano_roll.active_lane.note_property() else {
+            return;
+        };
+        let Some(clip) = self.timeline.midi_clip.as_ref() else {
+            return;
+        };
+        if clip.props.locked {
+            self.piano_roll.hint = "Clip bloqueado".into();
+            return;
+        }
+        let chosen = &self.piano_roll.selected_notes;
+        let scope = self.piano_roll.lane_scope;
+        let bar = ((self.timeline.meter.beats_per_bar() * PPQ as f64).round() as i64).max(1);
+        let clicked_bar = (self.piano_roll.lane_preset_beat * PPQ as f64).floor() as i64 / bar;
+        let mut targets: Vec<_> = clip
+            .notes()
+            .iter()
+            .filter(|note| chosen.len() < 2 || chosen.contains(&note.id))
+            .filter(|note| scope != super::LaneScope::ThisBar || note.start.0 / bar == clicked_bar)
+            .map(|note| (note.id, note.start.0, property.fraction(note)))
+            .collect();
+        if targets.is_empty() {
+            self.piano_roll.hint = "No hay notas en ese alcance".into();
+            return;
+        }
+        targets.sort_by_key(|target| (target.1, target.0));
+        let first = targets[0].1 as f32;
+        let span = (targets[targets.len() - 1].1 as f32 - first).max(1.0);
+        let updates: Vec<_> = targets
+            .iter()
+            .enumerate()
+            .map(|(index, (id, start, current))| {
+                let (t, cycles) = if scope == super::LaneScope::All {
+                    ((*start as f32 - first) / span, 2.0)
+                } else {
+                    ((start % bar) as f32 / bar as f32, 1.0)
+                };
+                (
+                    *id,
+                    property.value_at_fraction(preset.eval(t, cycles, index, *current)),
+                )
+            })
+            .collect();
+        self.stop_audio();
+        let count = updates.len();
+        if let Some(clip) = self.timeline.midi_clip.as_mut() {
+            clip.edit_pattern(|pattern| {
+                for (id, value) in updates {
+                    let _ = pattern.set_note_property(id, property, value);
+                }
+            });
+        }
+        self.piano_roll.hint = format!(
+            "{} · {} aplicado a {count} notas",
+            self.piano_roll.active_lane.short_label(),
+            preset.label()
         );
     }
 }

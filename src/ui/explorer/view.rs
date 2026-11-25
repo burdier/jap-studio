@@ -5,8 +5,8 @@ use crate::ui::{
 };
 use elevate::explorer::EntryKind;
 use gpui::{
-    Context, Div, IntoElement, MouseButton, MouseDownEvent, Render, Stateful, Window, div,
-    prelude::*, px, rgb,
+    Context, Div, IntoElement, MouseButton, MouseDownEvent, Render, Stateful, Window,
+    component::input::Input, div, prelude::*, px, rgb,
 };
 
 use std::path::PathBuf;
@@ -25,6 +25,11 @@ pub(in crate::ui) struct ExplorerSampleDrag {
 
 impl Render for ExplorerSampleDrag {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        let icon = if EntryKind::for_file(&self.path) == EntryKind::Hydrogen {
+            FILE
+        } else {
+            AUDIO
+        };
         div()
             .flex()
             .items_center()
@@ -36,7 +41,7 @@ impl Render for ExplorerSampleDrag {
             .rounded(px(3.0))
             .bg(rgb(self.style.selected))
             .text_color(rgb(self.style.text))
-            .child(render_svg_icon(AUDIO, 13.0, self.style.accent))
+            .child(render_svg_icon(icon, 13.0, self.style.accent))
             .child(
                 div().truncate().child(
                     self.path
@@ -50,19 +55,19 @@ impl Render for ExplorerSampleDrag {
 }
 
 impl Render for Explorer {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.init_search_input(window, cx);
         let style = self.style;
         let empty = self.tree.roots().is_empty();
         let message = self.save_error.as_ref().or(self.status.as_ref()).cloned();
         let selected_status = self
-            .tree
-            .rows()
+            .visible_rows()
             .iter()
             .find(|row| Some(&row.entry.path) == self.selected.as_ref())
             .and_then(|row| row.status.clone());
         tree::panel("library-explorer", style)
             .track_focus(&self.focus)
-            .on_key_down(cx.listener(|this, event, _, cx| this.handle_key(event, cx)))
+            .on_key_down(cx.listener(|this, event, window, cx| this.handle_key(event, window, cx)))
             .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| {
                 if !this.focus.is_focused(window) { cx.emit(ExplorerEvent::Focused); }
                 window.focus(&this.focus, cx);
@@ -98,11 +103,22 @@ impl Render for Explorer {
                         .child("Añade carpetas de audio o MIDI. Sus accesos quedarán guardados hasta que los quites."))
                     .child(div().text_color(rgb(style.muted)).child("Quitar una biblioteca no borra sus archivos.")),
             ))
-            .when(!empty, |panel| panel.child(self.render_preview_controls(cx)).child(
-                tree::list("library-tree", self.tree.rows().len(), &self.scroll, cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
-                    range.map(|index| this.render_row(index, cx)).collect()
-                })),
-            ))
+            .when(!empty, |panel| {
+                panel
+                    .when_some(self.search.input.as_ref(), |panel, input| panel.child(
+                        div().px_2().pb_2().flex_shrink_0()
+                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                            .child(Input::new(input).w_full().cleanable(true)),
+                    ))
+                    .child(self.render_preview_controls(cx))
+                    .child(self.render_root_controls(cx))
+                    .when_some(self.search_message(), |panel, text| panel.child(
+                        div().px_2().pb_1().text_color(rgb(style.muted)).child(text),
+                    ))
+                    .child(tree::list("library-tree", self.visible_rows().len(), &self.scroll, cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
+                        range.map(|index| this.render_row(index, cx)).collect()
+                    })))
+            })
             .child(
                 tree::footer(style)
                     .when_some(message, |footer, text| footer.child(div().text_color(rgb(style.accent)).child(text)))
@@ -113,12 +129,142 @@ impl Render for Explorer {
                     ))
                     .child("Arrastra audio a Drums Latex")
                     .child("Doble clic / Enter: insertar en pista activa")
+                    .child("→ Preescuchar / repetir · Ctrl+F: buscar")
                     .child("En el cursor · e / Esc: cerrar"),
             )
     }
 }
 
 impl Explorer {
+    fn render_root_controls(&self, cx: &mut Context<Self>) -> Div {
+        let container = div()
+            .flex_shrink_0()
+            .flex()
+            .flex_col()
+            .gap_1()
+            .px_2()
+            .pb_2();
+        let Some(path) = self
+            .selected_file()
+            .filter(|p| EntryKind::for_file(p) == EntryKind::Audio)
+        else {
+            return container;
+        };
+        let root = self.selected_root(&path);
+        let chosen = root.map_or((60, 0), |value| value.chosen);
+        let name = elevate::musical::pitch::note_name(chosen.0);
+        let description = match root {
+            Some(root) if root.detected == Some(chosen) => {
+                format!("Raíz ≈ {name} {:+} ¢", chosen.1)
+            }
+            Some(root) if root.detected.is_none() => format!("Sin tono estable · Raíz {name}"),
+            _ => format!("Raíz manual · {name}"),
+        };
+        let detect_label = if self.preview.analysing.is_some() {
+            "Analizando…"
+        } else {
+            "Detectar raíz"
+        };
+        let detect_path = path.clone();
+        let lower_path = path.clone();
+        let higher_path = path.clone();
+        let load_path = path.clone();
+        let hilo_path = path.clone();
+        let phrase_label = if self.preview.phrase && self.preview.path.as_ref() == Some(&path) {
+            "Detener frase"
+        } else {
+            "Preescuchar con la frase"
+        };
+        let style = self.style;
+        let button = |label: &'static str| {
+            div()
+                .px_1()
+                .py_1()
+                .cursor_pointer()
+                .text_color(rgb(style.accent))
+                .hover(move |s| s.bg(rgb(style.selected)))
+                .child(label)
+        };
+        container
+            .child(div().text_color(rgb(style.text)).child(description))
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap_1()
+                    .child(button(detect_label).id("detect-root").on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, _, cx| {
+                            this.detect_root(detect_path.clone(), cx);
+                            cx.stop_propagation();
+                        }),
+                    ))
+                    .child(button("−").id("root-down").on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, _, cx| {
+                            this.step_root(lower_path.clone(), -1, cx);
+                            cx.stop_propagation();
+                        }),
+                    ))
+                    .child(button("+").id("root-up").on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, _, cx| {
+                            this.step_root(higher_path.clone(), 1, cx);
+                            cx.stop_propagation();
+                        }),
+                    ))
+                    .child(button("Usar como raíz").id("load-root").on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, _, cx| {
+                            this.stop_preview();
+                            cx.emit(ExplorerEvent::LoadRoot(
+                                load_path.clone(),
+                                chosen.0,
+                                chosen.1,
+                            ));
+                            cx.stop_propagation();
+                        }),
+                    )),
+            )
+            .when(self.has_phrase, |row| {
+                row.child(
+                    button("Añadir al Hilo")
+                        .id("add-sample-hilo")
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, _, _, cx| {
+                                this.stop_preview();
+                                cx.emit(ExplorerEvent::AddToHilo(
+                                    hilo_path.clone(),
+                                    chosen.0,
+                                    chosen.1,
+                                ));
+                                cx.notify();
+                                cx.stop_propagation();
+                            }),
+                        ),
+                )
+            })
+            .when(self.has_phrase || self.preview.phrase, |row| {
+                row.child(button(phrase_label).id("preview-phrase").on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, _, _, cx| {
+                        if this.preview.phrase && this.preview.path.as_ref() == Some(&path) {
+                            this.stop_preview();
+                            cx.notify();
+                        } else {
+                            cx.emit(ExplorerEvent::PreviewPhrase(
+                                path.clone(),
+                                chosen.0,
+                                chosen.1,
+                            ));
+                        }
+                        cx.stop_propagation();
+                    }),
+                ))
+            })
+    }
+
     fn render_preview_controls(&self, cx: &mut Context<Self>) -> Div {
         let style = self.style;
         let automatic = self.preview.automatic;
@@ -210,7 +356,7 @@ impl Explorer {
     }
 
     fn render_row(&self, index: usize, cx: &mut Context<Self>) -> Stateful<Div> {
-        let row = &self.tree.rows()[index];
+        let row = &self.visible_rows()[index];
         let style = self.style;
         let selected = self.selected.as_ref() == Some(&row.entry.path);
         let color = if row.entry.kind == EntryKind::Other {
@@ -222,7 +368,7 @@ impl Explorer {
             EntryKind::Directory => FOLDER,
             EntryKind::Midi => MIDI,
             EntryKind::Audio => AUDIO,
-            EntryKind::Other => FILE,
+            EntryKind::Other | EntryKind::Hydrogen => FILE,
         };
         let remove_path = row.entry.path.clone();
         tree::row(
@@ -243,53 +389,58 @@ impl Explorer {
                 status: row.status.as_deref(),
             },
         )
+        .when(
+            matches!(row.entry.kind, EntryKind::Audio | EntryKind::Hydrogen),
+            |line| {
+                let drag = ExplorerSampleDrag {
+                    path: row.entry.path.clone(),
+                    style,
+                };
+                line.on_drag(drag, |drag, _, _, cx| cx.new(|_| drag.clone()))
+            },
+        )
         .when(row.entry.kind == EntryKind::Audio, |line| {
-            let drag = ExplorerSampleDrag {
-                path: row.entry.path.clone(),
-                style,
-            };
             let path = row.entry.path.clone();
             let active = self.preview.path.as_ref() == Some(&path);
-            line.on_drag(drag, |drag, _, _, cx| cx.new(|_| drag.clone()))
-                .child(
-                    div()
-                        .id(("library-preview-sample", index))
-                        .ml_1()
-                        .size(px(22.0))
-                        .flex_shrink_0()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .rounded(px(style.radius))
-                        .bg(rgb(if active { style.selected } else { style.panel }))
-                        .hover(move |s| s.bg(rgb(style.hover)))
-                        .cursor_pointer()
-                        .child(render_svg_icon(
-                            if active { PREVIEW_STOP } else { PREVIEW_PLAY },
-                            12.0,
-                            style.accent,
-                        ))
-                        .tooltip(move |window, cx| {
-                            gpui::component::tooltip::Tooltip::new(if active {
-                                "Detener preescucha"
-                            } else {
-                                "Preescuchar muestra"
-                            })
-                            .build(window, cx)
+            line.child(
+                div()
+                    .id(("library-preview-sample", index))
+                    .ml_1()
+                    .size(px(22.0))
+                    .flex_shrink_0()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(style.radius))
+                    .bg(rgb(if active { style.selected } else { style.panel }))
+                    .hover(move |s| s.bg(rgb(style.hover)))
+                    .cursor_pointer()
+                    .child(render_svg_icon(
+                        if active { PREVIEW_STOP } else { PREVIEW_PLAY },
+                        12.0,
+                        style.accent,
+                    ))
+                    .tooltip(move |window, cx| {
+                        gpui::component::tooltip::Tooltip::new(if active {
+                            "Detener preescucha"
+                        } else {
+                            "Preescuchar muestra"
                         })
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(move |this, _, window, cx| {
-                                if !this.focus.is_focused(window) {
-                                    cx.emit(ExplorerEvent::Focused);
-                                }
-                                window.focus(&this.focus, cx);
-                                this.selected = Some(path.clone());
-                                this.toggle_sample_preview(path.clone(), cx);
-                                cx.stop_propagation();
-                            }),
-                        ),
-                )
+                        .build(window, cx)
+                    })
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, window, cx| {
+                            if !this.focus.is_focused(window) {
+                                cx.emit(ExplorerEvent::Focused);
+                            }
+                            window.focus(&this.focus, cx);
+                            this.selected = Some(path.clone());
+                            this.toggle_sample_preview(path.clone(), cx);
+                            cx.stop_propagation();
+                        }),
+                    ),
+            )
         })
         .when(row.root, |line| {
             line.child(

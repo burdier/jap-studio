@@ -60,6 +60,12 @@ impl DawApp {
         viewport: Size<Pixels>,
     ) {
         self.timeline.end_clip_drag();
+        let cursor_track = self.timeline.place_cursor(
+            position,
+            TimelineArea::Lanes,
+            self.ds.track_header_height,
+            self.tracks.len(),
+        );
         let kind = if self
             .timeline
             .activate_midi_clip_at(position, self.ds.track_header_height)
@@ -76,12 +82,7 @@ impl DawApp {
         let track = match kind {
             Some(DragKind::Midi) => self.timeline.midi_clip.as_ref().map(|c| c.track),
             Some(DragKind::Audio) => self.timeline.clip.as_ref().map(|c| c.track),
-            None => self.timeline.place_cursor(
-                position,
-                TimelineArea::Lanes,
-                self.ds.track_header_height,
-                self.tracks.len(),
-            ),
+            None => cursor_track,
         };
         if let Some(track) = track {
             if !self.track_accepts_clips(track) {

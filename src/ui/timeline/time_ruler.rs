@@ -116,8 +116,10 @@ impl Timeline {
                             cx,
                         );
                     }
-                    for (beat, color) in [(Some(cursor), design.accent), (playhead, design.success)]
-                    {
+                    for (beat, color, width) in [
+                        (Some(cursor), design.accent, 1.0),
+                        (playhead, design.success, 2.0),
+                    ] {
                         if let Some(beat) = beat {
                             let x = viewport.x_at(beat);
                             if (0.0..f64::from(f32::from(bounds.size.width))).contains(&x) {
@@ -125,7 +127,7 @@ impl Timeline {
                                 window.paint_quad(fill(
                                     Bounds::new(
                                         point(x, bounds.top()),
-                                        size(px(2.0), bounds.size.height),
+                                        size(px(width), bounds.size.height),
                                     ),
                                     rgb(color),
                                 ));

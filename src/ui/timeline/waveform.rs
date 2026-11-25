@@ -6,7 +6,8 @@ use elevate::musical::{
     time::PPQ,
 };
 use gpui::{
-    App, Bounds, ContentMask, Pixels, TextAlign, TextRun, Window, fill, point, px, rgb, rgba, size,
+    App, Bounds, ContentMask, PathBuilder, Pixels, TextAlign, TextRun, Window, fill, point, px,
+    rgb, rgba, size,
 };
 
 /// Controles compactos dentro del clip, junto al nombre.
@@ -89,8 +90,10 @@ pub(super) fn paint(
     clip: &AudioClip,
     bpm: f64,
     selected: bool,
+    show_fades: bool,
     hover_edge: Option<clip_frame::ClipEdge>,
     viewport: Viewport,
+    wave_zoom: f32,
     bounds: Bounds<Pixels>,
     layout: &crate::ui::track_layout::TrackLayout,
     design: &DesignSystem,
@@ -104,7 +107,7 @@ pub(super) fn paint(
         return;
     }
     let track_color = design.clip_color(clip.track, clip.props);
-    let Some(row) = layout.row(clip.track) else {
+    let Some(row) = layout.clip_row(clip.track, clip.id) else {
         return;
     };
     let lane_top = bounds.top() + px(row.top);
@@ -134,7 +137,8 @@ pub(super) fn paint(
             let wave_h = (f32::from(body_height) - header_h - 2.0).max(8.0);
             let center_y = wave_top + wave_h * 0.5;
             let gain_scale = clip.props.gain_linear().clamp(0.0, 2.5);
-            let amplitude = wave_h * 0.46 * gain_scale.min(1.35);
+            let half_wave = wave_h * 0.48;
+            let amplitude = wave_h * 0.46 * gain_scale.min(1.35) * wave_zoom;
             let norm_scale = 1.0 / clip.file.max_peak.max(0.05);
 
             window.paint_quad(fill(
@@ -149,23 +153,99 @@ pub(super) fn paint(
                 }),
             ));
 
+            let frames_per_pixel =
+                f64::from(clip.file.sample_rate) / ((bpm / 60.0) * viewport.pixels_per_beat);
+            let cycle_secs = clip.cycle_seconds();
+            let clip_first = (clip.trim_start * f64::from(clip.file.sample_rate)).ceil() as usize;
+            let clip_last = if clip.props.looped {
+                clip.file.frames.len()
+            } else {
+                ((clip.trim_start + clip.length_seconds()) * f64::from(clip.file.sample_rate))
+                    .ceil() as usize
+            };
+            let frame_at = |x: f64| {
+                let mut rel_s = (viewport.beat_at(x) - clip.start_beat) / (bpm / 60.0);
+                if clip.props.looped && cycle_secs > 1e-6 && rel_s >= 0.0 {
+                    rel_s %= cycle_secs;
+                }
+                (rel_s + clip.trim_start) * f64::from(clip.file.sample_rate)
+            };
+            let wave_color = if clip.props.muted {
+                design.muted
+            } else {
+                design.text
+            };
+            if !clip.props.looped && frames_per_pixel <= 2.0 {
+                let first = (frame_at(left).floor() as usize).max(clip_first);
+                let last = (frame_at(right).ceil() as usize)
+                    .min(clip_last)
+                    .min(clip.file.frames.len());
+                if let Some(frames) = clip.file.frames.get(first..last) {
+                    let x_first = left + (first as f64 - frame_at(left)) / frames_per_pixel;
+                    for channel in [1, 0] {
+                        let mut path = PathBuilder::stroke(px(1.1));
+                        for (i, frame) in frames.iter().enumerate() {
+                            let y = center_y
+                                - (frame[channel] * norm_scale * amplitude)
+                                    .clamp(-half_wave, half_wave);
+                            let p = point(
+                                bounds.left() + px((x_first + i as f64 / frames_per_pixel) as f32),
+                                px(y),
+                            );
+                            if i == 0 {
+                                path.move_to(p);
+                            } else {
+                                path.line_to(p);
+                            }
+                        }
+                        if let Ok(path) = path.build() {
+                            window.paint_path(
+                                path,
+                                rgba((wave_color << 8) | if channel == 0 { 0xff } else { 0x66 }),
+                            );
+                        }
+                    }
+                }
+            }
             let start_col = left.floor() as usize;
             let end_col = right.ceil() as usize;
-            let mut column = start_col;
+            let mut column = if !clip.props.looped && frames_per_pixel <= 2.0 {
+                end_col
+            } else {
+                start_col
+            };
             while column < end_col {
-                let frame_at = |x: f64| {
-                    (((viewport.beat_at(x) - clip.start_beat).max(0.0) / (bpm / 60.0)
-                        + clip.trim_start)
-                        * f64::from(clip.file.sample_rate)) as usize
+                let f0 = (frame_at(column as f64).floor() as usize).max(clip_first);
+                let f1_raw = frame_at((column + 2) as f64).ceil() as usize;
+                let first = f0.min(clip.file.frames.len());
+                let last = if f1_raw > first {
+                    f1_raw.min(clip_last).min(clip.file.frames.len())
+                } else {
+                    (first + (frames_per_pixel * 2.0).ceil().max(1.0) as usize)
+                        .min(clip_last)
+                        .min(clip.file.frames.len())
                 };
-                let first_peak = (frame_at(column as f64) / PEAK_FRAMES).min(clip.file.peaks.len());
-                let last_peak =
-                    (frame_at((column + 2) as f64) / PEAK_FRAMES + 1).min(clip.file.peaks.len());
-                let slice = clip
-                    .file
-                    .peaks
-                    .get(first_peak..last_peak)
-                    .unwrap_or_default();
+                let detail;
+                let slice = if frames_per_pixel * 2.0 <= PEAK_FRAMES as f64 {
+                    let peak = clip
+                        .file
+                        .frames
+                        .get(first..last)
+                        .unwrap_or_default()
+                        .iter()
+                        .fold([0.0_f32, 0.0_f32], |[lo, hi], &[l, r]| {
+                            [lo.min(l).min(r), hi.max(l).max(r)]
+                        });
+                    detail = [peak];
+                    &detail[..]
+                } else {
+                    let first_peak = (first / PEAK_FRAMES).min(clip.file.peaks.len());
+                    let last_peak = last.div_ceil(PEAK_FRAMES).min(clip.file.peaks.len());
+                    clip.file
+                        .peaks
+                        .get(first_peak..last_peak)
+                        .unwrap_or_default()
+                };
                 if !slice.is_empty() {
                     let mut min_v = 0.0_f32;
                     let mut max_v = 0.0_f32;
@@ -178,12 +258,17 @@ pub(super) fn paint(
                         sum_pos += hi.abs();
                     }
                     let count = slice.len() as f32;
-                    let hi_peak = (max_v * norm_scale).clamp(0.0, 1.0).powf(0.85) * amplitude;
-                    let lo_peak = (min_v.abs() * norm_scale).clamp(0.0, 1.0).powf(0.85) * amplitude;
-                    let hi_rms =
-                        ((sum_pos / count) * norm_scale).clamp(0.0, 1.0).powf(0.85) * amplitude;
-                    let lo_rms =
-                        ((sum_neg / count) * norm_scale).clamp(0.0, 1.0).powf(0.85) * amplitude;
+                    let hi_peak = ((max_v * norm_scale).clamp(0.0, 1.0).powf(0.85) * amplitude)
+                        .min(half_wave);
+                    let lo_peak = ((min_v.abs() * norm_scale).clamp(0.0, 1.0).powf(0.85)
+                        * amplitude)
+                        .min(half_wave);
+                    let hi_rms = (((sum_pos / count) * norm_scale).clamp(0.0, 1.0).powf(0.85)
+                        * amplitude)
+                        .min(half_wave);
+                    let lo_rms = (((sum_neg / count) * norm_scale).clamp(0.0, 1.0).powf(0.85)
+                        * amplitude)
+                        .min(half_wave);
 
                     let x_pos = bounds.left() + px(column as f32);
                     let wave_col = if clip.props.muted {
@@ -217,6 +302,28 @@ pub(super) fn paint(
                 column += 2;
             }
 
+            if clip.props.looped && cycle_secs > 1e-6 {
+                let cycle_beats = cycle_secs * bpm / 60.0;
+                let end_beat = clip.end_beat(bpm);
+                let mut seam = clip.start_beat + cycle_beats;
+                while seam < end_beat - 1e-4 {
+                    let sx = viewport.x_at(seam);
+                    if sx >= left && sx <= right {
+                        window.paint_quad(fill(
+                            Bounds::new(
+                                point(bounds.left() + px(sx as f32), body_top + px(header_h)),
+                                size(px(1.2), px(wave_h)),
+                            ),
+                            rgba((design.cyan << 8) | 0x88),
+                        ));
+                    }
+                    seam += cycle_beats;
+                }
+            }
+
+            if show_fades && !clip.props.locked {
+                super::fades::paint(clip, bpm, viewport, bounds, layout, design, window);
+            }
             let mut name = clip.name.replace(['\n', '\r'], " ");
             if clip.props.gain_db.abs() >= 0.1 {
                 name.push_str(&format!(" [{:+.1}dB]", clip.props.gain_db));
@@ -292,7 +399,7 @@ pub(super) fn paint_midi(
         return;
     }
     let clip_color = design.clip_color(clip.track, clip.props);
-    let Some(row) = layout.row(clip.track) else {
+    let Some(row) = layout.clip_row(clip.track, clip.id) else {
         return;
     };
     let lane_top = bounds.top() + px(row.top);
@@ -329,27 +436,55 @@ pub(super) fn paint_midi(
             } else {
                 clip_color
             };
-            for note in notes {
-                let start_beat =
-                    clip.start_beat + note.start.0 as f64 / PPQ as f64 - clip.trim_start;
-                let end_beat = start_beat + (note.duration.0 as f64 / PPQ as f64).max(0.05);
-                let x0 = viewport.x_at(start_beat).max(left);
-                let x1 = viewport.x_at(end_beat).min(right);
-                if x1 <= x0 {
-                    continue;
+            let cycle_beats = clip.cycle_beats();
+            let clip_end = clip.end_beat();
+            let cycles = if clip.props.looped && cycle_beats > 1e-6 {
+                ((clip.duration_beats() / cycle_beats).ceil() as usize).clamp(1, 256)
+            } else {
+                1
+            };
+            for cycle in 0..cycles {
+                let cycle_offset = cycle as f64 * cycle_beats;
+                let cycle_end = (clip.start_beat + cycle_offset + cycle_beats).min(clip_end);
+                for note in notes {
+                    let rel_start = note.start.0 as f64 / PPQ as f64 - clip.trim_start;
+                    if rel_start < 0.0 || rel_start >= cycle_beats {
+                        continue;
+                    }
+                    let start_beat = clip.start_beat + cycle_offset + rel_start;
+                    let end_beat = (start_beat + (note.duration.0 as f64 / PPQ as f64).max(0.05))
+                        .min(cycle_end);
+                    let x0 = viewport.x_at(start_beat).max(left);
+                    let x1 = viewport.x_at(end_beat).min(right);
+                    if x1 <= x0 {
+                        continue;
+                    }
+                    let norm = 1.0 - f32::from(note.pitch.saturating_sub(min_pitch)) / span;
+                    let y = inner_top + norm.clamp(0.0, 1.0) * (inner_height - 4.0);
+                    let alpha = if cycle == 0 { 0xff } else { 0xbb };
+                    window.paint_quad(
+                        fill(
+                            Bounds::new(
+                                point(bounds.left() + px(x0 as f32), px(y)),
+                                size(px(((x1 - x0) as f32).max(2.0)), px(3.0)),
+                            ),
+                            rgba((note_color << 8) | alpha),
+                        )
+                        .corner_radii(px(1.5)),
+                    );
                 }
-                let norm = 1.0 - f32::from(note.pitch.saturating_sub(min_pitch)) / span;
-                let y = inner_top + norm.clamp(0.0, 1.0) * (inner_height - 4.0);
-                window.paint_quad(
-                    fill(
-                        Bounds::new(
-                            point(bounds.left() + px(x0 as f32), px(y)),
-                            size(px(((x1 - x0) as f32).max(2.0)), px(3.0)),
-                        ),
-                        rgb(note_color),
-                    )
-                    .corner_radii(px(1.5)),
-                );
+                if cycle > 0 {
+                    let sx = viewport.x_at(clip.start_beat + cycle_offset);
+                    if sx >= left && sx <= right {
+                        window.paint_quad(fill(
+                            Bounds::new(
+                                point(bounds.left() + px(sx as f32), px(inner_top - 2.0)),
+                                size(px(1.2), px(inner_height + 2.0)),
+                            ),
+                            rgba((design.cyan << 8) | 0x88),
+                        ));
+                    }
+                }
             }
             let mut title = format!("🎹 {} ({})", clip.name, notes.len());
             if let Some(target) = clip.hilo_target {

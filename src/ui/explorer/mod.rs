@@ -2,6 +2,7 @@
 mod input;
 mod io;
 mod preview;
+mod search;
 mod view;
 
 pub(super) use view::ExplorerSampleDrag;
@@ -13,6 +14,9 @@ use std::{collections::HashMap, path::PathBuf};
 
 pub(super) enum ExplorerEvent {
     Insert(PathBuf),
+    PreviewPhrase(PathBuf, u8, i32),
+    LoadRoot(PathBuf, u8, i32),
+    AddToHilo(PathBuf, u8, i32),
     Close,
     Focused,
 }
@@ -20,12 +24,11 @@ pub(super) enum ExplorerEvent {
 pub(super) struct Explorer {
     pub(super) style: ExplorerStyle,
     pub(super) focus: FocusHandle,
-    pub(super) vim_enabled: bool,
     tree: LibraryTree,
     selected: Option<PathBuf>,
-    search: String,
+    search: search::Search,
     preview: preview::Preview,
-    category: Option<String>,
+    pub(super) has_phrase: bool,
     scroll: UniformListScrollHandle,
     config: Option<PathBuf>,
     ready: bool,
@@ -48,12 +51,11 @@ impl Explorer {
         let mut this = Self {
             style,
             focus: cx.focus_handle(),
-            vim_enabled: true,
             tree: LibraryTree::default(),
             selected: None,
-            search: String::new(),
+            search: search::Search::default(),
             preview: preview::Preview::default(),
-            category: None,
+            has_phrase: false,
             scroll: UniformListScrollHandle::new(),
             config: dirs::config_dir().map(|path| path.join("hay-daw/libraries")),
             ready: false,
@@ -73,8 +75,7 @@ impl Explorer {
     }
 
     pub(super) fn selected_file(&self) -> Option<PathBuf> {
-        self.tree
-            .rows()
+        self.visible_rows()
             .iter()
             .find(|row| {
                 Some(&row.entry.path) == self.selected.as_ref() && row.entry.kind.importable()

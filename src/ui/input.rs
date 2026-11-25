@@ -1,6 +1,6 @@
 //! Teclas y comandos de texto. Ratón y teclado comparten acciones de edición.
 use super::{
-    CenterView, DawApp, VimMode,
+    CenterView, DawApp,
     cursor_fx::CursorFxMode,
     design::ThemePreset,
     views::tracks::{TcpControlStyle, TcpLayoutPreset},
@@ -14,8 +14,6 @@ impl DawApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // Cualquier tecla ajena a dd cancela el operador, también dentro de overlays.
-        let delete_pending = std::mem::take(&mut self.track_delete_pending);
         let key = event
             .keystroke
             .key_char
@@ -27,7 +25,10 @@ impl DawApp {
             key.to_string()
         };
         if self.general_note.is_some() {
-            self.track_delete_pending = false;
+            return;
+        }
+        #[cfg(feature = "p2p")]
+        if self.shared_invite_open() {
             return;
         }
         if self.action_form.is_some() {
@@ -48,6 +49,53 @@ impl DawApp {
             self.project_command(command, window, cx);
             cx.stop_propagation();
             return;
+        }
+        if (event.keystroke.modifiers.control || event.keystroke.modifiers.platform)
+            && !event.keystroke.modifiers.alt
+            && !event.is_held
+            && !self.command_open
+            && !self.palette.is_open()
+            && !self.settings.is_visible()
+        {
+            if key.eq_ignore_ascii_case("p") && !event.keystroke.modifiers.shift {
+                self.open_command_bar();
+                cx.stop_propagation();
+                return;
+            }
+            if key.eq_ignore_ascii_case("e") && !event.keystroke.modifiers.shift {
+                self.toggle_explorer();
+                cx.stop_propagation();
+                return;
+            }
+            if key.eq_ignore_ascii_case("z") {
+                if event.keystroke.modifiers.shift {
+                    self.redo_project();
+                } else {
+                    self.undo_project();
+                }
+                cx.stop_propagation();
+                return;
+            }
+            if key.eq_ignore_ascii_case("y") && !event.keystroke.modifiers.shift {
+                self.redo_project();
+                cx.stop_propagation();
+                return;
+            }
+            if key.eq_ignore_ascii_case("h") && !event.keystroke.modifiers.shift {
+                self.history.open = !self.history.open;
+                cx.stop_propagation();
+                return;
+            }
+            if key.eq_ignore_ascii_case("k") && !event.keystroke.modifiers.shift {
+                self.toggle_metronome();
+                cx.stop_propagation();
+                return;
+            }
+            if key.eq_ignore_ascii_case("a") && event.keystroke.modifiers.shift {
+                self.toggle_automation_mode();
+                cx.stop_propagation();
+                return;
+            }
         }
         if self.fx.menu.is_some() {
             self.handle_fx_menu_key(event);
@@ -77,70 +125,31 @@ impl DawApp {
             self.handle_clip_menu_key(event, window, cx);
             return;
         }
+        if self.command_open {
+            // GPUI no genera KeyDown por cada carácter pegado: leer explícitamente el clipboard.
+            if event.keystroke.modifiers.control && key.eq_ignore_ascii_case("v") {
+                if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
+                    self.command_buffer
+                        .push_str(&text.replace(['\n', '\r'], " "));
+                    self.cmd_selected = None;
+                }
+                return;
+            }
+            self.handle_command_key(key, event.keystroke.modifiers.shift, window, cx);
+            return;
+        }
         if self.handle_performance_key(event) {
             return;
         }
+        if self.handle_arrangement_edit_key(event, window, cx) {
+            return;
+        }
+        if self.handle_track_delete_key(event) {
+            return;
+        }
         let modifiers = event.keystroke.modifiers;
-        if self.vim_enabled
-            && self.mode == VimMode::Normal
-            && key == "e"
-            && !modifiers.control
-            && !modifiers.alt
-            && !modifiers.platform
-        {
-            if !event.is_held {
-                self.toggle_explorer();
-            }
-            return;
-        }
-        if self.handle_track_delete_key(event, delete_pending) {
-            return;
-        }
-        // GPUI no genera KeyDown por cada carácter pegado: leer explícitamente el clipboard.
-        if self.mode == VimMode::Command
-            && event.keystroke.modifiers.control
-            && key.eq_ignore_ascii_case("v")
-        {
-            if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
-                self.command_buffer
-                    .push_str(&text.replace(['\n', '\r'], " "));
-                self.cmd_selected = None;
-            }
-            return;
-        }
-        if !self.vim_enabled {
-            if matches!(
-                key,
-                "left"
-                    | "right"
-                    | "up"
-                    | "down"
-                    | "home"
-                    | "insert"
-                    | "enter"
-                    | "escape"
-                    | "tab"
-                    | "+"
-                    | "="
-                    | "-"
-                    | "["
-                    | "]"
-            ) || (self.drums_panel_active() && matches!(key, "delete" | "backspace"))
-            {
-                self.handle_normal_key(key);
-            }
-            return;
-        }
-        match self.mode {
-            VimMode::Normal => self.handle_normal_key(key),
-            VimMode::Insert => {
-                if matches!(key, "escape" | "enter") {
-                    self.set_mode(VimMode::Normal);
-                }
-            }
-            VimMode::Command => {
-                self.handle_command_key(key, event.keystroke.modifiers.shift, window, cx)
-            }
+        if !modifiers.control && !modifiers.alt && !modifiers.platform {
+            self.handle_workspace_key(key);
         }
     }
     pub(super) fn handle_key_up(&mut self, event: &KeyUpEvent) {
@@ -153,30 +162,26 @@ impl DawApp {
             self.apply_midi([message]);
         }
     }
-    fn handle_normal_key(&mut self, key: &str) {
+    fn handle_workspace_key(&mut self, key: &str) {
         let drums_active = self.drums_panel_active();
         if drums_active && self.handle_drum_key(key) {
             return;
         }
         let arrangement = self.arrangement_visible() && !drums_active;
         match key {
+            ":" => self.open_command_bar(),
             "[" => self.change_gain(-0.1),
             "]" => self.change_gain(0.1),
-            "a" | "insert" => self.open_palette(),
-            "b" => self.toggle_bypass(),
+            "insert" => self.open_palette(),
             "escape" => {
                 self.all_notes_off();
-                self.status_message = "Normal".into();
+                self.status_message = "Listo".into();
             }
-            "i" => self.set_mode(VimMode::Insert),
-            ":" => self.set_mode(VimMode::Command),
-            "tab" => self.set_center_view(match self.center_view {
-                CenterView::Arrangement => CenterView::Session,
-                CenterView::Session => CenterView::Mixer,
-                CenterView::Mixer => CenterView::Arrangement,
-            }),
-            "h" | "left" if arrangement => self.timeline.move_cursor(-1.0),
-            "l" | "right" if arrangement => self.timeline.move_cursor(1.0),
+            "f1" => self.set_center_view(CenterView::Arrangement),
+            "f2" => self.set_center_view(CenterView::Session),
+            "f3" => self.set_center_view(CenterView::Mixer),
+            "left" if arrangement => self.timeline.move_cursor(-1.0),
+            "right" if arrangement => self.timeline.move_cursor(1.0),
             "home" if arrangement => {
                 if let Err(error) = self.seek_audio(0.) {
                     self.status_message = error;
@@ -184,22 +189,14 @@ impl DawApp {
             }
             "+" | "=" if arrangement => self.timeline.zoom_at_cursor(2.0),
             "-" if arrangement => self.timeline.zoom_at_cursor(0.5),
-            "k" | "up" if arrangement => self.move_visible_track(false),
-            "j" | "down" if arrangement => self.move_visible_track(true),
-            "k" | "up" if self.center_view == CenterView::Mixer => {
+            "up" if arrangement => self.move_visible_track(false),
+            "down" if arrangement => self.move_visible_track(true),
+            "up" if self.center_view == CenterView::Mixer => {
                 self.select_track(self.cursor_row.saturating_sub(1), false, false);
             }
-            "j" | "down" if self.center_view == CenterView::Mixer => {
+            "down" if self.center_view == CenterView::Mixer => {
                 let last = self.tracks.len().saturating_sub(1);
                 self.select_track((self.cursor_row + 1).min(last), false, false);
-            }
-            "1" => self.set_center_view(CenterView::Arrangement),
-            "2" => self.set_center_view(CenterView::Session),
-            "3" => self.set_center_view(CenterView::Mixer),
-            "4" => self.open_selected_instrument(),
-            "R" => {
-                self.reload();
-                self.status_message = "Design reloaded".into();
             }
             _ => {}
         }
@@ -212,7 +209,7 @@ impl DawApp {
         cx: &mut Context<Self>,
     ) {
         match key {
-            "escape" => self.set_mode(VimMode::Normal),
+            "escape" => self.close_command_bar(),
             "up" => self.move_command_selection(true),
             "down" => self.move_command_selection(false),
             "tab" if shift => self.move_command_selection(true),
@@ -231,7 +228,7 @@ impl DawApp {
                     return;
                 }
                 self.submit_command_line(&cmd, window, cx);
-                self.set_mode(VimMode::Normal);
+                self.close_command_bar();
             }
             "backspace" => {
                 self.command_buffer.pop();
@@ -281,7 +278,7 @@ impl DawApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.project_command(cmd, window, cx) {
+        if self.hydrogen_command(cmd, cx) || self.project_command(cmd, window, cx) {
             return;
         }
         if matches!(
@@ -293,6 +290,31 @@ impl DawApp {
         }
         if cmd.trim() == "view.maximize" {
             self.toggle_workspace_focus(window, cx);
+            return;
+        }
+        if cmd.trim().eq_ignore_ascii_case("autosave") {
+            self.force_autosave_now(cx);
+            return;
+        }
+        if matches!(
+            cmd.trim().to_ascii_lowercase().as_str(),
+            "consolidate" | "consolidar"
+        ) {
+            self.consolidate_selection(cx);
+            return;
+        }
+        if matches!(
+            cmd.trim().to_ascii_lowercase().as_str(),
+            "export.midi" | "midi.export"
+        ) {
+            self.export_arrangement_midi_dialog(cx);
+            return;
+        }
+        if matches!(
+            cmd.trim().to_ascii_lowercase().as_str(),
+            "audio.to_midi" | "audio2midi"
+        ) {
+            self.convert_audio_clip_to_midi(cx);
             return;
         }
         if cmd.trim() == "fx.components.reload" {
@@ -336,7 +358,8 @@ impl DawApp {
         // El parser de export conserva mayúsculas y espacios entrecomillados en nombres/rutas.
         let cmd = cmd.trim();
         if matches!(cmd, "vim.toggle" | "vim toggle") {
-            self.toggle_vim();
+            self.status_message =
+                "Modo Vim deshabilitado · usa Ctrl+P o : para comandos y F1–F3 para vistas".into();
             return;
         }
         if self.audio_transport_command(cmd) {
@@ -411,6 +434,7 @@ impl DawApp {
                 }
             }
             "track.insert" => self.edit_track_structure(elevate::musical::track::TrackEdit::Insert),
+            "track.insert_return" | "return" => self.insert_return_track(),
             "track.delete" => self.edit_track_structure(elevate::musical::track::TrackEdit::Delete),
             "track.duplicate" => self.edit_track_structure(elevate::musical::track::TrackEdit::Duplicate),
             "track.group" => self.edit_track_structure(elevate::musical::track::TrackEdit::Group),
@@ -426,6 +450,7 @@ impl DawApp {
             "export.cancel" => self.cancel_export(),
             "export.help" => self.status_message = "export -n Nombre.[wav,mp3,aiff,flac] -master|-individuals · -sr Hz -bits 16|24|32|32f -bitrate kbps|-vbr 0–9 -mono -tracks 1,3 -start beats -length beats -tail segundos -master-fx on|off -out carpeta · docs/EXPORT.md".into(),
             "utility" | "utility.open" => self.open_utility(),
+            "master.fx" | "mfx" => self.show_master_fx(),
             "utility.remove" => {
                 self.apply_utility_action(elevate::devices::utility_slot::UtilityAction::Remove)
             }
@@ -452,13 +477,38 @@ impl DawApp {
             }
             "add" | "browse" | "insert" => self.open_palette(),
             "play" => self.play_context(),
-            "stop" => {
-                self.stop_all();
-                self.status_message = "Detenido".into();
+            "stop" => self.stop_transport(),
+            "metro" | "metronome" | "click" => self.toggle_metronome(),
+            "auto" | "automation" => self.toggle_automation_mode(),
+            "auto.vol" | "auto.volume" => {
+                self.set_automation_param(elevate::musical::track_automation::AutomationParam::Volume);
+            }
+            "auto.pan" => {
+                self.set_automation_param(elevate::musical::track_automation::AutomationParam::Pan);
+            }
+            "auto.clear" => self.clear_selected_track_automation(),
+            "countin" | "count_in" => self.cycle_count_in(),
+            other if other.starts_with("countin ") => {
+                match other.trim_start_matches("countin ").trim().parse::<u32>() {
+                    Ok(bars) => self.set_count_in_bars(bars),
+                    Err(_) => self.status_message = "Uso: countin 0 | 1 | 2".into(),
+                }
+            }
+            other if other.starts_with("metro.vol ") => {
+                match other.trim_start_matches("metro.vol ").trim().parse::<f32>() {
+                    Ok(pct) => self.set_metronome_gain(pct / 100.0),
+                    Err(_) => self.status_message = "Uso: metro.vol 75 (0–150%)".into(),
+                }
             }
             "record" | "rec" => self.toggle_midi_record(),
+            "rec.audio" | "mic" => self.toggle_audio_record(None),
+            "rec.stereo" => self.toggle_audio_record_stereo(),
             "capture" | "dump" => self.capture_midi_to_track(),
             "materialize" => self.materialize_midi_selection(),
+            "bounce" => self.bounce_midi_to_audio(),
+            "undo" => self.undo_project(),
+            "redo" => self.redo_project(),
+            "history" | "historial" => self.history.open = !self.history.open,
             "arrangement" | "arr" => self.set_center_view(CenterView::Arrangement),
             "piano" | "instrument" | "inst" => self.open_selected_instrument(),
             "session" | "pat" | "pattern" => self.set_center_view(CenterView::Session),
@@ -472,6 +522,18 @@ impl DawApp {
             }
             "learn" => {
                 self.toggle_midi_learn();
+            }
+            "learn.vst" | "midi.learn.vst" => {
+                self.arm_last_touched_vst_learn();
+            }
+            "freeze" => {
+                self.toggle_freeze_track(self.cursor_row);
+            }
+            "unfreeze" => {
+                if let Some(track) = self.tracks.get(self.cursor_row) {
+                    let id = track.id;
+                    self.unfreeze_track(id);
+                }
             }
             other if other.starts_with("clip.") => self.execute_clip_catalog_action(other),
             "midi-scan" => {

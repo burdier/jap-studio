@@ -11,7 +11,7 @@ const MIN_BEATS: f64 = 0.25;
 
 #[derive(Clone, Copy)]
 pub(super) struct TrimDrag {
-    kind: DragKind,
+    pub(super) kind: DragKind,
     left: bool,
     /// Posición en el timeline del borde izquierdo al empezar.
     start0: f64,
@@ -20,6 +20,8 @@ pub(super) struct TrimDrag {
     len0: f64,
     /// Longitud total de la fuente (archivo o patrón) en beats.
     source: f64,
+    /// Si está en bucle interno, el borde derecho se puede estirar más allá de 1 ciclo.
+    looped: bool,
     grab_beat: f64,
 }
 
@@ -35,12 +37,14 @@ impl Timeline {
         let beats_per_second = self.tempo.beats_per_second();
         let beat = self.pointer_beat(position);
         let bounds = self.lanes_bounds.get();
-        let Some(row) = self.row_at_y(f32::from(position.y - bounds.top()), track_height) else {
+        let y = f32::from(position.y - bounds.top());
+        let Some(row) = self.row_at_y(y, track_height) else {
             return false;
         };
         let track = row.track;
         let candidate = if let Some(c) = &self.midi_clip
             && track == c.track
+            && self.hits_layer(row, y, c.id)
             && beat >= c.start_beat
             && beat < c.end_beat()
         {
@@ -50,9 +54,11 @@ impl Timeline {
                 c.trim_start,
                 c.duration_beats(),
                 c.pattern_beats(),
+                c.props.looped,
             ))
         } else if let Some(c) = &self.clip
             && track == c.track
+            && self.hits_layer(row, y, c.id)
             && beat >= c.start_beat
             && beat < c.end_beat(self.tempo.bpm())
         {
@@ -62,11 +68,12 @@ impl Timeline {
                 c.trim_start * beats_per_second,
                 c.length_beats(self.tempo.bpm()),
                 c.file.duration() * beats_per_second,
+                c.props.looped,
             ))
         } else {
             None
         };
-        let Some((kind, start0, trim0, len0, source)) = candidate else {
+        let Some((kind, start0, trim0, len0, source, looped)) = candidate else {
             return false;
         };
         let edge = self.viewport.grid().edge_beats(EDGE_PX, len0);
@@ -82,6 +89,7 @@ impl Timeline {
             trim0,
             len0,
             source,
+            looped,
             grab_beat: beat,
         });
         true
@@ -104,7 +112,11 @@ impl Timeline {
             let shift = resized.start - drag.start0;
             (resized.start, drag.trim0 + shift, resized.length())
         } else {
-            let longest = (drag.source - drag.trim0).max(MIN_BEATS);
+            let longest = if drag.looped {
+                2048.0_f64.max(drag.len0 + 256.0)
+            } else {
+                (drag.source - drag.trim0).max(MIN_BEATS)
+            };
             let resized = grid.resize_end(span, delta, drag.start0 + longest, MIN_BEATS, step);
             (drag.start0, drag.trim0, resized.length())
         };

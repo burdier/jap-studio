@@ -7,7 +7,7 @@ use elevate::musical::{
     midi::{MidiInputEvent, MidiMessage, MidiTarget, RoutedMidi},
     midi_map::{MappedEffect, MidiAction, MidiBindTarget},
     pitch::note_name,
-    track::{HiloMode, assign_instrument, effective_mix},
+    track::{HiloMode, TrackKind, UNITY_LEVEL, assign_instrument, effective_mix},
 };
 
 impl DawApp {
@@ -48,7 +48,16 @@ impl DawApp {
             return;
         }
         self.cursor_row = track;
-        self.toggle_midi_record();
+        if self.is_audio_recording()
+            || self
+                .tracks
+                .get(track)
+                .is_some_and(|t| t.kind == TrackKind::Audio && t.instrument.is_none())
+        {
+            self.toggle_audio_record(Some(track));
+        } else {
+            self.toggle_midi_record();
+        }
     }
 
     pub(super) fn toggle_track_midi(&mut self, track: usize) {
@@ -82,10 +91,10 @@ impl DawApp {
     }
 
     pub(super) fn set_track_pan(&mut self, track: usize, value: i32) {
+        let next = value.clamp(0, 100);
         let Some(pan) = self.track_pans.get_mut(track) else {
             return;
         };
-        let next = value.clamp(0, 100);
         if *pan == next {
             return;
         }
@@ -95,16 +104,60 @@ impl DawApp {
     }
 
     pub(super) fn set_track_level(&mut self, track: usize, value: i32) {
+        let next = value.clamp(0, 100);
         let Some(level) = self.track_levels.get_mut(track) else {
             return;
         };
-        let next = value.clamp(0, 100);
         if *level == next {
             return;
         }
         *level = next;
         self.track_revision = self.track_revision.wrapping_add(1);
         self.apply_track_gains();
+    }
+
+    pub(super) fn set_track_send(
+        &mut self,
+        track: usize,
+        target: elevate::musical::track::TrackId,
+        amount: u8,
+    ) {
+        let Some(entry) = self.tracks.get_mut(track) else {
+            return;
+        };
+        if entry.is_return() || entry.id == target {
+            return;
+        }
+        let clamped = amount.min(100);
+        if entry.send_amount(target) == clamped {
+            return;
+        }
+        entry.set_send(target, clamped);
+        self.track_revision = self.track_revision.wrapping_add(1);
+        self.publish_track_sends(track);
+        let src_name = self.tracks[track].name.clone();
+        let dst_name = self
+            .tracks
+            .iter()
+            .find(|t| t.id == target)
+            .map_or("Return", |t| t.name.as_ref());
+        self.status_message = format!("↗ Envío {src_name} → {dst_name}: {clamped}%");
+    }
+
+    pub(in crate::ui) fn publish_track_sends(&self, track: usize) {
+        let Some(player) = &self.player else {
+            return;
+        };
+        let Some(entry) = self.tracks.get(track) else {
+            return;
+        };
+        let sends: Vec<(elevate::musical::track::TrackId, f32)> = entry
+            .sends
+            .iter()
+            .filter(|s| s.amount > 0)
+            .map(|s| (s.target, s.gain()))
+            .collect();
+        player.set_track_sends(entry.id, &sends);
     }
 
     fn instrument_track(&self) -> Option<usize> {
@@ -280,15 +333,25 @@ impl DawApp {
                 );
             }
             MappedEffect::SetNormalized { target, fraction } => match target {
-                MidiBindTarget::TrackVolume(idx) if idx < self.track_levels.len() => {
-                    self.set_track_level(idx, (fraction * 100.0).round() as i32);
-                    self.status_message =
-                        format!("{}: {}%", self.tracks[idx].name, self.track_levels[idx]);
+                MidiBindTarget::TrackVolume(track_id) => {
+                    if let Some(idx) = self.tracks.iter().position(|t| t.id == track_id) {
+                        self.set_track_level(idx, (fraction * 100.0).round() as i32);
+                        self.status_message =
+                            format!("{}: {}%", self.tracks[idx].name, self.track_levels[idx]);
+                    }
                 }
-                MidiBindTarget::TrackPan(idx) if idx < self.track_pans.len() => {
-                    self.set_track_pan(idx, (fraction * 100.0).round() as i32);
-                    let signed = self.track_pans[idx] - 50;
-                    self.status_message = format!("{} · Pan: {signed:+}", self.tracks[idx].name);
+                MidiBindTarget::TrackPan(track_id) => {
+                    if let Some(idx) = self.tracks.iter().position(|t| t.id == track_id) {
+                        self.set_track_pan(idx, (fraction * 100.0).round() as i32);
+                        let signed = self.track_pans[idx] - 50;
+                        self.status_message =
+                            format!("{} · Pan: {signed:+}", self.tracks[idx].name);
+                    }
+                }
+                MidiBindTarget::TrackSend { track, target } => {
+                    if let Some(idx) = self.tracks.iter().position(|t| t.id == track) {
+                        self.set_track_send(idx, target, (fraction * 100.0).round() as u8);
+                    }
                 }
                 MidiBindTarget::MasterGain => {
                     let target_gain = (fraction * 2.0).clamp(0.0, 2.0);
@@ -299,11 +362,40 @@ impl DawApp {
                         self.set_piano_param(spec.id, spec.from_fraction(fraction));
                     }
                 }
-                _ => {}
+                MidiBindTarget::FxParam { track, fx, param } => {
+                    if let Some(effect) = self.vst_effects.instances.get(&fx) {
+                        effect.editor.set_parameter(param, f64::from(fraction));
+                    } else if let Some(component) = self.lua_components.instances.get(&fx)
+                        && let Some(spec) = component
+                            .descriptor()
+                            .controls
+                            .iter()
+                            .find(|c| c.id == param)
+                    {
+                        let value = spec.from_fraction(fraction);
+                        let _ = self.edit_fx(
+                            track,
+                            elevate::musical::fx::FxEdit::Parameter(fx, param, value),
+                        );
+                    }
+                }
+                MidiBindTarget::VstInstrumentParam { instrument, param } => {
+                    let editor = if self.vst.id == instrument {
+                        self.vst.editor()
+                    } else {
+                        self.vst_instances
+                            .get(&instrument)
+                            .and_then(|inst| inst.editor())
+                    };
+                    if let Some(editor) = editor {
+                        editor.set_parameter(param, f64::from(fraction));
+                    }
+                }
+                MidiBindTarget::Action(_) => {}
             },
             MappedEffect::TriggerAction(action) => match action {
                 MidiAction::PlayToggle => self.play_context(),
-                MidiAction::Stop => self.stop_all(),
+                MidiAction::Stop => self.stop_transport(),
                 MidiAction::RecordToggle => self.toggle_midi_record(),
                 MidiAction::CaptureMidi => self.capture_midi_to_track(),
                 MidiAction::NextBank => self.step_soundfont_bank(1),
@@ -316,18 +408,108 @@ impl DawApp {
     pub(super) fn toggle_midi_learn(&mut self) {
         let on = self.midi_mapper.toggle_learn_mode();
         self.status_message = if on {
-            "🎯 MIDI Learn ACTIVO · haz clic en una perilla/slider y mueve un CC o pulsa ' (CC21)"
+            "🎯 MIDI Learn ACTIVO · toca un control (pista, envío, FX) o usa :learn.vst tras mover una perilla VST3"
                 .into()
         } else {
             "MIDI Learn desactivado".into()
         };
     }
-    pub(super) fn arm_midi_learn(&mut self, target: MidiBindTarget) {
+    pub(in crate::ui) fn arm_midi_learn(&mut self, target: MidiBindTarget) {
         self.midi_mapper.arm_target(target);
         self.status_message = format!(
             "🎯 Esperando CC/Nota MIDI para «{}» (pulsa ' para probar con CC21)…",
             target.label()
         );
+    }
+    pub(in crate::ui) fn last_touched_vst_target(&self) -> Option<(MidiBindTarget, String)> {
+        let mut best: Option<(u64, MidiBindTarget, String)> = None;
+        let mut consider = |seq: u64, target: MidiBindTarget, label: String| {
+            if best
+                .as_ref()
+                .is_none_or(|(best_seq, _, _)| seq >= *best_seq)
+            {
+                best = Some((seq, target, label));
+            }
+        };
+        if let Some(editor) = self.vst.editor()
+            && let Some(touched) = editor.last_touched()
+        {
+            consider(
+                touched.sequence,
+                MidiBindTarget::VstInstrumentParam {
+                    instrument: self.vst.id,
+                    param: touched.id,
+                },
+                format!("{} · {}", self.vst.name, touched.title),
+            );
+        }
+        for (id, inst) in &self.vst_instances {
+            if let Some(editor) = inst.editor()
+                && let Some(touched) = editor.last_touched()
+            {
+                consider(
+                    touched.sequence,
+                    MidiBindTarget::VstInstrumentParam {
+                        instrument: *id,
+                        param: touched.id,
+                    },
+                    format!("{} · {}", inst.name, touched.title),
+                );
+            }
+        }
+        for (&fx_id, effect) in &self.vst_effects.instances {
+            if let Some(touched) = effect.editor.last_touched() {
+                let track = self
+                    .tracks
+                    .iter()
+                    .find(|t| t.chain.find(fx_id).is_some())
+                    .map(|t| t.id)
+                    .unwrap_or(elevate::musical::track::MASTER_TRACK_ID);
+                let fx_name = self
+                    .tracks
+                    .iter()
+                    .find_map(|t| t.chain.find(fx_id))
+                    .or_else(|| self.master_chain.find(fx_id))
+                    .map(|n| n.name.as_str())
+                    .unwrap_or("VST3 FX");
+                consider(
+                    touched.sequence,
+                    MidiBindTarget::FxParam {
+                        track,
+                        fx: fx_id,
+                        param: touched.id,
+                    },
+                    format!("{fx_name} · {}", touched.title),
+                );
+            }
+        }
+        best.map(|(_, target, label)| (target, label))
+    }
+    pub(in crate::ui) fn arm_last_touched_vst_learn(&mut self) {
+        if let Some((target, label)) = self.last_touched_vst_target() {
+            self.midi_mapper.arm_target(target);
+            self.status_message =
+                format!("🎯 Esperando CC/Nota MIDI para «{label}» (pulsa ' para probar con CC21)…");
+        } else {
+            self.status_message =
+                "Mueve primero una perilla dentro de un plugin VST3 antes de usar Learn VST3"
+                    .into();
+        }
+    }
+    pub(in crate::ui) fn prune_midi_bindings_for(
+        &mut self,
+        tracks: &[elevate::musical::track::Track],
+    ) {
+        use std::collections::HashSet;
+        let valid_tracks: HashSet<_> = tracks.iter().map(|t| t.id).collect();
+        let mut valid_fx: HashSet<_> = self.vst_effects.instances.keys().copied().collect();
+        valid_fx.extend(self.lua_components.instances.keys().copied());
+        let mut valid_instruments: HashSet<_> =
+            tracks.iter().filter_map(|t| t.instrument).collect();
+        valid_instruments.insert(self.vst.id);
+        valid_instruments.extend(self.vst_instances.keys().copied());
+        self.midi_mapper
+            .prune_orphans(&valid_tracks, &valid_fx, &valid_instruments);
     }
     pub(in crate::ui) fn dispatch_routed_midi(
         &mut self,
@@ -440,13 +622,11 @@ impl DawApp {
         let Some(messages) = self.controller.key_down(key, repeat) else {
             return false;
         };
-        self.track_delete_pending = false;
         self.apply_midi(messages);
         self.status_message = self.controller_status();
         true
     }
     pub(super) fn toggle_controller(&mut self) {
-        self.track_delete_pending = false;
         let messages = self.controller.set_enabled(!self.controller.enabled());
         self.apply_midi(messages);
         self.status_message = self.controller_status();
@@ -680,7 +860,51 @@ impl DawApp {
             self.tracks[target_track].name
         );
     }
+    pub(in crate::ui) fn toggle_metronome(&mut self) {
+        let on = self.metronome.toggle();
+        let pct = (self.metronome.gain() * 100.0).round() as u32;
+        self.status_message = if on {
+            format!("♩ Metrónomo ON ({pct}% · Ctrl+K)")
+        } else {
+            "♩ Metrónomo OFF".into()
+        };
+    }
+
+    pub(in crate::ui) fn cycle_count_in(&mut self) {
+        let bars = self.metronome.cycle_count_in();
+        self.status_message = match bars {
+            0 => "Pre-cuenta desactivada".into(),
+            1 => "Pre-cuenta: 1 compás al grabar".into(),
+            n => format!("Pre-cuenta: {n} compases al grabar"),
+        };
+    }
+
+    pub(in crate::ui) fn set_count_in_bars(&mut self, bars: u32) {
+        let clamped = bars.min(2);
+        self.metronome.set_count_in_bars(clamped);
+        self.status_message = match clamped {
+            0 => "Pre-cuenta desactivada".into(),
+            1 => "Pre-cuenta: 1 compás al grabar".into(),
+            n => format!("Pre-cuenta: {n} compases al grabar"),
+        };
+    }
+
+    pub(in crate::ui) fn step_metronome_gain(&mut self, delta: f32) {
+        let next = (self.metronome.gain() + delta).clamp(0.0, 1.5);
+        self.metronome.set_gain(next);
+        self.status_message = format!("♩ Volumen del metrónomo: {:.0}%", next * 100.0);
+    }
+
+    pub(in crate::ui) fn set_metronome_gain(&mut self, gain: f32) {
+        self.metronome.set_gain(gain);
+        self.status_message = format!(
+            "♩ Volumen del metrónomo: {:.0}%",
+            self.metronome.gain() * 100.0
+        );
+    }
+
     /// Activa o detiene la grabación explícita de la salida MIDI hacia un `MidiClip`.
+    /// Si la pre-cuenta está activa (1 o 2 compases), inicia el transporte con pre-cuenta RT.
     pub(super) fn toggle_midi_record(&mut self) {
         if !self.midi_capture.is_recording() && !self.track_accepts_clips(self.cursor_row) {
             self.status_message = "Selecciona una pista hija para grabar MIDI".into();
@@ -688,8 +912,14 @@ impl DawApp {
         }
         if self.midi_capture.is_recording() {
             let now = self.now_ns();
+            self.recording_waiting_count_in = false;
+            self.metronome.set_keep_running(false);
+            self.metronome.clear_count_in();
             self.midi_capture
                 .stop_recording(now, self.timeline.tempo.bpm());
+            if self.player.is_some() || self.file_playback.is_some() {
+                self.stop_audio();
+            }
             if self.midi_capture.has_notes() {
                 self.capture_midi_to_track();
             } else {
@@ -698,14 +928,25 @@ impl DawApp {
         } else {
             self.all_notes_off();
             self.midi_capture.start_recording();
+            self.metronome.set_keep_running(true);
             if !self.controller.enabled() {
                 let _ = self.controller.set_enabled(true);
             }
             self.focus_midi_instrument();
-            self.status_message = format!(
-                "● Grabando MIDI en {} · toca y pulsa REC / :record para insertar el clip",
-                self.tracks[self.cursor_row].name
-            );
+            let bars = self.metronome.count_in_bars();
+            if self.player.is_none() && self.file_playback.is_none() {
+                self.recording_waiting_count_in = bars > 0;
+                self.publish_track_fx();
+                self.stop_pattern();
+                self.stop_instrument();
+                self.request_file_playback_with_count_in(self.timeline.edit_beat(), bars);
+            } else {
+                self.recording_waiting_count_in = false;
+                self.status_message = format!(
+                    "● Grabando MIDI en {} · toca y pulsa REC / Espacio para insertar el clip",
+                    self.tracks[self.cursor_row].name
+                );
+            }
         }
     }
     pub(super) fn set_piano_param(&mut self, id: ParamId, value: f32) {
@@ -836,32 +1077,71 @@ impl DawApp {
         }
     }
     pub(super) fn stop_all(&mut self) {
-        let stopped_at = self.player.as_ref().map(|player| player.beat());
+        if self.pattern_loop_beats.is_none()
+            && let Some(player) = &self.player
+        {
+            self.timeline.last_stop_beat = Some(player.beat());
+        }
         self.controller.release_all();
         self.midi_server.release_all();
         self.stop_audio();
         self.stop_pattern();
         self.stop_instrument();
-        if let Some(beat) = stopped_at {
-            self.timeline.set_edit_beat(beat);
+    }
+    pub(super) fn stop_transport(&mut self) {
+        let was_recording = self.midi_capture.is_recording();
+        let was_audio_recording = self.is_audio_recording();
+        self.recording_waiting_count_in = false;
+        self.metronome.set_keep_running(false);
+        self.metronome.clear_count_in();
+        let player = self.player.take();
+        if self.pattern_loop_beats.is_none()
+            && let Some(player) = &player
+        {
+            self.timeline.last_stop_beat = Some(player.beat());
+        }
+        if let Some(player) = &player {
+            player.stop_with_tail();
+        }
+        self.stop_all();
+        self.tail_player = player;
+        if was_audio_recording {
+            self.finish_audio_recording();
+        } else if was_recording {
+            let now = self.now_ns();
+            self.midi_capture
+                .stop_recording(now, self.timeline.tempo.bpm());
+            if self.midi_capture.has_notes() {
+                self.capture_midi_to_track();
+            } else {
+                self.status_message = "Grabación detenida (sin notas)".into();
+            }
+        } else {
+            self.status_message = "Detenido".into();
         }
     }
     pub(super) fn play_audio(&mut self) {
+        self.play_audio_from(self.timeline.edit_beat());
+    }
+
+    pub(super) fn play_audio_from(&mut self, beat: f64) {
         self.publish_track_fx();
         self.stop_pattern();
         self.stop_audio();
-        let edit_beat = self.timeline.edit_beat();
         self.stop_instrument();
-        self.request_file_playback(edit_beat);
+        self.request_file_playback(beat);
     }
 
     pub(super) fn stop_audio(&mut self) {
+        self.metronome.clear_count_in();
+        self.recording_waiting_count_in = false;
         self.vst.stop_clip();
         for vst in self.vst_instances.values() {
             vst.stop_clip();
         }
         self.file_playback = None;
         self.player = None;
+        self.tail_player = None;
         self.instrument.stop_clip();
         for piano in self.piano_instances.values_mut() {
             piano.stop_clip();
@@ -877,6 +1157,52 @@ impl DawApp {
     /// Fader de pista (`TRACK_UNITY_LEVEL` = 1.0x). Utility es una etapa posterior independiente.
     pub(super) fn track_gain(&self, track: usize) -> f32 {
         effective_mix(&self.tracks, &self.track_levels, &self.track_pans, track).gain
+    }
+    pub(super) fn arrangement_track_mix(&self, index: usize) -> (f32, f32, bool, bool) {
+        let track = &self.tracks[index];
+        let own = effective_mix(&self.tracks, &self.track_levels, &self.track_pans, index).audible;
+        let audible = own
+            || (track.kind == TrackKind::Effect && !track.muted)
+            || (track.kind == TrackKind::Group
+                && !track.muted
+                && self
+                    .tracks
+                    .iter()
+                    .any(|child| child.parent == Some(track.id) && child.solo && !child.muted));
+        let gain = if audible {
+            self.track_levels
+                .get(index)
+                .copied()
+                .unwrap_or(UNITY_LEVEL)
+                .clamp(0, 100) as f32
+                / UNITY_LEVEL as f32
+        } else {
+            0.0
+        };
+        let pan = (self
+            .track_pans
+            .get(index)
+            .copied()
+            .unwrap_or(50)
+            .clamp(0, 100)
+            - 50) as f32
+            / 50.0;
+        (gain, pan, track.kind != TrackKind::Group || own, audible)
+    }
+    pub(in crate::ui) fn publish_track_automation(&self, id: elevate::musical::track::TrackId) {
+        if let Some(player) = &self.player {
+            player.set_track_automation(id, self.timeline.automation.track_or_default(id));
+        }
+    }
+    pub(in crate::ui) fn publish_all_automation(&self) {
+        if let Some(player) = &self.player {
+            for track in &self.tracks {
+                player.set_track_automation(
+                    track.id,
+                    self.timeline.automation.track_or_default(track.id),
+                );
+            }
+        }
     }
     fn piano_gain(&self) -> f32 {
         let id = self.instrument.id();
@@ -898,8 +1224,11 @@ impl DawApp {
         }
         if let Some(player) = &self.player {
             for (index, track) in self.tracks.iter().enumerate() {
-                player.set_gain(track.id, self.track_gain(index));
-                player.set_pan(track.id, self.track_pan(index));
+                let (gain, pan, source_audible, audible) = self.arrangement_track_mix(index);
+                player.set_gain(track.id, gain);
+                player.set_pan(track.id, pan);
+                player.set_source_audible(track.id, source_audible);
+                player.set_audible(track.id, audible);
             }
         }
         self.instrument.set_gain(self.piano_gain());

@@ -169,6 +169,12 @@ impl DawApp {
             self.status_message = "Instrumento acoplado".into();
             return;
         }
+        if self.vst_selected() {
+            if let Some(track) = self.tracks.get(self.cursor_row) {
+                self.open_track_instrument(track.id);
+            }
+            return;
+        }
         // `open_window` dibuja la ventana nueva al instante y esta lee `DawApp`:
         // debe llamarse fuera de cualquier `update` de `DawApp`.
         let app = cx.entity();

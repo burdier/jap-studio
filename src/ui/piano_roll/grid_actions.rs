@@ -1,5 +1,5 @@
 //! Rejilla editable y gestos discretos para la misma acción de subdivisión Lua.
-use crate::ui::{DawApp, VimMode};
+use crate::ui::DawApp;
 use elevate::musical::grid::NoteGrid;
 use gpui::{KeyDownEvent, TouchPhase};
 
@@ -66,7 +66,7 @@ impl DawApp {
 
     pub(in crate::ui) fn handle_roll_grid_key(&mut self, event: &KeyDownEvent) -> bool {
         let modifiers = event.keystroke.modifiers;
-        if self.mode == VimMode::Command
+        if self.command_open
             || self.action_form.is_some()
             || !modifiers.alt
             || modifiers.control

@@ -30,26 +30,28 @@ impl DawApp {
         )
     }
     pub(in crate::ui) fn track_fx_gain(&self, index: usize) -> f32 {
-        let Some(track) = self.tracks.get(index) else {
-            return 1.0;
-        };
-        // Una ruta VST procesa toda la cadena, incluidas las Utility y ramas bypass.
-        let own = if crate::audio::effects::contains_vst(&track.chain)
-            || crate::audio::effects::contains_component(
-                &track.chain,
-                &self.lua_components.instances,
-            ) {
+        let parent = self
+            .tracks
+            .get(index)
+            .and_then(|track| track.parent)
+            .and_then(|id| self.tracks.iter().position(|track| track.id == id));
+        self.own_track_fx_gain(index) * parent.map_or(1.0, |parent| self.own_track_fx_gain(parent))
+    }
+
+    pub(in crate::ui) fn own_track_fx_gain(&self, index: usize) -> f32 {
+        self.tracks
+            .get(index)
+            .filter(|track| !crate::audio::effects::needs_rack(&track.chain))
+            .map_or(1.0, |track| {
+                elevate::devices::fx_gain::compile(&track.chain).unwrap_or(1.0)
+            })
+    }
+    pub(in crate::ui) fn master_fx_gain(&self) -> f32 {
+        if crate::audio::effects::needs_rack(&self.master_chain) {
             1.0
         } else {
-            elevate::devices::fx_gain::compile(&track.chain).unwrap_or(1.0)
-        };
-        let parent = track
-            .parent
-            .and_then(|id| self.tracks.iter().find(|track| track.id == id))
-            .map_or(1.0, |track| {
-                elevate::devices::fx_gain::compile(&track.chain).unwrap_or(0.0)
-            });
-        own * parent
+            elevate::devices::fx_gain::compile(&self.master_chain).unwrap_or(1.0)
+        }
     }
     pub(in crate::ui) fn publish_track_fx(&mut self) {
         self.mix_vst();
@@ -62,8 +64,9 @@ impl DawApp {
         }
         if let Some(player) = &self.player {
             for (index, track) in self.tracks.iter().enumerate() {
-                player.set_fx_gain(track.id, self.track_fx_gain(index));
+                player.set_fx_gain(track.id, self.own_track_fx_gain(index));
             }
+            player.set_master_fx_gain(self.master_fx_gain());
         }
         let track = self.piano_output_track();
         let gain = track.map_or(1.0, |index| self.track_fx_gain(index));
