@@ -59,9 +59,23 @@ impl Processing {
         edit: SampleEdit,
         semitones: i8,
     ) -> Result<(Arc<AudioFile>, Self), String> {
+        Self::prepare_for_bpm(original, edit, semitones, 120.0)
+    }
+
+    pub fn prepare_for_bpm(
+        original: Arc<AudioFile>,
+        edit: SampleEdit,
+        semitones: i8,
+        project_bpm: f64,
+    ) -> Result<(Arc<AudioFile>, Self), String> {
         edit.validate()?;
         let cents = i16::from(semitones) * 100 + i16::from(edit.fine_cents);
-        if cents == 0 && edit.ranges.is_empty() && (!edit.bell.enabled || edit.bell.db == 0.) {
+        let warp_active = edit.warp.is_active(project_bpm);
+        if cents == 0
+            && !warp_active
+            && edit.ranges.is_empty()
+            && (!edit.bell.enabled || edit.bell.db == 0.)
+        {
             return Ok((
                 original,
                 Self {
@@ -120,6 +134,11 @@ impl Processing {
                     }
                 }
             }
+        }
+        if warp_active {
+            let factor = edit.warp.stretch_factor(project_bpm);
+            frames =
+                super::sample_warp::warp(&frames, original.sample_rate, edit.warp.mode, factor)?;
         }
         if cents != 0 {
             frames = super::sample_pitch::transpose(&frames, original.sample_rate, cents)?;

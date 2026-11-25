@@ -24,6 +24,7 @@ pub(crate) mod recorder;
 pub(crate) mod sample_edit;
 mod sample_pitch;
 pub(crate) mod sample_preview;
+pub(crate) mod sample_warp;
 pub(crate) mod sampler;
 mod stereo_pan;
 pub(crate) mod vst3;

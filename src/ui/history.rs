@@ -615,10 +615,11 @@ impl DawApp {
                 proc.edit.crossfade_root = clip.edit.crossfade_root;
                 (cached.file.clone(), proc)
             } else {
-                match crate::audio::sample_edit::Processing::prepare(
+                match crate::audio::sample_edit::Processing::prepare_for_bpm(
                     orig_file,
                     clip.edit.clone(),
                     clip.props.pitch_semitones,
+                    self.timeline.tempo.bpm(),
                 ) {
                     Ok(pair) => pair,
                     Err(_) => continue,

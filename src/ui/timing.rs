@@ -24,6 +24,11 @@ impl DawApp {
             Ok(tempo) => {
                 self.stop_all();
                 self.timeline.tempo = tempo;
+                let bpm_f32 = bpm as f32;
+                for effect in self.lua_components.instances.values() {
+                    effect.set_bpm(bpm_f32);
+                }
+                self.rewarp_audio_clips_for_tempo(bpm);
                 self.status_message = format!("Tempo: {bpm:.2} BPM");
             }
             Err(error) => self.status_message = error.to_string(),

@@ -10,7 +10,9 @@ use crate::musical::{
 use loro::{LoroDoc, LoroMap};
 use std::collections::HashSet;
 
-use crate::musical::sample_edit::{Bell, ClipFade, Crossfade, Process, RangeEdit, SampleEdit};
+use crate::musical::sample_edit::{
+    Bell, ClipFade, Crossfade, Process, RangeEdit, SampleEdit, WarpMode, WarpSettings,
+};
 
 const CLIP_ORDER: &str = "audio_order";
 
@@ -213,6 +215,19 @@ fn write_edit(map: &LoroMap, edit: &SampleEdit) -> Result<(), String> {
         map.insert("fine_cents", i64::from(edit.fine_cents))
             .map_err(err)?;
     }
+    let default_warp = WarpSettings::default();
+    if edit.warp.mode != default_warp.mode || map.get("warp_mode").is_some() {
+        map.insert("warp_mode", edit.warp.mode.code())
+            .map_err(err)?;
+    }
+    if edit.warp.original_bpm != default_warp.original_bpm || map.get("warp_bpm").is_some() {
+        map.insert("warp_bpm", f64::from(edit.warp.original_bpm))
+            .map_err(err)?;
+    }
+    if edit.warp.rate != default_warp.rate || map.get("warp_rate").is_some() {
+        map.insert("warp_rate", f64::from(edit.warp.rate))
+            .map_err(err)?;
+    }
     let initial = Bell::default();
     for (key, value, default) in [
         ("eq_hz", edit.bell.hz, initial.hz),
@@ -326,11 +341,23 @@ fn read_edit(map: &LoroMap) -> Result<SampleEdit, String> {
             bend: bend.parse().map_err(|_| "Curva de fundido inválida")?,
         })
     };
+    let default_warp = WarpSettings::default();
+    let warp_mode = if map.get("warp_mode").is_some() {
+        WarpMode::from_code(read_i64(map, "warp_mode")?).ok_or("Modo Warp inválido")?
+    } else {
+        default_warp.mode
+    };
+    let warp = WarpSettings {
+        mode: warp_mode,
+        original_bpm: num("warp_bpm", f64::from(default_warp.original_bpm))? as f32,
+        rate: num("warp_rate", f64::from(default_warp.rate))? as f32,
+    };
     Ok(SampleEdit {
         fades: [fade("fade_in")?, fade("fade_out")?],
         crossfade_root,
         crossfade,
         fine_cents,
+        warp,
         bell: Bell {
             hz: num("eq_hz", d.hz)?,
             db: num("eq_db", d.db)?,

@@ -29,6 +29,7 @@ acotada de selección por NoteOn durante la reproducción.
 
 ## Disponible
 
+- **Warp por clip de audio estilo Ableton (`Off | Re-Pitch | Beats | Complex`)**: estiramiento temporal no destructivo por instancia en el editor de audio (`Warp / Tono`) con estimación automática del BPM original del loop (`Auto`), botones rápidos `=DAW`, `:2`, `1×`, `×2`, seguimiento automático al cambiar el BPM del proyecto, compartido entre Play, preescucha y Exportar, y persistido en `.loro` (`src/audio/sample_warp.rs`).
 - **Dinámica y Espacio estilo Ableton (`Hay Comp`, `Hay Limiter`, `Hay Echo`, `Hay Reverb`), Sidechain real y Monitoreo de Entrada Pro**:
   - **`Hay Comp`** (`elevate.dynamics.compressor` / `hay.fx.compressor`): modos `Peak` y `RMS`, Umbral, Ratio, Ataque, Release, Soft Knee, Makeup/Salida, Dry/Wet, ganancia y filtro pasa-altos de Sidechain, curva de transferencia interactiva y medidor de Gain Reduction (GR) en vivo.
   - **`Hay Limiter`** (`elevate.dynamics.limiter` / `hay.fx.limiter`): Ganancia de entrada, Techo (`Ceiling`), Release, lookahead seleccionable (`1.5 / 3.0 / 6.0 ms`) y medidor GR en vivo.

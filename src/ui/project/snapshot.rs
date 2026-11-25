@@ -255,10 +255,11 @@ impl Snapshot {
                 processing.edit.crossfade_root = clip.edit.crossfade_root;
                 (old.file.clone(), processing)
             } else {
-                crate::audio::sample_edit::Processing::prepare(
+                crate::audio::sample_edit::Processing::prepare_for_bpm(
                     file,
                     clip.edit.clone(),
                     clip.props.pitch_semitones,
+                    self.tempo.bpm(),
                 )?
             };
             audio.push(AudioClip {

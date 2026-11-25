@@ -340,6 +340,42 @@ impl DawApp {
         edit.fine_cents = fine;
         self.prepare_sample_edit(edit, semitones, cx);
     }
+    pub(in crate::ui) fn apply_sample_warp(
+        &mut self,
+        warp: elevate::musical::sample_edit::WarpSettings,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(c) = self.shown_sample() else { return };
+        let mut edit = c.processing.edit.clone();
+        edit.warp = warp;
+        self.prepare_sample_edit(edit, c.props.pitch_semitones, cx);
+    }
+    pub(in crate::ui) fn rewarp_audio_clips_for_tempo(&mut self, bpm: f64) {
+        use elevate::musical::sample_edit::WarpMode;
+        let mut changed = false;
+        for clip in self
+            .timeline
+            .clip
+            .iter_mut()
+            .chain(&mut self.timeline.other_audio_clips)
+        {
+            if clip.processing.edit.warp.mode == WarpMode::Off {
+                continue;
+            }
+            let original = clip.original_file().clone();
+            let edit = clip.processing.edit.clone();
+            if let Ok((file, processing)) =
+                Processing::prepare_for_bpm(original, edit, clip.props.pitch_semitones, bpm)
+            {
+                clip.file = file;
+                clip.processing = processing;
+                changed = true;
+            }
+        }
+        if changed {
+            self.publish_clip_edit();
+        }
+    }
     fn prepare_sample_edit(&mut self, edit: SampleEdit, semitones: i8, cx: &mut Context<Self>) {
         let Some(c) = self.shown_sample() else { return };
         if c.props.locked || self.timeline.sample_editor.job.is_some() {
@@ -354,8 +390,10 @@ impl DawApp {
         let previous_pitch = c.props.pitch_semitones;
         let expected = c.processing.edit.clone();
         let work_file = original.clone();
-        let job =
-            cx.background_spawn(async move { Processing::prepare(work_file, edit, semitones) });
+        let project_bpm = self.timeline.tempo.bpm();
+        let job = cx.background_spawn(async move {
+            Processing::prepare_for_bpm(work_file, edit, semitones, project_bpm)
+        });
         self.timeline.sample_editor.job = Some(cx.spawn(async move |this, cx| {
             let result = job.await;
             let _ = this.update(cx, |this, cx| {
@@ -431,9 +469,12 @@ impl DawApp {
         let looping = e.looping;
         let gain = c.props.gain_linear();
         let config = self.settings.audio.saved.clone();
+        let project_bpm = self.timeline.tempo.bpm();
         let job = cx.background_spawn(async move {
             let file = match preview_edit {
-                Some((original, edit, pitch)) => Processing::prepare(original, edit, pitch)?.0,
+                Some((original, edit, pitch)) => {
+                    Processing::prepare_for_bpm(original, edit, pitch, project_bpm)?.0
+                }
                 None => file,
             };
             let mut frames = file.frames[a..b].to_vec();

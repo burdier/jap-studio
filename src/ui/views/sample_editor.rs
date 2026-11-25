@@ -742,7 +742,7 @@ impl DawApp {
             .child(self.sample_button("EQ del clip", tab == 2, cx, |s, _| {
                 s.timeline.sample_editor.tab = 2
             }))
-            .child(self.sample_button("Afinación", tab == 3, cx, |s, _| {
+            .child(self.sample_button("Warp / Tono", tab == 3, cx, |s, _| {
                 s.timeline.sample_editor.tab = 3
             }))
             .child(self.sample_button("Tejer EQ", false, cx, move |s, _| {
@@ -875,7 +875,158 @@ impl DawApp {
     }
 
     fn sample_tuning(&self, c: &AudioClip, cx: &mut Context<Self>) -> Div {
-        use crate::ui::components::slider::param_slider;
+        use crate::ui::components::{button::flat_control, slider::param_slider};
+        use elevate::musical::sample_edit::WarpMode;
+
+        let ds = &self.ds;
+        let warp = c.processing.edit.warp;
+        let project_bpm = self.timeline.tempo.bpm();
+        let orig_frames = c.original_file().frames.len();
+        let orig_rate = c.original_file().sample_rate;
+        let stretch = warp.stretch_factor(project_bpm);
+        let speed = if stretch > 0.0 { 1.0 / stretch } else { 1.0 };
+
+        let mode_pills = div()
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap_1()
+            .child(
+                div()
+                    .text_xs()
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_color(rgb(if warp.mode != WarpMode::Off {
+                        ds.cyan
+                    } else {
+                        ds.muted
+                    }))
+                    .mr(px(4.))
+                    .child("WARP"),
+            )
+            .children(
+                [
+                    WarpMode::Off,
+                    WarpMode::RePitch,
+                    WarpMode::Beats,
+                    WarpMode::Complex,
+                ]
+                .into_iter()
+                .map(|mode| {
+                    let active = warp.mode == mode;
+                    let accent = if mode == WarpMode::Off {
+                        ds.muted
+                    } else {
+                        ds.cyan
+                    };
+                    let mut next = warp;
+                    next.mode = mode;
+                    if warp.mode == WarpMode::Off && mode != WarpMode::Off {
+                        // Al activar Warp por primera vez, estimar BPM del loop automáticamente.
+                        next.original_bpm = crate::audio::sample_warp::estimate_loop_bpm(
+                            orig_frames,
+                            orig_rate,
+                            project_bpm,
+                        );
+                    }
+                    flat_control(ds, active, accent)
+                        .px(px(7.))
+                        .py(px(3.))
+                        .text_xs()
+                        .text_color(rgb(if active { accent } else { ds.text }))
+                        .child(mode.label())
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, _, _, cx| {
+                                this.apply_sample_warp(next, cx);
+                                cx.stop_propagation();
+                                cx.notify();
+                            }),
+                        )
+                }),
+            );
+
+        let warp_details = (warp.mode != WarpMode::Off).then(|| {
+            let step_btn = |label: &'static str,
+                            next: elevate::musical::sample_edit::WarpSettings,
+                            active: bool,
+                            cx: &mut Context<Self>| {
+                flat_control(ds, active, ds.accent)
+                    .px(px(6.))
+                    .py(px(2.))
+                    .text_xs()
+                    .text_color(rgb(if active { ds.accent } else { ds.text }))
+                    .child(label)
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, _, cx| {
+                            this.apply_sample_warp(next, cx);
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    )
+            };
+            let with_bpm = |delta: f32| {
+                let mut w = warp;
+                w.original_bpm = (w.original_bpm + delta).clamp(20.0, 300.0);
+                w
+            };
+            let mut auto_w = warp;
+            auto_w.original_bpm =
+                crate::audio::sample_warp::estimate_loop_bpm(orig_frames, orig_rate, project_bpm);
+            let mut match_daw = warp;
+            match_daw.original_bpm = (project_bpm as f32).clamp(20.0, 300.0);
+            let mut half_w = warp;
+            half_w.rate = 0.5;
+            let mut norm_w = warp;
+            norm_w.rate = 1.0;
+            let mut dbl_w = warp;
+            dbl_w.rate = 2.0;
+
+            div()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .p_2()
+                .rounded(px(ds.radius_sm))
+                .bg(rgb(ds.panel_dark))
+                .border_1()
+                .border_color(rgb(ds.frame_border()))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .text_xs()
+                        .child(
+                            div()
+                                .text_color(rgb(ds.text))
+                                .child(format!("BPM origen: {:.1}", warp.original_bpm)),
+                        )
+                        .child(
+                            div()
+                                .text_color(rgb(ds.cyan))
+                                .child(format!("→ {:.1} BPM (×{speed:.2})", project_bpm)),
+                        ),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .items_center()
+                        .gap_1()
+                        .child(step_btn("-10", with_bpm(-10.0), false, cx))
+                        .child(step_btn("-1", with_bpm(-1.0), false, cx))
+                        .child(step_btn("Auto", auto_w, false, cx))
+                        .child(step_btn("=DAW", match_daw, false, cx))
+                        .child(step_btn("+1", with_bpm(1.0), false, cx))
+                        .child(step_btn("+10", with_bpm(10.0), false, cx))
+                        .child(div().w(px(6.)))
+                        .child(step_btn(":2", half_w, (warp.rate - 0.5).abs() < 0.01, cx))
+                        .child(step_btn("1×", norm_w, (warp.rate - 1.0).abs() < 0.01, cx))
+                        .child(step_btn("×2", dbl_w, (warp.rate - 2.0).abs() < 0.01, cx)),
+                )
+        });
+
         let tuning = self
             .timeline
             .sample_editor
@@ -921,6 +1072,8 @@ impl DawApp {
             .flex()
             .flex_col()
             .gap_2()
+            .child(mode_pills)
+            .children(warp_details)
             .child(row)
             .child(div().flex().child(self.sample_button(
                 "Aplicar afinación",
