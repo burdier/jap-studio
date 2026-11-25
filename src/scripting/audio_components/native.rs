@@ -78,10 +78,10 @@ pub(super) fn parse_node(
         } else {
             number(&params, spec.key)?
         };
-        if raw < spec.min as f64 || raw > spec.max as f64 {
+        let value = raw as f32;
+        if value < spec.min || value > spec.max {
             return Err(format!("{path}.{}: fuera de rango", spec.key));
         }
-        let value = raw as f32;
         spec.validate(value).map_err(|e| format!("{path}: {e}"))?;
         if kind == NativeKind::Filter {
             Filter::validate(spec.id, value).map_err(|e| format!("{path}: {e}"))?;

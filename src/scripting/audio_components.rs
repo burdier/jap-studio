@@ -223,8 +223,8 @@ pub fn parse(source: &str) -> Result<AudioComponent, String> {
                 .iter()
                 .find(|s| s.key == parameter)
                 .ok_or_else(|| format!("{path}: parámetro desconocido"))?;
-            if min < spec.min as f64
-                || max > spec.max as f64
+            if (min as f32) < spec.min
+                || (max as f32) > spec.max
                 || !destinations.insert((node_index, spec.id))
                 || nodes[node_index].values[spec.id.0 as usize] != default as f32
                 || (nodes[node_index].kind == NativeKind::Filter
@@ -301,6 +301,27 @@ mod tests {
             component.controls[0].targets,
             vec![(0, crate::ParameterId(0)), (1, crate::ParameterId(0))]
         );
+        for (source, expected_id) in [
+            (
+                include_str!("../../assets/scripts/components/audio/compressor.lua"),
+                "hay.fx.compressor",
+            ),
+            (
+                include_str!("../../assets/scripts/components/audio/limiter.lua"),
+                "hay.fx.limiter",
+            ),
+            (
+                include_str!("../../assets/scripts/components/audio/echo.lua"),
+                "hay.fx.echo",
+            ),
+            (
+                include_str!("../../assets/scripts/components/audio/reverb.lua"),
+                "hay.fx.reverb",
+            ),
+        ] {
+            let parsed = parse(source).unwrap_or_else(|e| panic!("{expected_id}: {e}"));
+            assert_eq!(parsed.id, expected_id);
+        }
     }
 
     #[test]
