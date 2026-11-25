@@ -43,6 +43,7 @@ fn audio_clip_metadata_survives_track_reorder_without_loading_file() {
     let first = Track::new("A", TrackKind::Audio);
     let second = Track::new("B", TrackKind::Audio);
     let clip = ProjectAudioClip {
+        edit: Default::default(),
         id: ClipId::fresh(),
         track: second.id,
         source: "/missing/session/take.wav".into(),
@@ -75,6 +76,7 @@ fn audio_and_midi_cannot_share_clip_identity() {
     let midi = MidiClip::new("Notas", 0, 0.0, Pattern::new(Tick(960)).unwrap());
     project.reconcile_midi_clips(&[midi.clone()]).unwrap();
     let audio = ProjectAudioClip {
+        edit: Default::default(),
         id: midi.id,
         track: track.id,
         source: "/audio.wav".into(),
@@ -92,6 +94,7 @@ fn audio_and_midi_cannot_share_clip_identity() {
 fn independent_audio_position_and_gain_edits_merge() {
     let track = Track::new("Audio", TrackKind::Audio);
     let clip = ProjectAudioClip {
+        edit: Default::default(),
         id: ClipId::fresh(),
         track: track.id,
         source: "/take.wav".into(),
@@ -127,6 +130,7 @@ fn collect_copies_shared_file_once_and_uses_relative_paths() {
     fs::write(&source, b"audio de prueba").unwrap();
     let track = Track::new("Audio", TrackKind::Audio);
     let clips = [0.0, 4.0].map(|beat| ProjectAudioClip {
+        edit: Default::default(),
         id: ClipId::fresh(),
         track: track.id,
         source: source.to_string_lossy().into_owned(),
@@ -168,6 +172,7 @@ fn missing_source_does_not_publish_an_incomplete_folder() {
     fs::write(&source, b"audio de prueba").unwrap();
     let track = Track::new("Audio", TrackKind::Audio);
     let clips = [source, root.0.join("ausente.wav")].map(|path| ProjectAudioClip {
+        edit: Default::default(),
         id: ClipId::fresh(),
         track: track.id,
         source: path.to_string_lossy().into_owned(),

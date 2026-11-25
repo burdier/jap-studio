@@ -34,7 +34,12 @@ fn options(denominator: u16) -> MidiOptions {
 fn subdivide_preserves_coverage_off_grid_tails_mute_and_selection() {
     let (pattern, first, second) = fixture();
     let original_next = pattern.next_id();
-    let untouched = *pattern.notes().iter().find(|n| n.id == second).unwrap();
+    let untouched = pattern
+        .notes()
+        .iter()
+        .find(|n| n.id == second)
+        .unwrap()
+        .clone();
     let edit = edit_midi(
         MidiTool::Subdivide.source(),
         &pattern,

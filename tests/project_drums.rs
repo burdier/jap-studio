@@ -134,7 +134,10 @@ fn custom_drum_pattern_and_sample_survive_reopen() {
     let created = drums.new_pattern().unwrap();
     assert_ne!(created, original);
     let six_eight = Meter::new(6, 8).unwrap();
-    drums.set_active_meter(six_eight).unwrap();
+    drums.set_active_meter(six_eight);
+    drums
+        .resize_active(Tick(six_eight.ticks_per_bar()))
+        .unwrap();
     drums.active_pattern_mut().grid = NoteGrid::new(8).unwrap();
     assert_eq!(drums.active_pattern().notes.length(), Tick(3 * PPQ));
     assert_eq!(drums.active_pattern().step_count(), 6);
@@ -143,7 +146,11 @@ fn custom_drum_pattern_and_sample_survive_reopen() {
     notes
         .add_note(piece, Tick(2 * PPQ), Tick(PPQ / 2), 36, 87)
         .unwrap();
-    assert!(drums.set_active_meter(Meter::new(2, 4).unwrap()).is_err());
+    assert!(
+        drums
+            .resize_active(Tick(Meter::new(2, 4).unwrap().ticks_per_bar()))
+            .is_err()
+    );
     assert_eq!(drums.active_pattern().meter, six_eight);
     drums.active_pattern_mut().grid = NoteGrid::new(16).unwrap();
     assert_eq!(drums.active_pattern().step_count(), 12);

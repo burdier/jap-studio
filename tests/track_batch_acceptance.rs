@@ -41,20 +41,33 @@ fn insertion_keeps_clip_identity_and_midi_mapping_on_the_original_track() {
     );
 
     let mut mapper = MidiMapper::new();
-    mapper.bind(MidiSource::Cc(20), MidiBindTarget::TrackVolume(1));
-    mapper.arm_target(MidiBindTarget::TrackPan(1));
+    mapper.bind(MidiSource::Cc(20), MidiBindTarget::TrackVolume(old_track));
+    mapper.arm_target(MidiBindTarget::TrackPan(old_track));
     let mut original = vec![None; before.entries.len()];
     for (new, old) in result.sources.iter().enumerate() {
         if let Some(old) = old {
             original[*old] = Some(new);
         }
     }
-    mapper.remap_tracks(&original);
+    let valid_tracks: std::collections::HashSet<_> = result
+        .snapshot
+        .entries
+        .iter()
+        .map(|entry| entry.track.id)
+        .collect();
+    mapper.prune_orphans(
+        &valid_tracks,
+        &std::collections::HashSet::new(),
+        &std::collections::HashSet::new(),
+    );
     assert_eq!(
-        mapper.source_for(MidiBindTarget::TrackVolume(2)),
+        mapper.source_for(MidiBindTarget::TrackVolume(old_track)),
         Some(MidiSource::Cc(20))
     );
-    assert_eq!(mapper.armed_target(), Some(MidiBindTarget::TrackPan(2)));
+    assert_eq!(
+        mapper.armed_target(),
+        Some(MidiBindTarget::TrackPan(old_track))
+    );
 
     let mut clip = MidiClip::new("Melodía", 1, 4.0, Pattern::new(Tick(960)).unwrap());
     let clip_id = clip.id;

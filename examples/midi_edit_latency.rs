@@ -29,6 +29,7 @@ fn main() {
                 pitch: 60,
                 velocity: 100,
                 expression: Default::default(),
+                pitch_curve: Default::default(),
             })
             .collect();
         let mut pattern = Pattern::restore(length, events).unwrap();
