@@ -207,6 +207,7 @@ impl Plan {
                     rate,
                     automation.map(|(a, beat)| (a, *fx_id, beat)),
                     sc_frames,
+                    time.map(|t| t.bpm),
                 );
             }
             Self::Analyzer(tap) => tap.capture(frames, rate),

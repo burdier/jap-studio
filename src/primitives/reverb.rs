@@ -15,6 +15,56 @@ pub const LOW_CUT_HZ: ParameterId = ParameterId(5);
 pub const HIGH_CUT_HZ: ParameterId = ParameterId(6);
 pub const DAMP_PCT: ParameterId = ParameterId(7);
 pub const MIX_PCT: ParameterId = ParameterId(8);
+pub const SYNC: ParameterId = ParameterId(9);
+pub const PRE_DIV: ParameterId = ParameterId(10);
+pub const DECAY_DIV: ParameterId = ParameterId(11);
+
+/// Divisiones de Pre-Delay sincronizadas al BPM (`Off` .. `1/8`).
+pub const REVERB_PRE_DIVISIONS: [(&str, f64); 5] = [
+    ("Off", 0.0),
+    ("1/64", 0.0625),
+    ("1/32", 0.125),
+    ("1/16", 0.25),
+    ("1/8", 0.5),
+];
+
+/// Divisiones de Decay sincronizadas al BPM (`1/4` .. `8c`).
+pub const REVERB_DECAY_DIVISIONS: [(&str, f64); 6] = [
+    ("1/4", 1.0),
+    ("1/2", 2.0),
+    ("1c", 4.0),
+    ("2c", 8.0),
+    ("4c", 16.0),
+    ("8c", 32.0),
+];
+
+pub fn predelay_sync_ms(index: u8, bpm: f64) -> f32 {
+    let beats = REVERB_PRE_DIVISIONS
+        .get(usize::from(index))
+        .map_or(0.125, |&(_, b)| b);
+    let safe_bpm = bpm.clamp(20.0, 360.0);
+    ((beats * 60_000.0 / safe_bpm) as f32).clamp(0.0, 250.0)
+}
+
+pub fn decay_sync_s(index: u8, bpm: f64) -> f32 {
+    let beats = REVERB_DECAY_DIVISIONS
+        .get(usize::from(index))
+        .map_or(4.0, |&(_, b)| b);
+    let safe_bpm = bpm.clamp(20.0, 360.0);
+    ((beats * 60.0 / safe_bpm) as f32).clamp(0.2, 20.0)
+}
+
+pub fn predelay_div_label(index: u8) -> &'static str {
+    REVERB_PRE_DIVISIONS
+        .get(usize::from(index))
+        .map_or("1/32", |&(l, _)| l)
+}
+
+pub fn decay_div_label(index: u8) -> &'static str {
+    REVERB_DECAY_DIVISIONS
+        .get(usize::from(index))
+        .map_or("1c", |&(l, _)| l)
+}
 
 const MAX_PREDELAY_SAMPLES: usize = 48_000; // 250 ms @ 192 kHz
 const FDN_CHANNELS: usize = 8;
@@ -107,10 +157,38 @@ const PARAMETERS: &[ParameterSpec] = &[
         max: 100.0,
         default: 32.0,
     },
+    ParameterSpec {
+        id: SYNC,
+        key: "sync",
+        name: "Tempo",
+        unit: "tipo",
+        min: 0.0,
+        max: 1.0,
+        default: 0.0,
+    },
+    ParameterSpec {
+        id: PRE_DIV,
+        key: "pre_div",
+        name: "Pre-Delay Sync",
+        unit: "tipo",
+        min: 0.0,
+        max: 4.0,
+        default: 2.0,
+    },
+    ParameterSpec {
+        id: DECAY_DIV,
+        key: "decay_div",
+        name: "Decay Sync",
+        unit: "tipo",
+        min: 0.0,
+        max: 5.0,
+        default: 2.0,
+    },
 ];
 
 pub struct Reverb {
     sample_rate: f32,
+    tempo_bpm: f64,
     bypassed: bool,
     freeze: bool,
     predelay_ms: f32,
@@ -121,6 +199,9 @@ pub struct Reverb {
     high_cut_hz: f32,
     damp_pct: f32,
     mix_pct: f32,
+    sync: bool,
+    pre_div: u8,
+    decay_div: u8,
 
     // Pre-delay estéreo
     pre_l: Box<[f32]>,
@@ -162,6 +243,7 @@ impl Reverb {
             .collect();
         Self {
             sample_rate: sr,
+            tempo_bpm: 120.0,
             bypassed: false,
             freeze: false,
             predelay_ms: 18.0,
@@ -172,6 +254,9 @@ impl Reverb {
             high_cut_hz: 10000.0,
             damp_pct: 40.0,
             mix_pct: 32.0,
+            sync: false,
+            pre_div: 2,
+            decay_div: 2,
             pre_l: vec![0.0; MAX_PREDELAY_SAMPLES].into_boxed_slice(),
             pre_r: vec![0.0; MAX_PREDELAY_SAMPLES].into_boxed_slice(),
             pre_pos: 0,
@@ -245,6 +330,15 @@ impl Primitive for Reverb {
             HIGH_CUT_HZ => self.high_cut_hz,
             DAMP_PCT => self.damp_pct,
             MIX_PCT => self.mix_pct,
+            SYNC => {
+                if self.sync {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            PRE_DIV => f32::from(self.pre_div),
+            DECAY_DIV => f32::from(self.decay_div),
             _ => return Err(PrimitiveError::UnknownParameter(parameter)),
         })
     }
@@ -265,6 +359,9 @@ impl Primitive for Reverb {
             HIGH_CUT_HZ => self.high_cut_hz = value,
             DAMP_PCT => self.damp_pct = value,
             MIX_PCT => self.mix_pct = value,
+            SYNC => self.sync = value >= 0.5,
+            PRE_DIV => self.pre_div = value.round().clamp(0.0, 4.0) as u8,
+            DECAY_DIV => self.decay_div = value.round().clamp(0.0, 5.0) as u8,
             _ => unreachable!(),
         }
         Ok(())
@@ -275,6 +372,12 @@ impl Primitive for Reverb {
         self.reset();
     }
 
+    fn set_tempo_bpm(&mut self, bpm: f64) {
+        if bpm.is_finite() && bpm >= 20.0 {
+            self.tempo_bpm = bpm.clamp(20.0, 360.0);
+        }
+    }
+
     fn process(&mut self, frames: &mut [StereoFrame]) {
         if self.bypassed || frames.is_empty() {
             return;
@@ -283,8 +386,19 @@ impl Primitive for Reverb {
         let rate_scale = sr / 48_000.0;
         let size_scale = 0.35 + (self.size_pct / 100.0).clamp(0.1, 1.0) * 0.95;
 
+        let eff_predelay_ms = if self.sync {
+            predelay_sync_ms(self.pre_div, self.tempo_bpm)
+        } else {
+            self.predelay_ms
+        };
+        let eff_decay_s = if self.sync {
+            decay_sync_s(self.decay_div, self.tempo_bpm)
+        } else {
+            self.decay_s
+        };
+
         let predelay_samples =
-            ((self.predelay_ms * 0.001 * sr).round() as usize).min(MAX_PREDELAY_SAMPLES - 2);
+            ((eff_predelay_ms * 0.001 * sr).round() as usize).min(MAX_PREDELAY_SAMPLES - 2);
         let diff_g = (self.diffusion_pct / 100.0).clamp(0.0, 1.0) * 0.68;
         let diff_d1 = ((211.0 * rate_scale).round() as usize).clamp(16, DIFF_LEN_1 - 2);
         let diff_d2 = ((379.0 * rate_scale).round() as usize).clamp(16, DIFF_LEN_2 - 2);
@@ -304,7 +418,7 @@ impl Primitive for Reverb {
         // Longitudes y ganancias RT60 exactas por cada canal de la FDN
         let mut fdn_delays = [0usize; FDN_CHANNELS];
         let mut fdn_gains = [0.0f32; FDN_CHANNELS];
-        let decay = self.decay_s.max(0.2);
+        let decay = eff_decay_s.max(0.2);
         for ch in 0..FDN_CHANNELS {
             let d = ((BASE_FDN_LENGTHS_48K[ch] as f32 * rate_scale * size_scale).round() as usize)
                 .clamp(64, MAX_FDN_LEN - 16);
@@ -489,5 +603,15 @@ mod tests {
             frozen_rms > 0.015,
             "Freeze debía sostener la cola sin decaer, obt {frozen_rms}"
         );
+    }
+
+    #[test]
+    fn reverb_sync_scales_predelay_and_decay_with_daw_bpm() {
+        // A 120 BPM: Pre 1/16 = 125 ms, Decay 1c (4 beats) = 2.0 s.
+        assert!((predelay_sync_ms(3, 120.0) - 125.0).abs() < 0.1);
+        assert!((decay_sync_s(2, 120.0) - 2.0).abs() < 0.01);
+        // Al doblar a 240 BPM, ambos tiempos se dividen exactamente a la mitad.
+        assert!((predelay_sync_ms(3, 240.0) - 62.5).abs() < 0.1);
+        assert!((decay_sync_s(2, 240.0) - 1.0).abs() < 0.01);
     }
 }

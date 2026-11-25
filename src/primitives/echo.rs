@@ -15,10 +15,40 @@ pub const LP_HZ: ParameterId = ParameterId(5);
 pub const DRIVE: ParameterId = ParameterId(6);
 pub const WOBBLE: ParameterId = ParameterId(7);
 pub const MIX: ParameterId = ParameterId(8);
+pub const SYNC: ParameterId = ParameterId(9);
+pub const DIV_L: ParameterId = ParameterId(10);
+pub const DIV_R: ParameterId = ParameterId(11);
 
 pub const MODE_STEREO: u8 = 0;
 pub const MODE_PING_PONG: u8 = 1;
 pub const MODE_MID_SIDE: u8 = 2;
+
+/// Divisiones musicales estilo Ableton Echo (`1/16` .. `1/1`).
+pub const ECHO_DIVISIONS: [(&str, f64); 9] = [
+    ("1/16", 0.25),
+    ("1/8T", 1.0 / 3.0),
+    ("1/8", 0.5),
+    ("1/8.", 0.75),
+    ("1/4T", 2.0 / 3.0),
+    ("1/4", 1.0),
+    ("1/4.", 1.5),
+    ("1/2", 2.0),
+    ("1/1", 4.0),
+];
+
+pub fn division_ms(index: u8, bpm: f64) -> f32 {
+    let beats = ECHO_DIVISIONS
+        .get(usize::from(index))
+        .map_or(0.75, |&(_, b)| b);
+    let safe_bpm = bpm.clamp(20.0, 360.0);
+    ((beats * 60_000.0 / safe_bpm) as f32).clamp(1.0, 2000.0)
+}
+
+pub fn division_label(index: u8) -> &'static str {
+    ECHO_DIVISIONS
+        .get(usize::from(index))
+        .map_or("1/8.", |&(l, _)| l)
+}
 
 /// Hasta 2.0 s a 192 kHz (384 000 muestras por canal), preasignado fuera de RT.
 const MAX_DELAY_SAMPLES: usize = 384_000;
@@ -105,10 +135,38 @@ const PARAMETERS: &[ParameterSpec] = &[
         max: 100.0,
         default: 30.0,
     },
+    ParameterSpec {
+        id: SYNC,
+        key: "sync",
+        name: "Tempo",
+        unit: "tipo",
+        min: 0.0,
+        max: 1.0,
+        default: 0.0,
+    },
+    ParameterSpec {
+        id: DIV_L,
+        key: "div_l",
+        name: "División L",
+        unit: "tipo",
+        min: 0.0,
+        max: 8.0,
+        default: 3.0,
+    },
+    ParameterSpec {
+        id: DIV_R,
+        key: "div_r",
+        name: "División R",
+        unit: "tipo",
+        min: 0.0,
+        max: 8.0,
+        default: 3.0,
+    },
 ];
 
 pub struct Echo {
     sample_rate: f32,
+    tempo_bpm: f64,
     bypassed: bool,
     mode: u8,
     time_l_ms: f32,
@@ -119,6 +177,9 @@ pub struct Echo {
     drive_pct: f32,
     wobble_pct: f32,
     mix_pct: f32,
+    sync: bool,
+    div_l: u8,
+    div_r: u8,
 
     // Estado interno preasignado
     buf_l: Box<[f32]>,
@@ -146,6 +207,7 @@ impl Echo {
         let init_delay = (375.0 * 0.001 * sr).clamp(1.0, (MAX_DELAY_SAMPLES - 4) as f32);
         Self {
             sample_rate: sr,
+            tempo_bpm: 120.0,
             bypassed: false,
             mode: MODE_STEREO,
             time_l_ms: 375.0,
@@ -156,6 +218,9 @@ impl Echo {
             drive_pct: 15.0,
             wobble_pct: 12.0,
             mix_pct: 30.0,
+            sync: false,
+            div_l: 3,
+            div_r: 3,
             buf_l: vec![0.0; MAX_DELAY_SAMPLES].into_boxed_slice(),
             buf_r: vec![0.0; MAX_DELAY_SAMPLES].into_boxed_slice(),
             write_pos: 0,
@@ -206,6 +271,15 @@ impl Primitive for Echo {
             DRIVE => self.drive_pct,
             WOBBLE => self.wobble_pct,
             MIX => self.mix_pct,
+            SYNC => {
+                if self.sync {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            DIV_L => f32::from(self.div_l),
+            DIV_R => f32::from(self.div_r),
             _ => return Err(PrimitiveError::UnknownParameter(parameter)),
         })
     }
@@ -226,6 +300,9 @@ impl Primitive for Echo {
             DRIVE => self.drive_pct = value,
             WOBBLE => self.wobble_pct = value,
             MIX => self.mix_pct = value,
+            SYNC => self.sync = value >= 0.5,
+            DIV_L => self.div_l = value.round().clamp(0.0, 8.0) as u8,
+            DIV_R => self.div_r = value.round().clamp(0.0, 8.0) as u8,
             _ => unreachable!(),
         }
         Ok(())
@@ -236,14 +313,30 @@ impl Primitive for Echo {
         self.reset();
     }
 
+    fn set_tempo_bpm(&mut self, bpm: f64) {
+        if bpm.is_finite() && bpm >= 20.0 {
+            self.tempo_bpm = bpm.clamp(20.0, 360.0);
+        }
+    }
+
     fn process(&mut self, frames: &mut [StereoFrame]) {
         if self.bypassed || frames.is_empty() {
             return;
         }
         let sr = self.sample_rate.max(8_000.0);
         let max_d = (MAX_DELAY_SAMPLES - 4) as f32;
-        let target_l = (self.time_l_ms * 0.001 * sr).clamp(1.0, max_d);
-        let target_r = (self.time_r_ms * 0.001 * sr).clamp(1.0, max_d);
+        let eff_l_ms = if self.sync {
+            division_ms(self.div_l, self.tempo_bpm)
+        } else {
+            self.time_l_ms
+        };
+        let eff_r_ms = if self.sync {
+            division_ms(self.div_r, self.tempo_bpm)
+        } else {
+            self.time_r_ms
+        };
+        let target_l = (eff_l_ms * 0.001 * sr).clamp(1.0, max_d);
+        let target_r = (eff_r_ms * 0.001 * sr).clamp(1.0, max_d);
         if !self.delay_initialized {
             self.smooth_delay_l = target_l;
             self.smooth_delay_r = target_r;
@@ -401,5 +494,32 @@ mod tests {
             "R debe permanecer casi en silencio en tap 1, obt {r1}"
         );
         assert!(r2 > 0.10, "segundo eco ping-pong en R esperado, obt {r2}");
+    }
+
+    #[test]
+    fn echo_sync_mode_tracks_daw_bpm_divisions_accurately() {
+        let spec = ProcessSpec::new(48_000.0).unwrap();
+        let mut echo = Echo::new(spec);
+        echo.set_parameter(SYNC, 1.0).unwrap();
+        echo.set_parameter(DIV_L, 0.0).unwrap(); // 1/16 = 0.25 beats
+        echo.set_parameter(DIV_R, 0.0).unwrap();
+        echo.set_parameter(WOBBLE, 0.0).unwrap();
+        echo.set_parameter(MIX, 100.0).unwrap();
+        // A 300 BPM, 1/16 = 0.25 * 60000 / 300 = 50 ms = 2400 muestras @ 48 kHz.
+        echo.set_tempo_bpm(300.0);
+        echo.reset();
+
+        let mut frames = vec![[0.0; 2]; 3000];
+        frames[0] = [1.0, 1.0];
+        echo.process(&mut frames);
+
+        let peak_at_50ms = frames[2395..2406]
+            .iter()
+            .map(|f| f[0].abs())
+            .fold(0.0_f32, f32::max);
+        assert!(
+            peak_at_50ms > 0.25,
+            "eco Sync 1/16 @ 300 BPM esperado en muestra 2400, obt {peak_at_50ms}"
+        );
     }
 }

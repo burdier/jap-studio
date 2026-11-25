@@ -27,6 +27,7 @@ pub(crate) struct ComponentEffect {
     preparation: std::sync::Mutex<()>,
     active_rate: AtomicU32,
     last_gr_db: AtomicU32,
+    bpm: AtomicU32,
     controls: Vec<(ParameterId, AtomicU32)>,
     busy: AtomicBool,
 }
@@ -41,6 +42,11 @@ impl ComponentEffect {
     }
     pub fn gain_reduction_db(&self) -> f32 {
         f32::from_bits(self.last_gr_db.load(Ordering::Relaxed))
+    }
+    pub fn set_bpm(&self, bpm: f32) {
+        if bpm.is_finite() && bpm >= 20.0 {
+            self.bpm.store(bpm.to_bits(), Ordering::Relaxed);
+        }
     }
     pub fn descriptor(&self) -> &Arc<AudioComponent> {
         &self.descriptor
@@ -66,6 +72,7 @@ impl ComponentEffect {
             ),
             active_rate: AtomicU32::new(rate),
             last_gr_db: AtomicU32::new(0.0_f32.to_bits()),
+            bpm: AtomicU32::new(120.0_f32.to_bits()),
             preparation: std::sync::Mutex::new(()),
             controls,
             busy: AtomicBool::new(false),
@@ -129,6 +136,7 @@ impl ComponentEffect {
             f64,
         )>,
         sidechain: Option<&[[f32; 2]]>,
+        bpm: Option<f64>,
     ) {
         if self
             .busy
@@ -138,6 +146,12 @@ impl ComponentEffect {
             frames.fill([0.0; 2]);
             return;
         }
+        let effective_bpm = if let Some(b) = bpm.filter(|b| b.is_finite() && *b >= 20.0) {
+            self.bpm.store((b as f32).to_bits(), Ordering::Relaxed);
+            b
+        } else {
+            f64::from(f32::from_bits(self.bpm.load(Ordering::Relaxed)))
+        };
         self.processor.read(|variants| {
             let Some(prepared) = variants.get(&rate) else {
                 frames.fill([0.; 2]);
@@ -145,6 +159,7 @@ impl ComponentEffect {
             };
             self.active_rate.store(rate, Ordering::Relaxed);
             let processor = unsafe { &mut *prepared.processor.get() };
+            processor.set_tempo_bpm(effective_bpm);
             for (id, value) in &self.controls {
                 let effective = if let Some((auto, fx_id, beat)) = automated
                     && let Some(norm) = auto.evaluate_fx_param(fx_id, id.0, beat)

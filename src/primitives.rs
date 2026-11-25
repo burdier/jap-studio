@@ -128,6 +128,8 @@ pub trait Primitive: Send {
     fn gain_reduction_db(&self) -> f32 {
         0.0
     }
+    /// Actualiza el tempo del transporte (BPM) para efectos sincronizados al compás.
+    fn set_tempo_bpm(&mut self, _bpm: f64) {}
     fn reset(&mut self);
     fn is_bypassed(&self) -> bool;
     fn set_bypassed(&mut self, bypassed: bool);

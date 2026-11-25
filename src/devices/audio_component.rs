@@ -111,6 +111,14 @@ impl AudioComponentDevice {
             .map(|p| p.gain_reduction_db())
             .fold(0.0_f32, f32::max)
     }
+
+    pub fn set_tempo_bpm(&mut self, bpm: f64) {
+        if bpm.is_finite() && bpm >= 20.0 {
+            for p in &mut self.processors {
+                p.set_tempo_bpm(bpm);
+            }
+        }
+    }
 }
 
 impl Device for AudioComponentDevice {

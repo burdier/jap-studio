@@ -1,7 +1,7 @@
--- Reverb algorítmica estéreo FDN estilo Ableton Live Reverb con Pre-Delay, Damping y Freeze.
+-- Reverb algorítmica estéreo FDN estilo Ableton Live Reverb con Pre-Delay, Tempo Sync, Damping y Freeze.
 return {
     api_version = 2, kind = "audio_component", id = "hay.fx.reverb",
-    name = "Hay Reverb", description = "Reverb algorítmica estéreo FDN estilo Ableton con Pre-Delay, Damping y Freeze.",
+    name = "Hay Reverb", description = "Reverb algorítmica estéreo FDN estilo Ableton con Tempo Sync, Pre-Delay, Damping y Freeze.",
     ports = { input = { kind = "audio", channels = 2 }, output = { kind = "audio", channels = 2 } },
     graph = {
         nodes = { {
@@ -9,6 +9,7 @@ return {
             parameters = {
                 freeze = 0, predelay = 18.0, decay = 2.4, size = 65.0,
                 diffusion = 75.0, low_cut = 120.0, high_cut = 10000.0, damp = 40.0, mix = 32.0,
+                sync = 0, pre_div = 2, decay_div = 2,
             },
         } },
         edges = { { from = "input", to = "rev" }, { from = "rev", to = "output" } },
@@ -18,6 +19,18 @@ return {
           choices = { "Normal", "Freeze" },
           min = 0, max = 1, default = 0, step = 1, unit = "tipo",
           targets = { { node = "rev", parameter = "freeze" } } },
+        { id = 9, key = "sync", label = "Tempo", kind = "choice",
+          choices = { "Time", "Sync" },
+          min = 0, max = 1, default = 0, step = 1, unit = "tipo",
+          targets = { { node = "rev", parameter = "sync" } } },
+        { id = 10, key = "pre_div", label = "Pre", kind = "choice",
+          choices = { "Off", "1/64", "1/32", "1/16", "1/8" },
+          min = 0, max = 4, default = 2, step = 1, unit = "tipo",
+          targets = { { node = "rev", parameter = "pre_div" } } },
+        { id = 11, key = "decay_div", label = "Decay", kind = "choice",
+          choices = { "1/4", "1/2", "1c", "2c", "4c", "8c" },
+          min = 0, max = 5, default = 2, step = 1, unit = "tipo",
+          targets = { { node = "rev", parameter = "decay_div" } } },
         { id = 1, key = "predelay", label = "Pre-Delay", kind = "number",
           min = 0, max = 250, default = 18, step = 1, unit = "ms",
           targets = { { node = "rev", parameter = "predelay" } } },

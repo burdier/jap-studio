@@ -193,6 +193,10 @@ impl DawApp {
         active.monitor.set_mix(mix.gain, mix.pan);
         active.monitor.set_stereo(self.audio_record_stereo);
         active.monitor.set_active(should_hear);
+        let bpm = self.timeline.tempo.bpm() as f32;
+        for effect in self.lua_components.instances.values() {
+            effect.set_bpm(bpm);
+        }
     }
 
     fn recordings_dir(&self) -> PathBuf {

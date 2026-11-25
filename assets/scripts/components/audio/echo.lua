@@ -1,7 +1,7 @@
--- Eco estéreo estilo Ableton Live Echo (Stereo, Ping Pong, Mid/Side, filtro, Drive y Wobble).
+-- Eco estéreo estilo Ableton Live Echo (Stereo, Ping Pong, Mid/Side, Time/Sync, filtro, Drive y Wobble).
 return {
     api_version = 2, kind = "audio_component", id = "hay.fx.echo",
-    name = "Hay Echo", description = "Delay estéreo / Ping-Pong / Mid-Side estilo Ableton con filtro, Drive y Wobble.",
+    name = "Hay Echo", description = "Delay estéreo / Ping-Pong / Mid-Side estilo Ableton con Tempo Sync, filtro, Drive y Wobble.",
     ports = { input = { kind = "audio", channels = 2 }, output = { kind = "audio", channels = 2 } },
     graph = {
         nodes = { {
@@ -9,6 +9,7 @@ return {
             parameters = {
                 mode = 0, time_l = 375.0, time_r = 375.0, feedback = 42.0,
                 hp = 120.0, lp = 6500.0, drive = 15.0, wobble = 12.0, mix = 30.0,
+                sync = 0, div_l = 3, div_r = 3,
             },
         } },
         edges = { { from = "input", to = "echo" }, { from = "echo", to = "output" } },
@@ -18,6 +19,18 @@ return {
           choices = { "Stereo", "Ping Pong", "Mid/Side" },
           min = 0, max = 2, default = 0, step = 1, unit = "tipo",
           targets = { { node = "echo", parameter = "mode" } } },
+        { id = 9, key = "sync", label = "Tempo", kind = "choice",
+          choices = { "Time", "Sync" },
+          min = 0, max = 1, default = 0, step = 1, unit = "tipo",
+          targets = { { node = "echo", parameter = "sync" } } },
+        { id = 10, key = "div_l", label = "L", kind = "choice",
+          choices = { "1/16", "1/8T", "1/8", "1/8.", "1/4T", "1/4", "1/4.", "1/2", "1/1" },
+          min = 0, max = 8, default = 3, step = 1, unit = "tipo",
+          targets = { { node = "echo", parameter = "div_l" } } },
+        { id = 11, key = "div_r", label = "R", kind = "choice",
+          choices = { "1/16", "1/8T", "1/8", "1/8.", "1/4T", "1/4", "1/4.", "1/2", "1/1" },
+          min = 0, max = 8, default = 3, step = 1, unit = "tipo",
+          targets = { { node = "echo", parameter = "div_r" } } },
         { id = 1, key = "time_l", label = "Tiempo L", kind = "number", scale = "log",
           min = 1, max = 2000, default = 375, step = 1, unit = "ms",
           targets = { { node = "echo", parameter = "time_l" } } },

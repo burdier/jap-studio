@@ -86,6 +86,10 @@ impl DawApp {
                 piano.set_fx_gain(gain);
             }
         }
+        let bpm = self.timeline.tempo.bpm() as f32;
+        for effect in self.lua_components.instances.values() {
+            effect.set_bpm(bpm);
+        }
         self.sync_input_monitor();
     }
 }
