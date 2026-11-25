@@ -25,6 +25,8 @@ pub(in crate::ui) struct ChordPadState {
     pub bass_octave: bool,
     pub inversion: i8,
     pub strum_ticks: i16,
+    /// Cuando está activo, las notas MIDI entrantes disparan acordes diatónicos de la escala activa.
+    pub midi_chord_mode: bool,
 }
 
 impl Default for ChordPadState {
@@ -36,6 +38,7 @@ impl Default for ChordPadState {
             bass_octave: true,
             inversion: 0,
             strum_ticks: 15,
+            midi_chord_mode: false,
         }
     }
 }
@@ -176,6 +179,28 @@ impl ChordPadState {
         }
         voices.dedup();
         (root_pitch, voices)
+    }
+
+    /// Calcula el grado diatónico y las voces de acorde para una nota MIDI entrante
+    /// respetando la escala activa, el voicing elegido y la octava tocada.
+    pub fn voices_for_midi_note(
+        &self,
+        trigger_note: u8,
+        scale_root: u8,
+        scale_minor: bool,
+    ) -> (u8, Vec<u8>) {
+        let (degree, octave_shift) =
+            elevate::musical::chord::scale_degree_for_note(trigger_note, scale_root, scale_minor);
+        let pad = Self { degree, ..*self };
+        let (_, raw_voices) = pad.preview_voices(scale_root, scale_minor);
+        let semitone_shift = i16::from(octave_shift) * 12;
+        let mut shifted: Vec<u8> = raw_voices
+            .into_iter()
+            .map(|p| (i16::from(p) + semitone_shift).clamp(0, 127) as u8)
+            .collect();
+        shifted.sort_unstable();
+        shifted.dedup();
+        (degree, shifted)
     }
 
     pub fn format_note_name(pitch: u8) -> String {

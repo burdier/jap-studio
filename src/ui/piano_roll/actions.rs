@@ -244,6 +244,19 @@ impl DawApp {
             RollAction::ChordToggleBass => {
                 self.piano_roll.chord_pad.bass_octave = !self.piano_roll.chord_pad.bass_octave;
             }
+            RollAction::ChordToggleMidiMode => {
+                let next = !self.piano_roll.chord_pad.midi_chord_mode;
+                if !next {
+                    self.release_midi_chord_expander();
+                }
+                self.piano_roll.chord_pad.midi_chord_mode = next;
+                self.piano_roll.hint = if next {
+                    "🎹 Acordes con teclado MIDI ACTIVOS · toca cualquier tecla para probar acordes en escala".into()
+                } else {
+                    "Teclado MIDI vuelto a notas individuales".into()
+                };
+                self.status_message = self.piano_roll.hint.clone();
+            }
             RollAction::ChordInversion(inv) => {
                 self.piano_roll.chord_pad.inversion = inv.clamp(-2, 3);
             }

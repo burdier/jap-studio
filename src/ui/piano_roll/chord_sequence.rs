@@ -2,7 +2,7 @@
 use super::chord::ChordPadState;
 use crate::ui::DawApp;
 use elevate::musical::{
-    chord::{ChordAudition, ChordStep, plan_sequence},
+    chord::{ChordAudition, ChordStep, MidiChordExpander, plan_sequence},
     midi::MidiTarget,
     model::NoteId,
     time::Tick,
@@ -20,6 +20,7 @@ pub(in crate::ui) struct ChordSequenceState {
     pub unit: ChordUnit,
     pub selected: usize,
     pub audition: ChordAudition,
+    pub midi_expander: MidiChordExpander,
 }
 
 impl Default for ChordSequenceState {
@@ -29,6 +30,7 @@ impl Default for ChordSequenceState {
             unit: ChordUnit::Bar,
             selected: 0,
             audition: ChordAudition::default(),
+            midi_expander: MidiChordExpander::default(),
         }
     }
 }
@@ -39,8 +41,20 @@ impl DawApp {
         self.dispatch_routed_midi(off);
     }
 
+    pub(in crate::ui) fn release_midi_chord_expander(&mut self) {
+        let off = self.piano_roll.chord_sequence.midi_expander.release_all();
+        if !off.is_empty() {
+            let routed = self.midi_server.publish_inputs(off);
+            self.dispatch_routed_midi(routed);
+        }
+    }
+
+    pub(in crate::ui) fn audition_current_chord_pad(&mut self) {
+        let pad = self.piano_roll.chord_pad;
+        self.audition_chord_pad(pad);
+    }
+
     pub(in crate::ui) fn audition_chord_slot(&mut self, index: usize) {
-        self.release_chord_audition();
         let Some(pad) = self
             .piano_roll
             .chord_sequence
@@ -49,14 +63,23 @@ impl DawApp {
             .copied()
             .flatten()
         else {
+            self.release_chord_audition();
             return;
         };
-        let Some(clip) = self.timeline.midi_clip.as_ref() else {
-            return;
-        };
+        self.audition_chord_pad(pad);
+    }
+
+    pub(in crate::ui) fn audition_chord_pad(&mut self, pad: ChordPadState) {
+        self.release_chord_audition();
+        let track_index = self
+            .timeline
+            .midi_clip
+            .as_ref()
+            .map(|clip| clip.track)
+            .unwrap_or(self.cursor_row);
         let id = self
             .tracks
-            .get(clip.track)
+            .get(track_index)
             .and_then(|track| track.instrument)
             .unwrap_or(self.instrument.id());
         let (_, voices) =

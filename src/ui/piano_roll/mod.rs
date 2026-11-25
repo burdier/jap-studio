@@ -157,6 +157,7 @@ pub(super) enum RollAction {
     ChordColor(u8),
     ChordVoicing(u8),
     ChordToggleBass,
+    ChordToggleMidiMode,
     ChordInversion(i8),
     ChordStrum(i16),
     ChordInsertAtCursor,

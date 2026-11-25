@@ -303,6 +303,8 @@ impl DawApp {
 
     fn apply_midi_inputs(&mut self, inputs: impl IntoIterator<Item = MidiInputEvent>) {
         let mut to_publish = Vec::new();
+        let chord_midi_active = self.piano_roll.chord_pad.midi_chord_mode
+            && self.midi_server.active_target() != Some(MidiTarget::Sequencer);
         for input in inputs {
             let effects = self.midi_mapper.process(input.message);
             let mut learned = false;
@@ -312,9 +314,60 @@ impl DawApp {
                 }
                 self.apply_mapped_effect(effect);
             }
-            if !learned {
-                to_publish.push(input);
+            if learned {
+                continue;
             }
+            if chord_midi_active {
+                match input.message {
+                    MidiMessage::NoteOn { note, velocity } if velocity > 0 => {
+                        let scale_root = self.piano_roll.scale_root;
+                        let scale_minor = self.piano_roll.scale_minor;
+                        let (degree, voices) = self.piano_roll.chord_pad.voices_for_midi_note(
+                            note,
+                            scale_root,
+                            scale_minor,
+                        );
+                        self.piano_roll.chord_pad.degree = degree;
+                        let roman = super::piano_roll::chord::ChordPadState::degree_roman(
+                            scale_minor,
+                            degree,
+                        );
+                        let name = super::piano_roll::chord::ChordPadState::degree_chord_name(
+                            scale_root,
+                            scale_minor,
+                            degree,
+                            self.piano_roll.chord_pad.color,
+                        );
+                        self.status_message = format!("🎹 Hay Chord · {roman} · {name}");
+                        to_publish.extend(
+                            self.piano_roll.chord_sequence.midi_expander.expand_note_on(
+                                input.channel,
+                                note,
+                                velocity,
+                                &voices,
+                            ),
+                        );
+                        continue;
+                    }
+                    MidiMessage::NoteOff { note } | MidiMessage::NoteOn { note, velocity: 0 } => {
+                        to_publish.extend(
+                            self.piano_roll
+                                .chord_sequence
+                                .midi_expander
+                                .expand_note_off(input.channel, note),
+                        );
+                        continue;
+                    }
+                    MidiMessage::AllNotesOff => {
+                        to_publish
+                            .extend(self.piano_roll.chord_sequence.midi_expander.release_all());
+                    }
+                    _ => {}
+                }
+            } else if self.piano_roll.chord_sequence.midi_expander.is_active() {
+                to_publish.extend(self.piano_roll.chord_sequence.midi_expander.release_all());
+            }
+            to_publish.push(input);
         }
         let was_full = self.midi_server.capacity_exceeded();
         let routed = self.midi_server.publish_inputs(to_publish);

@@ -4,7 +4,9 @@ use crate::ui::{
     components::slider::{FractionSet, Reset, param_slider},
     piano_roll::{RollAction, chord::ChordPadState},
 };
-use gpui::{Context, Div, IntoElement, MouseButton, MouseDownEvent, div, prelude::*, px, rgb};
+use gpui::{
+    Context, Div, IntoElement, MouseButton, MouseDownEvent, Stateful, div, prelude::*, px, rgb,
+};
 use std::rc::Rc;
 
 const ROOT_LABELS: [&str; 12] = [
@@ -136,7 +138,7 @@ impl DawApp {
                 }),
             ))
             .child({
-                let mut voicing_pills: Vec<Div> = VOICING_CHOICES
+                let mut voicing_pills: Vec<Stateful<Div>> = VOICING_CHOICES
                     .into_iter()
                     .map(|(label, idx)| {
                         self.chord_choice_pill(
@@ -171,6 +173,79 @@ impl DawApp {
                 strum_set,
                 strum_reset,
             ))
+            .child(
+                div()
+                    .id("hay-chord-midi-mode")
+                    .w_full()
+                    .px_2()
+                    .py(px(5.0))
+                    .rounded(px(ds.radius_sm))
+                    .border_1()
+                    .border_color(rgb(if pad.midi_chord_mode {
+                        ds.cyan
+                    } else {
+                        ds.border
+                    }))
+                    .bg(rgb(if pad.midi_chord_mode {
+                        ds.panel_hover
+                    } else {
+                        ds.panel
+                    }))
+                    .cursor_pointer()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap_2()
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, window, cx| {
+                            this.apply_roll_action(RollAction::ChordToggleMidiMode, window, cx);
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    )
+                    .child(
+                        div()
+                            .min_w_0()
+                            .flex_1()
+                            .flex()
+                            .flex_col()
+                            .child(
+                                div()
+                                    .text_size(px(10.0))
+                                    .text_color(rgb(if pad.midi_chord_mode {
+                                        ds.cyan
+                                    } else {
+                                        ds.text
+                                    }))
+                                    .child(if pad.midi_chord_mode {
+                                        "☑ Acordes con teclado MIDI"
+                                    } else {
+                                        "☐ Acordes con teclado MIDI"
+                                    }),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(8.5))
+                                    .text_color(rgb(ds.muted))
+                                    .child("Toca notas MIDI en la escala para probar sus acordes"),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .px(px(6.0))
+                            .py(px(2.0))
+                            .rounded(px(ds.radius_sm))
+                            .bg(rgb(if pad.midi_chord_mode {
+                                ds.cyan
+                            } else {
+                                ds.panel_dark
+                            }))
+                            .text_size(px(9.0))
+                            .text_color(rgb(if pad.midi_chord_mode { ds.bg } else { ds.muted }))
+                            .child(if pad.midi_chord_mode { "ON" } else { "OFF" }),
+                    ),
+            )
             .child(self.render_chord_sequence(cx))
             .child(self.render_chord_response_box(cx))
     }
@@ -178,7 +253,7 @@ impl DawApp {
     fn render_chord_choice_row(
         &self,
         label: &'static str,
-        pills: impl IntoIterator<Item = Div>,
+        pills: impl IntoIterator<Item = Stateful<Div>>,
     ) -> Div {
         let ds = &self.ds;
         div()
@@ -202,9 +277,10 @@ impl DawApp {
         active: bool,
         action: RollAction,
         cx: &mut Context<Self>,
-    ) -> Div {
+    ) -> Stateful<Div> {
         let ds = &self.ds;
         div()
+            .id(gpui::SharedString::from(format!("hay-chord-pill-{label}")))
             .px(px(5.0))
             .py(px(2.0))
             .border_1()
@@ -217,7 +293,23 @@ impl DawApp {
                 MouseButton::Left,
                 cx.listener(move |this, _, window, cx| {
                     this.apply_roll_action(action, window, cx);
+                    this.audition_current_chord_pad();
                     cx.stop_propagation();
+                    cx.notify();
+                }),
+            )
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|this, _, _, cx| {
+                    this.release_chord_audition();
+                    cx.stop_propagation();
+                    cx.notify();
+                }),
+            )
+            .on_mouse_up_out(
+                MouseButton::Left,
+                cx.listener(|this, _, _, cx| {
+                    this.release_chord_audition();
                     cx.notify();
                 }),
             )
@@ -247,6 +339,7 @@ impl DawApp {
                 ChordPadState::degree_chord_name(scale_root, scale_minor, deg, pad.color);
             let mood = ChordPadState::degree_mood(scale_minor, deg);
             div()
+                .id(("hay-chord-degree", usize::from(deg)))
                 .w(px(66.0))
                 .flex_grow(1.0)
                 .min_w(px(56.0))
@@ -265,10 +358,26 @@ impl DawApp {
                     MouseButton::Left,
                     cx.listener(move |this, event: &MouseDownEvent, window, cx| {
                         this.apply_roll_action(RollAction::ChordDegree(deg), window, cx);
+                        this.audition_current_chord_pad();
                         if event.click_count >= 2 {
                             this.apply_roll_action(RollAction::ChordInsertAtCursor, window, cx);
                         }
                         cx.stop_propagation();
+                        cx.notify();
+                    }),
+                )
+                .on_mouse_up(
+                    MouseButton::Left,
+                    cx.listener(|this, _, _, cx| {
+                        this.release_chord_audition();
+                        cx.stop_propagation();
+                        cx.notify();
+                    }),
+                )
+                .on_mouse_up_out(
+                    MouseButton::Left,
+                    cx.listener(|this, _, _, cx| {
+                        this.release_chord_audition();
                         cx.notify();
                     }),
                 )
