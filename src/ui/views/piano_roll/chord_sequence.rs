@@ -16,7 +16,11 @@ impl DawApp {
             ChordUnit::Beat => "tiempo",
         };
         div()
+            .w_full()
+            .min_w_0()
+            .overflow_hidden()
             .p_2()
+            .rounded(px(ds.radius_sm))
             .flex()
             .flex_col()
             .gap_2()
@@ -24,32 +28,107 @@ impl DawApp {
             .border_color(rgb(ds.border))
             .bg(rgb(ds.bg))
             .child(
-                div().flex().items_center().justify_between().gap_1()
-                    .child(div().text_size(px(10.)).text_color(rgb(ds.accent))
-                        .child(format!("Secuencia · 1 cuadro / {unit_label}")))
-                    .child(div().flex().gap_1()
-                        .child(self.roll_button("Compás", sequence.unit == ChordUnit::Bar,
-                            RollAction::ChordSequenceUnit(ChordUnit::Bar), cx))
-                        .child(self.roll_button("Tiempo", sequence.unit == ChordUnit::Beat,
-                            RollAction::ChordSequenceUnit(ChordUnit::Beat), cx))),
+                div()
+                    .w_full()
+                    .min_w_0()
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .justify_between()
+                    .gap_1()
+                    .child(
+                        div()
+                            .min_w_0()
+                            .text_size(px(10.))
+                            .text_color(rgb(ds.accent))
+                            .child(format!("Secuencia · 1/{unit_label}")),
+                    )
+                    .child(
+                        div()
+                            .flex_shrink_0()
+                            .flex()
+                            .gap_1()
+                            .child(self.roll_button(
+                                "Compás",
+                                sequence.unit == ChordUnit::Bar,
+                                RollAction::ChordSequenceUnit(ChordUnit::Bar),
+                                cx,
+                            ))
+                            .child(self.roll_button(
+                                "Tiempo",
+                                sequence.unit == ChordUnit::Beat,
+                                RollAction::ChordSequenceUnit(ChordUnit::Beat),
+                                cx,
+                            )),
+                    ),
             )
             .child(
-                div().id("chord-sequence-scroller").flex().gap_1().overflow_x_scroll().children(
-                    sequence.slots.iter().enumerate().map(|(index, slot)| {
-                        self.render_chord_slot(index, *slot, index == sequence.selected,
-                            scale_root, minor, cx)
-                    }).collect::<Vec<_>>()
-                ),
+                div()
+                    .id("chord-sequence-scroller")
+                    .w_full()
+                    .min_w_0()
+                    .flex()
+                    .flex_wrap()
+                    .gap(px(4.0))
+                    .children(
+                        sequence
+                            .slots
+                            .iter()
+                            .enumerate()
+                            .map(|(index, slot)| {
+                                self.render_chord_slot(
+                                    index,
+                                    *slot,
+                                    index == sequence.selected,
+                                    scale_root,
+                                    minor,
+                                    cx,
+                                )
+                            })
+                            .collect::<Vec<_>>(),
+                    ),
             )
             .child(
-                div().flex().items_center().justify_between().gap_1()
-                    .child(self.roll_button("−", false, RollAction::ChordSequenceResize(-1), cx))
-                    .child(self.roll_button("+ Cuadro", false, RollAction::ChordSequenceResize(1), cx))
-                    .child(self.roll_button("Insertar secuencia", true,
-                        RollAction::ChordSequenceInsert, cx)),
+                div()
+                    .w_full()
+                    .min_w_0()
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .justify_between()
+                    .gap_1()
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .child(self.roll_button(
+                                "−",
+                                false,
+                                RollAction::ChordSequenceResize(-1),
+                                cx,
+                            ))
+                            .child(self.roll_button(
+                                "+ Cuadro",
+                                false,
+                                RollAction::ChordSequenceResize(1),
+                                cx,
+                            )),
+                    )
+                    .child(self.roll_button(
+                        "Insertar secuencia",
+                        true,
+                        RollAction::ChordSequenceInsert,
+                        cx,
+                    )),
             )
-            .child(div().text_size(px(9.)).text_color(rgb(ds.muted))
-                .child("Desde el compás/tiempo del cursor · pulsa para escuchar · ▲/▼ invierten · ↺ reemplaza · × deja silencio."))
+            .child(
+                div()
+                    .w_full()
+                    .text_size(px(8.5))
+                    .text_color(rgb(ds.muted))
+                    .child("Pulsa para escuchar · ▲/▼ invierten · ↺ reemplaza · × silencio"),
+            )
     }
 
     fn render_chord_slot(
@@ -69,10 +148,12 @@ impl DawApp {
         let inv = slot.map_or(String::new(), |pad| format!("Inv {:+}", pad.inversion));
         div()
             .id(("chord-sequence-slot", index))
-            .w(px(76.))
-            .min_w(px(76.))
-            .h(px(92.))
-            .p(px(3.))
+            .w(px(69.))
+            .flex_grow(1.0)
+            .min_w(px(64.))
+            .h(px(88.))
+            .p(px(4.))
+            .rounded(px(ds.radius_sm))
             .flex()
             .flex_col()
             .items_center()
@@ -113,6 +194,8 @@ impl DawApp {
             )
             .child(
                 div()
+                    .w_full()
+                    .text_center()
                     .text_size(px(10.))
                     .text_color(rgb(ds.text))
                     .truncate()
@@ -120,7 +203,7 @@ impl DawApp {
             )
             .child(div().text_size(px(8.)).text_color(rgb(ds.cyan)).child(inv))
             .child(
-                div().flex().gap(px(2.)).children(
+                div().flex().gap(px(1.5)).children(
                     [
                         ("▲", RollAction::ChordSequenceInvert(index, 1)),
                         ("▼", RollAction::ChordSequenceInvert(index, -1)),
@@ -129,9 +212,10 @@ impl DawApp {
                     ]
                     .map(|(label, action)| {
                         self.roll_button(label, false, action, cx)
-                            .w(px(16.))
-                            .h(px(17.))
+                            .w(px(14.5))
+                            .h(px(16.))
                             .px_0()
+                            .text_size(px(8.5))
                             .justify_center()
                     }),
                 ),

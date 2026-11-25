@@ -18,6 +18,10 @@ pub fn paint_model(
         )
     };
     let border = ds.frame_border();
+    paint_wave(bounds, ds, &model.wave, model.wave_dim_until, window);
+    for spectrum in &model.spectrum {
+        paint_curve(bounds, spectrum, 0., window);
+    }
 
     if !model.grid_x.is_empty() || !model.grid_y.is_empty() {
         let mut grid = PathBuilder::stroke(px(1.0));
@@ -140,4 +144,53 @@ fn paint_anchor(
         ),
         rgb(anchor.color),
     ));
+}
+
+/// Onda espejada tipo editor de samples; la parte omitida por el offset se atenúa.
+fn paint_wave(
+    bounds: Bounds<Pixels>,
+    ds: &DesignSystem,
+    wave: &[[f32; 2]],
+    dim_until: f32,
+    window: &mut Window,
+) {
+    if wave.len() < 2 {
+        return;
+    }
+    let w = f32::from(bounds.size.width).max(1.0);
+    let h = f32::from(bounds.size.height).max(1.0);
+    let x = |i: usize| bounds.left() + px(w * i as f32 / (wave.len() - 1) as f32);
+    let y = |v: f32| bounds.top() + px(h * 0.5 * (1.0 - v.clamp(-1.0, 1.0)));
+    let mut path = PathBuilder::fill();
+    for (i, peak) in wave.iter().enumerate() {
+        let pos = point(x(i), y(peak[1]));
+        if i == 0 {
+            path.move_to(pos);
+        } else {
+            path.line_to(pos);
+        }
+    }
+    for (i, peak) in wave.iter().enumerate().rev() {
+        path.line_to(point(x(i), y(peak[0])));
+    }
+    path.close();
+    if let Ok(path) = path.build() {
+        window.paint_path(path, rgba((ds.text << 8) | 0x58));
+    }
+    window.paint_quad(fill(
+        Bounds::new(
+            point(bounds.left(), y(0.0)),
+            size(bounds.size.width, px(1.0)),
+        ),
+        rgba((ds.muted << 8) | 0x50),
+    ));
+    if dim_until > 0.0 {
+        window.paint_quad(fill(
+            Bounds::new(
+                bounds.origin,
+                size(px(w * dim_until.clamp(0.0, 1.0)), bounds.size.height),
+            ),
+            rgba((ds.panel_dark << 8) | 0xb0),
+        ));
+    }
 }

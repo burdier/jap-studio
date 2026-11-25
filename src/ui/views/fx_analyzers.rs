@@ -12,7 +12,12 @@ impl DawApp {
             return panel;
         };
         for (index, (node, enabled)) in nodes(&track.chain).into_iter().enumerate() {
-            let Some(view) = self.fx.analyzers.views.get(&node.id) else {
+            let Some(view) = self
+                .fx
+                .analyzers
+                .views
+                .get(&crate::audio::analyzer::tap::TapPoint::Output(node.id))
+            else {
                 continue;
             };
             let target = FxTarget {

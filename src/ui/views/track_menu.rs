@@ -18,28 +18,40 @@ impl DawApp {
             this.track_menu = None;
             cx.notify();
         }));
+        let blank = menu.blank_space;
+        let title = if blank {
+            "Pistas".to_string()
+        } else {
+            self.track_title(index)
+        };
         let mut panel = menu_panel(ds, 270.0).child(
             div()
                 .px_2()
                 .py_1()
                 .text_xs()
                 .text_color(rgb(ds.muted))
-                .child(self.track_title(index)),
+                .child(title),
         );
         for (i, (label, id)) in self.track_menu_items().iter().enumerate() {
-            if matches!(
-                *id,
-                "action.track.group"
-                    | "action.track.height.compact"
-                    | "action.track.mute"
-                    | "action.track.delete"
-            ) {
+            if !blank
+                && matches!(
+                    *id,
+                    "action.track.group"
+                        | "action.track.height.compact"
+                        | "action.track.mute"
+                        | "action.track.delete"
+                )
+            {
                 panel = panel.child(menu_separator(ds));
             }
-            let checked = match *id {
-                "action.track.mute" => self.tracks[index].muted,
-                "action.track.solo" => self.tracks[index].solo,
-                _ => false,
+            let checked = if blank {
+                false
+            } else {
+                match *id {
+                    "action.track.mute" => self.tracks[index].muted,
+                    "action.track.solo" => self.tracks[index].solo,
+                    _ => false,
+                }
             };
             panel = panel.child(
                 menu_row(ds, *label, menu.selected == i, checked)
@@ -59,33 +71,36 @@ impl DawApp {
                     ),
             );
         }
-        let mut colors = div().p_2().flex().gap_1().flex_wrap();
-        for color in std::iter::once(None).chain(ds.track_palette().into_iter().map(Some)) {
-            colors = colors.child(
-                color_swatch(
-                    ds,
-                    color.unwrap_or(ds.track_palette()[index % 7]),
-                    ds.track_color_override.get(index).copied().flatten() == color,
-                    false,
-                    color.is_none(),
-                )
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(move |this, _, _, cx| {
-                        this.ds.track_color_override[index] = color;
-                        this.track_menu = None;
-                        cx.stop_propagation();
-                        cx.notify();
-                    }),
-                ),
-            );
-        }
+        let content = if blank {
+            panel
+        } else {
+            let mut colors = div().p_2().flex().gap_1().flex_wrap();
+            for color in std::iter::once(None).chain(ds.track_palette().into_iter().map(Some)) {
+                colors = colors.child(
+                    color_swatch(
+                        ds,
+                        color.unwrap_or(ds.track_palette()[index % 7]),
+                        ds.track_color_override.get(index).copied().flatten() == color,
+                        false,
+                        color.is_none(),
+                    )
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, _, cx| {
+                            this.ds.track_color_override[index] = color;
+                            this.track_menu = None;
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    ),
+                );
+            }
+            panel.child(menu_separator(ds)).child(colors)
+        };
         context_menu(
             menu.position,
             close,
-            panel
-                .child(menu_separator(ds))
-                .child(colors)
+            content
                 .id("track-context-scroll")
                 .max_h(menu.max_height)
                 .overflow_y_scroll(),

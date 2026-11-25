@@ -13,8 +13,6 @@ use gpui::{
 
 /// Nivel de fader (0–100) que equivale a ganancia 1.0x.
 pub(in crate::ui) const TRACK_UNITY_LEVEL: i32 = elevate::musical::track::UNITY_LEVEL;
-pub(in crate::ui) const DEMO_LEVELS: [i32; 8] = [78, 65, 52, 48, 70, 58, 42, 55];
-pub(in crate::ui) const DEMO_PANS: [i32; 8] = [50, 50, 30, 50, 50, 70, 50, 50];
 const MAX_ROWS: usize = 3;
 const MAX_COLS: usize = 6;
 
@@ -333,11 +331,11 @@ impl DawApp {
     pub(super) fn render_track_header(
         &self,
         i: usize,
+        height: f32,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let ds = &self.ds;
         let cfg = ds.track_header;
-        let height = self.track_height(i);
         let color = ds.track_color(i);
         let selected = self.track_selected(i);
         let dragged = self
@@ -345,24 +343,35 @@ impl DawApp {
             .is_some_and(|drag| drag.moved && drag.source == self.tracks[i].id);
         let hovered = self.timeline.hover_track() == Some(i);
         let drag_glow = hovered && self.timeline.hover_dragging();
-        // El color de pista identifica la cabecera sin colorear todos sus controles.
-        let header = ds.arrangement_header();
+        // Mismo lenguaje limpio del navegador de dispositivos: superficie mate y lavado tintado suave al seleccionar.
+        let dark = ds.is_dark();
+        let header = ds.panel;
         let base = if selected {
-            ds.arrangement_selection(header)
+            blend_color(ds.panel_hover, color, if dark { 16 } else { 10 })
         } else if hovered {
-            blend_color(header, ds.text, 8)
+            ds.panel_hover
         } else {
             header
         };
-        let background = if ds.track_color_override.get(i).copied().flatten().is_some() {
-            blend_color(base, color, 10)
+        let background = if !selected && ds.track_color_override.get(i).copied().flatten().is_some()
+        {
+            blend_color(base, color, if dark { 7 } else { 5 })
         } else {
             base
         };
-        let stripe = if selected || drag_glow {
+        let stripe = if self.is_track_frozen(self.tracks[i].id) {
+            ds.cyan
+        } else if selected || drag_glow {
             color
         } else {
-            blend_color(header, color, 62)
+            blend_color(header, color, 58)
+        };
+        let separator = if selected {
+            gpui::rgba((color << 8) | if dark { 0x55 } else { 0x44 })
+        } else if dark {
+            gpui::rgba(0xffffff0d)
+        } else {
+            gpui::rgba(0x0f172a14)
         };
         let mut track_box = div()
             .relative()
@@ -373,7 +382,7 @@ impl DawApp {
             .flex()
             .flex_col()
             .justify_between()
-            .pl(px(9.0))
+            .pl(px(10.0))
             .pr(px(13.0))
             .when(self.tracks[i].parent.is_some(), |header| {
                 header.pl(px(18.0))
@@ -381,14 +390,15 @@ impl DawApp {
             .py(px(if height < 47.0 { 2.0 } else { 4.0 }))
             .bg(rgb(background))
             .border_b_1()
-            .border_color(gpui::rgba((ds.text << 8) | 0x23))
+            .border_color(separator)
             .child(
                 div()
                     .absolute()
-                    .left_0()
-                    .top_0()
-                    .bottom_0()
+                    .left(px(2.0))
+                    .top(px(4.0))
+                    .bottom(px(4.0))
                     .w(px(if selected { 3.0 } else { 2.0 }))
+                    .rounded_full()
                     .bg(rgb(stripe)),
             )
             .child(track_peak_meter(
@@ -398,25 +408,24 @@ impl DawApp {
                     .map_or(0.0, |player| player.track_peak(self.tracks[i].id)),
             ))
             .when(dragged, |header| header.opacity(0.25))
-            .drag_over::<gpui::ExternalPaths>(move |style, _, _, _| {
-                style
-                    .bg(gpui::rgba((color << 8) | 0x2e))
-                    .border_color(rgb(color))
-            })
-            .on_drop(
-                cx.listener(move |this, paths: &gpui::ExternalPaths, _, cx| {
-                    if let Some(path) = paths.paths().first() {
-                        this.cursor_row = i;
-                        this.import_audio(path.clone(), i, this.timeline.edit_beat(), cx);
-                    }
-                }),
-            )
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, event: &MouseDownEvent, window, cx| {
-                    this.select_track(i, event.modifiers.control, event.modifiers.shift);
-                    if !event.modifiers.control && !event.modifiers.shift {
-                        this.begin_track_reorder_drag(i, event.position);
+                    this.timeline.focused_audio = None;
+                    if event.click_count >= 2 && !event.modifiers.control && !event.modifiers.shift
+                    {
+                        this.track_reorder_drag = None;
+                        if let Some(track) = this.tracks.get(i).filter(|t| t.instrument.is_some()) {
+                            let id = track.id;
+                            this.open_track_instrument(id);
+                        } else {
+                            this.select_track(i, false, false);
+                        }
+                    } else {
+                        this.select_track(i, event.modifiers.control, event.modifiers.shift);
+                        if !event.modifiers.control && !event.modifiers.shift {
+                            this.begin_track_reorder_drag(i, event.position);
+                        }
                     }
                     window.focus(&this.focus_handle, cx);
                     cx.notify();
@@ -438,6 +447,15 @@ impl DawApp {
         } else {
             cfg.rows
         };
+        let embedded_spectrum = (height >= crate::ui::fx::analyzers::EMBEDDED_SPECTRUM_MIN_HEIGHT)
+            .then(|| {
+                crate::ui::fx::analyzers::nodes(&self.tracks[i].chain)
+                    .into_iter()
+                    .find(|(_, enabled)| *enabled)
+                    .map(|(node, _)| node.id)
+            })
+            .flatten();
+        let mut built_rows: Vec<gpui::Div> = Vec::new();
         for row in rows {
             let active: Vec<TcpWidget> = row
                 .into_iter()
@@ -467,7 +485,7 @@ impl DawApp {
                 while end < active.len() && active[end].group() == group {
                     end += 1;
                 }
-                let mut group_el = div().flex().items_center().min_w_0().gap(px(2.0));
+                let mut group_el = div().flex().items_center().min_w_0().gap(px(3.0));
                 if active[start..end].contains(&TcpWidget::Name) {
                     group_el = group_el.flex_1();
                 }
@@ -480,7 +498,68 @@ impl DawApp {
                 row_el = row_el.child(group_el);
                 start = end;
             }
+            built_rows.push(row_el);
+        }
+        let mut spectrum_slot = embedded_spectrum.map(|fx_id| {
+            let tap_id = crate::audio::analyzer::tap::TapPoint::Output(fx_id);
+            let view = self.fx.analyzers.views.get(&tap_id);
+            let mode = view.map_or(
+                crate::ui::components::spectrum::SpectrumMode::Spectrum,
+                |view| view.mode,
+            );
+            let graph_height = (height - 66.0).clamp(28.0, 96.0);
+            let mut data = crate::ui::spectrum::data(view.map(|view| &view.analyzer), mode, ds);
+            data.height = graph_height;
+            let short_mode = match mode {
+                crate::ui::components::spectrum::SpectrumMode::Spectrum => "SPEC",
+                crate::ui::components::spectrum::SpectrumMode::Visualizer => "ONDA",
+                crate::ui::components::spectrum::SpectrumMode::SpectrogramLog => "LOG",
+                crate::ui::components::spectrum::SpectrumMode::SpectrogramLinear => "LIN",
+                crate::ui::components::spectrum::SpectrumMode::Level => "LVL",
+            };
+            div()
+                .relative()
+                .w_full()
+                .h(px(graph_height))
+                .rounded(px(3.0))
+                .overflow_hidden()
+                .border_1()
+                .border_color(gpui::rgba((ds.text << 8) | 0x20))
+                .cursor_pointer()
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, _, _, cx| {
+                        if let Some(view) = this.fx.analyzers.views.get_mut(&tap_id) {
+                            view.mode = view.mode.next();
+                        }
+                        cx.stop_propagation();
+                        cx.notify();
+                    }),
+                )
+                .child(crate::ui::components::spectrum::spectrum_graph_mode(
+                    data, mode,
+                ))
+                .child(
+                    div()
+                        .absolute()
+                        .top(px(1.0))
+                        .right(px(3.0))
+                        .text_size(px(8.0))
+                        .text_color(gpui::rgba((ds.text << 8) | 0x88))
+                        .child(short_mode),
+                )
+        });
+        let insert_at = built_rows.len().saturating_sub(1);
+        for (idx, row_el) in built_rows.into_iter().enumerate() {
+            if idx == insert_at
+                && let Some(slot) = spectrum_slot.take()
+            {
+                track_box = track_box.child(slot);
+            }
             track_box = track_box.child(row_el);
+        }
+        if let Some(slot) = spectrum_slot {
+            track_box = track_box.child(slot);
         }
         track_box
     }
@@ -500,6 +579,41 @@ impl DawApp {
                 .gap_1()
                 .flex_1()
                 .min_w_0()
+                .when_some(
+                    self.timeline
+                        .layout
+                        .as_ref()
+                        .map(|layout| {
+                            layout.counts.get(&i).copied().unwrap_or(1) + track.chain.bands().len()
+                        })
+                        .filter(|n| *n > 1),
+                    |el, n| {
+                        let folded = self
+                            .track_presentation
+                            .get(&track.id)
+                            .is_some_and(|p| p.z_folded);
+                        el.child(
+                            div()
+                                .px_1()
+                                .cursor_pointer()
+                                .text_xs()
+                                .text_color(rgb(ds.accent))
+                                .child(format!("{} Z{}", if folded { "▸" } else { "▾" }, n))
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(move |this, _, _, cx| {
+                                        let entry = this
+                                            .track_presentation
+                                            .entry(this.tracks[i].id)
+                                            .or_default();
+                                        entry.z_folded = !entry.z_folded;
+                                        cx.stop_propagation();
+                                        cx.notify();
+                                    }),
+                                ),
+                        )
+                    },
+                )
                 .when(
                     track.kind == elevate::musical::track::TrackKind::Group,
                     |el| {
@@ -534,6 +648,74 @@ impl DawApp {
                         .text_color(rgb(ds.text))
                         .child(self.track_title(i)),
                 )
+                .when(self.timeline.automation.has_any_points(track.id), |el| {
+                    let has_vol = self.timeline.automation.has_points(
+                        track.id,
+                        elevate::musical::track_automation::AutomationParam::Volume,
+                    );
+                    el.child(
+                        div()
+                            .px(px(3.0))
+                            .rounded(px(2.0))
+                            .cursor_pointer()
+                            .text_size(px(9.0))
+                            .text_color(rgb(if has_vol { ds.warning } else { ds.cyan }))
+                            .child("⚡")
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |this, _, _, cx| {
+                                    this.select_track(i, false, false);
+                                    this.timeline.automation_mode = true;
+                                    cx.stop_propagation();
+                                    cx.notify();
+                                }),
+                            ),
+                    )
+                })
+                .when(self.is_track_frozen(track.id), |el| {
+                    let track_id = track.id;
+                    el.child(
+                        div()
+                            .px(px(4.0))
+                            .py(px(1.0))
+                            .rounded(px(ds.radius_sm))
+                            .bg(gpui::rgba((ds.cyan << 8) | 0x26))
+                            .border_1()
+                            .border_color(gpui::rgba((ds.cyan << 8) | 0x66))
+                            .cursor_pointer()
+                            .text_size(px(9.0))
+                            .text_color(rgb(ds.cyan))
+                            .child("❄")
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |this, _, _, cx| {
+                                    this.unfreeze_track(track_id);
+                                    cx.stop_propagation();
+                                    cx.notify();
+                                }),
+                            ),
+                    )
+                })
+                .when(!track.sends.is_empty(), |el| {
+                    el.child(
+                        div()
+                            .px(px(3.0))
+                            .rounded(px(2.0))
+                            .cursor_pointer()
+                            .text_size(px(9.0))
+                            .text_color(rgb(ds.cyan))
+                            .child("↗")
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |this, _, _, cx| {
+                                    this.select_track(i, false, false);
+                                    this.set_center_view(crate::ui::CenterView::Mixer);
+                                    cx.stop_propagation();
+                                    cx.notify();
+                                }),
+                            ),
+                    )
+                })
                 .into_any_element(),
             TcpWidget::Type => {
                 let label = if track.instrument.is_some_and(|id| self.is_vst_id(id)) {
@@ -561,12 +743,19 @@ impl DawApp {
                     track.kind.label().to_string()
                 };
                 let el = div()
-                    .max_w(px(74.0))
+                    .max_w(px(82.0))
                     .min_w_0()
+                    .px(px(5.0))
+                    .py(px(1.0))
+                    .rounded(px(ds.radius_sm))
+                    .bg(rgb(ds.panel_dark))
+                    .font_family("monospace")
                     .truncate()
                     .text_size(px(9.0))
-                    .text_color(rgb(if track.instrument.is_some() {
-                        blend_color(ds.muted, ds.accent, 45)
+                    .text_color(rgb(if track.is_return() {
+                        ds.cyan
+                    } else if track.instrument.is_some() {
+                        blend_color(ds.muted, ds.accent, 55)
                     } else {
                         ds.muted
                     }))
@@ -605,7 +794,11 @@ impl DawApp {
                 )
                 .into_any_element(),
             TcpWidget::Rec => {
-                let recording = self.midi_capture.is_recording() && self.cursor_row == i;
+                let recording = (self.midi_capture.is_recording() && self.cursor_row == i)
+                    || self
+                        .audio_recorder
+                        .as_ref()
+                        .is_some_and(|r| r.track_id == track.id);
                 toggle_badge(ds, "R", recording, ds.danger)
                     .on_mouse_down(
                         MouseButton::Left,
@@ -646,6 +839,41 @@ impl DawApp {
                     .items_center()
                     .gap(px(2.0))
                     .child(add)
+                    .when(
+                        (track.instrument.is_some()
+                            || self
+                                .timeline
+                                .clip
+                                .iter()
+                                .chain(&self.timeline.other_audio_clips)
+                                .any(|c| c.track == i)
+                            || self.timeline.midi_clips().any(|c| c.track == i))
+                            && track.accepts_clips()
+                            && track.kind != elevate::musical::track::TrackKind::Group,
+                        |r| {
+                            let split = !track.chain.bands().is_empty();
+                            r.child(
+                                toggle_badge(
+                                    ds,
+                                    if split { "Tejer" } else { "+ Banda" },
+                                    false,
+                                    ds.cyan,
+                                )
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(move |s, _, _, cx| {
+                                        if split {
+                                            s.select_tejer_band(i, None);
+                                        } else {
+                                            s.split_track_band(i, None);
+                                        }
+                                        cx.stop_propagation();
+                                        cx.notify();
+                                    }),
+                                ),
+                            )
+                        },
+                    )
                     .child(
                         toggle_badge(
                             ds,

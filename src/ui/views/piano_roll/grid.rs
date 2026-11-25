@@ -2,12 +2,18 @@
 use super::grid_background::{label, paint_rows, paint_time, rectangle};
 use crate::ui::{
     DawApp, DesignSystem,
-    piano_roll::{RollDrag, RollTool, geometry::Grid, motion::NotePreview},
+    piano_roll::{RollDrag, RollTool, geometry::Grid, motion::NotePreview, pitch::pitch_position},
 };
-use elevate::musical::{clip::MidiClip, model::NoteId, scale::PitchScale, time::PPQ};
+use elevate::musical::{
+    clip::MidiClip,
+    model::{NoteEvent, NoteId},
+    pitch_curve::{PitchCurve, PitchPoint},
+    scale::PitchScale,
+    time::PPQ,
+};
 use gpui::{
-    Bounds, ContentMask, Context, IntoElement, MouseButton, Window, canvas, div, fill, point,
-    prelude::*, px, rgb, rgba, size,
+    Bounds, ContentMask, Context, IntoElement, MouseButton, PathBuilder, Window, canvas, div, fill,
+    point, prelude::*, px, rgb, rgba, size,
 };
 
 use std::collections::HashSet;
@@ -21,18 +27,23 @@ struct GhostNote {
 impl DawApp {
     pub(super) fn render_roll_grid(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let clip = self.timeline.midi_clip.clone().expect("clip visible");
+        #[cfg(feature = "p2p")]
+        let peer_note = self.peer_note_presence(&clip);
         let ds = self.ds.clone();
-        let cursor = self.piano_roll.cursor;
-        let playhead = if self.instrument.clip_playing() || self.sampler.clip_playing() {
-            self.timeline
-                .visual_playhead()
-                .map(|beat| beat - clip.start_beat + clip.trim_start)
+        let playhead = if self.timeline.playhead.is_some() {
+            self.timeline.clip_visual_playhead(&clip)
         } else {
-            None
+            Some(self.piano_roll.cursor.0 as f64 / PPQ as f64)
         };
         let selected = self.piano_roll.selected;
         let selected_notes: HashSet<_> = self.piano_roll.selected_notes.iter().copied().collect();
         let hovered_note = self.piano_roll.hovered_note;
+        let pitch_mode = self.piano_roll.tool == RollTool::Pitch;
+        let pitch_preview = self
+            .piano_roll
+            .pitch_drag
+            .as_ref()
+            .map(|drag| (drag.note, drag.preview.clone()));
         let hovered_resize_edge =
             self.piano_roll.hovered_resize_edge || self.piano_roll.tool == RollTool::Length;
         let drag_box = match &self.piano_roll.drag {
@@ -40,6 +51,7 @@ impl DawApp {
                 origin,
                 current,
                 erase,
+                ..
             }) => Some((*origin, *current, *erase)),
             _ => None,
         };
@@ -88,10 +100,21 @@ impl DawApp {
                     cx.notify();
                 }),
             )
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
+                    if this.open_lane_preset_menu(event.position) {
+                        cx.notify();
+                    }
+                    cx.stop_propagation();
+                }),
+            )
             .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
                 this.cursor_fx.on_mouse_move(event.position);
                 if event.dragging() {
-                    if this.piano_roll.lane_span.is_some() {
+                    if this.piano_roll.pitch_drag.is_some() {
+                        this.drag_roll_pitch(event.position, event.modifiers.shift);
+                    } else if this.piano_roll.lane_span.is_some() {
                         this.apply_lane_span_to(event.position, event.modifiers.shift);
                     } else if this.piano_roll.control_drag {
                         if this
@@ -111,6 +134,7 @@ impl DawApp {
                     cx.notify();
                 } else {
                     if this.piano_roll.drag.is_some()
+                        || this.piano_roll.pitch_drag.is_some()
                         || this.piano_roll.control_drag
                         || this.piano_roll.lane_span.is_some()
                         || this.piano_roll.paint_stroke.is_some()
@@ -193,9 +217,17 @@ impl DawApp {
                                         active_lane,
                                         show_note_names,
                                         pitch_scale,
+                                        pitch_mode,
+                                        pitch_preview.as_ref(),
                                         window,
                                         cx,
                                     );
+                                    #[cfg(feature = "p2p")]
+                                    if let Some((alias, note)) = &peer_note {
+                                        super::note_frame::paint_peer(
+                                            &grid, *note, alias, &ds, window, cx,
+                                        );
+                                    }
                                     snap_guide.paint(
                                         grid.axis(),
                                         grid.notes,
@@ -276,7 +308,7 @@ impl DawApp {
                                     &header_label,
                                     point(bounds.left() + px(10.0), grid.velocity.top() + px(4.0)),
                                     ds.text,
-                                    10.0,
+                                    ds.font_size_xs - 1.0,
                                 );
                                 if active_lane.controller().is_none() {
                                     let contour_label = format!("∿ {}", lane_contour.label());
@@ -305,7 +337,7 @@ impl DawApp {
                                             grid.velocity.top() + px(23.0),
                                         ),
                                         ds.cyan,
-                                        9.5,
+                                        ds.font_size_xs - 1.0,
                                     );
                                 }
                                 if active_lane.is_bipolar() {
@@ -356,8 +388,10 @@ impl DawApp {
                                     window,
                                 );
                             }
-                            let x = grid.x(playhead.unwrap_or(cursor.0 as f64 / PPQ as f64));
-                            if x >= grid.notes.left() && x < grid.notes.right() {
+                            if let Some(x) = playhead.map(|beat| grid.x(beat))
+                                && x >= grid.notes.left()
+                                && x < grid.notes.right()
+                            {
                                 rectangle(
                                     window,
                                     x,
@@ -457,6 +491,8 @@ fn paint_notes(
     active_lane: crate::ui::piano_roll::RollLane,
     show_note_names: bool,
     pitch_scale: PitchScale,
+    pitch_mode: bool,
+    pitch_preview: Option<&(NoteId, PitchCurve)>,
     window: &mut Window,
     cx: &mut gpui::App,
 ) {
@@ -509,6 +545,19 @@ fn paint_notes(
             clip_accent
         };
         window.with_content_mask(Some(ContentMask { bounds: grid.notes }), |window| {
+            if pitch_mode {
+                let active = selected == Some(note.id);
+                let color = if clip.muted_notes.contains(&note.id) {
+                    ds.muted
+                } else {
+                    [ds.cyan, ds.warning, ds.accent, ds.pink][usize::from(note.pitch) % 4]
+                };
+                let curve = pitch_preview
+                    .filter(|(id, _)| *id == note.id)
+                    .map_or(&note.pitch_curve, |(_, curve)| curve);
+                paint_pitch_curve(*grid, note, curve, color, active, window, cx);
+                return;
+            }
             if bounds.right() >= grid.notes.left()
                 && bounds.left() <= grid.notes.right()
                 && bounds.bottom() >= grid.notes.top()
@@ -524,14 +573,14 @@ fn paint_notes(
                 );
             }
         });
-        if show_note_names && width > 30.0 {
+        if !pitch_mode && show_note_names && width > 30.0 {
             super::grid_background::label(
                 window,
                 cx,
                 &elevate::musical::pitch::note_name(note.pitch),
                 point(x + px(4.0), bounds.top() + px(1.0)),
                 ds.panel_dark,
-                9.0,
+                ds.font_size_xs - 1.0,
             );
         }
         if velocities && active_lane.controller().is_none() {
@@ -576,5 +625,61 @@ fn paint_notes(
                 },
             );
         }
+    }
+}
+
+fn paint_pitch_curve(
+    grid: Grid,
+    note: &NoteEvent,
+    curve: &PitchCurve,
+    color: u32,
+    selected: bool,
+    window: &mut Window,
+    cx: &mut gpui::App,
+) {
+    let flat = [
+        PitchPoint { at: 0, cents: 0 },
+        PitchPoint {
+            at: u16::MAX,
+            cents: 0,
+        },
+    ];
+    let points = if curve.points().is_empty() {
+        &flat[..]
+    } else {
+        curve.points()
+    };
+    let first = pitch_position(grid, note, points[0]);
+    let end = pitch_position(grid, note, points[points.len() - 1]);
+    if end.x < grid.notes.left() || first.x > grid.notes.right() {
+        return;
+    }
+    let mut path = PathBuilder::stroke(px(if selected { 2.0 } else { 1.3 }));
+    path.move_to(first);
+    for &anchor in &points[1..] {
+        path.line_to(pitch_position(grid, note, anchor));
+    }
+    let alpha = if selected { 0xff } else { 0xb0 };
+    if let Ok(path) = path.build() {
+        window.paint_path(path, rgba((color << 8) | alpha));
+    }
+    for &anchor in points.iter().take(if selected { points.len() } else { 1 }) {
+        let center = pitch_position(grid, note, anchor);
+        let radius = px(if selected { 3.0 } else { 2.2 });
+        let bounds = Bounds::new(
+            point(center.x - radius, center.y - radius),
+            size(radius * 2.0, radius * 2.0),
+        );
+        window.paint_quad(fill(bounds, rgb(color)).corner_radii(radius));
+    }
+    if end.x - first.x >= px(25.0) {
+        label(
+            window,
+            cx,
+            &elevate::musical::pitch::note_name(note.pitch),
+            point(first.x + px(6.0), first.y - px(14.0)),
+            color,
+            11.0,
+        );
     }
 }

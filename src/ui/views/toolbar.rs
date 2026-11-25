@@ -4,7 +4,7 @@ use crate::ui::{
     components::button::flat_control,
     icons::{ToolbarAction, ToolbarScope, render_svg_icon, toolbar_icon_button},
 };
-use gpui::{Context, Div, MouseButton, component::tooltip::Tooltip, div, prelude::*, px, rgb};
+use gpui::{Context, Div, MouseButton, component::tooltip::Tooltip, div, prelude::*, px};
 
 impl DawApp {
     pub(in crate::ui) fn render_toolbar_bound_buttons(
@@ -32,10 +32,7 @@ impl DawApp {
             .items_center()
             .px_1()
             .when(scope == ToolbarScope::Transport, |strip| {
-                strip
-                    .h(px(ds.transport_btn_size + 4.0))
-                    .bg(rgb(ds.panel_dark))
-                    .rounded(px(ds.radius_md))
+                strip.h(px(ds.transport_btn_size + 4.0))
             })
             .on_mouse_down(
                 MouseButton::Right,
@@ -69,10 +66,12 @@ impl DawApp {
                                 matches!(command.trim().trim_start_matches(':'), "midi" | "kbd")
                             },
                         );
-                        let active = (controller && self.controller.enabled())
-                            || (command.is_none()
-                                && action == ToolbarAction::Catalog("action.vim.toggle")
-                                && self.vim_enabled);
+                        let tuner = command.as_deref().map_or(
+                            action == ToolbarAction::Catalog("action.track.tuner"),
+                            |command| command.trim().trim_start_matches(':') == "track.tuner",
+                        );
+                        let active = (tuner && self.tuner_enabled())
+                            || (controller && self.controller.enabled());
                         let tag = if controller {
                             if self.controller.enabled() {
                                 "MIDI ON"

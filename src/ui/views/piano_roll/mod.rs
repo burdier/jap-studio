@@ -9,7 +9,7 @@ mod inspector;
 pub(super) mod note_frame;
 mod toolbar;
 
-use crate::ui::{DawApp, VimMode, piano_roll::RollAction};
+use crate::ui::{DawApp, piano_roll::RollAction};
 use gpui::{
     Context, FocusHandle, IntoElement, KeyDownEvent, MouseButton, div, prelude::*, px, rgb,
 };
@@ -22,6 +22,7 @@ impl DawApp {
     ) -> impl IntoElement + use<> {
         let ds = &self.ds;
         let clip = self.timeline.midi_clip.as_ref().expect("clip del editor");
+        let compact = self.piano_roll_window.is_none() && self.workspace_focus.expanded.is_none();
         let position = self.timeline.meter.position_label(self.piano_roll.cursor);
         let focus = focus.clone();
         div()
@@ -46,6 +47,7 @@ impl DawApp {
                 MouseButton::Left,
                 cx.listener(|this, event: &gpui::MouseUpEvent, _, cx| {
                     if this.piano_roll.drag.is_some()
+                        || this.piano_roll.pitch_drag.is_some()
                         || this.piano_roll.control_drag
                         || this.piano_roll.paint_stroke.is_some()
                     {
@@ -59,6 +61,7 @@ impl DawApp {
                 MouseButton::Left,
                 cx.listener(|this, event: &gpui::MouseUpEvent, _, cx| {
                     if this.piano_roll.drag.is_some()
+                        || this.piano_roll.pitch_drag.is_some()
                         || this.piano_roll.control_drag
                         || this.piano_roll.paint_stroke.is_some()
                     {
@@ -69,7 +72,10 @@ impl DawApp {
             )
             .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
                 // Continúa el rectángulo/arrastre al cruzar la regla o el inspector.
-                if event.dragging() && this.piano_roll.drag.is_some() {
+                if event.dragging() && this.piano_roll.pitch_drag.is_some() {
+                    this.drag_roll_pitch(event.position, event.modifiers.shift);
+                    cx.notify();
+                } else if event.dragging() && this.piano_roll.drag.is_some() {
                     this.drag_roll_to(event.position);
                     cx.notify();
                 }
@@ -122,13 +128,12 @@ impl DawApp {
                     .as_deref()
                     .unwrap_or(&event.keystroke.key);
                 let modifiers = event.keystroke.modifiers;
-                if this.mode == VimMode::Command
-                    || (this.vim_enabled
-                        && matches!(key, "e" | ":")
-                        && this.mode == VimMode::Normal
-                        && !modifiers.control
+                if this.command_open
+                    || (key == ":" && !modifiers.control && !modifiers.alt && !modifiers.platform)
+                    || ((modifiers.control || modifiers.platform)
                         && !modifiers.alt
-                        && !modifiers.platform)
+                        && !modifiers.shift
+                        && key.eq_ignore_ascii_case("p"))
                 {
                     this.handle_key(event, window, cx);
                 } else if !modifiers.alt && !modifiers.control && !modifiers.platform {
@@ -150,28 +155,35 @@ impl DawApp {
                     .border_color(rgb(ds.border))
                     .child(
                         div()
-                            .text_size(px(12.0))
+                            .text_size(px(ds.font_size_xs + 1.0))
                             .text_color(rgb(ds.accent))
-                            .child("PIANO ROLL EDITOR"),
+                            .truncate()
+                            .child(if compact {
+                                clip.name.clone()
+                            } else {
+                                "PIANO ROLL EDITOR".into()
+                            }),
                     )
                     .child(
                         div()
                             .flex()
                             .items_center()
-                            .gap_3()
+                            .gap_1()
                             .child(
                                 div()
-                                    .text_size(px(10.0))
+                                    .text_size(px(ds.font_size_xs - 1.0))
                                     .text_color(rgb(ds.muted))
                                     .child("MIDI"),
                             )
                             .child(self.workspace_zoom_button(cx))
-                            .child(self.roll_button(
-                                "Ajustar vista",
-                                false,
-                                RollAction::ResetView,
-                                cx,
-                            ))
+                            .when(!compact, |v| {
+                                v.child(self.roll_button(
+                                    "Ajustar vista",
+                                    false,
+                                    RollAction::ResetView,
+                                    cx,
+                                ))
+                            })
                             .child(self.roll_button(
                                 if self.piano_roll_window.is_some() {
                                     "Acoplar · Esc"
@@ -192,14 +204,48 @@ impl DawApp {
                             }),
                     ),
             )
-            .child(self.render_roll_toolbar(cx))
+            .when(!compact, |v| v.child(self.render_roll_toolbar(cx)))
+            .when(compact, |v| {
+                v.child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .gap_1()
+                        .p_1()
+                        .child(self.roll_button(
+                            "Selección",
+                            self.piano_roll.tool == crate::ui::piano_roll::RollTool::Select,
+                            RollAction::Tool(crate::ui::piano_roll::RollTool::Select),
+                            cx,
+                        ))
+                        .child(self.roll_button(
+                            "Dibujar",
+                            self.piano_roll.tool == crate::ui::piano_roll::RollTool::Draw,
+                            RollAction::Tool(crate::ui::piano_roll::RollTool::Draw),
+                            cx,
+                        ))
+                        .child(self.roll_button(
+                            "Pitch MPE",
+                            self.piano_roll.tool == crate::ui::piano_roll::RollTool::Pitch,
+                            RollAction::Tool(crate::ui::piano_roll::RollTool::Pitch),
+                            cx,
+                        ))
+                        .child(self.roll_button("Carril", false, RollAction::ChooseLane, cx))
+                        .child(self.roll_button(
+                            "Duración",
+                            false,
+                            RollAction::ChooseDrawLength,
+                            cx,
+                        )),
+                )
+            })
             .child(
                 div()
                     .flex()
                     .flex_1()
                     .min_h_0()
                     .min_w_0()
-                    .child(self.render_roll_inspector(cx))
+                    .when(!compact, |v| v.child(self.render_roll_inspector(cx)))
                     .child(self.render_roll_grid(cx)),
             )
             .child(
@@ -213,8 +259,8 @@ impl DawApp {
                     .bg(rgb(ds.panel_dark))
                     .border_t_1()
                     .border_color(rgb(ds.border))
-                    .text_size(px(10.0))
-                    .child(div().text_color(rgb(ds.success)).child(self.mode_label()))
+                    .text_size(px(ds.font_size_xs - 1.0))
+                    .child(div().text_color(rgb(ds.accent)).child("PIANO ROLL"))
                     .child(
                         div()
                             .flex_1()
@@ -243,10 +289,91 @@ impl DawApp {
             })
             .children(
                 self.piano_roll
+                    .lane_preset_menu
+                    .map(|position| self.render_lane_preset_menu(position, cx)),
+            )
+            .children(
+                self.piano_roll
                     .lane_menu
                     .as_ref()
                     .map(|menu| self.render_roll_lane_menu(menu, cx)),
             )
+    }
+
+    fn render_lane_preset_menu(
+        &self,
+        position: gpui::Point<gpui::Pixels>,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let ds = &self.ds;
+        let chosen = self.piano_roll.selected_notes.len();
+        let mut panel = crate::ui::components::context_menu::menu_panel(ds, 232.0)
+            .id("roll-lane-preset-panel")
+            .max_h(px(360.0))
+            .overflow_y_scroll()
+            .child(
+                div()
+                    .px_2()
+                    .py(px(2.0))
+                    .text_size(px(ds.font_size_xs - 1.0))
+                    .text_color(rgb(ds.accent))
+                    .child(if chosen >= 2 {
+                        format!("Patrón en {chosen} notas seleccionadas")
+                    } else {
+                        "Patrón en todas las notas del clip".to_string()
+                    }),
+            );
+        let scope = self.piano_roll.lane_scope;
+        let mut chips = div().flex().gap_1().px_1().pb_1();
+        for option in crate::ui::piano_roll::LaneScope::ALL {
+            chips = chips.child(
+                div()
+                    .px_2()
+                    .py(px(2.0))
+                    .text_size(px(ds.font_size_xs - 1.0))
+                    .border_1()
+                    .border_color(rgb(if option == scope {
+                        ds.accent
+                    } else {
+                        ds.border
+                    }))
+                    .text_color(rgb(if option == scope { ds.accent } else { ds.text }))
+                    .cursor_default()
+                    .child(option.label())
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, window, cx| {
+                            this.apply_roll_action(RollAction::SetLaneScope(option), window, cx);
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    ),
+            );
+        }
+        panel = panel.child(chips);
+        for preset in crate::ui::piano_roll::LanePreset::ALL {
+            panel = panel.child(
+                crate::ui::components::context_menu::menu_row(ds, preset.label(), false, false)
+                    .hover(|row| row.bg(rgb(ds.selection_background())))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, window, cx| {
+                            this.apply_roll_action(RollAction::ApplyLanePreset(preset), window, cx);
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    ),
+            );
+        }
+        let close = std::rc::Rc::new(cx.listener(|this, _, _, cx| {
+            this.piano_roll.lane_preset_menu = None;
+            cx.notify();
+        }));
+        let pos = gpui::point(
+            position.x.max(px(10.0)),
+            (position.y - px(300.0)).max(px(32.0)),
+        );
+        crate::ui::components::context_menu::context_menu(pos, close, panel)
     }
 
     fn render_roll_lane_menu(
@@ -270,7 +397,7 @@ impl DawApp {
                         .px_2()
                         .pt(px(4.0))
                         .pb(px(2.0))
-                        .text_size(px(9.5))
+                        .text_size(px(ds.font_size_xs - 1.0))
                         .text_color(rgb(ds.accent))
                         .child(section),
                 );

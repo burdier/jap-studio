@@ -26,19 +26,24 @@ impl DawApp {
         let root = piece.base_note();
         let piece_id = piece.id;
         let snap = editor.roll.snap;
-        let meter = editor.session.active_pattern().meter;
+        let meter = self.timeline.meter;
         let viewport = editor.roll.viewport;
         let grid_handle = editor.roll.grid.clone();
         let selected = editor.roll.selected;
-        let preview = editor.roll.preview;
+        let preview = editor.roll.preview.clone();
         let notes: Vec<_> = editor
             .pattern()
             .notes()
             .iter()
-            .copied()
             .filter(|note| note.instrument == piece.id)
+            .cloned()
             .collect();
         let total_beats = editor.pattern().length().0 as f64 / PPQ as f64;
+        #[cfg(feature = "p2p")]
+        let peer = self.peer_drum_step(piece.id).map(|(alias, step)| {
+            let length = (editor.pattern().length().0 - step.tick).min(editor.ticks_per_step());
+            (alias, step, elevate::musical::time::Tick(length))
+        });
         let playhead = self.drum_pattern_playhead();
         let title = format!("{} · raíz {}", piece.name, note_name(root));
         div()
@@ -178,8 +183,9 @@ impl DawApp {
                                 paint_time(&grid, &ds, total_beats, meter, snap, window, cx);
                                 for note in &notes {
                                     let note = preview
+                                        .as_ref()
                                         .filter(|target| target.id == note.id)
-                                        .unwrap_or(*note);
+                                        .unwrap_or(note);
                                     let rect =
                                         grid.note_bounds(note.start, note.duration, note.pitch);
                                     let active = selected == Some(note.id);
@@ -205,6 +211,17 @@ impl DawApp {
                                                 window,
                                             );
                                         },
+                                    );
+                                }
+                                #[cfg(feature = "p2p")]
+                                if let Some((alias, step, duration)) = &peer {
+                                    let cell = grid.note_bounds(
+                                        elevate::musical::time::Tick(step.tick),
+                                        *duration,
+                                        step.pitch,
+                                    );
+                                    super::steps::paint_step_peer(
+                                        grid.notes, cell, alias, &ds, window, cx,
                                     );
                                 }
                                 if let Some(beat) = playhead {

@@ -8,15 +8,17 @@ impl DawApp {
         let clip = self.timeline.midi_clip.as_ref().expect("clip visible");
         let clip_color = ds.clip_color(clip.track, clip.props);
         let width = if self.piano_roll.inspector_tab == 4 {
-            268.0
+            344.0
         } else {
-            218.0
+            224.0
         };
         div()
             .w(px(width))
             .flex_shrink_0()
             .h_full()
             .min_h_0()
+            .min_w_0()
+            .overflow_hidden()
             .flex()
             .flex_col()
             .bg(rgb(ds.panel_dark))
@@ -24,12 +26,14 @@ impl DawApp {
             .border_color(rgb(ds.border))
             .child(
                 div()
-                    .h(px(36.0))
+                    .min_h(px(34.0))
                     .flex_shrink_0()
                     .flex()
+                    .flex_wrap()
                     .items_center()
                     .gap_1()
                     .px_2()
+                    .py(px(5.0))
                     .bg(rgb(ds.panel))
                     .border_b_1()
                     .border_color(rgb(ds.border))
@@ -44,7 +48,7 @@ impl DawApp {
                                     RollAction::InspectorTab(index as u8),
                                     cx,
                                 )
-                                .px(px(5.0))
+                                .px(px(6.0))
                                 .h(px(21.0))
                             }),
                     ),
@@ -54,118 +58,125 @@ impl DawApp {
                     .id("roll-inspector-scroll")
                     .flex_1()
                     .min_h_0()
+                    .w_full()
+                    .min_w_0()
                     .overflow_y_scroll()
                     .p_2()
-                    .child(div().when(self.piano_roll.inspector_tab == 0, |container| {
-                        container.child(
-                            section(ds, "PROPIEDADES DEL CLIP")
-                                .child(
-                                    div()
-                                        .h(px(5.0))
-                                        .mb(px(4.0))
-                                        .rounded(px(2.0))
-                                        .bg(rgb(clip_color)),
-                                )
-                                .child(property_action(
-                                    ds,
-                                    "Nombre",
-                                    self.roll_button(
-                                        clip.name.clone(),
-                                        false,
-                                        RollAction::Form("midi.clip.rename"),
-                                        cx,
-                                    ),
-                                ))
-                                .child(property_action(
-                                    ds,
-                                    "Color",
-                                    div()
-                                        .flex()
-                                        .items_center()
-                                        .gap_1()
-                                        .child(
-                                            div()
-                                                .size(px(21.0))
-                                                .flex_shrink_0()
-                                                .rounded(px(3.0))
-                                                .border_1()
-                                                .border_color(rgb(ds.frame_border()))
-                                                .bg(rgb(clip_color)),
-                                        )
-                                        .child(self.roll_button(
-                                            "Cambiar",
+                    .child(div().w_full().min_w_0().when(
+                        self.piano_roll.inspector_tab == 0,
+                        |container| {
+                            container.child(
+                                section(ds, "PROPIEDADES DEL CLIP")
+                                    .child(
+                                        div()
+                                            .h(px(5.0))
+                                            .mb(px(4.0))
+                                            .rounded(px(2.0))
+                                            .bg(rgb(clip_color)),
+                                    )
+                                    .child(property_action(
+                                        ds,
+                                        "Nombre",
+                                        self.roll_button(
+                                            clip.name.clone(),
                                             false,
-                                            RollAction::ChooseClipColor,
+                                            RollAction::Form("midi.clip.rename"),
                                             cx,
-                                        )),
-                                ))
-                                .child(property_action(
-                                    ds,
-                                    "Canal",
-                                    self.roll_button(
-                                        format!("{}", clip.channel),
-                                        false,
-                                        RollAction::Form("midi.clip.channel"),
+                                        ),
+                                    ))
+                                    .child(property_action(
+                                        ds,
+                                        "Color",
+                                        div()
+                                            .flex()
+                                            .items_center()
+                                            .gap_1()
+                                            .child(
+                                                div()
+                                                    .size(px(21.0))
+                                                    .flex_shrink_0()
+                                                    .rounded(px(3.0))
+                                                    .border_1()
+                                                    .border_color(rgb(ds.frame_border()))
+                                                    .bg(rgb(clip_color)),
+                                            )
+                                            .child(self.roll_button(
+                                                "Cambiar",
+                                                false,
+                                                RollAction::ChooseClipColor,
+                                                cx,
+                                            )),
+                                    ))
+                                    .child(property_action(
+                                        ds,
+                                        "Canal",
+                                        self.roll_button(
+                                            format!("{}", clip.channel),
+                                            false,
+                                            RollAction::Form("midi.clip.channel"),
+                                            cx,
+                                        ),
+                                    ))
+                                    .child(property_action(
+                                        ds,
+                                        "Duración",
+                                        self.roll_button(
+                                            format!(
+                                                "{:.2} compases",
+                                                clip.pattern_beats()
+                                                    / self.timeline.meter.beats_per_bar()
+                                            ),
+                                            false,
+                                            RollAction::Form("midi.clip.length"),
+                                            cx,
+                                        ),
+                                    ))
+                                    .child(property(
+                                        ds,
+                                        "Start",
+                                        self.timeline.meter.position_label(
+                                            elevate::musical::time::Tick(
+                                                (clip.start_beat
+                                                    * elevate::musical::time::PPQ as f64)
+                                                    .round()
+                                                    as i64,
+                                            ),
+                                        ),
+                                    ))
+                                    .child(property(
+                                        ds,
+                                        "End",
+                                        self.timeline.meter.position_label(
+                                            elevate::musical::time::Tick(
+                                                (clip.end_beat()
+                                                    * elevate::musical::time::PPQ as f64)
+                                                    .round()
+                                                    as i64,
+                                            ),
+                                        ),
+                                    ))
+                                    .child(div().h(px(1.0)).my_1().bg(rgb(ds.border)))
+                                    .child(self.roll_checkbox(
+                                        "Loop",
+                                        clip.props.looped,
+                                        RollAction::ToggleClipLoop,
                                         cx,
-                                    ),
-                                ))
-                                .child(property_action(
-                                    ds,
-                                    "Duración",
-                                    self.roll_button(
-                                        format!(
-                                            "{:.2} compases",
-                                            clip.pattern_beats()
-                                                / self.timeline.meter.beats_per_bar()
-                                        ),
-                                        false,
-                                        RollAction::Form("midi.clip.length"),
+                                    ))
+                                    .child(self.roll_checkbox(
+                                        "Mute",
+                                        clip.props.muted,
+                                        RollAction::ToggleClipMute,
                                         cx,
-                                    ),
-                                ))
-                                .child(property(
-                                    ds,
-                                    "Start",
-                                    self.timeline.meter.position_label(
-                                        elevate::musical::time::Tick(
-                                            (clip.start_beat * elevate::musical::time::PPQ as f64)
-                                                .round()
-                                                as i64,
-                                        ),
-                                    ),
-                                ))
-                                .child(property(
-                                    ds,
-                                    "End",
-                                    self.timeline.meter.position_label(
-                                        elevate::musical::time::Tick(
-                                            (clip.end_beat() * elevate::musical::time::PPQ as f64)
-                                                .round()
-                                                as i64,
-                                        ),
-                                    ),
-                                ))
-                                .child(div().h(px(1.0)).my_1().bg(rgb(ds.border)))
-                                .child(self.roll_checkbox(
-                                    "Loop",
-                                    clip.props.looped,
-                                    RollAction::ToggleClipLoop,
-                                    cx,
-                                ))
-                                .child(self.roll_checkbox(
-                                    "Mute",
-                                    clip.props.muted,
-                                    RollAction::ToggleClipMute,
-                                    cx,
-                                ))
-                                .child(self.roll_checkbox(
-                                    "Solo de pista",
-                                    self.tracks.get(clip.track).is_some_and(|track| track.solo),
-                                    RollAction::TrackSolo,
-                                    cx,
-                                )),
-                        )
-                    }))
+                                    ))
+                                    .child(self.roll_checkbox(
+                                        "Solo de pista",
+                                        self.tracks.get(clip.track).is_some_and(|track| track.solo),
+                                        RollAction::TrackSolo,
+                                        cx,
+                                    )),
+                            )
+                        },
+                    ))
                     .child(div().when(self.piano_roll.inspector_tab == 1, |container| {
                         container.child(
                             section(ds, "Quantize")

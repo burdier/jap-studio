@@ -1,42 +1,40 @@
 use crate::ui::DawApp;
-use gpui::{Context, IntoElement, MouseButton, div, prelude::*, px, rgb};
+use gpui::{Context, IntoElement, div, prelude::*, px, rgb};
 impl DawApp {
-    pub(super) fn render_shortcut_help(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+    pub(super) fn render_shortcut_help(&self, _cx: &mut Context<Self>) -> gpui::AnyElement {
         let ds = &self.ds;
         let groups: &[(&str, &[(&str, &str)])] = &[
             (
-                "VIM-LIKE / GENERAL",
+                "GENERAL Y VISTAS",
                 &[
-                    ("h  j  k  l", "mover cursor / selección según la vista"),
-                    ("i", "modo Insert"),
                     (
-                        "f (Normal) / F11",
-                        "ampliar panel activo; repetir o Esc para restaurar",
+                        "Ctrl+P  /  :",
+                        "abrir paleta de comandos con autocompletado",
                     ),
                     (
-                        "vim.toggle",
-                        "activar/desactivar Vim desde [+] o Configuración",
+                        "F1  /  F2  /  F3",
+                        "cambiar entre Arrangement · Drums · Mixer",
                     ),
-                    ("e (Normal)", "mostrar / ocultar explorador de bibliotecas"),
-                    (":", "modo Command; escribe un comando y pulsa Enter"),
-                    (":sa", "insertar pista Hay Sampler o abrir la existente"),
-                    ("Esc", "salir del overlay o liberar notas"),
-                    ("Tab", "cambiar a la vista siguiente"),
+                    ("Ctrl+E", "mostrar / ocultar explorador de bibliotecas"),
+                    ("F11", "ampliar panel activo; repetir o Esc para restaurar"),
+                    ("Ctrl+Z  /  Ctrl+Y", "deshacer / rehacer (Historial Loro)"),
+                    ("Ctrl+H", "abrir / cerrar panel de historial"),
+                    ("Ctrl+S  /  Ctrl+O", "guardar / abrir proyecto"),
+                    ("Ctrl+K", "activar / desactivar metrónomo"),
+                    ("Ctrl+Shift+A", "activar / desactivar modo Automatización"),
+                    ("Ctrl+J", "consolidar clips seleccionados"),
                     (
-                        "1  2  3  4",
-                        "Arrangement · Pattern · Mixer · editor de instrumento en Track FX",
+                        "Esc",
+                        "cerrar overlays, restaurar panel ampliado o liberar notas",
                     ),
                 ],
             ),
             (
                 "ARRANGEMENT",
                 &[
-                    ("h / l", "mover el cursor en el tiempo"),
-                    ("j / k", "seleccionar pista"),
-                    (
-                        "Delete / dd (Normal)",
-                        "eliminar pistas seleccionadas y sus clips; dd se desactiva con teclado MIDI",
-                    ),
+                    ("← / →", "mover el cursor en el tiempo"),
+                    ("↑ / ↓", "seleccionar pista"),
+                    ("Delete", "eliminar pistas o clips seleccionados"),
                     ("+ / -", "acercar / alejar"),
                     ("Home", "volver al inicio"),
                     ("Space", "reproducir / detener"),
@@ -55,28 +53,18 @@ impl DawApp {
                         "Doble clic / Enter",
                         "insertar audio/MIDI en la pista activa, en el cursor",
                     ),
-                    ("j / k · ↑ / ↓", "seleccionar archivo o carpeta"),
-                    ("h / l · ← / →", "plegar / expandir carpetas"),
-                    (
-                        "e / Esc",
-                        "ocultar explorador; e permite recuperarlo al reducir su ancho a cero",
-                    ),
-                    (
-                        "Añadir biblioteca / Quitar",
-                        "guardar / quitar acceso a una carpeta sin borrar sus archivos",
-                    ),
-                    (
-                        "Recargar",
-                        "actualizar las bibliotecas después de cambios en el disco",
-                    ),
+                    ("↑ / ↓", "seleccionar archivo o carpeta"),
+                    ("← / →", "plegar / expandir carpetas"),
+                    ("Ctrl+F", "buscar dentro de las bibliotecas"),
+                    ("Ctrl+E / Esc", "ocultar explorador"),
                 ],
             ),
             (
                 "PIANO ROLL",
                 &[
                     (
-                        "Shift+E",
-                        "herramienta Borrar; e en Normal abre el explorador",
+                        "V / B / E / P / M",
+                        "Seleccionar · Dibujar · Borrar · Pintar · Mute",
                     ),
                     ("Touchpad: 2 dedos", "desplazar tiempo y registro de notas"),
                     (
@@ -100,88 +88,50 @@ impl DawApp {
                 ],
             ),
             (
-                "COMANDOS",
+                "COMANDOS (Ctrl+P o :)",
                 &[
+                    (":return", "insertar un bus Return auxiliar (FX)"),
+                    (
+                        ":master.fx / :mfx",
+                        "abrir cadena de efectos del Bus Master",
+                    ),
                     (
                         ":export -n 93.[mp3,wave] -master",
                         "mezcla offline del Arrangement → exports/; -individuals para pistas",
                     ),
                     (
                         ":export.help / :export.cancel",
-                        "opciones de frecuencia, bits, MP3, rango, pistas, cola, Utility y destino",
+                        "opciones de frecuencia, bits, MP3, rango, pistas, cola y destino",
                     ),
                     (
-                        "Ctrl+V en modo Command",
-                        "pegar texto del portapapeles en el comando",
+                        "Ctrl+V en comandos",
+                        "pegar texto del portapapeles en la barra de comandos",
                     ),
-                    (
-                        ":utility",
-                        "insertar/abrir Hay Utility en la salida de audición",
-                    ),
-                    (
-                        ":utility.gain 0.5",
-                        "ganancia de Utility (0–2x), también con [ / ] y MIDI Learn",
-                    ),
-                    (
-                        ":utility.bypass / reset / remove",
-                        "utility.bypass, utility.reset y utility.remove",
-                    ),
-                    (
-                        ":materialize / :clip.materialize",
-                        "consolidar MIDI seleccionado; Ctrl+clic añade/quita clips",
-                    ),
+                    (":utility", "abrir Hay Utility en la salida"),
+                    (":sa", "insertar pista Hay Sampler"),
                     (":add", "abrir buscador de instrumentos y acciones"),
                     (
-                        ":explorer.toggle / :explorer.insert",
-                        "abrir explorador / insertar su archivo seleccionado",
+                        ":play  :stop  :record  :rec.audio",
+                        "transporte y grabación MIDI / audio",
                     ),
-                    (
-                        ":file.import '/ruta/archivo.wav'",
-                        "insertar por ruta; también disponible en catálogo e iconos",
-                    ),
-                    (
-                        ":play  :stop  :record  :capture",
-                        "transporte y grabación MIDI",
-                    ),
-                    (
-                        ":clip.duplicate  :clip.split  :clip.delete",
-                        "duplicar, dividir en el cursor o eliminar el clip bajo el cursor",
-                    ),
-                    (
-                        ":clip.mute  :clip.lock  :clip.restore_trim",
-                        "mute, bloqueo y restaurar recorte del clip bajo el cursor",
-                    ),
-                    (
-                        ":clip.gain.down  :clip.gain.reset  :clip.gain.up",
-                        "ajustar la ganancia del clip en pasos de 3 dB",
-                    ),
-                    (
-                        ":clip.track.previous  :clip.track.next",
-                        "mover el clip una pista arriba o abajo",
-                    ),
-                    (
-                        ":clip.rename  :clip.gain  :clip.color",
-                        "abrir el editor correspondiente para el clip bajo el cursor",
-                    ),
-                    (":cursor fire|sparks|neon|stars|off", "cambiar puntero GPU"),
-                    (":tcp standard|compact|mixer|minimal", "cambiar layout TCP"),
-                    ("[  ]  b  R", "volumen -/+ · bypass · recargar diseño"),
+                    (":auto  :auto.vol  :auto.pan", "controles de automatización"),
+                    (":tempo 128  /  :meter 3/4", "cambiar tempo o compás"),
                 ],
             ),
             (
-                "INSTRUMENT / PATTERN",
+                "TECLADO MIDI / DRUMS",
                 &[
-                    ("a w s e d f t g y h u j k", "tocar C4–C5 en Instrument"),
-                    ("Click en las teclas", "tocar nota; soltar para Note Off"),
+                    ("m", "activar / desactivar teclado MIDI en el QWERTY"),
+                    (
+                        "a w s e d f t g y h u j k",
+                        "tocar C4–C5 cuando MIDI está activo",
+                    ),
                     (
                         "Space",
                         "reproducir / detener (también en ventanas separadas)",
                     ),
-                    ("Esc", "liberar notas en Instrument"),
-                    (
-                        "Enter / rueda",
-                        "alternar paso / cambiar velocity en Pattern",
-                    ),
+                    ("Esc", "liberar notas activas"),
+                    ("Enter / rueda", "alternar paso / cambiar velocity en Drums"),
                 ],
             ),
         ];
@@ -193,16 +143,6 @@ impl DawApp {
             .gap_3()
             .p_4()
             .overflow_y_scroll()
-            .child(div().flex().items_center().justify_between().gap_3().pb_3()
-                .child(div().flex().flex_col()
-                    .child(div().text_color(rgb(ds.text)).child("Navegación Vim"))
-                    .child(div().text_xs().text_color(rgb(ds.muted)).child("Modos Normal/Insert/Command · hjkl · dd. No cambia MIDI ni transporte.")))
-                .child(div().px_3().py_2().cursor_pointer().border_1().border_color(rgb(ds.border))
-                    .bg(rgb(if self.vim_enabled { ds.selection_background() } else { ds.panel }))
-                    .child(if self.vim_enabled { "✓ Activado" } else { "Desactivado" })
-                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
-                        this.execute_command("vim.toggle"); cx.stop_propagation(); cx.notify();
-                    }))))
             .children(groups.iter().map(|(heading, shortcuts)| {
                 div()
                     .flex()

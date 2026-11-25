@@ -62,6 +62,17 @@ pub(in crate::ui) struct SpectrumData {
     pub height: f32,
 }
 
+pub(in crate::ui) fn spectrum_graph(data: SpectrumData) -> impl IntoElement {
+    plot::graph(data, SpectrumMode::Spectrum)
+}
+
+pub(in crate::ui) fn spectrum_graph_mode(
+    data: SpectrumData,
+    mode: SpectrumMode,
+) -> impl IntoElement {
+    plot::graph(data, mode)
+}
+
 pub(in crate::ui) fn spectrum_panel(
     data: SpectrumData,
     mode: SpectrumMode,

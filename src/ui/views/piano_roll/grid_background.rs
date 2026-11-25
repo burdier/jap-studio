@@ -84,17 +84,17 @@ pub(in crate::ui::views) fn paint_rows(
                 0.6,
                 (ds.muted << 8) | 0x90,
             );
-            if grid.row_height >= 9.0 || pitch % 12 == 0 {
+            if grid.row_height >= ds.font_size_xs || pitch % 12 == 0 {
                 label(
                     window,
                     cx,
                     &note_name(pitch),
                     point(
                         keys_left + px(keys_width - 22.0),
-                        y + px((grid.row_height - 11.0).max(0.0) / 2.0),
+                        y + px((grid.row_height - ds.font_size_xs).max(0.0) / 2.0),
                     ),
                     ds.panel_dark,
-                    9.0,
+                    ds.font_size_xs - 1.0,
                 );
             }
         }

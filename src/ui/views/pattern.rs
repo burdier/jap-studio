@@ -5,21 +5,84 @@ mod song;
 mod steps;
 
 use crate::ui::{
-    DawApp,
+    DawApp, DesignSystem,
     components::{
-        button::{flat_control, toggle_badge},
+        button::{flat_control, led_dot, panel_shadow},
         meter::track_peak_meter,
     },
     explorer::ExplorerSampleDrag,
     pattern_editor::{DrumSampleTarget, PatternAction, PatternOptions},
     workspace_focus::Panel,
 };
-use elevate::musical::{drums::DrumPlaybackSource, grid::NoteGrid, time::Meter};
-use gpui::{Context, Div, MouseButton, SharedString, Stateful, div, prelude::*, px, rgb};
+use elevate::musical::{drums::DrumPlaybackSource, grid::NoteGrid};
+use gpui::{
+    Context, Div, FontWeight, MouseButton, SharedString, Stateful, component::tooltip::Tooltip,
+    div, prelude::*, px, rgb, rgba,
+};
+
+fn grid_note_name(denominator: u16) -> &'static str {
+    match denominator {
+        1 => "Redonda",
+        2 => "Blanca",
+        4 => "Negra",
+        8 => "Corchea",
+        16 => "Semicorchea",
+        32 => "Fusa",
+        64 => "Semifusa",
+        _ => "Garrapatea",
+    }
+}
+
+fn drum_capsule(ds: &DesignSystem) -> Div {
+    div()
+        .h(px(30.0))
+        .px(px(4.0))
+        .flex_shrink_0()
+        .flex()
+        .items_center()
+        .gap(px(4.0))
+        .rounded(px(9.0))
+        .bg(rgb(ds.panel))
+        .border_1()
+        .border_color(rgba(if ds.is_dark() { 0xffffff0e } else { 0x0f172a14 }))
+        .shadow(panel_shadow(ds))
+}
+
+fn duration_label(length: i64, bar: i64, beat: i64) -> String {
+    let bars = length / bar;
+    let remainder = length % bar;
+    let pulses = remainder / beat;
+    let measures = if bars == 1 {
+        "1 compás".into()
+    } else {
+        format!("{bars} compases")
+    };
+    if remainder == 0 {
+        measures
+    } else if remainder % beat != 0 {
+        if bars == 0 {
+            "Parcial".into()
+        } else {
+            format!("{measures}+")
+        }
+    } else {
+        let beats = if pulses == 1 {
+            "1 pulso".into()
+        } else {
+            format!("{pulses} pulsos")
+        };
+        if bars == 0 {
+            beats
+        } else {
+            format!("{measures} + {beats}")
+        }
+    }
+}
 
 impl DawApp {
     pub(in crate::ui) fn render_pattern(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         let editor = &self.pattern_editor;
+        let has_kit = !editor.session.kit.pieces.is_empty();
         let selected = editor.roll.piece.and_then(|id| {
             editor
                 .session
@@ -29,6 +92,9 @@ impl DawApp {
                 .find(|piece| piece.id == id)
         });
         let instrument = selected.or_else(|| editor.session.kit.pieces.get(editor.cursor_lane));
+        let show_song =
+            has_kit && !editor.mixer_open && editor.session.source == DrumPlaybackSource::Song;
+
         div()
             .id("drums-latex")
             .flex()
@@ -37,7 +103,7 @@ impl DawApp {
             .min_w_0()
             .min_h_0()
             .overflow_hidden()
-            .bg(rgb(self.ds.panel_dark))
+            .bg(rgb(self.ds.bg))
             .capture_any_mouse_down(cx.listener(|this, _, window, cx| {
                 if this.workspace_focus.active != Panel::Center {
                     this.workspace_focus.active = Panel::Center;
@@ -45,43 +111,18 @@ impl DawApp {
                 }
                 window.focus(&this.focus_handle, cx);
             }))
-            .child(self.render_drum_song(cx))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .flex_shrink_0()
-                    .min_w_0()
-                    .bg(rgb(self.ds.panel_dark))
-                    .child(
-                        toggle_badge(&self.ds, "Mixer", editor.mixer_open, self.ds.cyan)
-                            .id("drums-mixer-toggle")
-                            .h(px(22.0))
-                            .mx_1()
-                            .px_2()
-                            .tooltip(|window, cx| {
-                                gpui::component::tooltip::Tooltip::new("Mixer del kit")
-                                    .build(window, cx)
-                            })
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(|this, _, _, cx| {
-                                    this.pattern_editor.mixer_open =
-                                        !this.pattern_editor.mixer_open;
-                                    this.mixer_drag = None;
-                                    cx.notify();
-                                }),
-                            ),
+            .when(has_kit || editor.mixer_open, |panel| {
+                panel
+                    .child(self.render_drum_toolbar(cx))
+                    .when(!editor.mixer_open && editor.options.is_some(), |p| {
+                        p.child(self.render_grid_picker_drawer(cx))
+                    })
+                    .when(show_song, |p| p.child(self.render_drum_song(cx)))
+                    .when_some(
+                        instrument.filter(|_| editor.inspector_open && !editor.mixer_open),
+                        |p, piece| p.child(self.render_drum_inspector(piece, cx)),
                     )
-                    .child(self.render_pattern_controls(cx).flex_1()),
-            )
-            .when(!editor.mixer_open, |panel| {
-                panel.child(self.render_pattern_settings(cx))
             })
-            .when_some(
-                instrument.filter(|_| editor.inspector_open && !editor.mixer_open),
-                |panel, piece| panel.child(self.render_drum_inspector(piece, cx)),
-            )
             .child(
                 div()
                     .id("drum-sample-drop")
@@ -91,9 +132,14 @@ impl DawApp {
                     .min_h_0()
                     .min_w_0()
                     .overflow_hidden()
+                    .on_drop(
+                        cx.listener(|this, files: &gpui::ExternalPaths, window, cx| {
+                            this.drop_drum_files(files.paths(), None, window, cx);
+                        }),
+                    )
                     .drag_over::<ExplorerSampleDrag>({
                         let cyan = self.ds.cyan;
-                        move |style, _, _, _| style.border_1().border_color(rgb(cyan))
+                        move |style, _, _, _| style.border_2().border_color(rgb(cyan))
                     })
                     .on_drop(
                         cx.listener(|this, sample: &ExplorerSampleDrag, window, cx| {
@@ -101,94 +147,508 @@ impl DawApp {
                         }),
                     )
                     .child(if editor.mixer_open {
-                        self.render_drum_mixer(cx)
+                        self.render_drum_mixer(cx).into_any_element()
+                    } else if !has_kit {
+                        self.render_drum_empty_state(cx).into_any_element()
                     } else if let Some(piece) = selected {
-                        self.render_drum_roll(piece, cx)
+                        self.render_drum_roll(piece, cx).into_any_element()
                     } else {
-                        self.render_drum_steps(cx)
+                        self.render_drum_steps(cx).into_any_element()
                     }),
             )
     }
 
-    fn render_pattern_controls(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+    /// Estado inicial limpio: sin paneles ni controles hasta que se suelte o cargue un sample.
+    fn render_drum_empty_state(&self, cx: &mut Context<Self>) -> Div {
         let ds = &self.ds;
-        let session = &self.pattern_editor.session;
+        let dark = ds.is_dark();
+        let pad = |lit: bool| {
+            div()
+                .size(px(14.0))
+                .rounded(px(4.0))
+                .bg(rgb(if lit { ds.accent } else { ds.panel_dark }))
+                .border_1()
+                .border_color(rgba(if lit {
+                    (ds.accent << 8) | 0x99
+                } else if dark {
+                    0xffffff12
+                } else {
+                    0x0f172a18
+                }))
+        };
+        let pad_emblem = div()
+            .p(px(8.0))
+            .rounded(px(12.0))
+            .bg(rgb(ds.bg))
+            .border_1()
+            .border_color(rgba(if dark { 0xffffff10 } else { 0x0f172a14 }))
+            .flex()
+            .flex_col()
+            .gap(px(4.0))
+            .child(div().flex().gap(px(4.0)).child(pad(true)).child(pad(false)))
+            .child(
+                div()
+                    .flex()
+                    .gap(px(4.0))
+                    .child(pad(false))
+                    .child(pad(false)),
+            );
+
+        div()
+            .flex_1()
+            .size_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .p(px(24.0))
+            .child(
+                div()
+                    .w(px(400.0))
+                    .max_w_full()
+                    .px(px(28.0))
+                    .py(px(26.0))
+                    .rounded(px(14.0))
+                    .bg(rgb(ds.panel))
+                    .border_1()
+                    .border_color(rgba(if dark { 0xffffff12 } else { 0x0f172a16 }))
+                    .shadow(panel_shadow(ds))
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .gap(px(12.0))
+                    .child(pad_emblem)
+                    .child(
+                        div()
+                            .text_size(px(14.0))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(rgb(ds.text))
+                            .child("Empieza tu ritmo"),
+                    )
+                    .child(
+                        div()
+                            .text_center()
+                            .text_size(px(11.5))
+                            .text_color(rgb(ds.muted))
+                            .child(
+                                "Suelta un sample aquí desde el Explorador o desde tu equipo para activar el secuenciador de Drums.",
+                            ),
+                    )
+                    .child(
+                        div()
+                            .pt(px(4.0))
+                            .flex()
+                            .items_center()
+                            .gap(px(8.0))
+                            .child(
+                                flat_control(ds, true, ds.accent)
+                                    .id("empty-add-drum-sample")
+                                    .h(px(30.0))
+                                    .px(px(14.0))
+                                    .rounded(px(ds.radius_md))
+                                    .text_size(px(11.5))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(rgb(ds.text))
+                                    .child("+ Cargar muestra")
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(|this, _, _, cx| {
+                                            this.choose_drum_sample(
+                                                DrumSampleTarget::NewPiece,
+                                                cx,
+                                            );
+                                            cx.stop_propagation();
+                                            cx.notify();
+                                        }),
+                                    ),
+                            )
+                            .when(!self.explorer_visible(), |row| {
+                                row.child(
+                                    flat_control(ds, false, ds.cyan)
+                                        .id("empty-open-explorer")
+                                        .h(px(30.0))
+                                        .px(px(14.0))
+                                        .rounded(px(ds.radius_md))
+                                        .text_size(px(11.5))
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .text_color(rgb(ds.text))
+                                        .child("Abrir explorador")
+                                        .on_mouse_down(
+                                            MouseButton::Left,
+                                            cx.listener(|this, _, _, cx| {
+                                                this.toggle_explorer();
+                                                cx.stop_propagation();
+                                                cx.notify();
+                                            }),
+                                        ),
+                                )
+                            }),
+                    ),
+            )
+    }
+
+    /// Barra única y organizada en 4 cápsulas limpias (Patrón · Ritmo · Modo · Kit).
+    fn render_drum_toolbar(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+        let ds = &self.ds;
+        let editor = &self.pattern_editor;
+        let session = &editor.session;
+        let pattern = session.active_pattern();
+        let meter = self.timeline.meter;
+        let bar_ticks = meter.ticks_per_bar();
+        let beat_ticks = meter.ticks_per_beat();
+        let length = pattern.notes.length().0;
+        let can_shrink = length > bar_ticks;
         let peak = self
             .player
             .as_ref()
             .map_or(0.0, |player| player.drum_bus_peak());
-        div()
-            .id("drum-pattern-controls")
-            .flex()
-            .flex_shrink_0()
-            .min_w_0()
-            .items_center()
-            .gap_1()
-            .p_1()
-            .bg(rgb(ds.panel_dark))
-            .overflow_x_scroll()
-            .font_family("monospace")
-            .children(
-                [
-                    ("Patrón", DrumPlaybackSource::Pattern),
-                    ("Canción", DrumPlaybackSource::Song),
-                    ("Arrangement", DrumPlaybackSource::Arrangement),
-                ]
-                .into_iter()
-                .map(|(label, source)| {
-                    self.drum_action_chip(
-                        label,
-                        source == session.source,
-                        PatternAction::UseSource(source),
-                        cx,
-                    )
-                }),
-            )
-            .child(
-                div()
-                    .w(px(1.0))
-                    .h(px(15.0))
-                    .flex_shrink_0()
-                    .bg(rgb(ds.border)),
-            )
+        let multiple_patterns = session.patterns.len() > 1;
+
+        // 1. Cápsula de patrones (selector + crear + duplicar)
+        let mut pattern_capsule = drum_capsule(ds);
+        for (idx, pat) in session.patterns.iter().enumerate() {
+            let active = pat.id == session.active;
+            let short = if multiple_patterns {
+                format!("P{}", idx + 1)
+            } else {
+                pat.name.clone()
+            };
+            let full_name = pat.name.clone();
+            let id = pat.id;
+            pattern_capsule = pattern_capsule.child(
+                flat_control(ds, active, ds.accent)
+                    .id(("drum-pat-tab", idx))
+                    .h(px(22.0))
+                    .px(px(8.0))
+                    .gap(px(5.0))
+                    .rounded(px(ds.radius_sm))
+                    .text_size(px(11.0))
+                    .font_weight(if active {
+                        FontWeight::SEMIBOLD
+                    } else {
+                        FontWeight::MEDIUM
+                    })
+                    .text_color(rgb(if active { ds.text } else { ds.muted }))
+                    .tooltip(move |window, cx| Tooltip::new(full_name.clone()).build(window, cx))
+                    .when(active, |el| el.child(led_dot(ds.accent, 4.5, true)))
+                    .child(short)
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, _, cx| {
+                            this.apply_pattern_action(PatternAction::Select(id));
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    ),
+            );
+        }
+        pattern_capsule = pattern_capsule
             .child(
                 flat_control(ds, false, ds.accent)
-                    .id("send-drums-to-arrangement")
+                    .id("drum-new-pattern")
+                    .w(px(22.0))
                     .h(px(22.0))
-                    .px_2()
-                    .text_xs()
+                    .rounded(px(ds.radius_sm))
+                    .text_size(px(12.0))
+                    .font_weight(FontWeight::SEMIBOLD)
                     .text_color(rgb(ds.text))
-                    .child("→ Arrangement")
-                    .tooltip(|window, cx| {
-                        gpui::component::tooltip::Tooltip::new(
-                            "Enviar las piezas al cursor del Arrangement",
-                        )
-                        .build(window, cx)
-                    })
+                    .tooltip(|window, cx| Tooltip::new("Nuevo patrón").build(window, cx))
+                    .child("+")
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|this, _, _, cx| {
-                            this.send_drums_to_arrangement();
+                            this.apply_pattern_action(PatternAction::NewPattern);
+                            cx.stop_propagation();
                             cx.notify();
                         }),
                     ),
             )
             .child(
-                toggle_badge(ds, "+ Muestra", false, ds.cyan)
+                flat_control(ds, false, ds.accent)
+                    .id("drum-dup-pattern")
+                    .h(px(22.0))
+                    .px(px(8.0))
+                    .rounded(px(ds.radius_sm))
+                    .text_size(px(10.5))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(rgb(ds.muted))
+                    .tooltip(|window, cx| Tooltip::new("Duplicar patrón actual").build(window, cx))
+                    .child("Duplicar")
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, cx| {
+                            this.apply_pattern_action(PatternAction::Duplicate);
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    ),
+            );
+
+        // 2. Cápsula de ritmo (duración en compases + rejilla/pasos)
+        let rhythm_capsule = drum_capsule(ds)
+            .child(
+                flat_control(ds, false, ds.accent)
+                    .id("drum-bars-dec")
+                    .w(px(22.0))
+                    .h(px(22.0))
+                    .rounded(px(ds.radius_sm))
+                    .text_size(px(11.5))
+                    .text_color(rgb(if can_shrink { ds.text } else { ds.muted }))
+                    .when(!can_shrink, |el| el.opacity(0.45))
+                    .tooltip(|window, cx| Tooltip::new("Quitar 1 compás").build(window, cx))
+                    .child("−")
+                    .when(can_shrink, |el| {
+                        el.on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|this, _, _, cx| {
+                                this.apply_pattern_action(PatternAction::Bars(-1));
+                                cx.stop_propagation();
+                                cx.notify();
+                            }),
+                        )
+                    }),
+            )
+            .child(
+                div()
+                    .px(px(4.0))
+                    .font_family("monospace")
+                    .text_size(px(10.5))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(rgb(ds.text))
+                    .child(duration_label(length, bar_ticks, beat_ticks)),
+            )
+            .child(
+                flat_control(ds, false, ds.accent)
+                    .id("drum-bars-inc")
+                    .w(px(22.0))
+                    .h(px(22.0))
+                    .rounded(px(ds.radius_sm))
+                    .text_size(px(11.5))
+                    .text_color(rgb(ds.text))
+                    .tooltip(|window, cx| Tooltip::new("Añadir 1 compás").build(window, cx))
+                    .child("+")
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, cx| {
+                            this.apply_pattern_action(PatternAction::Bars(1));
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    ),
+            )
+            .child(
+                div()
+                    .w(px(1.0))
+                    .h(px(14.0))
+                    .mx(px(2.0))
+                    .bg(rgba(if ds.is_dark() { 0xffffff14 } else { 0x0f172a18 })),
+            )
+            .child(
+                flat_control(ds, editor.options == Some(PatternOptions::Grid), ds.cyan)
+                    .id("drum-grid-menu")
+                    .h(px(22.0))
+                    .px(px(8.0))
+                    .gap(px(5.0))
+                    .rounded(px(ds.radius_sm))
+                    .font_family("monospace")
+                    .text_size(px(10.5))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(rgb(if editor.options == Some(PatternOptions::Grid) {
+                        ds.text
+                    } else {
+                        ds.muted
+                    }))
+                    .tooltip({
+                        let name = grid_note_name(pattern.grid.denominator());
+                        let steps = pattern.step_count();
+                        move |window, cx| {
+                            Tooltip::new(format!(
+                                "Rejilla: {name} ({steps} pasos) · clic para cambiar subdivisión"
+                            ))
+                            .build(window, cx)
+                        }
+                    })
+                    .when(editor.options == Some(PatternOptions::Grid), |el| {
+                        el.child(led_dot(ds.cyan, 4.5, true))
+                    })
+                    .child(format!(
+                        "1/{} · {}p",
+                        pattern.grid.denominator(),
+                        pattern.step_count()
+                    ))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, cx| {
+                            let options = &mut this.pattern_editor.options;
+                            *options = (*options != Some(PatternOptions::Grid))
+                                .then_some(PatternOptions::Grid);
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    ),
+            );
+
+        // 3. Cápsula de modo de reproducción (Patrón · Canción · Timeline)
+        let mode_capsule = drum_capsule(ds).children(
+            [
+                (
+                    "drum-mode-pattern",
+                    "Patrón",
+                    "Reproduce el patrón activo en bucle",
+                    DrumPlaybackSource::Pattern,
+                ),
+                (
+                    "drum-mode-song",
+                    "Canción",
+                    "Abre y reproduce la secuencia de patrones",
+                    DrumPlaybackSource::Song,
+                ),
+                (
+                    "drum-mode-timeline",
+                    "Timeline",
+                    "Reproduce sincronizado con el Arrangement",
+                    DrumPlaybackSource::Arrangement,
+                ),
+            ]
+            .into_iter()
+            .map(|(id, label, tip, source)| {
+                let active = session.source == source;
+                flat_control(ds, active, ds.accent)
+                    .id(id)
+                    .h(px(22.0))
+                    .px(px(8.0))
+                    .gap(px(5.0))
+                    .rounded(px(ds.radius_sm))
+                    .text_size(px(10.5))
+                    .font_weight(if active {
+                        FontWeight::SEMIBOLD
+                    } else {
+                        FontWeight::MEDIUM
+                    })
+                    .text_color(rgb(if active { ds.text } else { ds.muted }))
+                    .tooltip(move |window, cx| Tooltip::new(tip).build(window, cx))
+                    .when(active, |el| el.child(led_dot(ds.accent, 4.5, true)))
+                    .child(label)
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, _, cx| {
+                            this.apply_pattern_action(PatternAction::UseSource(source));
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    )
+            }),
+        );
+
+        // 4. Cápsula de acciones del kit (+ Muestra · Volcar · Ajustes · Mixer · Pico)
+        let kit_capsule = drum_capsule(ds)
+            .child(
+                flat_control(ds, false, ds.cyan)
                     .id("add-drum-sample")
                     .h(px(22.0))
-                    .px_2()
+                    .px(px(8.0))
+                    .rounded(px(ds.radius_sm))
+                    .text_size(px(10.5))
+                    .font_weight(FontWeight::SEMIBOLD)
                     .text_color(rgb(ds.cyan))
                     .tooltip(|window, cx| {
-                        gpui::component::tooltip::Tooltip::new(
-                            "Crear una pieza del kit con un archivo de audio",
-                        )
-                        .build(window, cx)
+                        Tooltip::new("Añadir una muestra de audio al kit").build(window, cx)
                     })
+                    .child("+ Muestra")
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|this, _, _, cx| {
                             this.choose_drum_sample(DrumSampleTarget::NewPiece, cx);
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    ),
+            )
+            .child(
+                flat_control(ds, false, ds.accent)
+                    .id("send-drums-to-arrangement")
+                    .h(px(22.0))
+                    .px(px(8.0))
+                    .rounded(px(ds.radius_sm))
+                    .text_size(px(10.5))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(rgb(ds.text))
+                    .tooltip(|window, cx| {
+                        Tooltip::new("Volcar las piezas al cursor del Arrangement")
+                            .build(window, cx)
+                    })
+                    .child("Volcar")
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, cx| {
+                            this.send_drums_to_arrangement();
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    ),
+            )
+            .child(
+                flat_control(ds, editor.inspector_open, ds.accent)
+                    .id("drum-inspector-toggle")
+                    .h(px(22.0))
+                    .px(px(8.0))
+                    .gap(px(5.0))
+                    .rounded(px(ds.radius_sm))
+                    .text_size(px(10.5))
+                    .font_weight(if editor.inspector_open {
+                        FontWeight::SEMIBOLD
+                    } else {
+                        FontWeight::MEDIUM
+                    })
+                    .text_color(rgb(if editor.inspector_open {
+                        ds.text
+                    } else {
+                        ds.muted
+                    }))
+                    .tooltip(|window, cx| {
+                        Tooltip::new("Ajustes y envolvente de la pieza seleccionada")
+                            .build(window, cx)
+                    })
+                    .when(editor.inspector_open, |el| {
+                        el.child(led_dot(ds.accent, 4.5, true))
+                    })
+                    .child("Ajustes")
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, cx| {
+                            this.pattern_editor.inspector_open =
+                                !this.pattern_editor.inspector_open;
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    ),
+            )
+            .child(
+                flat_control(ds, editor.mixer_open, ds.cyan)
+                    .id("drums-mixer-toggle")
+                    .h(px(22.0))
+                    .px(px(8.0))
+                    .gap(px(5.0))
+                    .rounded(px(ds.radius_sm))
+                    .text_size(px(10.5))
+                    .font_weight(if editor.mixer_open {
+                        FontWeight::SEMIBOLD
+                    } else {
+                        FontWeight::MEDIUM
+                    })
+                    .text_color(rgb(if editor.mixer_open { ds.text } else { ds.muted }))
+                    .tooltip(|window, cx| {
+                        Tooltip::new("Mezclador interno del kit").build(window, cx)
+                    })
+                    .when(editor.mixer_open, |el| {
+                        el.child(led_dot(ds.cyan, 4.5, true))
+                    })
+                    .child("Mixer")
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, cx| {
+                            this.pattern_editor.mixer_open = !this.pattern_editor.mixer_open;
+                            this.mixer_drag = None;
+                            cx.stop_propagation();
                             cx.notify();
                         }),
                     ),
@@ -197,177 +657,87 @@ impl DawApp {
                 div()
                     .relative()
                     .id("drums-bus-peak")
-                    .h(px(22.0))
-                    .w(px(13.0))
+                    .h(px(20.0))
+                    .w(px(11.0))
                     .flex_shrink_0()
-                    .tooltip(|window, cx| {
-                        gpui::component::tooltip::Tooltip::new("Pico del bus Drums")
-                            .build(window, cx)
-                    })
+                    .tooltip(|window, cx| Tooltip::new("Pico del bus Drums").build(window, cx))
                     .child(track_peak_meter(ds, peak)),
-            )
-            .child(
-                toggle_badge(ds, "Ajustes", self.pattern_editor.inspector_open, ds.accent)
-                    .id("drum-inspector-toggle")
-                    .h(px(22.0))
-                    .px_2()
-                    .tooltip(|window, cx| {
-                        gpui::component::tooltip::Tooltip::new("Ajustes de la pieza")
-                            .build(window, cx)
-                    })
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(|this, _, _, cx| {
-                            this.pattern_editor.inspector_open =
-                                !this.pattern_editor.inspector_open;
-                            cx.notify();
-                        }),
-                    ),
-            )
-    }
+            );
 
-    fn render_pattern_settings(&self, cx: &mut Context<Self>) -> Div {
-        let ds = &self.ds;
-        let editor = &self.pattern_editor;
-        let pattern = editor.session.active_pattern();
-        let bars = pattern.bar_count();
-        let options = editor.options;
         div()
+            .id("drum-pattern-controls")
             .flex()
-            .flex_col()
             .flex_shrink_0()
-            .bg(rgb(ds.panel))
+            .min_w_0()
+            .items_center()
+            .justify_between()
+            .gap(px(8.0))
+            .px(px(8.0))
+            .py(px(6.0))
+            .bg(rgb(ds.bg))
+            .border_b_1()
+            .border_color(rgba(if ds.is_dark() { 0xffffff0d } else { 0x0f172a12 }))
+            .overflow_x_scroll()
             .child(
                 div()
-                    .id("drum-pattern-settings")
                     .flex()
                     .items_center()
-                    .gap_1()
-                    .p_1()
-                    .text_xs()
-                    .font_family("monospace")
-                    .overflow_x_scroll()
-                    .child(
-                        div()
-                            .px_1()
-                            .flex_shrink_0()
-                            .text_color(rgb(ds.accent))
-                            .child(pattern.name.clone()),
-                    )
-                    .child(self.drum_action_chip("+ Patrón", false, PatternAction::NewPattern, cx))
-                    .child(self.drum_action_chip("Duplicar", false, PatternAction::Duplicate, cx))
-                    .children(
-                        [
-                            (
-                                PatternOptions::Meter,
-                                format!("Compás {} ⌄", pattern.meter.label()),
-                            ),
-                            (
-                                PatternOptions::Grid,
-                                format!("Paso 1/{} ⌄", pattern.grid.denominator()),
-                            ),
-                        ]
-                        .into_iter()
-                        .map(|(field, label)| {
-                            toggle_badge(ds, label, options == Some(field), ds.cyan)
-                                .h(px(22.0))
-                                .px_2()
-                                .text_color(rgb(ds.text))
-                                .on_mouse_down(
-                                    MouseButton::Left,
-                                    cx.listener(move |this, _, _, cx| {
-                                        let options = &mut this.pattern_editor.options;
-                                        *options = if *options == Some(field) {
-                                            None
-                                        } else {
-                                            Some(field)
-                                        };
-                                        cx.notify();
-                                    }),
-                                )
+                    .gap(px(8.0))
+                    .flex_shrink_0()
+                    .child(pattern_capsule)
+                    .when(!editor.mixer_open, |row| row.child(rhythm_capsule))
+                    .child(mode_capsule),
+            )
+            .child(kit_capsule)
+    }
+
+    fn render_grid_picker_drawer(&self, cx: &mut Context<Self>) -> Div {
+        let ds = &self.ds;
+        let pattern = self.pattern_editor.session.active_pattern();
+        div()
+            .flex()
+            .items_center()
+            .gap(px(6.0))
+            .px(px(10.0))
+            .py(px(5.0))
+            .flex_shrink_0()
+            .bg(rgb(ds.panel))
+            .border_b_1()
+            .border_color(rgba(if ds.is_dark() { 0xffffff0d } else { 0x0f172a12 }))
+            .child(
+                div()
+                    .text_size(px(10.5))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(rgb(ds.muted))
+                    .child("Subdivisión de pasos:"),
+            )
+            .children([8u16, 16, 32, 64].into_iter().map(|denominator| {
+                let grid = NoteGrid::new(denominator).expect("subdivisión predefinida");
+                let active = grid == pattern.grid;
+                flat_control(ds, active, ds.cyan)
+                    .h(px(22.0))
+                    .px(px(9.0))
+                    .gap(px(5.0))
+                    .rounded(px(ds.radius_sm))
+                    .text_size(px(10.5))
+                    .font_weight(if active {
+                        FontWeight::SEMIBOLD
+                    } else {
+                        FontWeight::MEDIUM
+                    })
+                    .text_color(rgb(if active { ds.text } else { ds.muted }))
+                    .when(active, |el| el.child(led_dot(ds.cyan, 4.5, true)))
+                    .child(format!("1/{denominator} · {}", grid_note_name(denominator)))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, _, cx| {
+                            this.apply_pattern_action(PatternAction::Grid(grid));
+                            this.pattern_editor.options = None;
+                            cx.stop_propagation();
+                            cx.notify();
                         }),
                     )
-                    .child(if bars > 1 {
-                        self.drum_action_chip("−", false, PatternAction::Bars(-1), cx)
-                    } else {
-                        div()
-                            .w(px(22.0))
-                            .flex_shrink_0()
-                            .text_center()
-                            .text_color(rgb(ds.muted))
-                            .child("−")
-                    })
-                    .child(
-                        div()
-                            .flex_shrink_0()
-                            .text_color(rgb(ds.text))
-                            .child(if bars == 1 {
-                                "1 compás".into()
-                            } else {
-                                format!("{bars} compases")
-                            }),
-                    )
-                    .child(self.drum_action_chip("+", false, PatternAction::Bars(1), cx))
-                    .child(
-                        div()
-                            .px_1()
-                            .flex_shrink_0()
-                            .text_color(rgb(ds.muted))
-                            .child(format!("{} pasos", pattern.step_count())),
-                    ),
-            )
-            .when_some(options, |panel, options| {
-                let choices = match options {
-                    PatternOptions::Meter => [
-                        (2, 4),
-                        (3, 4),
-                        (4, 4),
-                        (5, 4),
-                        (7, 4),
-                        (3, 8),
-                        (5, 8),
-                        (6, 8),
-                        (7, 8),
-                        (9, 8),
-                        (12, 8),
-                    ]
-                    .into_iter()
-                    .map(|(n, d)| {
-                        let meter = Meter::new(n, d).expect("compás predefinido");
-                        self.drum_action_chip(
-                            meter.label(),
-                            meter == pattern.meter,
-                            PatternAction::Meter(meter),
-                            cx,
-                        )
-                    })
-                    .collect::<Vec<_>>(),
-                    PatternOptions::Grid => [8, 16, 32, 64]
-                        .into_iter()
-                        .map(|denominator| {
-                            let grid = NoteGrid::new(denominator).expect("subdivisión predefinida");
-                            self.drum_action_chip(
-                                format!("1/{denominator}"),
-                                grid == pattern.grid,
-                                PatternAction::Grid(grid),
-                                cx,
-                            )
-                        })
-                        .collect(),
-                };
-                panel.child(
-                    div()
-                        .id("drum-pattern-options")
-                        .flex()
-                        .items_center()
-                        .gap_1()
-                        .px_1()
-                        .pb_1()
-                        .font_family("monospace")
-                        .overflow_x_scroll()
-                        .children(choices),
-                )
-            })
+            }))
     }
 
     fn drum_action_chip(
@@ -379,9 +749,15 @@ impl DawApp {
     ) -> Div {
         flat_control(&self.ds, active, self.ds.accent)
             .h(px(22.0))
-            .px_2()
-            .text_xs()
-            .text_color(rgb(if active { self.ds.accent } else { self.ds.text }))
+            .px(px(8.0))
+            .rounded(px(self.ds.radius_sm))
+            .text_size(px(10.5))
+            .font_weight(if active {
+                FontWeight::SEMIBOLD
+            } else {
+                FontWeight::MEDIUM
+            })
+            .text_color(rgb(if active { self.ds.text } else { self.ds.muted }))
             .child(label.into())
             .on_mouse_down(
                 MouseButton::Left,
@@ -390,5 +766,185 @@ impl DawApp {
                     cx.notify();
                 }),
             )
+    }
+
+    pub(in crate::ui) fn render_drum_lane_menu(
+        &self,
+        window: &gpui::Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        use crate::ui::components::context_menu::{
+            context_menu, menu_panel, menu_row, menu_separator,
+        };
+        let ds = &self.ds;
+        let menu = self.pattern_editor.lane_menu.expect("menú de fila abierto");
+        let lane = menu.lane;
+        let piece_name = self
+            .pattern_editor
+            .session
+            .kit
+            .pieces
+            .get(lane)
+            .map(|piece| piece.name.clone())
+            .unwrap_or_else(|| "Fila".into());
+        let has_copied = self.pattern_editor.copied_lane.is_some();
+
+        let action_row = |label: &'static str, action: PatternAction, cx: &mut Context<Self>| {
+            menu_row(ds, label, false, false)
+                .hover(|row| row.bg(rgb(ds.selection_background())))
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, _, _, cx| {
+                        this.apply_pattern_action(action.clone());
+                        cx.stop_propagation();
+                        cx.notify();
+                    }),
+                )
+        };
+
+        let section = |title: &'static str| {
+            div()
+                .px_2()
+                .pt(px(4.0))
+                .pb(px(2.0))
+                .text_size(px(ds.font_size_xs - 1.0))
+                .text_color(rgb(ds.accent))
+                .child(title)
+        };
+
+        let mut panel = menu_panel(ds, 248.0)
+            .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
+            .child(
+                div()
+                    .px_2()
+                    .py(px(3.0))
+                    .text_xs()
+                    .text_color(rgb(ds.text))
+                    .truncate()
+                    .child(piece_name),
+            )
+            .child(menu_separator(ds));
+
+        if let Some(step) = menu.step {
+            panel = panel
+                .child(action_row(
+                    "Dividir golpe (Roll)",
+                    PatternAction::SplitStep { lane, step },
+                    cx,
+                ))
+                .child(menu_separator(ds));
+        }
+
+        panel = panel
+            .child(section("Rellenar (Fill)"))
+            .child(action_row(
+                "Rellenar cada 2 pasos",
+                PatternAction::FillLane { lane, every: 2 },
+                cx,
+            ))
+            .child(action_row(
+                "Rellenar cada 4 pasos",
+                PatternAction::FillLane { lane, every: 4 },
+                cx,
+            ))
+            .child(action_row(
+                "Rellenar cada 8 pasos",
+                PatternAction::FillLane { lane, every: 8 },
+                cx,
+            ))
+            .child(action_row(
+                "Rellenar cada 16 pasos",
+                PatternAction::FillLane { lane, every: 16 },
+                cx,
+            ))
+            .child(menu_separator(ds))
+            .child(section("Clonar y MIDI"))
+            .child(action_row(
+                "Shadow Clone (solo MIDI)",
+                PatternAction::CloneLane {
+                    lane,
+                    keep_layers: false,
+                    copy_midi: true,
+                },
+                cx,
+            ))
+            .child(action_row(
+                "Clone (pieza + patrón)",
+                PatternAction::CloneLane {
+                    lane,
+                    keep_layers: true,
+                    copy_midi: true,
+                },
+                cx,
+            ))
+            .child(action_row(
+                "Clonar instrumento (vacío)",
+                PatternAction::CloneLane {
+                    lane,
+                    keep_layers: true,
+                    copy_midi: false,
+                },
+                cx,
+            ))
+            .child(action_row(
+                "Copiar MIDI de la fila",
+                PatternAction::CopyLaneMidi(lane),
+                cx,
+            ));
+
+        if has_copied {
+            panel = panel.child(action_row(
+                "Pegar MIDI en esta fila",
+                PatternAction::PasteLaneMidi(lane),
+                cx,
+            ));
+        }
+
+        panel = panel
+            .child(menu_separator(ds))
+            .child(section("Edición de pasos"))
+            .child(action_row(
+                "Desplazar ← 1 paso",
+                PatternAction::ShiftLane { lane, steps: -1 },
+                cx,
+            ))
+            .child(action_row(
+                "Desplazar → 1 paso",
+                PatternAction::ShiftLane { lane, steps: 1 },
+                cx,
+            ))
+            .child(action_row(
+                "Invertir pasos",
+                PatternAction::InvertLane(lane),
+                cx,
+            ))
+            .child(action_row(
+                "Vaciar fila",
+                PatternAction::ClearLane(lane),
+                cx,
+            ))
+            .child(menu_separator(ds))
+            .child(action_row(
+                "Duplicar patrón completo",
+                PatternAction::Duplicate,
+                cx,
+            ));
+
+        let close = std::rc::Rc::new(cx.listener(|this, _, _, cx| {
+            this.pattern_editor.lane_menu = None;
+            cx.notify();
+        }));
+        let viewport = window.viewport_size();
+        let x = menu
+            .position
+            .x
+            .min((viewport.width - px(256.0)).max(px(8.0)))
+            .max(px(8.0));
+        let y = menu
+            .position
+            .y
+            .min((viewport.height - px(380.0)).max(px(8.0)))
+            .max(px(8.0));
+        context_menu(gpui::point(x, y), close, panel)
     }
 }

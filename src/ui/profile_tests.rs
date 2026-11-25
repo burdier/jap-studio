@@ -63,7 +63,8 @@ fn every_theme_survives_reload_with_legacy_color_overrides_and_unrelated_setting
 #[test]
 fn every_cursor_mode_is_saved_without_resetting_custom_colors_or_dimensions() {
     let fixture = TestProfile::new();
-    let original = "THEME=tokyonight\nBG=abcdef\nACCENT=123456\nPLAYHEAD_PARTICLE_COLOR=aa1100\nKNOB_SIZE=31\n";
+    let original =
+        "THEME=cyberpunk\nBG=abcdef\nACCENT=123456\nPLAYHEAD_PARTICLE_COLOR=aa1100\nKNOB_SIZE=31\n";
     fs::write(fixture.path(), original).unwrap();
     let mut design = DesignSystem::from_profile(original);
     for cursor in CursorFxMode::ALL {
@@ -71,7 +72,7 @@ fn every_cursor_mode_is_saved_without_resetting_custom_colors_or_dimensions() {
         save_appearance_at(&fixture.path(), &design).unwrap();
         let reloaded = fixture.reload();
         assert_eq!(reloaded.cursor_fx, cursor);
-        assert_eq!(reloaded.theme, ThemePreset::TokyoNight);
+        assert_eq!(reloaded.theme, ThemePreset::Cyberpunk);
         assert_eq!(reloaded.bg, 0xabcdef);
         assert_eq!(reloaded.accent, 0x123456);
         assert_eq!(reloaded.playhead_particle_color, 0xaa1100);
@@ -80,17 +81,37 @@ fn every_cursor_mode_is_saved_without_resetting_custom_colors_or_dimensions() {
 }
 
 #[test]
+fn editing_theme_in_profile_switches_palette_immediately() {
+    let fixture = TestProfile::new();
+    let mut design = DesignSystem::from_profile("");
+    design.apply_theme(ThemePreset::Cyberpunk);
+    save_appearance_at(&fixture.path(), &design).unwrap();
+    let content = fs::read_to_string(fixture.path()).unwrap();
+    // No debe escribir líneas BG=/PANEL= que bloqueen cambios manuales de THEME=.
+    assert!(!content.contains("BG="));
+    let edited = content.replace("THEME=cyberpunk", "THEME=daylight studio");
+    fs::write(fixture.path(), edited).unwrap();
+    let reloaded = fixture.reload();
+    assert_eq!(reloaded.theme, ThemePreset::DaylightStudio);
+    assert_eq!(reloaded.bg, ThemePreset::DaylightStudio.palette().bg);
+    assert_eq!(
+        reloaded.accent,
+        ThemePreset::DaylightStudio.palette().accent
+    );
+}
+
+#[test]
 fn first_save_creates_profile_and_duplicate_keys_cannot_override_last_choice() {
     let fixture = TestProfile::new();
     let mut design = DesignSystem::from_profile("");
-    design.apply_theme(ThemePreset::MameyCream);
+    design.apply_theme(ThemePreset::DaylightStudio);
     design.cursor_fx = CursorFxMode::Off;
     save_appearance_at(&fixture.path(), &design).unwrap();
-    assert_eq!(fixture.reload().theme, ThemePreset::MameyCream);
-    fs::write(fixture.path(), "# THEME=no cambiar\r\nTHEME=obsidian\r\n THEME = nord\r\nCURSOR_FX=fire\r\nCURSOR_FX=stars").unwrap();
+    assert_eq!(fixture.reload().theme, ThemePreset::DaylightStudio);
+    fs::write(fixture.path(), "# THEME=no cambiar\r\nTHEME=cyberpunk\r\n THEME = cyberpunk\r\nCURSOR_FX=fire\r\nCURSOR_FX=stars").unwrap();
     save_appearance_at(&fixture.path(), &design).unwrap();
     let reloaded = fixture.reload();
-    assert_eq!(reloaded.theme, ThemePreset::MameyCream);
+    assert_eq!(reloaded.theme, ThemePreset::DaylightStudio);
     assert_eq!(reloaded.cursor_fx, CursorFxMode::Off);
     assert!(
         fs::read_to_string(fixture.path())
@@ -117,11 +138,11 @@ fn saving_preserves_profile_symlink_and_target_permissions() {
     use std::os::unix::fs::{PermissionsExt, symlink};
     let fixture = TestProfile::new();
     let target = fixture.0.join("real-profile");
-    fs::write(&target, "# Compartido\nTHEME=obsidian\n").unwrap();
+    fs::write(&target, "# Compartido\nTHEME=cyberpunk\n").unwrap();
     fs::set_permissions(&target, fs::Permissions::from_mode(0o600)).unwrap();
     symlink(&target, fixture.path()).unwrap();
     let mut design = DesignSystem::from_profile("");
-    design.apply_theme(ThemePreset::NordAurora);
+    design.apply_theme(ThemePreset::DaylightStudio);
     save_appearance_at(&fixture.path(), &design).unwrap();
     assert!(
         fs::symlink_metadata(fixture.path())
@@ -129,7 +150,7 @@ fn saving_preserves_profile_symlink_and_target_permissions() {
             .file_type()
             .is_symlink()
     );
-    assert_eq!(fixture.reload().theme, ThemePreset::NordAurora);
+    assert_eq!(fixture.reload().theme, ThemePreset::DaylightStudio);
     assert_eq!(
         fs::metadata(target).unwrap().permissions().mode() & 0o777,
         0o600

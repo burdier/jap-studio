@@ -1,23 +1,26 @@
 //! Barras de título y estado. No abrir dispositivos ni ejecutar DSP aquí.
 use super::super::{
-    CenterView, DawApp, VimMode,
-    components::button::{MAMEY_LOGO_COLOR, brand_logo},
+    CenterView, DawApp,
+    components::button::{MAMEY_LOGO_COLOR, brand_logo, flat_control, recessed_well},
 };
 use super::menu_bar::MenuGroup;
-use gpui::{Context, IntoElement, MouseButton, SharedString, div, prelude::*, px, rgb};
+use gpui::{
+    Context, CursorStyle, Decorations, IntoElement, MouseButton, ResizeEdge, Stateful, Window,
+    component::tooltip::Tooltip, div, prelude::*, px, rgb, rgba,
+};
 
 impl DawApp {
     pub(in crate::ui) fn render_title_bar(
         &self,
-        mode_label: SharedString,
-        mode_color: u32,
+        window: &Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let ds = &self.ds;
+        let client = matches!(window.window_decorations(), Decorations::Client { .. });
         let view_label = match self.center_view {
-            CenterView::Arrangement => "ARRANGEMENT",
-            CenterView::Session => "PATTERN",
-            CenterView::Mixer => "MIXER",
+            CenterView::Arrangement => "Arrangement",
+            CenterView::Session => "Drums",
+            CenterView::Mixer => "Mixer",
         };
         let audio_label = if let Some(player) = &self.player {
             format!("{} Hz", player.sample_rate)
@@ -51,10 +54,18 @@ impl DawApp {
             .items_center()
             .justify_between()
             .px_4()
-            .bg(rgb(ds.panel_dark))
-            .rounded(px(ds.radius_lg))
-            .border_1()
-            .border_color(rgb(ds.frame_border()))
+            .when(client, |bar| {
+                bar.on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|_, event: &gpui::MouseDownEvent, window, _| {
+                        if event.click_count == 2 {
+                            window.zoom_window();
+                        } else {
+                            window.start_window_move();
+                        }
+                    }),
+                )
+            })
             .child(
                 div()
                     .flex()
@@ -82,7 +93,7 @@ impl DawApp {
                                     .text_color(rgb(MAMEY_LOGO_COLOR))
                                     .text_lg()
                                     .font_weight(gpui::FontWeight::BOLD)
-                                    .child("Hay"),
+                                    .child("Jap Studio"),
                             ),
                     )
                     .child(
@@ -104,23 +115,174 @@ impl DawApp {
                                 .unwrap_or_else(|| "Sin título".into()),
                             if self.project.dirty { " *" } else { "" }
                         )))
-                    .child(
+                    .child({
+                        let can_undo = self.history.can_undo();
+                        let can_redo = self.history.can_redo();
+                        let hist_open = self.history.open;
+                        let hist_count = self.history.len();
                         div()
-                            .ml_2()
-                            .px_2()
-                            .py_1()
-                            .bg(rgb(mode_color))
-                            .rounded(px(ds.radius_sm))
-                            .text_xs()
-                            .text_color(rgb(ds.bg))
-                            .child(mode_label),
-                    ),
+                            .flex()
+                            .items_center()
+                            .gap(px(3.))
+                            .ml_1()
+                            .child(
+                                div()
+                                    .id("title-undo")
+                                    .px(px(5.))
+                                    .py(px(1.))
+                                    .rounded(px(3.))
+                                    .bg(rgba((ds.text << 8) | if can_undo { 0x12 } else { 0x05 }))
+                                    .hover(|b| b.bg(rgba((ds.accent << 8) | 0x26)))
+                                    .text_size(px(11.))
+                                    .text_color(rgb(if can_undo { ds.text } else { ds.muted }))
+                                    .cursor_pointer()
+                                    .tooltip(|window, cx| {
+                                        Tooltip::new("Deshacer (Ctrl+Z)").build(window, cx)
+                                    })
+                                    .child("↶")
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(|this, _, _, cx| {
+                                            this.undo_project();
+                                            cx.stop_propagation();
+                                            cx.notify();
+                                        }),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .id("title-redo")
+                                    .px(px(5.))
+                                    .py(px(1.))
+                                    .rounded(px(3.))
+                                    .bg(rgba((ds.text << 8) | if can_redo { 0x12 } else { 0x05 }))
+                                    .hover(|b| b.bg(rgba((ds.accent << 8) | 0x26)))
+                                    .text_size(px(11.))
+                                    .text_color(rgb(if can_redo { ds.text } else { ds.muted }))
+                                    .cursor_pointer()
+                                    .tooltip(|window, cx| {
+                                        Tooltip::new("Rehacer (Ctrl+Y)").build(window, cx)
+                                    })
+                                    .child("↷")
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(|this, _, _, cx| {
+                                            this.redo_project();
+                                            cx.stop_propagation();
+                                            cx.notify();
+                                        }),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .id("title-history")
+                                    .px(px(6.))
+                                    .py(px(1.))
+                                    .rounded(px(3.))
+                                    .border_1()
+                                    .border_color(if hist_open {
+                                        rgb(ds.cyan)
+                                    } else {
+                                        rgba((ds.text << 8) | 0x18)
+                                    })
+                                    .bg(if hist_open {
+                                        rgba((ds.cyan << 8) | 0x26)
+                                    } else {
+                                        rgba((ds.text << 8) | 0x0a)
+                                    })
+                                    .hover(|b| b.bg(rgba((ds.cyan << 8) | 0x22)))
+                                    .text_size(px(10.))
+                                    .text_color(rgb(if hist_open { ds.cyan } else { ds.text }))
+                                    .cursor_pointer()
+                                    .tooltip(|window, cx| {
+                                        Tooltip::new("Ver historial de cambios (Ctrl+H)")
+                                            .build(window, cx)
+                                    })
+                                    .child(format!("🕒 {hist_count}"))
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(|this, _, _, cx| {
+                                            this.history.open = !this.history.open;
+                                            cx.stop_propagation();
+                                            cx.notify();
+                                        }),
+                                    ),
+                            )
+                            .when_some(self.project.autosave_label.clone(), |row, stamp| {
+                                row.child(
+                                    div()
+                                        .id("title-autosave")
+                                        .ml(px(4.))
+                                        .text_size(px(9.5))
+                                        .text_color(rgb(ds.success))
+                                        .tooltip(|window, cx| {
+                                            Tooltip::new("Autoguardado activo cada 25 s")
+                                                .build(window, cx)
+                                        })
+                                        .child(format!("✓ {stamp}")),
+                                )
+                            })
+                    })
+                    .when(self.command_open, |row| {
+                        row.child(
+                            div()
+                                .ml_2()
+                                .px_2()
+                                .py(px(2.0))
+                                .bg(rgb(ds.pink))
+                                .rounded(px(ds.radius_sm))
+                                .text_xs()
+                                .text_color(rgb(ds.bg))
+                                .child("COMANDO"),
+                        )
+                    }),
             )
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap_3()
+                    .children({
+                        #[cfg(feature = "p2p")]
+                        let shared = self.shared_project_label();
+                        #[cfg(not(feature = "p2p"))]
+                        let shared: Option<&str> = None;
+                        shared.map(|label| div().text_xs().text_color(rgb(ds.cyan)).child(label))
+                    })
+                    .children(self.vst_effects.tuner.as_ref().map(|tuner| {
+                        let track = self.tracks.iter().find(|t| t.id == tuner.track);
+                        div()
+                            .flex()
+                            .gap_2()
+                            .items_center()
+                            .text_xs()
+                            .child(
+                                div()
+                                    .max_w(px(120.))
+                                    .truncate()
+                                    .text_color(rgb(ds.muted))
+                                    .child(track.map(|t| t.name.to_string()).unwrap_or_default()),
+                            )
+                            .child(
+                                div()
+                                    .font_family("monospace")
+                                    .text_color(rgb(ds.cyan))
+                                    .child(tuner.reading()),
+                            )
+                    }))
+                    .child(
+                        flat_control(ds, self.tuner_enabled(), ds.cyan)
+                            .id("track-tuner-toggle")
+                            .px_2()
+                            .text_xs()
+                            .text_color(rgb(if self.tuner_enabled() {
+                                ds.cyan
+                            } else {
+                                ds.muted
+                            }))
+                            .child("Afinador")
+                            .on_click(cx.listener(|this, _, _, cx| this.toggle_track_tuner(cx))),
+                    )
                     .child(div().text_xs().text_color(rgb(ds.muted)).child(view_label))
                     .child(div().text_xs().text_color(rgb(ds.muted)).child(audio_label))
                     .child(
@@ -128,17 +290,121 @@ impl DawApp {
                             .text_xs()
                             .text_color(rgb(ds.success))
                             .child(engine_label),
-                    ),
+                    )
+                    .when(client, |group| {
+                        group.child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .child(self.window_button("–", false, cx, |_, window, _| {
+                                    window.minimize_window()
+                                }))
+                                .child(self.window_button("□", false, cx, |_, window, _| {
+                                    window.zoom_window()
+                                }))
+                                .child(self.window_button("×", true, cx, |this, window, cx| {
+                                    if this.guard_project_close(window, cx) {
+                                        window.remove_window();
+                                        cx.quit();
+                                    }
+                                })),
+                        )
+                    }),
             )
     }
 
-    pub(in crate::ui) fn render_status_bar(
+    fn window_button(
         &self,
-        mode_label: SharedString,
-        mode_color: u32,
-    ) -> impl IntoElement {
+        label: &'static str,
+        danger: bool,
+        cx: &mut Context<Self>,
+        action: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
+    ) -> Stateful<gpui::Div> {
         let ds = &self.ds;
+        let (hover_bg, hover_text) = if danger {
+            (ds.danger, ds.bg)
+        } else {
+            (ds.selection_background(), ds.text)
+        };
         div()
+            .id(label)
+            .w(px(30.0))
+            .h(px(22.0))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(px(ds.radius_sm))
+            .text_color(rgb(ds.muted))
+            .cursor_pointer()
+            .hover(move |button| button.bg(rgb(hover_bg)).text_color(rgb(hover_text)))
+            .child(label)
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_click(cx.listener(move |this, _, window, cx| action(this, window, cx)))
+    }
+
+    /// Bordes y esquinas invisibles para redimensionar con decoraciones propias.
+    pub(in crate::ui) fn window_resize_edges() -> Vec<Stateful<gpui::Div>> {
+        const EDGE: f32 = 4.0;
+        const CORNER: f32 = 10.0;
+        let handle = |index: usize, edge: ResizeEdge, cursor: CursorStyle| {
+            let base = div().id(("window-resize", index)).absolute().cursor(cursor);
+            let base = match edge {
+                ResizeEdge::Top => base.top_0().left(px(CORNER)).right(px(CORNER)).h(px(EDGE)),
+                ResizeEdge::Bottom => base
+                    .bottom_0()
+                    .left(px(CORNER))
+                    .right(px(CORNER))
+                    .h(px(EDGE)),
+                ResizeEdge::Left => base.left_0().top(px(CORNER)).bottom(px(CORNER)).w(px(EDGE)),
+                ResizeEdge::Right => base
+                    .right_0()
+                    .top(px(CORNER))
+                    .bottom(px(CORNER))
+                    .w(px(EDGE)),
+                ResizeEdge::TopLeft => base.top_0().left_0().size(px(CORNER)),
+                ResizeEdge::TopRight => base.top_0().right_0().size(px(CORNER)),
+                ResizeEdge::BottomLeft => base.bottom_0().left_0().size(px(CORNER)),
+                ResizeEdge::BottomRight => base.bottom_0().right_0().size(px(CORNER)),
+            };
+            base.on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                window.start_window_resize(edge);
+                cx.stop_propagation();
+            })
+        };
+        vec![
+            handle(0, ResizeEdge::Top, CursorStyle::ResizeUpDown),
+            handle(1, ResizeEdge::Bottom, CursorStyle::ResizeUpDown),
+            handle(2, ResizeEdge::Left, CursorStyle::ResizeLeftRight),
+            handle(3, ResizeEdge::Right, CursorStyle::ResizeLeftRight),
+            handle(4, ResizeEdge::TopLeft, CursorStyle::ResizeUpLeftDownRight),
+            handle(
+                5,
+                ResizeEdge::BottomRight,
+                CursorStyle::ResizeUpLeftDownRight,
+            ),
+            handle(6, ResizeEdge::TopRight, CursorStyle::ResizeUpRightDownLeft),
+            handle(
+                7,
+                ResizeEdge::BottomLeft,
+                CursorStyle::ResizeUpRightDownLeft,
+            ),
+        ]
+    }
+
+    pub(in crate::ui) fn render_status_bar(&self) -> impl IntoElement {
+        let ds = &self.ds;
+        let active_panel = self.workspace_focus.active.label(self.center_view);
+        let badge_label = if self.command_open {
+            "COMANDO".to_string()
+        } else {
+            format!("● {active_panel}")
+        };
+        let badge_color = if self.command_open {
+            ds.pink
+        } else {
+            ds.accent
+        };
+        recessed_well(ds)
             .h(px(ds.status_bar_height))
             .mt(px(5.0))
             .flex_shrink_0()
@@ -146,10 +412,7 @@ impl DawApp {
             .items_center()
             .justify_between()
             .px_3()
-            .bg(rgb(ds.panel_dark))
             .rounded(px(ds.radius_lg))
-            .border_1()
-            .border_color(rgb(ds.frame_border()))
             .child(
                 div()
                     .flex()
@@ -158,9 +421,9 @@ impl DawApp {
                     .text_xs()
                     .child(
                         div()
-                            .text_color(rgb(mode_color))
+                            .text_color(rgb(badge_color))
                             .font_weight(gpui::FontWeight::BOLD)
-                            .child(mode_label),
+                            .child(badge_label),
                     )
                     .child(
                         div()
@@ -182,25 +445,14 @@ impl DawApp {
                             }),
                     )
                     .children(
-                        if self.vim_enabled {
-                            vec![
-                                "h j k l",
-                                "i:insert",
-                                "::cmd",
-                                "a:buscar",
-                                "Tab:view",
-                                "+/-:zoom",
-                                "R:reload",
-                                "1/2/3/4:jump",
-                            ]
-                        } else {
-                            vec![
-                                "Flechas: navegar",
-                                "Delete: eliminar",
-                                "F11: ampliar",
-                                "[+]: acciones",
-                            ]
-                        }
+                        [
+                            "Espacio: Play",
+                            "Flechas: navegar",
+                            "Ctrl+P / :: comandos",
+                            "Ctrl+E: explorador",
+                            "F11: ampliar",
+                            "Delete: borrar",
+                        ]
                         .into_iter()
                         .map(|label| div().text_color(rgb(ds.muted)).child(label)),
                     ),
@@ -211,7 +463,7 @@ impl DawApp {
                     .items_center()
                     .gap_3()
                     .text_xs()
-                    .child(if self.mode == VimMode::Command {
+                    .child(if self.command_open {
                         div()
                             .text_color(rgb(ds.pink))
                             .child(format!(":{}", self.command_buffer))

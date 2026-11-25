@@ -31,10 +31,18 @@ impl DawApp {
     ) -> impl IntoElement {
         let form = self.action_form.as_ref().expect("formulario abierto");
         let ds = &self.ds;
+        let export = form.export.as_ref();
+        let running = export.is_some_and(|export| export.running);
+        let completed = export.is_some_and(|export| export.completed.is_some());
         let close: ModalClose = Rc::new(cx.listener(|this, _, window, cx| {
             this.close_action_form(window, cx);
             cx.stop_propagation();
         }));
+        let field_content = if export.is_some() {
+            self.render_export_fields(cx)
+        } else {
+            div().children((0..form.fields.len()).map(|index| self.render_action_field(index, cx)))
+        };
         let fields = div()
             .id("action-parameter-fields")
             .flex_1()
@@ -43,7 +51,7 @@ impl DawApp {
             .track_scroll(&form.scroll)
             .px_4()
             .py_2()
-            .children((0..form.fields.len()).map(|index| self.render_action_field(index, cx)));
+            .child(field_content);
         let footer = div()
             .flex_shrink_0()
             .px_4()
@@ -62,36 +70,63 @@ impl DawApp {
                     .items_center()
                     .justify_between()
                     .gap_3()
+                    .when(!running && !completed, |row| {
+                        row.child(div().text_xs().text_color(rgb(ds.muted)).child(
+                            if export.is_some() {
+                                "Ctrl+Enter: exportar"
+                            } else {
+                                "Tab: recorrer · ↑↓: cantidad · Ctrl+Enter: OK"
+                            },
+                        ))
+                    })
                     .child(
                         div()
-                            .text_xs()
-                            .text_color(rgb(ds.muted))
-                            .child("Tab: recorrer · ↑↓: cantidad · Ctrl+Enter: OK"),
-                    )
-                    .child(
-                        div()
+                            .ml_auto()
                             .flex()
                             .gap_2()
-                            .child(
-                                Button::new("cancel-action-form")
-                                    .small()
-                                    .label("Cancelar")
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.close_action_form(window, cx)
-                                    })),
-                            )
-                            .child(
-                                Button::new("submit-action-form")
-                                    .primary()
-                                    .small()
-                                    .label("OK")
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.submit_action_form(window, cx)
-                                    })),
-                            ),
+                            .when(!completed, |buttons| {
+                                buttons.child(
+                                    Button::new("cancel-action-form")
+                                        .small()
+                                        .label(if running {
+                                            "Cancelar exportación"
+                                        } else {
+                                            "Cancelar"
+                                        })
+                                        .on_click(cx.listener(move |this, _, window, cx| {
+                                            if running {
+                                                this.cancel_export();
+                                            } else {
+                                                this.close_action_form(window, cx);
+                                            }
+                                        })),
+                                )
+                            })
+                            .when(!running, |buttons| {
+                                buttons.child(
+                                    Button::new("submit-action-form")
+                                        .primary()
+                                        .small()
+                                        .label(if completed {
+                                            "Cerrar"
+                                        } else if export.is_some() {
+                                            "Exportar audio"
+                                        } else {
+                                            "OK"
+                                        })
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.submit_action_form(window, cx)
+                                        })),
+                                )
+                            }),
                     ),
             );
-        let height = (230.0 + form.fields.len() as f32 * 68.0).min(690.0);
+        let height = match export {
+            Some(_) if running || completed => 260.0,
+            Some(export) if export.advanced => 690.0,
+            Some(_) => 495.0,
+            None => (230.0 + form.fields.len() as f32 * 68.0).min(690.0),
+        };
         let card = div()
             .key_context("HayActionForm")
             .on_action(cx.listener(|this, _: &CancelActionForm, window, cx| {
@@ -128,12 +163,14 @@ impl DawApp {
                             .text_color(rgb(ds.text))
                             .child(form.title.clone()),
                     )
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(rgb(ds.muted))
-                            .child(form.spec.description.clone()),
-                    ),
+                    .when(export.is_none(), |header| {
+                        header.child(
+                            div()
+                                .text_sm()
+                                .text_color(rgb(ds.muted))
+                                .child(form.spec.description.clone()),
+                        )
+                    }),
             )
             .child(fields)
             .child(footer)
@@ -141,7 +178,7 @@ impl DawApp {
         modal_backdrop(0x05070bd9, close, card)
     }
 
-    fn render_action_field(&self, index: usize, cx: &mut Context<Self>) -> Div {
+    pub(super) fn render_action_field(&self, index: usize, cx: &mut Context<Self>) -> Div {
         let form = self.action_form.as_ref().expect("formulario abierto");
         let parameter = &form.spec.parameters[index];
         div()
@@ -177,7 +214,11 @@ impl DawApp {
             )
     }
 
-    fn render_parameter_control(&self, index: usize, cx: &mut Context<Self>) -> AnyElement {
+    pub(super) fn render_parameter_control(
+        &self,
+        index: usize,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let form = self.action_form.as_ref().expect("formulario abierto");
         let parameter = &form.spec.parameters[index];
         match &form.fields[index] {

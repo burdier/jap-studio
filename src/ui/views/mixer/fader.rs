@@ -1,18 +1,18 @@
 //! Fader vertical de la tira. Render y picking comparten la geometría del riel.
 use crate::ui::{
     DawApp,
-    design::blend_color,
     mixer::{MixParam, MixerTarget},
 };
 use gpui::{
     Bounds, Context, CursorStyle, Div, MouseButton, MouseDownEvent, Pixels, Point, ScrollEvent,
-    Stateful, canvas, component::tooltip::Tooltip, div, fill, point, prelude::*, px, rgb, size,
+    Stateful, canvas, component::tooltip::Tooltip, div, fill, point, prelude::*, px, rgb, rgba,
+    size,
 };
 use std::{cell::Cell, rc::Rc};
 
-const THUMB_HEIGHT: f32 = 10.0;
-const THUMB_WIDTH: f32 = 21.0;
-const INSET: f32 = 7.0;
+const THUMB_HEIGHT: f32 = 14.0;
+const THUMB_WIDTH: f32 = 24.0;
+const INSET: f32 = 9.0;
 
 impl DawApp {
     pub(super) fn render_mixer_fader(
@@ -24,11 +24,15 @@ impl DawApp {
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let ds = &self.ds;
+        let is_dark = ds.is_dark();
         let rail_color = ds.panel_dark;
-        let fill_color = blend_color(ds.panel_dark, color, 58);
+        let fill_color = color;
         let tick_color = ds.border;
         let unity_color = ds.text;
-        let thumb_color = blend_color(ds.panel_hover, ds.text, 28);
+        // Objeto fader esculpido del mismo material mate que el chasis, sin borde duro.
+        let thumb_body = ds.panel;
+        let thumb_light = rgba(ds.shadow_light());
+        let thumb_shadow = rgba(ds.shadow_dark());
         let geometry = Rc::new(Cell::new(Bounds::<Pixels>::default()));
         let painted = geometry.clone();
         div()
@@ -43,7 +47,7 @@ impl DawApp {
                 cx.listener(move |this, event: &MouseDownEvent, _, cx| {
                     let bounds = geometry.get();
                     if event.click_count == 2 {
-                        this.set_mixer_fraction(target, MixParam::Level, unity);
+                        this.reset_mixer_fraction(target, MixParam::Level, unity);
                     } else {
                         if !event.modifiers.shift {
                             let fraction =
@@ -86,21 +90,27 @@ impl DawApp {
                             |fraction: f32| top + px(height * (1.0 - fraction.clamp(0.0, 1.0)));
                         let y = at(level);
                         let rail_bottom = top + px(height);
+                        // Ranura minimalista limpia (estilo Braun / OP-1).
                         window.paint_quad(
-                            fill(rect(point(x - px(2.5), top), 5.0, height), rgb(rail_color))
+                            fill(rect(point(x - px(2.0), top), 4.0, height), rgb(rail_color))
                                 .corner_radii(px(2.0)),
                         );
-                        window.paint_quad(fill(
-                            rect(point(x - px(1.0), y), 2.0, f32::from(rail_bottom - y)),
-                            rgb(fill_color),
-                        ));
+                        // Trazo quirúrgico de nivel activo.
+                        window.paint_quad(
+                            fill(
+                                rect(point(x - px(1.5), y), 3.0, f32::from(rail_bottom - y)),
+                                rgba((fill_color << 8) | if is_dark { 0xdd } else { 0xcc }),
+                            )
+                            .corner_radii(px(1.5)),
+                        );
+                        // Marcas geométricas limpias.
                         for fraction in [0.0, 0.25, 0.5, 0.75, 1.0] {
                             let marker = fraction == unity;
                             window.paint_quad(fill(
                                 rect(
-                                    point(x - px(8.0), at(fraction)),
-                                    if marker { 5.0 } else { 3.0 },
-                                    1.0,
+                                    point(x - px(11.0), at(fraction)),
+                                    if marker { 5.0 } else { 2.5 },
+                                    if marker { 1.5 } else { 1.0 },
                                 ),
                                 rgb(if marker { unity_color } else { tick_color }),
                             ));
@@ -110,11 +120,43 @@ impl DawApp {
                             THUMB_WIDTH,
                             THUMB_HEIGHT,
                         );
-                        window.paint_quad(fill(thumb, rgb(thumb_color)).corner_radii(px(2.0)));
-                        window.paint_quad(fill(
-                            rect(point(thumb.left() + px(3.0), y), THUMB_WIDTH - 6.0, 1.0),
-                            rgb(unity_color),
-                        ));
+                        // Doble sombra Soft UI: luz suave arriba-izq + sombra proyectada abajo-der.
+                        window.paint_quad(
+                            fill(
+                                rect(
+                                    point(thumb.left() - px(1.5), thumb.top() - px(1.5)),
+                                    THUMB_WIDTH,
+                                    THUMB_HEIGHT,
+                                ),
+                                thumb_light,
+                            )
+                            .corner_radii(px(5.0)),
+                        );
+                        window.paint_quad(
+                            fill(
+                                rect(
+                                    point(thumb.left() + px(2.0), thumb.top() + px(2.5)),
+                                    THUMB_WIDTH,
+                                    THUMB_HEIGHT,
+                                ),
+                                thumb_shadow,
+                            )
+                            .corner_radii(px(5.0)),
+                        );
+                        // Cuerpo mate esculpido que emerge de la base.
+                        window.paint_quad(fill(thumb, rgb(thumb_body)).corner_radii(px(5.0)));
+                        // Indicador quirúrgico central.
+                        window.paint_quad(
+                            fill(
+                                rect(
+                                    point(thumb.left() + px(5.0), y - px(1.0)),
+                                    THUMB_WIDTH - 10.0,
+                                    2.0,
+                                ),
+                                rgb(color),
+                            )
+                            .corner_radii(px(1.0)),
+                        );
                     },
                 )
                 .size_full(),

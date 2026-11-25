@@ -1,5 +1,5 @@
 //! Estado vacío del Arrangement; abre el mismo buscador que :add y la tecla a.
-use crate::ui::{DawApp, icons::render_svg_icon};
+use crate::ui::{DawApp, explorer::ExplorerSampleDrag, icons::render_svg_icon};
 use gpui::{Context, IntoElement, MouseButton, div, prelude::*, px, rgb};
 
 impl DawApp {
@@ -19,6 +19,14 @@ impl DawApp {
             .border_1()
             .border_color(rgb(ds.frame_border()))
             .rounded(px(ds.radius_lg))
+            .on_drop(
+                cx.listener(|this, paths: &gpui::ExternalPaths, window, cx| {
+                    this.drop_arrangement_files(paths.paths(), None, window, cx);
+                }),
+            )
+            .on_drop(cx.listener(|this, file: &ExplorerSampleDrag, window, cx| {
+                this.drop_arrangement_files(std::slice::from_ref(&file.path), None, window, cx);
+            }))
             .child(
                 div()
                     .flex()
@@ -58,7 +66,7 @@ impl DawApp {
                         div()
                             .text_sm()
                             .text_color(rgb(ds.muted))
-                            .child("Elige Insertar pista o un instrumento · A"),
+                            .child("Arrastra audio aquí o pulsa A para añadir una pista"),
                     ),
             )
     }

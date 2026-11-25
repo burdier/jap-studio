@@ -1,5 +1,5 @@
 //! Inicialización de GPUI Kit y proyección del tema de Hay, sin estado de audio.
-use super::{DawApp, DesignSystem, VimMode};
+use super::{DawApp, DesignSystem};
 use gpui::{
     App, Context, Global, KeyBinding, KeyDownEvent, Keystroke, Modifiers, Window,
     component::{Theme, ThemeMode},
@@ -43,7 +43,7 @@ impl DawApp {
         if self.tab_audio_select(backwards, window, cx) {
             return;
         }
-        if self.mode != VimMode::Command
+        if !self.command_open
             && !self.palette.is_open()
             && !self.settings.is_visible()
             && !self.toolbar_icons.picker_open
@@ -95,7 +95,7 @@ pub(super) fn sync_theme(ds: &DesignSystem, cx: &mut App) {
         ],
         radius: ds.radius_sm,
         large_radius: ds.radius_lg,
-        font_size: ds.font_size_xs + 2.0,
+        font_size: ds.font_size_xs + 4.0,
     };
     if cx.try_global::<AppliedTheme>() == Some(&signature) {
         return;
@@ -139,10 +139,9 @@ pub(super) fn sync_theme(ds: &DesignSystem, cx: &mut App) {
         colors.button_primary_active = rgb(ds.accent).into();
         theme.radius = px(ds.radius_sm);
         theme.radius_lg = px(ds.radius_lg);
-        theme.font_family = "monospace".into();
-        theme.font_size = px(ds.font_size_xs + 2.0);
-        theme.shadow = false;
-        theme.focus_ring = false;
+        theme.font_size = px(signature.font_size);
+        theme.shadow = true;
+        theme.focus_ring = true;
     });
     cx.set_global(signature);
 }

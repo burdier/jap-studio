@@ -19,6 +19,33 @@ pub struct CurvePath {
     pub fill_alpha: u8,
 }
 
+pub(in crate::ui) fn spectrum_legend(
+    ds: &DesignSystem,
+    input: &'static str,
+    output: SharedString,
+    response: &'static str,
+) -> gpui::Div {
+    let key = |label: SharedString, color, height| {
+        div()
+            .flex()
+            .items_center()
+            .gap_1()
+            .flex_shrink_0()
+            .child(div().w(px(12.)).h(px(height)).bg(rgb(color)))
+            .child(label)
+    };
+    div()
+        .flex()
+        .items_center()
+        .gap_2()
+        .text_xs()
+        .text_color(rgb(ds.text))
+        .flex_wrap()
+        .child(key(input.into(), ds.muted, 2.))
+        .child(key(output, ds.cyan, 6.))
+        .child(key(response.into(), ds.accent, 2.))
+}
+
 #[derive(Clone, Debug)]
 pub struct CurveAnchor {
     pub x: f32,
@@ -33,6 +60,11 @@ pub struct CurveModel {
     pub grid_x: Vec<f32>,
     pub grid_y: Vec<f32>,
     pub baseline: Option<f32>,
+    /// Picos `[min, max]` normalizados (-1..1) de un audio, dibujados espejados al fondo.
+    pub wave: Vec<[f32; 2]>,
+    /// Fracción inicial `0..1` de la onda que no suena (se atenúa).
+    pub wave_dim_until: f32,
+    pub spectrum: Vec<CurvePath>,
     pub curves: Vec<CurvePath>,
     pub anchors: Vec<CurveAnchor>,
     pub header: SharedString,

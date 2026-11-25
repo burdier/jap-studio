@@ -4,12 +4,35 @@ use gpui::{CursorStyle, Div, div, prelude::*, px, rgb};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(in crate::ui) enum SplitDrag {
-    Fx { start_x: f32, start_width: f32 },
-    Explorer { start_x: f32, start_width: f32 },
-    TrackHeaders { start_x: f32, start_width: f32 },
-    DrumWorkspace { start_x: f32, start_ratio: f32 },
-    WorkspaceVertical { start_y: f32, start_ratio: f32 },
-    TransportHeight { start_y: f32, start_height: f32 },
+    Fx {
+        start_x: f32,
+        start_width: f32,
+    },
+    Tejer {
+        start_x: f32,
+        start_width: f32,
+        max_width: f32,
+    },
+    Explorer {
+        start_x: f32,
+        start_width: f32,
+    },
+    TrackHeaders {
+        start_x: f32,
+        start_width: f32,
+    },
+    DrumWorkspace {
+        start_x: f32,
+        start_ratio: f32,
+    },
+    WorkspaceVertical {
+        start_y: f32,
+        start_ratio: f32,
+    },
+    TransportHeight {
+        start_y: f32,
+        start_height: f32,
+    },
 }
 
 /// Divisor vertical (izquierda ↔ derecha) entre módulos flotantes con píldora indicadora.

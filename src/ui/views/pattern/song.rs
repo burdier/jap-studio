@@ -8,7 +8,7 @@ use elevate::musical::{
     drums::{DrumPlaybackSource, DrumSongCell},
     time::{PPQ, Tick},
 };
-use gpui::{Context, Div, MouseButton, Stateful, div, prelude::*, px, rgb};
+use gpui::{Context, Div, FontWeight, MouseButton, Stateful, div, prelude::*, px, rgb, rgba};
 
 const LABEL_WIDTH: f32 = 104.0;
 const CELL_WIDTH: f32 = 42.0;
@@ -46,16 +46,18 @@ impl DawApp {
         let header = div()
             .flex()
             .w_full()
-            .gap_1()
+            .gap(px(4.0))
             .items_center()
             .flex_shrink_0()
             .child(
                 div()
                     .w(px(LABEL_WIDTH))
                     .flex_shrink_0()
-                    .px_2()
-                    .text_color(rgb(ds.accent))
-                    .child("CANCIÓN"),
+                    .px(px(6.0))
+                    .text_size(px(10.0))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(rgb(ds.muted))
+                    .child("SECUENCIA"),
             )
             .children(columns.iter().enumerate().map(|(index, &at)| {
                 let next = columns.get(index + 1).map_or(page_end, |next| next.0);
@@ -63,7 +65,9 @@ impl DawApp {
                 div()
                     .flex_shrink_0()
                     .w(px(CELL_WIDTH))
-                    .h(px(20.0))
+                    .h(px(18.0))
+                    .font_family("monospace")
+                    .text_size(px(10.0))
                     .text_center()
                     .text_color(rgb(if playing { ds.cyan } else { ds.muted }))
                     .child(if at.0 % bar == 0 {
@@ -78,14 +82,14 @@ impl DawApp {
             .flex_col()
             .flex_shrink_0()
             .min_w_0()
-            .max_h(px(144.0))
-            .p_1()
-            .gap_1()
+            .max_h(px(152.0))
+            .px(px(10.0))
+            .py(px(8.0))
+            .gap(px(6.0))
             .bg(rgb(ds.panel))
             .border_b_1()
-            .border_color(rgb(ds.border))
+            .border_color(rgba(if ds.is_dark() { 0xffffff0d } else { 0x0f172a12 }))
             .text_xs()
-            .font_family("monospace")
             .child(
                 div()
                     .id("drum-song-cells")
@@ -94,7 +98,7 @@ impl DawApp {
                     .min_h_0()
                     .overflow_x_scroll()
                     .overflow_y_scroll()
-                    .gap_1()
+                    .gap(px(4.0))
                     .child(header)
                     .children(session.patterns.iter().map(|pattern| {
                         let id = pattern.id;
@@ -102,7 +106,7 @@ impl DawApp {
                             .flex()
                             .items_center()
                             .flex_shrink_0()
-                            .gap_1()
+                            .gap(px(4.0))
                             .child(
                                 self.drum_action_chip(
                                     pattern.name.clone(),
@@ -135,12 +139,25 @@ impl DawApp {
                 div()
                     .flex()
                     .items_center()
-                    .gap_1()
+                    .gap(px(6.0))
                     .flex_shrink_0()
-                    .children([("‹", -1), ("›", 1)].into_iter().map(|(label, delta)| {
+                    .child(
+                        div()
+                            .font_family("monospace")
+                            .text_size(px(10.0))
+                            .text_color(rgb(ds.muted))
+                            .child(format!(
+                                "Compases {}–{}",
+                                page_start / bar + 1,
+                                page_end / bar,
+                            )),
+                    )
+                    .children([("Ant", -1), ("Sig", 1)].into_iter().map(|(label, delta)| {
                         flat_control(ds, false, ds.cyan)
-                            .h(px(17.0))
-                            .px_2()
+                            .h(px(20.0))
+                            .px(px(8.0))
+                            .rounded(px(ds.radius_sm))
+                            .text_size(px(10.0))
                             .text_color(rgb(ds.muted))
                             .child(label)
                             .on_mouse_down(
@@ -151,12 +168,7 @@ impl DawApp {
                                     cx.notify();
                                 }),
                             )
-                    }))
-                    .child(div().text_color(rgb(ds.muted)).child(format!(
-                        "{}–{}",
-                        page_start / bar + 1,
-                        page_end / bar,
-                    ))),
+                    })),
             )
     }
 }

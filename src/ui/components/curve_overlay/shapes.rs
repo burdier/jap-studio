@@ -66,6 +66,88 @@ impl ContourShape {
     }
 }
 
+/// Patrones listos para moldear un carril de propiedades de nota como una sola onda.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LanePreset {
+    Flat,
+    RampUp,
+    RampDown,
+    EaseIn,
+    EaseOut,
+    Triangle,
+    Sine,
+    SawUp,
+    SawDown,
+    Square,
+    Random,
+    Invert,
+}
+
+impl LanePreset {
+    pub const ALL: [Self; 12] = [
+        Self::Flat,
+        Self::RampUp,
+        Self::RampDown,
+        Self::EaseIn,
+        Self::EaseOut,
+        Self::Triangle,
+        Self::Sine,
+        Self::SawUp,
+        Self::SawDown,
+        Self::Square,
+        Self::Random,
+        Self::Invert,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Flat => "Plano",
+            Self::RampUp => "Rampa ↗ (crescendo)",
+            Self::RampDown => "Rampa ↘ (decrescendo)",
+            Self::EaseIn => "Curva lenta → rápida",
+            Self::EaseOut => "Curva rápida → lenta",
+            Self::Triangle => "Triángulo",
+            Self::Sine => "Onda senoidal",
+            Self::SawUp => "Diente de sierra ↗",
+            Self::SawDown => "Diente de sierra ↘",
+            Self::Square => "Cuadrada",
+            Self::Random => "Aleatorio",
+            Self::Invert => "Invertir valores",
+        }
+    }
+
+    /// Altura `0..1` en la posición `t` (`0..1`) con `cycles` repeticiones; `index` solo alimenta `Random`.
+    /// `Invert` devuelve `1 - current`.
+    pub fn eval(self, t: f32, cycles: f32, index: usize, current: f32) -> f32 {
+        let t = t.clamp(0.0, 1.0);
+        let phase = (t * cycles).fract();
+        let value = match self {
+            Self::Flat => 0.75,
+            Self::RampUp => 0.15 + 0.85 * t,
+            Self::RampDown => 1.0 - 0.85 * t,
+            Self::EaseIn => 0.15 + 0.85 * t * t,
+            Self::EaseOut => 0.15 + 0.85 * (1.0 - (1.0 - t) * (1.0 - t)),
+            Self::Triangle => 0.15 + 0.85 * (1.0 - (phase * 2.0 - 1.0).abs()),
+            Self::Sine => 0.575 + 0.425 * (t * cycles * std::f32::consts::TAU).sin(),
+            Self::SawUp => 0.15 + 0.85 * phase,
+            Self::SawDown => 1.0 - 0.85 * phase,
+            Self::Square => {
+                if phase < 0.5 {
+                    1.0
+                } else {
+                    0.4
+                }
+            }
+            Self::Random => {
+                let h = (index as u32 + 1).wrapping_mul(2_654_435_761) >> 8;
+                0.3 + 0.7 * (h % 1000) as f32 / 999.0
+            }
+            Self::Invert => 1.0 - current,
+        };
+        value.clamp(0.0, 1.0)
+    }
+}
+
 /// Genera una polilínea `(x, y)` que conecta los `anchors` ordenados por `x` según `shape`.
 pub fn connect_anchors(
     anchors: &[(f32, f32)],
@@ -159,6 +241,20 @@ mod tests {
         let mid_convex = ContourShape::Smooth.eval_span(0.0, 1.0, 0.5, 0.5);
         let mid_concave = ContourShape::Smooth.eval_span(0.0, 1.0, 0.5, -0.5);
         assert!(mid_convex > 0.5 && mid_concave < 0.5);
+    }
+
+    #[test]
+    fn presets_stay_in_range_and_ramps_move() {
+        for preset in LanePreset::ALL {
+            for i in 0..=10 {
+                let v = preset.eval(i as f32 / 10.0, 1.0, i, 0.3);
+                assert!((0.0..=1.0).contains(&v));
+            }
+        }
+        assert!(
+            LanePreset::RampUp.eval(1.0, 1.0, 0, 0.0) > LanePreset::RampUp.eval(0.0, 1.0, 0, 0.0)
+        );
+        assert!((LanePreset::Invert.eval(0.5, 1.0, 0, 0.25) - 0.75).abs() < 1e-6);
     }
 
     #[test]

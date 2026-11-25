@@ -57,24 +57,33 @@ impl DawApp {
         }));
 
         div()
+            .w_full()
+            .min_w_0()
+            .overflow_hidden()
             .p_2()
             .flex()
             .flex_col()
             .gap_2()
-            .rounded(px(ds.radius_sm))
+            .rounded(px(ds.radius_md))
             .border_1()
             .border_color(rgb(ds.frame_border()))
             .bg(rgb(ds.panel_dark))
             .child(
                 div()
+                    .w_full()
+                    .min_w_0()
                     .pb_1()
                     .border_b_1()
                     .border_color(rgb(ds.border))
                     .flex()
+                    .flex_wrap()
                     .items_center()
                     .justify_between()
+                    .gap_1()
                     .child(
                         div()
+                            .min_w_0()
+                            .flex_1()
                             .flex()
                             .flex_col()
                             .child(
@@ -84,13 +93,15 @@ impl DawApp {
                                     .child("Hay Chord"),
                             )
                             .child(
-                                div().text_size(px(9.0)).text_color(rgb(ds.muted)).child(
-                                    "Elige acordes, ordénalos y escúchalos antes de insertar",
-                                ),
+                                div()
+                                    .text_size(px(9.0))
+                                    .text_color(rgb(ds.muted))
+                                    .child("Progresiones y voicing en escala"),
                             ),
                     )
                     .child(
                         div()
+                            .flex_shrink_0()
                             .flex()
                             .items_center()
                             .gap_1()
@@ -236,10 +247,12 @@ impl DawApp {
                 ChordPadState::degree_chord_name(scale_root, scale_minor, deg, pad.color);
             let mood = ChordPadState::degree_mood(scale_minor, deg);
             div()
-                .flex_1()
-                .min_w(px(30.0))
+                .w(px(66.0))
+                .flex_grow(1.0)
+                .min_w(px(56.0))
                 .py(px(4.0))
-                .px(px(2.0))
+                .px(px(4.0))
+                .rounded(px(ds.radius_sm))
                 .flex()
                 .flex_col()
                 .items_center()
@@ -267,6 +280,8 @@ impl DawApp {
                 )
                 .child(
                     div()
+                        .w_full()
+                        .text_center()
                         .text_size(px(9.5))
                         .text_color(rgb(ds.text))
                         .truncate()
@@ -274,6 +289,8 @@ impl DawApp {
                 )
                 .child(
                     div()
+                        .w_full()
+                        .text_center()
                         .text_size(px(7.5))
                         .text_color(rgb(ds.muted))
                         .truncate()
@@ -316,7 +333,11 @@ impl DawApp {
         });
 
         div()
+            .w_full()
+            .min_w_0()
+            .overflow_hidden()
             .p_2()
+            .rounded(px(ds.radius_sm))
             .flex()
             .flex_col()
             .gap_2()
@@ -325,22 +346,41 @@ impl DawApp {
             .bg(rgb(ds.bg))
             .child(
                 div()
+                    .w_full()
+                    .min_w_0()
                     .flex()
+                    .flex_wrap()
                     .items_center()
                     .justify_between()
                     .gap_1()
                     .text_size(px(9.5))
                     .child(
                         div()
+                            .min_w_0()
                             .text_color(rgb(ds.accent))
                             .truncate()
                             .child(format!("{active_roman} · {active_name} · {active_mood}")),
                     )
-                    .child(div().text_color(rgb(ds.cyan)).truncate().child(notes_text)),
+                    .child(
+                        div()
+                            .min_w_0()
+                            .text_color(rgb(ds.cyan))
+                            .truncate()
+                            .child(notes_text),
+                    ),
             )
-            .child(div().flex().gap(px(2.0)).children(degree_pads))
             .child(
                 div()
+                    .w_full()
+                    .min_w_0()
+                    .flex()
+                    .flex_wrap()
+                    .gap(px(3.0))
+                    .children(degree_pads),
+            )
+            .child(
+                div()
+                    .w_full()
                     .h(px(30.0))
                     .p(px(2.0))
                     .flex()
@@ -353,27 +393,22 @@ impl DawApp {
             )
             .child(
                 div()
+                    .w_full()
+                    .min_w_0()
                     .flex()
+                    .flex_wrap()
                     .gap_1()
                     .child(
-                        self.roll_button(
-                            "Aplicar a selección",
-                            false,
-                            RollAction::ChordApplySelection,
-                            cx,
-                        )
-                        .flex_1()
-                        .justify_center(),
+                        self.roll_button("Aplicar", false, RollAction::ChordApplySelection, cx)
+                            .flex_1()
+                            .min_w(px(80.0))
+                            .justify_center(),
                     )
                     .child(
-                        self.roll_button(
-                            "+ Insertar en cursor",
-                            true,
-                            RollAction::ChordInsertAtCursor,
-                            cx,
-                        )
-                        .flex_1()
-                        .justify_center(),
+                        self.roll_button("+ Insertar", true, RollAction::ChordInsertAtCursor, cx)
+                            .flex_1()
+                            .min_w(px(90.0))
+                            .justify_center(),
                     ),
             )
     }

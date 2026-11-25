@@ -1,21 +1,31 @@
 //! Vista ampliada: presenta la misma entidad/editor y conserva el layout subyacente.
-use crate::ui::{CenterView, DawApp, workspace_focus::Panel};
+use crate::ui::{
+    CenterView, DawApp,
+    components::button::{flat_control, led_dot},
+    workspace_focus::Panel,
+};
 use gpui::{
-    AnyElement, Context, Div, IntoElement, MouseButton, StyleRefinement, div, prelude::*, px, rgb,
+    AnyElement, Context, Div, FontWeight, IntoElement, MouseButton, StyleRefinement, div,
+    prelude::*, px, rgb,
 };
 impl DawApp {
     pub(in crate::ui) fn workspace_zoom_button(&self, cx: &mut Context<Self>) -> Div {
-        div()
-            .px_2()
-            .cursor_pointer()
-            .text_size(px(10.))
-            .text_color(rgb(self.ds.accent))
-            .child(if self.workspace_focus.expanded.is_some() {
-                "Restaurar"
-            } else if self.vim_enabled {
-                "Ampliar · f"
+        let expanded = self.workspace_focus.expanded.is_some();
+        flat_control(&self.ds, expanded, self.ds.accent)
+            .h(px(24.0))
+            .px(px(9.0))
+            .gap(px(5.0))
+            .rounded(px(self.ds.radius_md))
+            .text_size(px(10.5))
+            .text_color(rgb(if expanded {
+                self.ds.accent
             } else {
-                "Ampliar · F11"
+                self.ds.muted
+            }))
+            .child(if expanded {
+                "⤡ Restaurar (F11 / Esc)"
+            } else {
+                "⤢ F11"
             })
             .on_mouse_down(
                 MouseButton::Left,
@@ -28,6 +38,7 @@ impl DawApp {
     }
     pub(super) fn render_expanded_workspace(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let panel = self.workspace_focus.expanded?;
+        let panel_name = panel.label(self.center_view);
         let content = match panel {
             Panel::PianoRoll => self
                 .render_piano_roll(&self.piano_roll_focus, cx)
@@ -54,15 +65,30 @@ impl DawApp {
                 .min_w_0()
                 .flex()
                 .flex_col()
+                .gap(px(6.0))
                 .overflow_hidden()
                 .child(
                     div()
-                        .h(px(22.))
+                        .h(px(32.))
                         .flex_shrink_0()
                         .flex()
-                        .justify_end()
+                        .justify_between()
                         .items_center()
-                        .bg(rgb(self.ds.panel))
+                        .px_3()
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(7.0))
+                                .text_xs()
+                                .child(led_dot(self.ds.accent, 6.0, true))
+                                .child(
+                                    div()
+                                        .font_weight(FontWeight::BOLD)
+                                        .text_color(rgb(self.ds.text))
+                                        .child(format!("PANEL AMPLIADO · {panel_name}")),
+                                ),
+                        )
                         .child(self.workspace_zoom_button(cx)),
                 )
                 .child(

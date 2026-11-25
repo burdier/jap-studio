@@ -23,7 +23,7 @@ impl DawApp {
             .flex_shrink_0()
             .flex()
             .items_center()
-            .text_size(px(10.5))
+            .text_size(px(ds.font_size_xs))
             .text_color(rgb(if active { ds.panel_dark } else { ds.text }))
             .on_mouse_down(
                 MouseButton::Left,
@@ -85,7 +85,7 @@ impl DawApp {
             )
             .child(
                 div()
-                    .text_size(px(10.0))
+                    .text_size(px(ds.font_size_xs - 1.0))
                     .text_color(rgb(ds.warning))
                     .child(if edited { "Edited •" } else { "Sin cambios" }),
             )
@@ -94,6 +94,7 @@ impl DawApp {
             .child(self.roll_button("⚙", false, RollAction::OpenSettings, cx));
         let tools = [
             ("↖ Selección", RollTool::Select),
+            ("Pitch MPE", RollTool::Pitch),
             ("▧ Región", RollTool::Box),
             ("✎ Dibujar", RollTool::Draw),
             ("↔ Longitud", RollTool::Length),

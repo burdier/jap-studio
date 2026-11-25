@@ -29,6 +29,7 @@ pub(in crate::ui) struct BarMenu {
 #[derive(Clone, Copy)]
 enum MenuAction {
     Command(&'static str),
+    Export,
     Fx,
     PianoRoll,
 }
@@ -70,6 +71,12 @@ impl MenuGroup {
                     "Ctrl+O"
                 ),
                 item!(
+                    "Importar Hydrogen…",
+                    "folder",
+                    Command("hydrogen.import"),
+                    ""
+                ),
+                item!(
                     "Guardar proyecto",
                     "document-save",
                     Command("project.save"),
@@ -87,12 +94,47 @@ impl MenuGroup {
                     Command("project.reveal"),
                     ""
                 ),
+                item!("Exportar audio…", "export", MenuAction::Export, ""),
+                item!(
+                    "Exportar MIDI (.mid)…",
+                    "export",
+                    Command("export.midi"),
+                    ""
+                ),
+                #[cfg(feature = "p2p")]
+                item!("Compartir sesión", "share", Command("project.share"), ""),
+                #[cfg(feature = "p2p")]
+                item!(
+                    "Unirse",
+                    "chain-link",
+                    Command("project.join"),
+                    "Portapapeles"
+                ),
+                #[cfg(feature = "p2p")]
+                item!(
+                    "Salir de la sesión",
+                    "connector",
+                    Command("project.leave"),
+                    ""
+                ),
+                #[cfg(feature = "p2p")]
+                item!(
+                    "Nombre e historial de edición…",
+                    "addressbook",
+                    Command("project.identity"),
+                    ""
+                ),
             ],
             Self::View => &[
-                item!("Arrangement", "view-continuous", Command("arrangement"), ""),
-                item!("Pattern", "app-grid", Command("pattern"), ""),
-                item!("Mixer", "mixer-sliders", Command("mixer"), ""),
-                item!("Explorador", "folder", Command("explorer.toggle"), ""),
+                item!(
+                    "Arrangement",
+                    "view-continuous",
+                    Command("arrangement"),
+                    "F1"
+                ),
+                item!("Drums", "app-grid", Command("pattern"), "F2"),
+                item!("Mixer", "mixer-sliders", Command("mixer"), "F3"),
+                item!("Explorador", "folder", Command("explorer.toggle"), "Ctrl+E"),
                 item!("Track FX", "sliders", Fx, ""),
                 item!("Piano Roll", "piano", PianoRoll, ""),
                 item!(
@@ -140,7 +182,6 @@ impl DawApp {
                             selected: None,
                         })
                     };
-                    this.track_delete_pending = false;
                     window.focus(&this.focus_handle, cx);
                     cx.stop_propagation();
                     cx.notify();
@@ -210,7 +251,69 @@ impl DawApp {
                     .when(!item.hint.is_empty(), |row| {
                         row.child(div().text_xs().text_color(rgb(ds.muted)).child(item.hint))
                     })
-            }));
+            }))
+            .when(
+                menu.group == MenuGroup::File && !self.project.recent.is_empty(),
+                |list| {
+                    let recent_items = self.project.recent.clone();
+                    list.child(
+                        div()
+                            .mt_1()
+                            .pt_1()
+                            .border_t_1()
+                            .border_color(rgb(ds.frame_border()))
+                            .px_1()
+                            .text_size(px(9.5))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(rgb(ds.muted))
+                            .child("PROYECTOS RECIENTES"),
+                    )
+                    .children(recent_items.into_iter().enumerate().map(|(i, path)| {
+                        let name = path
+                            .file_stem()
+                            .map(|s| s.to_string_lossy().into_owned())
+                            .unwrap_or_else(|| path.display().to_string());
+                        let folder = path
+                            .parent()
+                            .and_then(|p| p.file_name())
+                            .map(|s| s.to_string_lossy().into_owned())
+                            .unwrap_or_default();
+                        let open_path = path.clone();
+                        super::palette::palette_card(ds, ds.cyan, false)
+                            .id(("recent-project", i))
+                            .flex_shrink_0()
+                            .rounded(px(ds.radius_sm))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_xs()
+                                    .text_color(rgb(ds.text))
+                                    .child(format!("🕒 {name}")),
+                            )
+                            .when(!folder.is_empty(), |row| {
+                                row.child(
+                                    div()
+                                        .max_w(px(110.0))
+                                        .truncate()
+                                        .text_size(px(10.0))
+                                        .text_color(rgb(ds.muted))
+                                        .child(folder),
+                                )
+                            })
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |this, _, _, cx| {
+                                    this.bar_menu = None;
+                                    this.open_project_path(open_path.clone(), cx);
+                                    cx.stop_propagation();
+                                    cx.notify();
+                                }),
+                            )
+                    }))
+                },
+            );
         div()
             .absolute()
             .left_0()
@@ -255,6 +358,7 @@ impl DawApp {
         let checked = self.bar_action_checked(action);
         match action {
             Command(command) => self.execute_command_with_context(command, window, cx),
+            MenuAction::Export => self.submit_command_line("export", window, cx),
             Fx if checked => self.resize_fx(0.0),
             Fx => self.show_fx(),
             PianoRoll if checked => {

@@ -6,22 +6,8 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(in crate::ui) enum ThemePreset {
     #[default]
-    Obsidian,
-    AbletonLiveDark,
-    MameyStudio,
-    CatppuccinMocha,
     Cyberpunk,
-    GruvboxDark,
-    TokyoNight,
-    RosePine,
-    NordAurora,
-    SilverHardware,
-    GruvboxPaper,
-    MameyCream,
-    MatchaMist,
-    RosePineDawn,
-    DaylightLatte,
-    DaynightStudio,
+    DaylightStudio,
 }
 
 #[derive(Clone, Copy)]
@@ -45,378 +31,75 @@ pub(in crate::ui) struct ThemePalette {
 }
 
 impl ThemePreset {
-    pub const ALL: [Self; 16] = [
-        Self::Obsidian,
-        Self::AbletonLiveDark,
-        Self::MameyStudio,
-        Self::CatppuccinMocha,
-        Self::Cyberpunk,
-        Self::GruvboxDark,
-        Self::TokyoNight,
-        Self::RosePine,
-        Self::NordAurora,
-        Self::SilverHardware,
-        Self::GruvboxPaper,
-        Self::MameyCream,
-        Self::MatchaMist,
-        Self::RosePineDawn,
-        Self::DaylightLatte,
-        Self::DaynightStudio,
-    ];
+    pub const ALL: [Self; 2] = [Self::Cyberpunk, Self::DaylightStudio];
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Obsidian => "Obsidiana",
-            Self::AbletonLiveDark => "Ableton Live Dark",
-            Self::MameyStudio => "Mamey Studio",
-            Self::CatppuccinMocha => "Catppuccin Mocha",
             Self::Cyberpunk => "Cyberpunk Studio",
-            Self::GruvboxDark => "Gruvbox Tape",
-            Self::TokyoNight => "Tokyo Night",
-            Self::RosePine => "Rosé Pine",
-            Self::NordAurora => "Nord Aurora",
-            Self::SilverHardware => "Aluminio OP-1",
-            Self::GruvboxPaper => "Gruvbox Arena",
-            Self::MameyCream => "Mamey Crema",
-            Self::MatchaMist => "Matcha Bruma",
-            Self::RosePineDawn => "Rosé Pine Dawn",
-            Self::DaylightLatte => "Daylight Studio",
-            Self::DaynightStudio => "Daynight Studio",
+            Self::DaylightStudio => "Daylight Studio",
         }
     }
 
     pub fn token(self) -> &'static str {
         match self {
-            Self::Obsidian => "obsidian",
-            Self::AbletonLiveDark => "ableton-live-dark",
-            Self::MameyStudio => "mamey",
-            Self::CatppuccinMocha => "mocha",
             Self::Cyberpunk => "cyberpunk",
-            Self::GruvboxDark => "gruvbox",
-            Self::TokyoNight => "tokyonight",
-            Self::RosePine => "rosepine",
-            Self::NordAurora => "nord",
-            Self::SilverHardware => "silver",
-            Self::GruvboxPaper => "sand",
-            Self::MameyCream => "mamey-cream",
-            Self::MatchaMist => "matcha",
-            Self::RosePineDawn => "dawn",
-            Self::DaylightLatte => "latte",
-            Self::DaynightStudio => "daynight",
+            Self::DaylightStudio => "daylight",
         }
     }
 
     pub fn from_token(raw: &str) -> Self {
-        match raw.trim().to_ascii_lowercase().as_str() {
-            "ableton-live-dark" | "ableton-dark" | "live-dark" => Self::AbletonLiveDark,
-            "mamey" | "mamei" | "carrot" => Self::MameyStudio,
-            "mocha" | "catppuccin" => Self::CatppuccinMocha,
-            "cyberpunk" | "neon" => Self::Cyberpunk,
-            "gruvbox" | "tape" | "warm" => Self::GruvboxDark,
-            "tokyonight" | "tokyo" => Self::TokyoNight,
-            "rosepine" | "rose" => Self::RosePine,
-            "nord" | "aurora" => Self::NordAurora,
-            "silver" | "op1" | "aluminio" | "hardware" => Self::SilverHardware,
-            "sand" | "arena" | "paper" | "gruvbox-light" => Self::GruvboxPaper,
-            "mamey-cream" | "crema" | "peach" => Self::MameyCream,
-            "matcha" | "sage" | "bruma" => Self::MatchaMist,
-            "dawn" | "rosepine-dawn" => Self::RosePineDawn,
-            "latte" | "daylight" | "light" | "claro" => Self::DaylightLatte,
-            "daynight" | "daynight-studio" | "daylight-dark" => Self::DaynightStudio,
-            _ => Self::Obsidian,
+        let cleaned = raw
+            .trim()
+            .trim_matches(|c| c == '"' || c == '\'')
+            .trim()
+            .to_ascii_lowercase();
+        match cleaned.as_str() {
+            "daylight" | "daylight-studio" | "daylight studio" | "daylight_studio"
+            | "daylightlatte" | "latte" | "light" | "claro" => Self::DaylightStudio,
+            _ => Self::Cyberpunk,
         }
     }
 
     pub fn palette(self) -> ThemePalette {
         match self {
-            Self::Obsidian => ThemePalette {
-                bg: 0x303132,
-                panel: 0x3b3c3d,
-                panel_hover: 0x46484a,
-                panel_dark: 0x252728,
-                border: 0x55585a,
-                text: 0xd3d4d2,
-                muted: 0x9b9e9f,
-                accent: 0x87a6b8,
-                accent_dim: 0x3c4b54,
-                success: 0x91ad88,
-                warning: 0xc6ad70,
-                danger: 0xc47e78,
-                cyan: 0x80aaa5,
-                orange: 0xbd9b7e,
-                pink: 0xaa91a4,
-                grid: 0x47494b,
-            },
-            Self::AbletonLiveDark => ThemePalette {
-                bg: 0x282a2b,
-                panel: 0x333537,
-                panel_hover: 0x404345,
-                panel_dark: 0x202223,
-                border: 0x525659,
-                text: 0xcbd0d1,
-                muted: 0x969da1,
-                accent: 0xc0a16c,
-                accent_dim: 0x4b4233,
-                success: 0x8cac91,
-                warning: 0xb9ad79,
-                danger: 0xc1837b,
-                cyan: 0x7fa9a3,
-                orange: 0xc19c83,
-                pink: 0xa494b9,
-                grid: 0x424649,
-            },
-            Self::MameyStudio => ThemePalette {
-                bg: 0x161413,
-                panel: 0x201d1c,
-                panel_hover: 0x292524,
-                panel_dark: 0x100e0e,
-                border: 0x36302e,
-                text: 0xeeeae7,
-                muted: 0x948a86,
-                accent: 0xbc8a78,
-                accent_dim: 0x3e2921,
-                success: 0x77b78d,
-                warning: 0xc3aa84,
-                danger: 0xc28282,
-                cyan: 0x77b5b0,
-                orange: 0xc69d8b,
-                pink: 0xc68b9b,
-                grid: 0x322c2a,
-            },
-            Self::CatppuccinMocha => ThemePalette {
-                bg: 0x22222a,
-                panel: 0x2a2b34,
-                panel_hover: 0x36363f,
-                panel_dark: 0x1b1b22,
-                border: 0x4a4b55,
-                text: 0xdadde7,
-                muted: 0x878994,
-                accent: 0xa68bc6,
-                accent_dim: 0x3f394e,
-                success: 0x94c190,
-                warning: 0xc6b38b,
-                danger: 0xc68b9b,
-                cyan: 0x8ec2ba,
-                orange: 0xc6a18b,
-                pink: 0xc68bb6,
-                grid: 0x3c3e49,
-            },
             Self::Cyberpunk => ThemePalette {
-                bg: 0x0d0b12,
-                panel: 0x171320,
-                panel_hover: 0x221d2f,
-                panel_dark: 0x08070b,
-                border: 0x352a46,
-                text: 0xf3f0f8,
-                muted: 0x8b8198,
-                accent: 0xb9708f,
-                accent_dim: 0x3e1f2f,
-                success: 0x58ad8d,
-                warning: 0xada458,
-                danger: 0xad5874,
-                cyan: 0x58a8ad,
-                orange: 0xad8c58,
-                pink: 0xb478bd,
-                grid: 0x2d243c,
+                // Chasis continuo mate índigo-obsidiana: los objetos salen de la misma base.
+                bg: 0x171522,
+                panel: 0x191725,
+                panel_hover: 0x221f33,
+                panel_dark: 0x110f1a,
+                border: 0x2c2742,
+                text: 0xf4f2fc,
+                muted: 0x9990b8,
+                accent: 0xff2e93,
+                accent_dim: 0x421633,
+                success: 0x00e699,
+                warning: 0xffc43d,
+                danger: 0xff3b5c,
+                cyan: 0x00e5ff,
+                orange: 0xff7a2f,
+                pink: 0xd86bff,
+                grid: 0x262238,
             },
-            Self::GruvboxDark => ThemePalette {
-                bg: 0x1e1f20,
-                panel: 0x282828,
-                panel_hover: 0x313030,
-                panel_dark: 0x151616,
-                border: 0x3a3837,
-                text: 0xd8d3c5,
-                muted: 0x928c86,
-                accent: 0xad9058,
-                accent_dim: 0x3d3320,
-                success: 0xadac58,
-                warning: 0xb9a370,
-                danger: 0xad5b58,
-                cyan: 0x96b08c,
-                orange: 0xb38864,
-                pink: 0xbd939f,
-                grid: 0x4d4a48,
-            },
-            Self::TokyoNight => ThemePalette {
-                bg: 0x1d1d23,
-                panel: 0x2a2c35,
-                panel_hover: 0x353842,
-                panel_dark: 0x18181c,
-                border: 0x454858,
-                text: 0xd1d5e4,
-                muted: 0x808598,
-                accent: 0x8b9ec6,
-                accent_dim: 0x343a4b,
-                success: 0x9db682,
-                warning: 0xc3aa85,
-                danger: 0xc68b96,
-                cyan: 0x8bb0c6,
-                orange: 0xc6a18b,
-                pink: 0xa08bc6,
-                grid: 0x2f323c,
-            },
-            Self::RosePine => ThemePalette {
-                bg: 0x1b1a21,
-                panel: 0x22212a,
-                panel_hover: 0x2a2934,
-                panel_dark: 0x141318,
-                border: 0x44424d,
-                text: 0xe6e5ed,
-                muted: 0x888692,
-                accent: 0xc1928f,
-                accent_dim: 0x40373b,
-                success: 0x95b6bc,
-                warning: 0xc6ad8b,
-                danger: 0xc68b9b,
-                cyan: 0x6290a2,
-                orange: 0xc68d8b,
-                pink: 0xa68fc2,
-                grid: 0x3e3c4b,
-            },
-            Self::NordAurora => ThemePalette {
-                bg: 0x282a2f,
-                panel: 0x33363c,
-                panel_hover: 0x41444c,
-                panel_dark: 0x202227,
-                border: 0x4a4e57,
-                text: 0xeff0f1,
-                muted: 0x858b97,
-                accent: 0x95b3bc,
-                accent_dim: 0x354048,
-                success: 0xa4b298,
-                warning: 0xc6b28b,
-                danger: 0xa8787c,
-                cyan: 0x9ab1b1,
-                orange: 0xb99387,
-                pink: 0xab97a7,
-                grid: 0x545962,
-            },
-            Self::SilverHardware => ThemePalette {
-                bg: 0xc6c9cd,
-                panel: 0xdadce0,
-                panel_hover: 0xd1d4d8,
-                panel_dark: 0xbabdc2,
-                border: 0x9da2a8,
-                text: 0x1f2123,
-                muted: 0x585b60,
-                accent: 0xa16a4f,
-                accent_dim: 0xdecec5,
-                success: 0x397050,
-                warning: 0x917247,
-                danger: 0xa14f4f,
-                cyan: 0x34626b,
-                orange: 0xa16c4f,
-                pink: 0x97567c,
-                grid: 0xacb0b6,
-            },
-            Self::GruvboxPaper => ThemePalette {
-                bg: 0xc8c0ae,
-                panel: 0xddd5c0,
-                panel_hover: 0xd3cab5,
-                panel_dark: 0xbbb2a0,
-                border: 0xb2ab9e,
-                text: 0x3a3938,
-                muted: 0x615d59,
-                accent: 0x774e3b,
-                accent_dim: 0xcebea9,
-                success: 0x5a582d,
-                warning: 0x876c42,
-                danger: 0x693436,
-                cyan: 0x506d5b,
-                orange: 0x774e3b,
-                pink: 0x7c526c,
-                grid: 0xb2ab9e,
-            },
-            Self::MameyCream => ThemePalette {
-                bg: 0xd9d3ce,
-                panel: 0xeee9e5,
-                panel_hover: 0xe3ddd8,
-                panel_dark: 0xcdc6bf,
-                border: 0xb6aca7,
-                text: 0x272322,
-                muted: 0x665d58,
-                accent: 0xa1664f,
-                accent_dim: 0xe5d4cc,
-                success: 0x427354,
-                warning: 0x95744a,
-                danger: 0xa14f55,
-                cyan: 0x35676b,
-                orange: 0xa1654f,
-                pink: 0x97596f,
-                grid: 0xbdb4af,
-            },
-            Self::MatchaMist => ThemePalette {
-                bg: 0xd3d7d0,
-                panel: 0xe7eae4,
-                panel_hover: 0xdce0d9,
-                panel_dark: 0xc8ccc3,
-                border: 0xaeb4aa,
-                text: 0x2a2d2c,
-                muted: 0x5c625e,
-                accent: 0x44705a,
-                accent_dim: 0xcad7d0,
-                success: 0x44705a,
-                warning: 0x896d43,
-                danger: 0x9e5252,
-                cyan: 0x3a676b,
-                orange: 0xa16a4f,
-                pink: 0x90607a,
-                grid: 0xb4baaf,
-            },
-            Self::RosePineDawn => ThemePalette {
-                bg: 0xe2ddd9,
-                panel: 0xf4f1ee,
-                panel_hover: 0xeae5e1,
-                panel_dark: 0xd7d1cc,
-                border: 0xc2bbb6,
-                text: 0x4d4c57,
-                muted: 0x7f7d8b,
-                accent: 0x8e626e,
-                accent_dim: 0xe4d7da,
-                success: 0x3e606d,
-                warning: 0xa17e4f,
-                danger: 0x8e626e,
-                cyan: 0x65858a,
-                orange: 0x995a57,
-                pink: 0x776a85,
-                grid: 0xc9c2bf,
-            },
-            Self::DaylightLatte => ThemePalette {
-                bg: 0xdfe1e5,
-                panel: 0xf3f4f6,
-                panel_hover: 0xe8eaed,
-                panel_dark: 0xd5d8dc,
-                border: 0xbdc0c7,
-                text: 0x3f4047,
-                muted: 0x73747e,
-                accent: 0x4f6aa1,
-                accent_dim: 0xd6dded,
-                success: 0x46753c,
-                warning: 0x937448,
-                danger: 0x914757,
-                cyan: 0x336669,
-                orange: 0xa16d4f,
-                pink: 0x9c548a,
-                grid: 0xc0c2c8,
-            },
-            // Variante oscura de Daylight: superficies separadas y acentos mates.
-            Self::DaynightStudio => ThemePalette {
-                bg: 0x252930,
-                panel: 0x383e48,
-                panel_hover: 0x484f5b,
-                panel_dark: 0x1b1f26,
-                border: 0x606a79,
-                text: 0xdfe3ea,
-                muted: 0xa8b0bd,
-                accent: 0x94abd2,
-                accent_dim: 0x414e65,
-                success: 0x98b28e,
-                warning: 0xc5ad83,
-                danger: 0xc68f9b,
-                cyan: 0x8ab5b8,
-                orange: 0xc3a08a,
-                pink: 0xbb97b1,
-                grid: 0x464e5b,
+            Self::DaylightStudio => ThemePalette {
+                // Chasis continuo aluminio/cerámica mate (Dieter Rams / Soft UI):
+                // bg y panel comparten el mismo material para que cada botón nazca de la base.
+                bg: 0xe3e7ee,
+                panel: 0xe5e9f0,
+                panel_hover: 0xedf0f5,
+                panel_dark: 0xd5dbe5,
+                border: 0xc4ccd9,
+                text: 0x171b24,
+                muted: 0x5c6578,
+                accent: 0x2563eb,
+                accent_dim: 0xdbeafe,
+                success: 0x0fa958,
+                warning: 0xe08200,
+                danger: 0xe63946,
+                cyan: 0x0284c7,
+                orange: 0xff5a1f,
+                pink: 0x9333ea,
+                grid: 0xcbd1de,
             },
         }
     }
@@ -436,7 +119,6 @@ struct ThemeLayout {
     vol_bar_width: f32,
     control_bar_height: f32,
     transport_btn_size: f32,
-    font_size_xs: f32,
     padding_xs: f32,
     padding_sm: f32,
     padding_lg: f32,
@@ -447,57 +129,31 @@ struct ThemeLayout {
 
 impl ThemeLayout {
     const STANDARD: Self = Self {
-        selection_contrast: 0.18,
-        track_header_width: 200.0,
-        track_header_height: 76.0,
-        timeline_bar_height: 28.0,
+        selection_contrast: 0.22,
+        track_header_width: 204.0,
+        track_header_height: 74.0,
+        timeline_bar_height: 34.0,
         timeline_pixels_per_beat: 32.0,
-        title_bar_height: 36.0,
-        transport_height: 44.0,
+        title_bar_height: 34.0,
+        transport_height: 48.0,
         status_bar_height: 28.0,
         pan_bar_width: 40.0,
         vol_bar_width: 40.0,
         control_bar_height: 6.0,
         transport_btn_size: 28.0,
-        font_size_xs: 11.0,
         padding_xs: 4.0,
         padding_sm: 8.0,
         padding_lg: 16.0,
-        radius_sm: 3.0,
-        radius_md: 4.0,
-        radius_lg: 6.0,
-    };
-
-    const ABLETON: Self = Self {
-        selection_contrast: 0.22,
-        track_header_width: 180.0,
-        track_header_height: 58.0,
-        timeline_bar_height: 24.0,
-        timeline_pixels_per_beat: 32.0,
-        title_bar_height: 28.0,
-        transport_height: 36.0,
-        status_bar_height: 22.0,
-        pan_bar_width: 36.0,
-        vol_bar_width: 40.0,
-        control_bar_height: 5.0,
-        transport_btn_size: 24.0,
-        font_size_xs: 10.0,
-        padding_xs: 3.0,
-        padding_sm: 6.0,
-        padding_lg: 12.0,
-        radius_sm: 1.0,
-        radius_md: 2.0,
-        radius_lg: 3.0,
+        radius_sm: 6.0,
+        radius_md: 8.0,
+        radius_lg: 12.0,
     };
 }
 
 impl ThemePreset {
     fn layout_defaults(self) -> ThemeLayout {
-        if self == Self::AbletonLiveDark {
-            ThemeLayout::ABLETON
-        } else {
-            ThemeLayout::STANDARD
-        }
+        let _ = self;
+        ThemeLayout::STANDARD
     }
 }
 
@@ -578,7 +234,10 @@ impl DesignSystem {
         };
         let color = |key: &str, default: u32| -> u32 {
             map.get(key)
-                .and_then(|value| u32::from_str_radix(value, 16).ok())
+                .and_then(|value| {
+                    let hex = value.trim().trim_start_matches('#');
+                    u32::from_str_radix(hex, 16).ok()
+                })
                 .filter(|value| *value <= 0xffffff)
                 .unwrap_or(default)
         };
@@ -587,6 +246,7 @@ impl DesignSystem {
             .copied()
             .map(ThemePreset::from_token)
             .unwrap_or_default();
+        const MIN_UI_FONT_SIZE: f32 = 12.0;
         let pal = theme.palette();
         let layout = theme.layout_defaults();
         let success = color("SUCCESS", pal.success);
@@ -634,7 +294,7 @@ impl DesignSystem {
             control_bar_height: get("CONTROL_BAR_HEIGHT", layout.control_bar_height),
             knob_size: get("KNOB_SIZE", 28.0).clamp(18.0, 36.0),
             transport_btn_size: get("TRANSPORT_BTN_SIZE", layout.transport_btn_size),
-            font_size_xs: get("FONT_SIZE_XS", layout.font_size_xs),
+            font_size_xs: get("FONT_SIZE_XS", MIN_UI_FONT_SIZE).max(MIN_UI_FONT_SIZE),
             padding_xs: get("PADDING_XS", layout.padding_xs),
             padding_sm: get("PADDING_SM", layout.padding_sm),
             padding_lg: get("PADDING_LG", layout.padding_lg),
@@ -668,14 +328,83 @@ impl DesignSystem {
         self.selection_color(self.panel)
     }
 
-    /// Superficie entre paneles: más profunda que el fondo, sin añadir otro acento.
-    pub(in crate::ui) fn gutter_color(&self) -> u32 {
-        blend_color(self.bg, self.panel_dark, 85)
+    /// True para temas oscuros (como Cyberpunk Studio), false para temas claros (Daylight Studio).
+    pub(in crate::ui) fn is_dark(&self) -> bool {
+        let r = ((self.bg >> 16) & 0xff) as f32;
+        let g = ((self.bg >> 8) & 0xff) as f32;
+        let b = (self.bg & 0xff) as f32;
+        (0.299 * r + 0.587 * g + 0.114 * b) < 128.0
     }
 
-    /// Contorno de panel, separado del borde tenue de los controles internos.
+    pub(in crate::ui) fn matches_theme_palette(&self) -> bool {
+        let pal = self.theme.palette();
+        self.bg == pal.bg
+            && self.panel == pal.panel
+            && self.panel_hover == pal.panel_hover
+            && self.panel_dark == pal.panel_dark
+            && self.border == pal.border
+            && self.text == pal.text
+            && self.muted == pal.muted
+            && self.accent == pal.accent
+            && self.accent_dim == pal.accent_dim
+            && self.success == pal.success
+            && self.warning == pal.warning
+            && self.danger == pal.danger
+            && self.cyan == pal.cyan
+            && self.orange == pal.orange
+            && self.pink == pal.pink
+            && self.grid == pal.grid
+            && self.playhead_particle_color == pal.success
+    }
+
+    /// Color de la luz suave superior-izquierda (Soft UI / Dieter Rams).
+    pub(in crate::ui) fn shadow_light(&self) -> u32 {
+        if self.is_dark() {
+            (blend_color(self.bg, 0xffffff, 16) << 8) | 0x66
+        } else {
+            0xfffffff4
+        }
+    }
+
+    /// Color de la sombra suave inferior-derecha (Soft UI / Dieter Rams).
+    pub(in crate::ui) fn shadow_dark(&self) -> u32 {
+        if self.is_dark() {
+            0x05040ad4
+        } else {
+            0x9aa8bf92
+        }
+    }
+
+    /// Borde superior ligeramente iluminado para superficies esculpidas.
+    pub(in crate::ui) fn panel_top(&self) -> u32 {
+        if self.is_dark() {
+            blend_color(self.panel, 0xffffff, 3)
+        } else {
+            blend_color(self.panel, 0xffffff, 22)
+        }
+    }
+
+    /// Borde inferior suavemente sombreado (muy sutil, sin efecto bisel metálico duro).
+    pub(in crate::ui) fn panel_bottom(&self) -> u32 {
+        if self.is_dark() {
+            blend_color(self.panel, self.panel_dark, 14)
+        } else {
+            blend_color(self.panel, self.bg, 16)
+        }
+    }
+
+    /// Superficie continua del chasis base sobre la que emergen paneles y controles.
+    pub(in crate::ui) fn gutter_color(&self) -> u32 {
+        self.bg
+    }
+
+    /// Contorno ultrasutil de separación (sin bordes duros tipo GTK/Ardour).
     pub(in crate::ui) fn frame_border(&self) -> u32 {
-        blend_color(self.border, self.text, 15)
+        if self.is_dark() {
+            blend_color(self.panel, self.border, 45)
+        } else {
+            blend_color(self.panel, self.border, 38)
+        }
     }
 
     /// Colores seleccionables para una pista (el mismo orden que el color automático).
@@ -698,6 +427,10 @@ impl DesignSystem {
             .color_index
             .map(|index| palette[usize::from(index) % palette.len()])
             .unwrap_or_else(|| self.track_color(track))
+    }
+
+    pub(in crate::ui) fn band_color(&self, selected: bool) -> u32 {
+        if selected { self.accent } else { self.cyan }
     }
 
     pub(in crate::ui) fn track_palette(&self) -> [u32; 7] {
@@ -774,7 +507,7 @@ mod tests {
         assert_eq!(design.bg, 0x141618);
         assert_eq!(design.accent, 0x5b9cf6);
         assert_eq!(design.radius_sm, 3.5);
-        assert_eq!(design.font_size_xs, 11.0);
+        assert_eq!(design.font_size_xs, 12.0);
         assert_eq!(design.cursor_fx, CursorFxMode::NeonComet);
         assert_eq!(design.track_header.preset(), Some(TcpLayoutPreset::Compact));
         assert!(!design.track_header.is_visible(TcpWidget::Rec));

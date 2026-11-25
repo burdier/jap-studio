@@ -13,7 +13,7 @@ use gpui::{
 
 #[derive(Clone, Copy)]
 pub(in crate::ui) struct TrackControlDrag {
-    track: usize,
+    pub(in crate::ui) track: usize,
     pan: bool,
     origin: Point<Pixels>,
     original: i32,
@@ -95,6 +95,7 @@ impl DawApp {
     ) -> AnyElement {
         let ds = &self.ds;
         let track = &self.tracks[i];
+        let track_id = track.id;
         let value = if pan {
             self.track_pans[i]
         } else {
@@ -175,9 +176,9 @@ impl DawApp {
                 cx.listener(move |this, event: &MouseDownEvent, window, cx| {
                     if this.midi_mapper.learn_mode() {
                         this.arm_midi_learn(if pan {
-                            MidiBindTarget::TrackPan(i)
+                            MidiBindTarget::TrackPan(track_id)
                         } else {
-                            MidiBindTarget::TrackVolume(i)
+                            MidiBindTarget::TrackVolume(track_id)
                         });
                     } else {
                         window.focus(&this.focus_handle, cx);
@@ -196,14 +197,19 @@ impl DawApp {
                 }),
             )
             .when(!pan, |el| {
-                el.child(div().text_size(px(9.)).text_color(rgb(ds.muted)).child("V"))
+                el.child(
+                    div()
+                        .text_size(px(ds.font_size_xs - 1.0))
+                        .text_color(rgb(ds.muted))
+                        .child("V"),
+                )
             })
             .child(control)
             .when(pan, |el| {
                 el.child(
                     div()
                         .w(px(8.))
-                        .text_size(px(9.))
+                        .text_size(px(ds.font_size_xs - 1.0))
                         .font_family("monospace")
                         .text_color(rgb(ds.muted))
                         .child(centered),
@@ -220,7 +226,7 @@ impl DawApp {
                         .bg(rgb(ds.panel_dark))
                         .rounded(px(ds.radius_sm))
                         .text_color(rgb(ds.text))
-                        .text_size(px(9.))
+                        .text_size(px(ds.font_size_xs - 1.0))
                         .font_family("monospace")
                         .opacity(if dragging { 1.0 } else { 0.0 })
                         .group_hover(hover_group, |style| style.opacity(1.0))

@@ -7,17 +7,22 @@ use crate::ui::{
     pattern_editor::PatternAction,
 };
 use elevate::musical::{
+    drums::{DrumPiece, OffsetMode},
     model::NoteEvent,
     pitch::note_name,
-    time::{Meter, Tick},
+    time::{Meter, PPQ, Tick},
 };
 use gpui::{
-    Context, Div, IntoElement, MouseButton, Stateful, canvas, div, fill, point, prelude::*, px,
-    rgb, size,
+    Context, CursorStyle, Div, IntoElement, MouseButton, Stateful, canvas,
+    component::tooltip::Tooltip, div, fill, point, prelude::*, px, relative, rgb, rgba, size,
 };
 
-const NAME_WIDTH: f32 = 116.0;
-const STEP_WIDTH: f32 = 26.0;
+const NAME_WIDTH: f32 = 190.0;
+const QUARTER_WIDTH: f32 = 128.0;
+
+fn tick_width(ticks: i64) -> f32 {
+    QUARTER_WIDTH * ticks as f32 / PPQ as f32
+}
 
 fn beat_surface(ds: &DesignSystem, meter: Meter, at: i64) -> u32 {
     let beat = (at % meter.ticks_per_bar()) / meter.ticks_per_beat();
@@ -36,68 +41,78 @@ impl DawApp {
     pub(super) fn render_drum_steps(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         let ds = &self.ds;
         let editor = &self.pattern_editor;
-        let steps = editor.step_count();
         let playing = self.pattern_play_step();
         let pattern = editor.session.active_pattern();
-        let meter = pattern.meter;
-        let step_ticks = editor.ticks_per_step();
-        let span = steps as i64 * step_ticks;
-        let width = |ticks: i64| px(STEP_WIDTH * ticks as f32 / step_ticks as f32);
-        let play_at = playing.map(|step| step as i64 * step_ticks);
+        let meter = self.timeline.meter;
+        let span = pattern.notes.length().0;
+        let play_at = self
+            .drum_pattern_playhead()
+            .map(|beat| (beat * PPQ as f64) as i64);
 
-        // Las reglas se dibujan en ticks para quedar alineadas con las notas.
-        let ruler = |label, stride: i64, measure| {
-            div()
-                .flex()
-                .h(px(18.0))
-                .flex_shrink_0()
-                .bg(rgb(ds.panel))
-                .items_center()
-                .child(
-                    div()
-                        .w(px(NAME_WIDTH))
-                        .flex_shrink_0()
-                        .px_2()
-                        .text_color(rgb(ds.muted))
-                        .child(label),
-                )
-                .children(
-                    (0..pattern.notes.length().0)
-                        .step_by(stride as usize)
-                        .map(|at| {
-                            let active =
-                                play_at.is_some_and(|play| (at..at + stride).contains(&play));
-                            let index = if measure {
-                                at / stride + 1
+        // Regla unificada compacta de compases y pulsos, alineada exactamente en ticks.
+        let beat_stride = meter.ticks_per_beat();
+        let bar_ticks = meter.ticks_per_bar();
+        let piece_count = editor.session.kit.pieces.len();
+        let beat_ruler = div()
+            .flex()
+            .h(px(22.0))
+            .flex_shrink_0()
+            .bg(rgb(ds.panel))
+            .border_b_1()
+            .border_color(rgba(if ds.is_dark() { 0xffffff0d } else { 0x0f172a12 }))
+            .items_center()
+            .child(
+                div()
+                    .w(px(NAME_WIDTH))
+                    .flex_shrink_0()
+                    .px(px(10.0))
+                    .text_size(px(10.0))
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_color(rgb(ds.muted))
+                    .child(format!("KIT · {piece_count}")),
+            )
+            .children(
+                (0..pattern.notes.length().0)
+                    .step_by(beat_stride as usize)
+                    .map(|at| {
+                        let active =
+                            play_at.is_some_and(|play| (at..at + beat_stride).contains(&play));
+                        let is_bar_start = at % bar_ticks == 0;
+                        let bar_num = at / bar_ticks + 1;
+                        let beat_num = (at % bar_ticks) / beat_stride + 1;
+                        let label = if is_bar_start {
+                            format!("{bar_num}")
+                        } else {
+                            format!("{bar_num}.{beat_num}")
+                        };
+                        div()
+                            .h_full()
+                            .w(px(tick_width(beat_stride.min(span - at))))
+                            .flex_shrink_0()
+                            .flex()
+                            .items_center()
+                            .px(px(6.0))
+                            .border_l_1()
+                            .border_color(rgb(beat_line(ds, meter, at)))
+                            .bg(rgb(beat_surface(ds, meter, at)))
+                            .font_family("monospace")
+                            .text_size(px(10.0))
+                            .font_weight(if is_bar_start || active {
+                                gpui::FontWeight::BOLD
                             } else {
-                                (at % meter.ticks_per_bar()) / stride + 1
-                            };
-                            div()
-                                .h_full()
-                                .w(width(stride.min(span - at)))
-                                .flex_shrink_0()
-                                .flex()
-                                .items_center()
-                                .px_1()
-                                .border_l_1()
-                                .border_color(rgb(beat_line(ds, meter, at)))
-                                .bg(rgb(if measure {
-                                    ds.panel
-                                } else {
-                                    beat_surface(ds, meter, at)
-                                }))
-                                .text_color(rgb(if active {
-                                    ds.cyan
-                                } else if measure {
-                                    ds.text
-                                } else {
-                                    ds.muted
-                                }))
-                                .overflow_hidden()
-                                .child(index.to_string())
-                        }),
-                )
-        };
+                                gpui::FontWeight::NORMAL
+                            })
+                            .text_color(rgb(if active {
+                                ds.cyan
+                            } else if is_bar_start {
+                                ds.text
+                            } else {
+                                ds.muted
+                            }))
+                            .overflow_hidden()
+                            .child(label)
+                    }),
+            );
         div()
             .id("drum-steps")
             .flex()
@@ -106,7 +121,6 @@ impl DawApp {
             .min_h_0()
             .min_w_0()
             .overflow_x_scroll()
-            .font_family("monospace")
             .text_xs()
             .child(
                 div()
@@ -114,9 +128,8 @@ impl DawApp {
                     .flex_col()
                     .flex_1()
                     .min_h_0()
-                    .min_w(px(NAME_WIDTH) + width(span))
-                    .child(ruler("COMPÁS", meter.ticks_per_bar(), true))
-                    .child(ruler("PULSO", meter.ticks_per_beat(), false))
+                    .min_w(px(NAME_WIDTH + tick_width(span)))
+                    .child(beat_ruler)
                     .child(
                         div()
                             .id("drum-step-lanes")
@@ -126,36 +139,6 @@ impl DawApp {
                             .min_h_0()
                             .overflow_y_scroll()
                             .track_scroll(&editor.steps_scroll)
-                            .when(editor.session.kit.pieces.is_empty(), |lanes| {
-                                lanes.child(
-                                    div()
-                                        .flex()
-                                        .flex_col()
-                                        .items_center()
-                                        .self_start()
-                                        .w_full()
-                                        .gap_2()
-                                        .p_4()
-                                        .text_color(rgb(ds.muted))
-                                        .child("Arrastra una muestra desde el Explorador")
-                                        .when(!self.explorer_visible(), |hint| {
-                                            hint.child(
-                                                flat_control(ds, false, ds.cyan)
-                                                    .h(px(22.0))
-                                                    .px_2()
-                                                    .text_color(rgb(ds.cyan))
-                                                    .child("Abrir explorador")
-                                                    .on_mouse_down(
-                                                        MouseButton::Left,
-                                                        cx.listener(|this, _, _, cx| {
-                                                            this.toggle_explorer();
-                                                            cx.notify();
-                                                        }),
-                                                    ),
-                                            )
-                                        }),
-                                )
-                            })
                             .children(
                                 (0..editor.session.kit.pieces.len())
                                     .map(|lane| self.render_drum_step_lane(lane, playing, cx)),
@@ -179,7 +162,8 @@ impl DawApp {
         let color = palette[lane % palette.len()];
         let root = piece.base_note();
         let step_ticks = editor.ticks_per_step();
-        let meter = editor.session.active_pattern().meter;
+        let length = editor.pattern().length();
+        let meter = self.timeline.meter;
         let peak = self
             .player
             .as_ref()
@@ -189,24 +173,28 @@ impl DawApp {
             .notes()
             .iter()
             .filter(|note| note.instrument == piece.id)
-            .copied()
+            .cloned()
             .collect();
-        let showing_preview = notes
-            .iter()
-            .any(|note| note.pitch != root || note.start.0 % step_ticks != 0)
+        let showing_preview = notes.iter().any(|note| note.pitch != root)
             || notes.windows(2).any(|pair| pair[0].start == pair[1].start);
         let steps = editor.step_count();
         let cursor = (editor.cursor_lane == lane).then_some(editor.cursor_step);
 
-        div()
+        let row = div()
+            .relative()
             .id(("drum-step-lane", piece_id.0 as usize))
             .flex()
             .items_center()
-            .w(px(NAME_WIDTH + STEP_WIDTH * steps as f32))
-            .h(px(36.0))
+            .w(px(NAME_WIDTH + tick_width(length.0)))
+            .h(px(40.0))
             .flex_shrink_0()
             .border_b_1()
             .border_color(rgb(blend_color(ds.panel_dark, ds.border, 45)))
+            .on_drop(
+                cx.listener(move |this, files: &gpui::ExternalPaths, window, cx| {
+                    this.drop_drum_files(files.paths(), Some(piece_id), window, cx);
+                }),
+            )
             .drag_over::<ExplorerSampleDrag>(move |style, _, _, _| style.border_color(rgb(cyan)))
             .on_drop(
                 cx.listener(move |this, sample: &ExplorerSampleDrag, window, cx| {
@@ -215,12 +203,185 @@ impl DawApp {
             )
             .child(
                 flat_control(ds, cursor.is_some(), color)
+                    .id(("drum-lane-head", piece_id.0 as usize))
                     .relative()
                     .w(px(NAME_WIDTH))
                     .h_full()
                     .justify_start()
-                    .px_2()
-                    .gap_1()
+                    .px(px(4.0))
+                    .gap(px(4.0))
+                    .child({
+                        let max = DrumPiece::MAX_TIMING_OFFSET;
+                        let offset = editor.piece_timing_offset(piece_id, piece.timing_offset);
+                        let mode = piece.timing_mode;
+                        let mode_color = match mode {
+                            OffsetMode::Fixed => ds.muted,
+                            OffsetMode::EachNote => ds.cyan,
+                            OffsetMode::Random => ds.accent,
+                        };
+                        let ms =
+                            f64::from(offset) * 60_000.0 / (self.timeline.tempo.bpm() * PPQ as f64);
+                        let tip = format!(
+                            "Timing {:+} ms ({:+} ticks) · {} · arrastra izq/der o rueda · doble clic: 0",
+                            ms.round() as i32,
+                            offset,
+                            mode.label()
+                        );
+                        let norm = (f32::from(offset) / f32::from(max)).clamp(-1.0, 1.0);
+                        let mag = norm.abs();
+                        let bar_color = if mag >= 0.72 {
+                            ds.danger
+                        } else if mag >= 0.42 {
+                            ds.warning
+                        } else {
+                            ds.success
+                        };
+                        let bar_left = if norm < 0.0 { 0.5 + norm * 0.5 } else { 0.5 };
+                        let bar_width = mag * 0.5;
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(3.0))
+                            .flex_shrink_0()
+                            .child(
+                                div()
+                                    .id(("drum-inline-offset", piece_id.0 as usize))
+                                    .relative()
+                                    .w(px(38.0))
+                                    .h(px(12.0))
+                                    .flex_shrink_0()
+                                    .rounded(px(2.5))
+                                    .bg(rgb(ds.panel_dark))
+                                    .border_1()
+                                    .border_color(if mag >= 0.72 {
+                                        rgb(ds.danger)
+                                    } else {
+                                        rgba((ds.text << 8) | 0x26)
+                                    })
+                                    .overflow_hidden()
+                                    .cursor(CursorStyle::ResizeLeftRight)
+                                    .tooltip(move |window, cx| {
+                                        Tooltip::new(tip.clone()).build(window, cx)
+                                    })
+                                    // Zonas rojas sutiles en ambos extremos
+                                    .child(
+                                        div()
+                                            .absolute()
+                                            .top_0()
+                                            .bottom_0()
+                                            .left_0()
+                                            .w(relative(0.14))
+                                            .bg(rgba((ds.danger << 8) | 0x28)),
+                                    )
+                                    .child(
+                                        div()
+                                            .absolute()
+                                            .top_0()
+                                            .bottom_0()
+                                            .right_0()
+                                            .w(relative(0.14))
+                                            .bg(rgba((ds.danger << 8) | 0x28)),
+                                    )
+                                    // Relleno desde el centro hacia izquierda o derecha
+                                    .when(bar_width > 0.005, |bar| {
+                                        bar.child(
+                                            div()
+                                                .absolute()
+                                                .top(px(1.5))
+                                                .bottom(px(1.5))
+                                                .left(relative(bar_left))
+                                                .w(relative(bar_width))
+                                                .bg(rgb(bar_color)),
+                                        )
+                                    })
+                                    // Marca central (0)
+                                    .child(
+                                        div()
+                                            .absolute()
+                                            .top_0()
+                                            .bottom_0()
+                                            .left(relative(0.5))
+                                            .w(px(1.0))
+                                            .bg(rgba((ds.text << 8) | 0x70)),
+                                    )
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(
+                                            move |this, event: &gpui::MouseDownEvent, _, cx| {
+                                                if event.click_count == 2 {
+                                                    this.apply_pattern_action(
+                                                        PatternAction::PieceTimingOffset {
+                                                            piece: piece_id,
+                                                            value: 0,
+                                                        },
+                                                    );
+                                                } else {
+                                                    this.begin_drum_timing_drag(
+                                                        piece_id,
+                                                        offset,
+                                                        event.position.x,
+                                                    );
+                                                }
+                                                cx.stop_propagation();
+                                                cx.notify();
+                                            },
+                                        ),
+                                    )
+                                    .on_scroll(cx.listener(
+                                        move |this, event: &gpui::ScrollEvent, _, cx| {
+                                            let delta =
+                                                f32::from(event.delta.pixel_delta(px(16.0)).y);
+                                            if delta != 0.0 {
+                                                let step = if event.modifiers.shift { 1 } else { 6 };
+                                                let value = (offset
+                                                    + delta.signum() as i16 * step)
+                                                    .clamp(-max, max);
+                                                this.apply_pattern_action(
+                                                    PatternAction::PieceTimingOffset {
+                                                        piece: piece_id,
+                                                        value,
+                                                    },
+                                                );
+                                                cx.stop_propagation();
+                                                cx.notify();
+                                            }
+                                        },
+                                    )),
+                            )
+                            .child(
+                                div()
+                                    .id(("drum-inline-offset-mode", piece_id.0 as usize))
+                                    .flex_shrink_0()
+                                    .px(px(3.0))
+                                    .py(px(1.0))
+                                    .rounded(px(2.0))
+                                    .bg(rgb(ds.panel_dark))
+                                    .border_1()
+                                    .border_color(rgba((mode_color << 8) | 0x66))
+                                    .text_size(px(8.5))
+                                    .text_color(rgb(mode_color))
+                                    .cursor_pointer()
+                                    .tooltip(|window, cx| {
+                                        Tooltip::new(
+                                            "Modo timing: Fijo · Cada nota (groove) · Random (clic para cambiar)",
+                                        )
+                                        .build(window, cx)
+                                    })
+                                    .child(mode.short_label())
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(move |this, _, _, cx| {
+                                            this.apply_pattern_action(
+                                                PatternAction::CyclePieceTimingMode {
+                                                    piece: piece_id,
+                                                },
+                                            );
+                                            cx.stop_propagation();
+                                            cx.notify();
+                                        }),
+                                    ),
+                            )
+                    })
                     .child(
                         div()
                             .flex_1()
@@ -242,11 +403,26 @@ impl DawApp {
                             this.pattern_editor.show_roll(lane);
                             cx.notify();
                         }),
+                    )
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                            this.pattern_editor.cursor_lane = lane;
+                            this.pattern_editor.lane_menu =
+                                Some(crate::ui::pattern_editor::DrumLaneMenu {
+                                    lane,
+                                    step: None,
+                                    position: event.position,
+                                });
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
                     ),
             )
             .child(if showing_preview {
                 div()
-                    .w(px(STEP_WIDTH * steps as f32))
+                    .relative()
+                    .w(px(tick_width(length.0)))
                     .h_full()
                     .flex_shrink_0()
                     .overflow_hidden()
@@ -258,63 +434,159 @@ impl DawApp {
                             cx.notify();
                         }),
                     )
-                    .child(drum_mini_roll(
-                        ds,
-                        notes,
-                        root,
-                        Tick(steps as i64 * step_ticks),
-                        meter,
-                        color,
-                    ))
+                    .child(drum_mini_roll(ds, notes, root, length, meter, color))
+                    .child(
+                        div()
+                            .absolute()
+                            .inset_0()
+                            .flex()
+                            .children((0..steps).map(|step| {
+                                let span = step_ticks.min(length.0 - step as i64 * step_ticks);
+                                self.with_drum_split(
+                                    div().w(px(tick_width(span))).h_full().flex_shrink_0(),
+                                    lane,
+                                    step,
+                                    cx,
+                                )
+                            })),
+                    )
             } else {
-                let mut notes = notes.iter().peekable();
+                let mut pending = notes.as_slice();
                 div()
                     .flex()
                     .flex_shrink_0()
                     .children((0..steps).map(|step| {
                         let at = step as i64 * step_ticks;
-                        let note = notes.next_if(|note| note.start.0 == at);
+                        let next = pending.partition_point(|note| note.start.0 < at + step_ticks);
+                        let (hits, rest) = pending.split_at(next);
+                        pending = rest;
+                        let lead = playing.and_then(|play| {
+                            let dist = (step + steps - play) % steps;
+                            (dist <= 2).then_some(dist as u8)
+                        });
                         self.render_drum_pad(
                             lane,
                             step,
-                            note,
+                            hits,
                             color,
                             cursor == Some(step),
-                            playing == Some(step),
+                            lead,
                             cx,
                         )
                     }))
-            })
+            });
+        #[cfg(feature = "p2p")]
+        let row = row.when_some(self.peer_drum_step(piece_id), |row, (alias, target)| {
+            let step = target.tick / step_ticks;
+            let start = step * step_ticks;
+            let width = tick_width(step_ticks.min(length.0 - start)).max(3.0);
+            let design = ds.clone();
+            row.child(
+                canvas(
+                    |_, _, _| (),
+                    move |bounds, _, window, cx| {
+                        let x = bounds.left() + px(NAME_WIDTH + tick_width(start) + 1.0);
+                        let cell = gpui::Bounds::new(
+                            point(x, bounds.top() + px(4.0)),
+                            size(px((width - 2.0).max(1.0)), px(31.0)),
+                        );
+                        paint_step_peer(bounds, cell, &alias, &design, window, cx);
+                    },
+                )
+                .absolute()
+                .inset_0()
+                .size_full(),
+            )
+        });
+        row
+    }
+
+    fn with_drum_split(&self, pad: Div, lane: usize, step: usize, cx: &mut Context<Self>) -> Div {
+        pad.on_mouse_down(
+            MouseButton::Right,
+            cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                this.pattern_editor.cursor_lane = lane;
+                this.pattern_editor.cursor_step = step;
+                let occupied = this.pattern_editor.step_notes(lane, step).next().is_some();
+                if occupied {
+                    this.apply_pattern_action(PatternAction::SplitStep { lane, step });
+                } else {
+                    this.pattern_editor.lane_menu = Some(crate::ui::pattern_editor::DrumLaneMenu {
+                        lane,
+                        step: None,
+                        position: event.position,
+                    });
+                }
+                cx.stop_propagation();
+                cx.notify();
+            }),
+        )
     }
 
     fn render_drum_pad(
         &self,
         lane: usize,
         step: usize,
-        note: Option<&NoteEvent>,
+        notes: &[NoteEvent],
         color: u32,
         selected: bool,
-        playing: bool,
+        lead: Option<u8>,
         cx: &mut Context<Self>,
     ) -> Div {
         let ds = &self.ds;
-        let occupied = note.is_some();
-        let meter = self.pattern_editor.session.active_pattern().meter;
-        let at = step as i64 * self.pattern_editor.ticks_per_step();
-        let surface = if occupied {
-            blend_color(ds.panel, color, 53)
-        } else if playing {
-            ds.panel_hover
+        let occupied = !notes.is_empty();
+        let hits = notes.len();
+        let meter = self.timeline.meter;
+        let step_ticks = self.pattern_editor.ticks_per_step();
+        let at = step as i64 * step_ticks;
+        let span = step_ticks.min(self.pattern_editor.pattern().length().0 - at);
+        let width = tick_width(span);
+        let show_velocity = width >= 26.0;
+        let aligned = notes.first().is_some_and(|note| note.start.0 == at);
+        let lead_1 = blend_color(ds.cyan, ds.accent, 45);
+        let lead_2 = blend_color(ds.accent, ds.muted, 35);
+        let base_surface = if occupied {
+            blend_color(ds.panel_dark, color, if aligned { 24 } else { 14 })
         } else {
-            blend_color(beat_surface(ds, meter, at), ds.text, 15)
+            blend_color(beat_surface(ds, meter, at), ds.panel_dark, 45)
         };
+        let surface = match lead {
+            Some(0) => blend_color(base_surface, ds.cyan, 36),
+            Some(1) => blend_color(base_surface, lead_1, 22),
+            Some(2) => blend_color(base_surface, lead_2, 12),
+            _ => base_surface,
+        };
+        let border = match lead {
+            Some(0) => ds.cyan,
+            Some(1) => blend_color(ds.panel, lead_1, 74),
+            Some(2) => blend_color(ds.panel, lead_2, 46),
+            _ if occupied => blend_color(color, ds.text, 28),
+            _ => blend_color(ds.border, ds.muted, 24),
+        };
+        let dot_color = match lead {
+            Some(0) => ds.cyan,
+            Some(1) if occupied => blend_color(color, lead_1, 45),
+            Some(1) => lead_1,
+            Some(2) if occupied => blend_color(color, lead_2, 25),
+            Some(2) => blend_color(ds.muted, lead_2, 58),
+            _ if occupied => color,
+            _ => ds.muted,
+        };
+        let overlay_label = notes.first().filter(|_| show_velocity).map(|note| {
+            if hits == 1 {
+                note.velocity.to_string()
+            } else {
+                format!("×{hits}")
+            }
+        });
         div()
-            .w(px(STEP_WIDTH))
+            .relative()
+            .w(px(width))
             .h_full()
             .flex_shrink_0()
             .flex()
             .items_center()
-            .px(px(1.5))
+            .px(px(if width >= 16.0 { 1.5 } else { 0.5 }))
             .bg(rgb(beat_surface(ds, meter, at)))
             .when(at % meter.ticks_per_beat() == 0, |column| {
                 column
@@ -323,15 +595,69 @@ impl DawApp {
             })
             .child(
                 flat_control(ds, occupied, color)
+                    .id(("drum-step", lane * self.pattern_editor.step_count() + step))
+                    .relative()
                     .w_full()
-                    .h(px(25.0))
+                    .min_w_0()
+                    .h(px(31.0))
                     .bg(rgb(surface))
-                    .when(selected || playing, |pad| {
-                        pad.border_b_1()
-                            .border_color(rgb(if playing { ds.cyan } else { color }))
+                    .when(occupied || selected || lead.is_some(), |pad| {
+                        pad.border_1().border_color(rgb(border))
                     })
-                    .text_color(rgb(ds.text))
-                    .child(note.map_or_else(String::new, |note| note.velocity.to_string()))
+                    .child(
+                        div()
+                            .text_color(rgb(dot_color))
+                            .text_size(px(if occupied { 13.0 } else { 12.0 }))
+                            .child(if occupied { "●" } else { "·" }),
+                    )
+                    .when_some(overlay_label, |pad, label| {
+                        pad.child(
+                            div()
+                                .absolute()
+                                .top(px(1.5))
+                                .left(px(1.5))
+                                .right(px(1.5))
+                                .h(px(13.0))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .rounded(px(3.0))
+                                .bg(rgba((ds.panel_dark << 8) | 0x9c))
+                                .border_1()
+                                .border_color(rgba((ds.text << 8) | 0x2a))
+                                .text_size(px(9.0))
+                                .text_color(rgb(ds.text))
+                                .overflow_hidden()
+                                .child(label),
+                        )
+                    })
+                    .when(occupied, |pad| {
+                        pad.tooltip(|window, cx| {
+                            Tooltip::new(
+                                "Clic: reducir roll / borrar · clic derecho: dividir · rueda: velocity",
+                            )
+                            .build(window, cx)
+                        })
+                    })
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                            this.pattern_editor.cursor_lane = lane;
+                            this.pattern_editor.cursor_step = step;
+                            if occupied {
+                                this.apply_pattern_action(PatternAction::SplitStep { lane, step });
+                            } else {
+                                this.pattern_editor.lane_menu =
+                                    Some(crate::ui::pattern_editor::DrumLaneMenu {
+                                        lane,
+                                        step: None,
+                                        position: event.position,
+                                    });
+                            }
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    )
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |this, _, _, cx| {
@@ -354,7 +680,72 @@ impl DawApp {
                         }
                     })),
             )
+            .children(notes.iter().map(|note| {
+                div()
+                    .absolute()
+                    .bottom(px(6.0))
+                    .left(px(tick_width(note.start.0 - at).clamp(1.0, (width - 2.0).max(1.0))))
+                    .w(px(2.0))
+                    .h(px(5.0))
+                    .bg(rgb(border))
+            }))
     }
+}
+
+#[cfg(feature = "p2p")]
+pub(super) fn paint_step_peer(
+    area: gpui::Bounds<gpui::Pixels>,
+    cell: gpui::Bounds<gpui::Pixels>,
+    alias: &str,
+    ds: &DesignSystem,
+    window: &mut gpui::Window,
+    cx: &mut gpui::App,
+) {
+    use gpui::{Bounds, ContentMask, TextAlign, TextRun, rgba};
+    if cell.left() >= area.right()
+        || cell.right() <= area.left()
+        || cell.top() >= area.bottom()
+        || cell.bottom() <= area.top()
+    {
+        return;
+    }
+    window.with_content_mask(Some(ContentMask { bounds: area }), |window| {
+        window.paint_quad(
+            fill(cell, rgba(0))
+                .corner_radii(px(2.0))
+                .border_widths(px(1.5))
+                .border_color(rgb(ds.cyan)),
+        );
+        let run = TextRun {
+            len: alias.len(),
+            font: window.text_style().font(),
+            color: rgb(ds.panel_dark).into(),
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        };
+        let line = window.text_system().shape_line(
+            alias.to_owned().into(),
+            px(ds.font_size_xs),
+            &[run],
+            None,
+        );
+        let height = px(ds.font_size_xs + 3.0);
+        let width = (line.width + px(6.0)).min(area.size.width);
+        let x = cell.left().clamp(area.left(), area.right() - width);
+        let y = (cell.top() - height).max(area.top());
+        window.paint_quad(
+            fill(Bounds::new(point(x, y), size(width, height)), rgb(ds.cyan)).corner_radii(px(2.0)),
+        );
+        let _ = line.paint(
+            point(x + px(3.0), y),
+            height,
+            TextAlign::Left,
+            None,
+            window,
+            cx,
+        );
+    });
 }
 
 fn drum_mini_roll(

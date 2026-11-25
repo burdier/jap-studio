@@ -30,36 +30,60 @@ pub(super) fn save_appearance(design: &DesignSystem) -> io::Result<()> {
     save_appearance_at(&path()?, design)
 }
 
+const PALETTE_KEYS: &[&str] = &[
+    "BG",
+    "PANEL",
+    "PANEL_HOVER",
+    "PANEL_DARK",
+    "BORDER",
+    "TEXT",
+    "MUTED",
+    "ACCENT",
+    "ACCENT_DIM",
+    "SUCCESS",
+    "WARNING",
+    "DANGER",
+    "CYAN",
+    "ORANGE",
+    "PINK",
+    "GRID",
+    "PLAYHEAD_PARTICLE_COLOR",
+];
+
 fn save_appearance_at(path: &Path, design: &DesignSystem) -> io::Result<()> {
-    // Guardar también los colores: los perfiles antiguos contienen una paleta explícita
-    // que, de guardar solo THEME, volvería a imponerse al reiniciar o recargar.
+    // Si el perfil usa un tema estándar sin sobrescrituras manuales de color,
+    // guardamos solo THEME y eliminamos las claves hex heredadas para que editar
+    // THEME=... en ~/.jaybu.profile cambie toda la paleta al instante.
     let mut values = vec![
         ("THEME", design.theme.token().to_string()),
         ("CURSOR_FX", design.cursor_fx.token().to_string()),
         ("SELECTION_CONTRAST", design.selection_contrast.to_string()),
     ];
-    values.extend(
-        [
-            ("BG", design.bg),
-            ("PANEL", design.panel),
-            ("PANEL_HOVER", design.panel_hover),
-            ("PANEL_DARK", design.panel_dark),
-            ("BORDER", design.border),
-            ("TEXT", design.text),
-            ("MUTED", design.muted),
-            ("ACCENT", design.accent),
-            ("ACCENT_DIM", design.accent_dim),
-            ("SUCCESS", design.success),
-            ("WARNING", design.warning),
-            ("DANGER", design.danger),
-            ("CYAN", design.cyan),
-            ("ORANGE", design.orange),
-            ("PINK", design.pink),
-            ("GRID", design.grid),
-            ("PLAYHEAD_PARTICLE_COLOR", design.playhead_particle_color),
-        ]
-        .map(|(key, value)| (key, format!("{value:06x}"))),
-    );
+    let strip_palette = design.matches_theme_palette();
+    if !strip_palette {
+        values.extend(
+            [
+                ("BG", design.bg),
+                ("PANEL", design.panel),
+                ("PANEL_HOVER", design.panel_hover),
+                ("PANEL_DARK", design.panel_dark),
+                ("BORDER", design.border),
+                ("TEXT", design.text),
+                ("MUTED", design.muted),
+                ("ACCENT", design.accent),
+                ("ACCENT_DIM", design.accent_dim),
+                ("SUCCESS", design.success),
+                ("WARNING", design.warning),
+                ("DANGER", design.danger),
+                ("CYAN", design.cyan),
+                ("ORANGE", design.orange),
+                ("PINK", design.pink),
+                ("GRID", design.grid),
+                ("PLAYHEAD_PARTICLE_COLOR", design.playhead_particle_color),
+            ]
+            .map(|(key, value)| (key, format!("{value:06x}"))),
+        );
+    }
     values.extend(
         [
             ("TRACK_HEADER_WIDTH", design.track_header_width),
@@ -83,14 +107,18 @@ fn save_appearance_at(path: &Path, design: &DesignSystem) -> io::Result<()> {
         ]
         .map(|(key, value)| (key, value.to_string())),
     );
-    update_at(path, &values)
+    update_at(
+        path,
+        &values,
+        if strip_palette { PALETTE_KEYS } else { &[] },
+    )
 }
 
 pub(super) fn save_values(values: &[(&str, String)]) -> io::Result<()> {
-    update_at(&path()?, values)
+    update_at(&path()?, values, &[])
 }
 
-fn update_at(path: &Path, values: &[(&str, String)]) -> io::Result<()> {
+fn update_at(path: &Path, values: &[(&str, String)], remove: &[&str]) -> io::Result<()> {
     // Mantener enlaces simbólicos: reemplazar su destino, no el enlace del perfil.
     let target = match fs::symlink_metadata(path) {
         Ok(meta) if meta.file_type().is_symlink() => fs::canonicalize(path)?,
@@ -103,7 +131,7 @@ fn update_at(path: &Path, values: &[(&str, String)]) -> io::Result<()> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => String::new(),
         Err(error) => return Err(error),
     };
-    let updated = replace_values(&content, values);
+    let updated = replace_values(&content, values, remove);
     if updated == content {
         return Ok(());
     }
@@ -143,7 +171,7 @@ fn update_at(path: &Path, values: &[(&str, String)]) -> io::Result<()> {
     result
 }
 
-fn replace_values(content: &str, values: &[(&str, String)]) -> String {
+fn replace_values(content: &str, values: &[(&str, String)], remove: &[&str]) -> String {
     let newline = if content.contains("\r\n") {
         "\r\n"
     } else {
@@ -153,6 +181,9 @@ fn replace_values(content: &str, values: &[(&str, String)]) -> String {
     let mut output = String::new();
     for line in content.split_inclusive('\n') {
         let key = line.split_once('=').map(|(key, _)| key.trim());
+        if key.is_some_and(|k| remove.contains(&k)) {
+            continue;
+        }
         if let Some(index) = values.iter().position(|(name, _)| Some(*name) == key) {
             let (name, value) = &values[index];
             output.push_str(&format!("{name}={value}"));
