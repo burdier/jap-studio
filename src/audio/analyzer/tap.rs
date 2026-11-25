@@ -8,6 +8,21 @@ use std::{
     },
 };
 
+use elevate::musical::fx::FxId;
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum TapPoint {
+    Input(FxId),
+    Output(FxId),
+}
+impl TapPoint {
+    pub fn node(self) -> FxId {
+        match self {
+            Self::Input(id) | Self::Output(id) => id,
+        }
+    }
+}
+
 const BLOCK: usize = 256;
 const QUEUE: usize = 64;
 pub(crate) struct Samples {

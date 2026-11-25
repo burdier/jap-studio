@@ -36,7 +36,11 @@ impl Buffers {
                 if !(1..=64).contains(&info.channelCount) {
                     return Err("VST3: número de canales no compatible".into());
                 }
-                if (direction == 1 || effect) && index == 0 && info.channelCount != 2 {
+                if (direction == 1 || effect)
+                    && index == 0
+                    && info.channelCount != 2
+                    && !(effect && info.channelCount == 1)
+                {
                     return Err("VST3: salida principal no estéreo".into());
                 }
                 let mut samples: Vec<_> = (0..info.channelCount)
@@ -80,24 +84,44 @@ impl Buffers {
     pub fn input(&mut self, frames: &[[f32; 2]]) {
         if let Some(bus) = self.input_samples.first_mut() {
             for (i, frame) in frames.iter().enumerate() {
-                bus[0][i] = frame[0];
-                bus[1][i] = frame[1];
+                if bus.len() == 1 {
+                    bus[0][i] = (frame[0] + frame[1]) * 0.5;
+                } else {
+                    bus[0][i] = frame[0];
+                    bus[1][i] = frame[1];
+                }
             }
             self.inputs[0].silenceFlags = 0;
         }
     }
-    pub fn clear(&mut self) {
+    pub fn clear_len(&mut self, len: usize) {
+        let count = len.min(512);
         for bus in &mut self.outputs {
             bus.silenceFlags = 0;
         }
         for bus in &mut self.output_samples {
             for channel in bus {
-                channel.fill(0.);
+                channel[..count].fill(0.);
             }
         }
     }
     pub fn copy_output(&self, left: &mut [f32], right: &mut [f32]) {
         left.copy_from_slice(&self.output_samples[0][0][..left.len()]);
-        right.copy_from_slice(&self.output_samples[0][1][..right.len()]);
+        let bus = &self.output_samples[0];
+        right.copy_from_slice(&bus.get(1).unwrap_or(&bus[0])[..right.len()]);
+    }
+    /// Copia directamente a frames estéreo entrelazados en una sola pasada y valida finitud.
+    pub fn copy_output_interleaved(&self, frames: &mut [[f32; 2]]) -> bool {
+        let bus = &self.output_samples[0];
+        let left = &bus[0];
+        let right = bus.get(1).unwrap_or(left);
+        let mut all_finite = true;
+        for (i, frame) in frames.iter_mut().enumerate() {
+            let l = left[i];
+            let r = right[i];
+            all_finite &= l.is_finite() & r.is_finite();
+            *frame = [l, r];
+        }
+        all_finite
     }
 }

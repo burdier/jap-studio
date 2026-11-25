@@ -9,6 +9,7 @@ pub(crate) struct TransportContext {
     pub bpm: f64,
     pub meter: Meter,
     pub loop_range: Option<(u64, u64)>,
+    pub playing: bool,
 }
 
 impl TransportContext {
@@ -31,12 +32,17 @@ impl TransportContext {
             bpm,
             meter,
             loop_range,
+            playing: true,
         })
     }
 
     pub fn offset(self, frames: usize) -> Self {
         Self {
-            frame: self.frame.saturating_add(frames as u64),
+            frame: if self.playing {
+                self.frame.saturating_add(frames as u64)
+            } else {
+                self.frame
+            },
             ..self
         }
     }
@@ -54,8 +60,10 @@ impl TransportContext {
         context.timeSigNumerator = i32::from(self.meter.numerator());
         context.timeSigDenominator = i32::from(self.meter.denominator());
         context.state =
-            (kPlaying | kProjectTimeMusicValid | kBarPositionValid | kTempoValid | kTimeSigValid)
-                as u32;
+            (kProjectTimeMusicValid | kBarPositionValid | kTempoValid | kTimeSigValid) as u32;
+        if self.playing {
+            context.state |= kPlaying as u32;
+        }
         if let Some((start, end)) = self.loop_range {
             context.cycleStartMusic = quarter(start);
             context.cycleEndMusic = quarter(end);

@@ -29,7 +29,7 @@ pub(super) fn render_plan_segment(
             synthesizer.render(&mut left[cursor..offset], &mut right[cursor..offset]);
             cursor = offset;
         }
-        play_event(synthesizer, event, channel, cycle);
+        synthesizer.scheduled(channel, event, cycle, 1 << channel);
     }
     if cursor < planned {
         synthesizer.render(&mut left[cursor..planned], &mut right[cursor..planned]);
@@ -42,7 +42,7 @@ pub(super) fn render_plan_segment(
                 .events_in(end)
                 .filter(|event| matches!(event.kind, EventKind::NoteOff))
             {
-                play_event(synthesizer, event, channel, cycle);
+                synthesizer.scheduled(channel, event, cycle, 1 << channel);
             }
         }
         synthesizer.midi(0xb0 | channel, 64, 0);
@@ -91,27 +91,4 @@ pub(super) fn render_plan_block(
         }
     }
     false
-}
-
-fn play_event(
-    synthesizer: &mut SynthBackend,
-    event: elevate::musical::scheduler::ScheduledEvent,
-    channel: u8,
-    cycle: u64,
-) {
-    match event.kind {
-        EventKind::Control { lane, value } => {
-            let (command, a, b) = lane.midi(value);
-            synthesizer.midi(command | channel, a, b);
-        }
-        EventKind::NoteOn { velocity } if event.expression.plays(event.note, cycle) => {
-            synthesizer.note_on_expression(channel, event.pitch, velocity, event.expression)
-        }
-        EventKind::NoteOff if event.expression.plays(event.note, cycle) => synthesizer.midi(
-            0x80 | channel,
-            event.pitch,
-            event.expression.release_velocity,
-        ),
-        _ => {}
-    }
 }

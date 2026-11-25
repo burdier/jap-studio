@@ -92,6 +92,23 @@ fn choose_config(
     })
 }
 
+/// Techo suave transparente por encima de -0.5 dBFS: evita recorte digital duro
+/// sin alterar la señal por debajo de ±0.94.
+#[inline]
+fn soft_ceiling(sample: f32) -> f32 {
+    if !sample.is_finite() {
+        return 0.0;
+    }
+    const KNEE: f32 = 0.94;
+    let abs = sample.abs();
+    if abs <= KNEE {
+        sample
+    } else {
+        let excess = (abs - KNEE) / (1.0 - KNEE);
+        sample.signum() * (KNEE + (1.0 - KNEE) * excess.tanh())
+    }
+}
+
 /// Distribuye el master estéreo a la pareja elegida; silencia las demás salidas.
 /// Sin reservas, conversión y ruteo acotados por el bloque recibido.
 pub(super) fn write_stereo<T: cpal::SizedSample + cpal::FromSample<f32>>(
@@ -102,7 +119,7 @@ pub(super) fn write_stereo<T: cpal::SizedSample + cpal::FromSample<f32>>(
 ) {
     output.fill(T::from_sample(0.0));
     for (destination, frame) in output.chunks_exact_mut(channels).zip(frames) {
-        destination[first] = T::from_sample(frame[0].clamp(-1.0, 1.0));
-        destination[first + 1] = T::from_sample(frame[1].clamp(-1.0, 1.0));
+        destination[first] = T::from_sample(soft_ceiling(frame[0]));
+        destination[first + 1] = T::from_sample(soft_ceiling(frame[1]));
     }
 }

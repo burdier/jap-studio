@@ -38,6 +38,29 @@ impl PreparedPiano {
             class,
         )?;
         let name = engine.name.clone();
+        let _ = engine.editor.watch_state(None);
+        let shared = crate::audio::vst3::SharedInstrument::new(engine, setup.config.sample_rate);
+        Ok((
+            Self {
+                device,
+                setup,
+                backend: SynthBackend::Vst(crate::audio::vst3::InstrumentVoice::preview(shared)),
+            },
+            name,
+        ))
+    }
+    pub fn load_vst_preset(
+        path: std::path::PathBuf,
+        class: String,
+        preset: elevate::musical::fx::VstPreset,
+        audio: &crate::audio::device::AudioConfig,
+    ) -> Result<(Self, String), String> {
+        let device = audio.device(false)?;
+        let setup = choose_output_config(&device, audio)?;
+        let state = crate::audio::vst3::PluginState::from_instrument_preset(path, class, &preset)?;
+        let engine = state.instantiate(setup.config.sample_rate)?;
+        let name = engine.name.clone();
+        let _ = engine.editor.watch_state(Some(preset));
         let shared = crate::audio::vst3::SharedInstrument::new(engine, setup.config.sample_rate);
         Ok((
             Self {

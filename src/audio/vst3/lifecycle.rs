@@ -12,17 +12,17 @@ use vst3::{
 
 impl VstEngine {
     pub fn load(bundle: &Path, sample_rate: u32) -> Result<Self, String> {
-        editor::session::spawn(bundle, sample_rate, None, true)
+        editor::session::spawn(bundle, sample_rate, None, true, None)
     }
     pub fn load_instrument_class(
         bundle: &Path,
         sample_rate: u32,
         class: Option<String>,
     ) -> Result<Self, String> {
-        editor::session::spawn(bundle, sample_rate, class, true)
+        editor::session::spawn(bundle, sample_rate, class, true, None)
     }
     pub fn load_effect(bundle: &Path, sample_rate: u32, class: &str) -> Result<Self, String> {
-        editor::session::spawn(bundle, sample_rate, Some(class.to_owned()), false)
+        editor::session::spawn(bundle, sample_rate, Some(class.to_owned()), false, None)
     }
 }
 impl Session {
@@ -32,9 +32,11 @@ impl Session {
         edits: rtrb::Producer<Edit>,
         class: Option<&str>,
         instrument: bool,
+        state: Option<super::PluginState>,
     ) -> Result<Self, String> {
         let module = module::Module::open(bundle)?;
         let info = module.audio_class(class, instrument)?;
+        let class_id = info.id();
         let (cid, name) = (info.cid, info.name);
         let component = module.create::<IComponent>(&cid)?;
         let processor = component
@@ -43,11 +45,11 @@ impl Session {
         let host = ComWrapper::new(host::Host)
             .to_com_ptr::<IHostApplication>()
             .unwrap();
-        let handler = ComWrapper::new(Handler {
-            edits: std::sync::Mutex::new(edits),
-            restart: std::sync::atomic::AtomicI32::new(0),
-        });
+        let handler = ComWrapper::new(Handler::new(edits));
         let mut engine = Self {
+            initial_parameters: Vec::new(),
+            path: bundle.to_owned(),
+            class_id,
             component,
             processor,
             controller: None,
@@ -64,10 +66,10 @@ impl Session {
             host,
             _module: module,
         };
-        engine.initialize()?;
+        engine.initialize(state)?;
         Ok(engine)
     }
-    fn initialize(&mut self) -> Result<(), String> {
+    fn initialize(&mut self, state: Option<super::PluginState>) -> Result<(), String> {
         unsafe {
             check(
                 self.component.initialize(self.host.as_ptr().cast()),
@@ -105,9 +107,12 @@ impl Session {
                     controller.setComponentHandler(handler.as_ptr()),
                     "editor handler",
                 )?;
-                if self.separate_controller {
+                if self.separate_controller && state.is_none() {
                     editor::session::sync_state(&self.component, controller)?;
                 }
+            }
+            if let Some(state) = state {
+                self.restore(state)?;
             }
             if let Some(mapping) = self
                 .controller
@@ -152,12 +157,34 @@ impl Session {
                 self.processor.setupProcessing(&mut setup),
                 "setupProcessing",
             )?;
-            check(self.component.setActive(1), "setActive")?;
-            self.active = true;
-            check(self.processor.setProcessing(1), "setProcessing")?;
-            self.processing = true;
+            self.activate()?;
         }
         Ok(())
+    }
+    fn activate(&mut self) -> Result<(), String> {
+        unsafe {
+            check(self.component.setActive(1), "setActive")?;
+            self.active = true;
+            // The SDK's default AudioEffect leaves this notification unimplemented.
+            let result = self.processor.setProcessing(1);
+            if result != kNotImplemented {
+                check(result, "setProcessing")?;
+                self.processing = true;
+            }
+        }
+        Ok(())
+    }
+    pub(super) fn reactivate_latency(&mut self) -> Result<u32, String> {
+        unsafe {
+            if self.processing {
+                check(self.processor.setProcessing(0), "suspender DSP")?;
+                self.processing = false;
+            }
+            check(self.component.setActive(0), "desactivar DSP")?;
+            self.active = false;
+            self.activate()?;
+            Ok(self.processor.getLatencySamples())
+        }
     }
 }
 pub(super) fn check(result: tresult, operation: &str) -> Result<(), String> {

@@ -1,4 +1,4 @@
-//! IBStream temporal para sincronizar el estado inicial del controlador estándar.
+//! Stream de estado VST3 en memoria, con tamaño consultable y lecturas parciales.
 #![allow(non_snake_case)]
 use std::{
     cell::{Cell, RefCell},
@@ -11,8 +11,19 @@ pub(super) struct Stream {
     bytes: RefCell<Vec<u8>>,
     position: Cell<usize>,
 }
+impl Stream {
+    pub(super) fn from_bytes(bytes: Vec<u8>) -> Self {
+        Self {
+            bytes: RefCell::new(bytes),
+            position: Cell::new(0),
+        }
+    }
+    pub(super) fn take_bytes(&self) -> Vec<u8> {
+        self.bytes.take()
+    }
+}
 impl Class for Stream {
-    type Interfaces = (IBStream,);
+    type Interfaces = (IBStream, ISizeableStream);
 }
 impl IBStreamTrait for Stream {
     unsafe fn read(&self, buffer: *mut c_void, count: i32, read: *mut i32) -> tresult {
@@ -41,7 +52,8 @@ impl IBStreamTrait for Stream {
                 *read = len as i32;
             }
         }
-        if len == count as usize {
+        // Una lectura corta entrega los bytes disponibles. EOF llega en la siguiente llamada.
+        if len > 0 || count == 0 {
             kResultOk
         } else {
             kResultFalse
@@ -113,5 +125,50 @@ impl IBStreamTrait for Stream {
             *result = self.position.get() as i64;
         }
         kResultOk
+    }
+}
+
+impl ISizeableStreamTrait for Stream {
+    unsafe fn getStreamSize(&self, size: *mut i64) -> tresult {
+        if size.is_null() {
+            return kInvalidArgument;
+        }
+        unsafe {
+            *size = self.bytes.borrow().len() as i64;
+        }
+        kResultOk
+    }
+    unsafe fn setStreamSize(&self, size: i64) -> tresult {
+        let Ok(size) = usize::try_from(size) else {
+            return kInvalidArgument;
+        };
+        if size > LIMIT {
+            return kOutOfMemory;
+        }
+        self.bytes.borrow_mut().resize(size, 0);
+        self.position.set(self.position.get().min(size));
+        kResultOk
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn short_final_read_delivers_the_rest_of_the_preset() {
+        let stream = Stream::from_bytes(vec![17; 4103]);
+        let mut buffer = [0u8; 4096];
+        let mut count = 0;
+        for remaining in [4096, 7] {
+            assert_eq!(
+                unsafe { stream.read(buffer.as_mut_ptr().cast(), 4096, &mut count) },
+                kResultOk
+            );
+            assert_eq!(count, remaining);
+        }
+        assert_eq!(
+            unsafe { stream.read(buffer.as_mut_ptr().cast(), 4096, &mut count) },
+            kResultFalse
+        );
+        assert_eq!(count, 0);
     }
 }

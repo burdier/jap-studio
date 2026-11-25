@@ -4,10 +4,7 @@ use crate::audio::vst3::{SharedInstrument, TransportContext};
 use elevate::musical::model::InstrumentId;
 use elevate::musical::scheduler::PreparedPattern;
 use elevate::musical::{
-    arrangement_midi::PreparedMidiArrangement,
-    midi::MidiMessage,
-    scheduler::{EventKind, ScheduledEvent},
-    time::FrameWindow,
+    arrangement_midi::PreparedMidiArrangement, midi::MidiMessage, time::FrameWindow,
 };
 use std::sync::{Arc, atomic::Ordering};
 
@@ -102,27 +99,6 @@ impl InstrumentVoice {
     pub fn failed(&self) -> bool {
         self.synth.failed()
     }
-
-    fn scheduled(&mut self, channel: u8, event: ScheduledEvent) {
-        match event.kind {
-            EventKind::NoteOn { velocity } if event.expression.plays(event.note, 0) => {
-                self.synth
-                    .note_on_expression(channel, event.pitch, velocity, event.expression);
-            }
-            EventKind::NoteOff if event.expression.plays(event.note, 0) => {
-                self.synth.midi(
-                    0x80 | channel,
-                    event.pitch,
-                    event.expression.release_velocity,
-                );
-            }
-            EventKind::Control { lane, value } => {
-                let (command, a, b) = lane.midi(value);
-                self.synth.midi(command | channel, a, b);
-            }
-            _ => {}
-        }
-    }
 }
 
 /// Voces preparadas fuera del callback, identificadas por instancia.
@@ -144,9 +120,14 @@ pub(crate) struct PreparedArrangementVoice {
     id: InstrumentId,
     voices: PreparedVoices,
     filter: Option<super::filter::StereoFilter>,
+    parallel_safe: bool,
 }
 
 impl PreparedArrangementVoice {
+    pub fn parallel_safe(&self) -> bool {
+        self.parallel_safe
+    }
+
     pub fn prepare(id: InstrumentId, source: VoiceSource, rate: u32) -> Result<Self, String> {
         let (backend, filter) = match source {
             VoiceSource::Piano(snapshot) => {
@@ -175,6 +156,8 @@ impl PreparedArrangementVoice {
                 )
             }
         };
+        // `libfluidsynth` comparte estado global C entre instancias; sus pistas corren en serie.
+        let parallel_safe = !matches!(backend, SynthBackend::Fluid(_));
         let mut voices = PreparedVoices::new();
         voices
             .insert(
@@ -183,7 +166,12 @@ impl PreparedArrangementVoice {
                 Arc::new(InstrumentState::new(1.0, Default::default(), 0.0, 1.0)),
             )
             .map_err(|_| "ID de instrumento duplicado")?;
-        Ok(Self { id, voices, filter })
+        Ok(Self {
+            id,
+            voices,
+            filter,
+            parallel_safe,
+        })
     }
 
     pub fn id(&self) -> InstrumentId {
@@ -239,6 +227,23 @@ impl PreparedArrangementVoice {
         self.voices.render_timed(output, time);
         if let Some(filter) = &mut self.filter {
             filter.process(output);
+        }
+    }
+
+    pub fn change_note(
+        &mut self,
+        routed: elevate::musical::arrangement_midi::ArrangementEvent,
+        reserved: u16,
+    ) {
+        if let Some((_, voice, _)) = self
+            .voices
+            .voices
+            .iter_mut()
+            .find(|(id, _, _)| *id == routed.instrument)
+        {
+            voice
+                .synth
+                .scheduled(routed.channel, routed.event, 0, reserved);
         }
     }
 
@@ -353,7 +358,16 @@ impl PreparedVoices {
                     .iter_mut()
                     .find(|(id, _, _)| *id == routed.instrument)
                 {
-                    voice.scheduled(routed.channel, routed.event);
+                    voice.synth.scheduled(
+                        routed.channel,
+                        routed.event,
+                        0,
+                        if routed.event.initial_pitch_cents.is_some() {
+                            plan.conventional_channels(routed.instrument)
+                        } else {
+                            0
+                        },
+                    );
                 }
             }
             if written < block.len() {

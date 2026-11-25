@@ -44,9 +44,9 @@ pub(super) struct Changes {
     count: Cell<usize>,
 }
 impl Changes {
-    pub fn new() -> Self {
+    pub fn new(capacity: usize) -> Self {
         Self {
-            points: (0..256)
+            points: (0..capacity)
                 .map(|_| {
                     let point = ComWrapper::new(Point {
                         id: Cell::new(0),
@@ -57,6 +57,11 @@ impl Changes {
                 })
                 .collect(),
             count: Cell::new(0),
+        }
+    }
+    pub fn send_latest(&self, queue: &mut rtrb::Producer<(u32, f64)>) {
+        for (point, _) in &self.points[..self.count.get()] {
+            let _ = queue.push((point.id.get(), point.value.get()));
         }
     }
     pub fn clear(&self) {

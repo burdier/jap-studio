@@ -1,6 +1,6 @@
 //! Worker dueño del snapshot, instancias C y archivos. Memoria de salida acotada por bloque.
 use super::{
-    ExportJob, Report, Snapshot,
+    ExportJob, Report, Snapshot, Stem, StemBuffers,
     files::{Batch, track_name},
     lame, render, sndfile,
 };
@@ -30,7 +30,11 @@ impl Encoder {
     }
 }
 
-pub(crate) fn start(snapshot: Snapshot, options: ExportOptions) -> Result<ExportJob, String> {
+pub(crate) fn start(
+    mut snapshot: Snapshot,
+    options: ExportOptions,
+    plugins: super::Plugins,
+) -> Result<ExportJob, String> {
     options.validate()?;
     let (sender, result) = mpsc::channel();
     let cancel = Arc::new(AtomicBool::new(false));
@@ -39,7 +43,14 @@ pub(crate) fn start(snapshot: Snapshot, options: ExportOptions) -> Result<Export
     std::thread::Builder::new()
         .name("hay-export".into())
         .spawn(move || {
-            let result = run(snapshot, options, &worker_cancel, &worker_progress);
+            let result = plugins
+                .prepare(
+                    &mut snapshot.inputs,
+                    &mut snapshot.master_rack,
+                    options.sample_rate,
+                    &worker_cancel,
+                )
+                .and_then(|()| run(snapshot, options, &worker_cancel, &worker_progress));
             let _ = sender.send(result);
         })
         .map_err(|e| e.to_string())?;
@@ -51,7 +62,7 @@ pub(crate) fn start(snapshot: Snapshot, options: ExportOptions) -> Result<Export
 }
 
 pub(super) fn run(
-    snapshot: Snapshot,
+    mut snapshot: Snapshot,
     options: ExportOptions,
     cancel: &AtomicBool,
     progress: &AtomicU32,
@@ -60,40 +71,74 @@ pub(super) fn run(
     if options.tracks.iter().any(|&i| i >= snapshot.tracks.len()) {
         return Err("Selección de pista fuera de rango".into());
     }
-    let tracks: Vec<_> = (0..snapshot.tracks.len())
-        .filter(|&i| {
-            options.includes_track(i)
-                && (snapshot.audio.iter().any(|c| c.track == i)
-                    || snapshot.midi.iter().any(|c| {
-                        c.track == i
-                            && c.hilo_target.is_none()
-                            && !snapshot.hilo.iter().any(|branch| branch.group_index == i)
-                    })
-                    || snapshot.hilo.iter().any(|branch| branch.track_index == i))
-        })
-        .collect();
-    if tracks.is_empty() {
-        return Err("No hay clips en las pistas elegidas del Arrangement".into());
+    if cancel.load(Ordering::Relaxed) {
+        return Err("Exportación cancelada".into());
     }
-    let range = render::range(&snapshot, &options)?;
-    let targets = if options.target == Target::Master {
-        vec![(options.name.clone(), tracks)]
-    } else {
-        tracks
-            .into_iter()
-            .map(|i| {
-                (
+    let includes = |id| {
+        snapshot
+            .tracks
+            .iter()
+            .position(|(track, _)| *track == id)
+            .is_some_and(|i| options.includes_track(i))
+    };
+    let buses: std::collections::HashSet<_> = snapshot
+        .inputs
+        .iter()
+        .filter(|input| includes(input.id))
+        .filter_map(|input| input.parent)
+        .collect();
+    snapshot
+        .inputs
+        .retain(|input| includes(input.id) || buses.contains(&input.id));
+    crate::audio::apply_preplay(&mut snapshot.inputs)?;
+    let mut targets = Vec::new();
+    for (i, (id, name)) in snapshot.tracks.iter().enumerate() {
+        if snapshot.inputs.iter().any(|t| {
+            (t.id == *id || (options.tracks.contains(&i) && t.parent == Some(*id)))
+                && (!t.clips.is_empty()
+                    || t.midi.as_ref().is_some_and(|m| {
+                        !m.clips.is_empty() || m.hilo.as_ref().is_some_and(|h| !h.clips.is_empty())
+                    }))
+        }) {
+            targets.push((
+                format!("{}-{:02}-{}", options.name, i + 1, track_name(name)),
+                Some(Stem::Track(*id)),
+            ));
+        }
+    }
+    if let Some(drums) = &snapshot.drums
+        && let Some(score) = &drums.score
+    {
+        for (i, piece) in drums.kit.pieces.iter().enumerate() {
+            if score
+                .pattern
+                .notes()
+                .iter()
+                .any(|n| n.instrument == piece.id)
+            {
+                targets.push((
                     format!(
-                        "{}-{:02}-{}",
+                        "{}-Drums-{:02}-{}",
                         options.name,
                         i + 1,
-                        track_name(&snapshot.tracks[i].name)
+                        track_name(&piece.name)
                     ),
-                    vec![i],
-                )
-            })
-            .collect()
-    };
+                    Some(Stem::Drum(piece.id)),
+                ));
+            }
+        }
+    }
+    if targets.is_empty() {
+        return Err("No hay material en las pistas elegidas".into());
+    }
+    if options.target == Target::Master {
+        targets.clear();
+        targets.push((options.name.clone(), None));
+    }
+    let mut taps: StemBuffers = targets
+        .iter()
+        .filter_map(|(_, id)| id.map(|id| (id, [[0.; 2]; 256])))
+        .collect();
     let mut batch = Batch::new();
     let mut outputs = Vec::new();
     // Validar todos los destinos/codecs antes de renderizar y publicar cualquiera.
@@ -113,14 +158,18 @@ pub(super) fn run(
         outputs.push(encoders);
     }
     let mut overs = 0;
-    for (i, ((_, tracks), encoders)) in targets.iter().zip(outputs.iter_mut()).enumerate() {
-        render::render(
-            &snapshot,
-            &options,
-            tracks,
-            range,
-            cancel,
-            |frames, position| {
+    render::render(
+        snapshot,
+        &options,
+        &mut taps,
+        cancel,
+        |master, taps, range, percent| {
+            for ((_, id), encoders) in targets.iter().zip(&mut outputs) {
+                let bus = match id {
+                    Some(id) => &taps[id][..],
+                    None => master,
+                };
+                let frames = &bus[range.clone()];
                 let mut samples = [0.0; 1024];
                 let mut size = 0;
                 for &[left, right] in frames {
@@ -139,15 +188,11 @@ pub(super) fn run(
                         encoder.write(&samples[..size])?;
                     }
                 }
-                progress.store(
-                    ((i as f64 + position as f64 / range.end as f64) * 100.0 / targets.len() as f64)
-                        as u32,
-                    Ordering::Relaxed,
-                );
-                Ok(())
-            },
-        )?;
-    }
+            }
+            progress.store(percent, Ordering::Relaxed);
+            Ok(())
+        },
+    )?;
     for encoders in outputs {
         for encoder in encoders {
             encoder.finish()?;

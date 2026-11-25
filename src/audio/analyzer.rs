@@ -1,4 +1,5 @@
 //! Análisis fuera de RT. El callback solo entrega muestras a una cola acotada.
+pub(crate) mod loudness;
 pub(crate) mod tap;
 use realfft::{RealFftPlanner, RealToComplex, num_complex::Complex32};
 use std::{collections::VecDeque, sync::Arc};

@@ -12,12 +12,16 @@ impl FxGain {
     pub fn set_rack(&self, rack: Option<std::sync::Arc<super::effects::Rack>>, rate: u32) {
         self.1.set(rack, rate);
     }
+    pub fn tail_frames(&self) -> u64 {
+        self.1.tail_frames()
+    }
     pub fn set(&self, gain: f32) {
         self.0.store(gain.to_bits(), Ordering::Relaxed);
     }
     pub fn prepare(&self) -> PreparedFxGain {
         let gain = self.get();
         PreparedFxGain {
+            history: super::effects::CrossoverHistory::new(),
             current: gain,
             target: gain,
             step: 0.0,
@@ -29,6 +33,7 @@ impl FxGain {
     }
 }
 pub(crate) struct PreparedFxGain {
+    history: super::effects::CrossoverHistory,
     current: f32,
     target: f32,
     step: f32,
@@ -50,11 +55,7 @@ impl PreparedFxGain {
             self.remaining = 256;
             self.step = (target - self.current) / 256.0;
         }
-        if time.is_some() {
-            state.1.process_timed(frames, time);
-        } else {
-            state.1.process(frames);
-        }
+        state.1.process_timed(frames, time, &mut self.history);
         for frame in frames {
             if self.remaining > 0 {
                 self.current += self.step;

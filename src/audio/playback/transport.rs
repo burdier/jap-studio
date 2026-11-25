@@ -91,6 +91,70 @@ impl Cursor {
         }
     }
 }
+
+/// Renderiza la salida residual sin avanzar el marcador del transporte.
+pub(super) struct StopTail {
+    start: u64,
+    elapsed: u64,
+    quiet: u64,
+    minimum: u64,
+    quiet_window: u64,
+    limit: u64,
+    fade: u64,
+    done: bool,
+}
+impl StopTail {
+    pub fn new(start: u64, rate: u32, declared: u64) -> Self {
+        let rate = u64::from(rate);
+        Self {
+            start,
+            elapsed: 0,
+            quiet: 0,
+            minimum: declared,
+            quiet_window: rate * 3 / 4,
+            limit: rate * 30,
+            fade: (rate / 20).max(1),
+            done: false,
+        }
+    }
+
+    pub fn finished(&self) -> bool {
+        self.done
+    }
+
+    pub fn render(
+        &mut self,
+        output: &mut [StereoFrame],
+        sustained_sample: bool,
+        mut render: impl FnMut(u64, &mut [StereoFrame]),
+    ) {
+        output.fill([0.; 2]);
+        if self.done {
+            return;
+        }
+        let count = (self.limit - self.elapsed).min(output.len() as u64) as usize;
+        let frames = &mut output[..count];
+        render(self.start.saturating_add(self.elapsed), frames);
+        for (offset, frame) in frames.iter_mut().enumerate() {
+            let remaining = self.limit - self.elapsed - offset as u64;
+            if remaining < self.fade {
+                let weight = remaining.saturating_sub(1) as f32 / self.fade as f32;
+                *frame = frame.map(|sample| sample * weight);
+            }
+            self.quiet = if frame.iter().any(|s| s.abs() > 0.0001) {
+                0
+            } else {
+                self.quiet + 1
+            };
+        }
+        self.elapsed += count as u64;
+        self.done = self.elapsed == self.limit
+            || (!sustained_sample
+                && self.elapsed >= self.minimum
+                && self.quiet >= self.quiet_window);
+    }
+}
+
 pub(crate) fn beat_frame(beat: f64, rate: u32, beats_per_second: f64) -> Result<u64, String> {
     let frame = beat / beats_per_second * rate as f64;
     if !beat.is_finite() || beat < 0. || !frame.is_finite() || frame >= u64::MAX as f64 {

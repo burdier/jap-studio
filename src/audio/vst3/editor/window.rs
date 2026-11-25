@@ -1,11 +1,11 @@
 //! Ventana original devuelta por createView("editor"), sin reconstruir controles.
 use super::{
-    EditorHandle,
+    EditorHandle, EditorMidiKey,
     frame::{Frame, valid},
     shortcut::SpaceShortcut,
     x11::X11,
 };
-use std::{ptr, rc::Rc};
+use std::{ptr, rc::Rc, sync::atomic::Ordering};
 use vst3::{
     ComPtr, ComWrapper,
     Steinberg::{Vst::*, *},
@@ -17,6 +17,8 @@ pub(super) struct Window {
     x11: Rc<X11>,
     attached: bool,
     space: SpaceShortcut,
+    midi_enabled: bool,
+    midi_held: [Option<u8>; 256],
 }
 impl Window {
     pub fn open(controller: &ComPtr<IEditController>, name: &str) -> Result<Self, String> {
@@ -38,7 +40,11 @@ impl Window {
             if !valid(size) {
                 return Err("El plugin devolvió un tamaño de editor inválido".into());
             }
-            let x11 = X11::open(&format!("{name} — Hay"), size.0 as u32, size.1 as u32)?;
+            let x11 = X11::open(
+                &format!("{name} — Jap Studio"),
+                size.0 as u32,
+                size.1 as u32,
+            )?;
             let frame = ComWrapper::new(Frame::new(x11.clone(), size));
             let interface = frame.to_com_ptr::<IPlugFrame>().unwrap();
             let mut window = Self {
@@ -48,6 +54,8 @@ impl Window {
                 x11,
                 attached: false,
                 space: SpaceShortcut::default(),
+                midi_enabled: false,
+                midi_held: [None; 256],
             };
             window.x11.raise();
             super::super::check(
@@ -68,8 +76,23 @@ impl Window {
     pub fn raise(&self) {
         self.x11.raise();
     }
+    fn release_midi(&mut self, handle: &EditorHandle) {
+        if self.midi_held.iter().any(Option::is_some) {
+            self.midi_held.fill(None);
+            handle.push_midi_key(EditorMidiKey::Release);
+        }
+    }
+
     /// false solicita cerrar solo la ventana; el instrumento continúa procesando audio.
     pub fn tick(&mut self, handle: &EditorHandle) -> bool {
+        let midi = handle.midi_enabled.load(Ordering::Acquire);
+        if midi != self.midi_enabled {
+            self.midi_enabled = midi;
+            self.x11.grab_midi_keys(midi);
+            if !midi {
+                self.release_midi(handle);
+            }
+        }
         self.frame.tick();
         for _ in 0..256 {
             let Some(mut event) = self.x11.poll() else {
@@ -110,11 +133,36 @@ impl Window {
                     }
                     10 => {
                         self.view.onFocus(0);
+                        if matches!(event.focus.mode, 0 | 3) {
+                            self.release_midi(handle);
+                        }
                     }
                     2 | 3 => {
                         let down = event.kind == 2;
                         let (character, symbol) = self.x11.key(&mut event.key);
                         let state = event.key.state;
+                        if let Some(held) = self.midi_held.get_mut(event.key.keycode as usize) {
+                            if !down {
+                                if let Some(key) = held.take() {
+                                    handle.push_midi_key(EditorMidiKey::Key {
+                                        key,
+                                        down,
+                                        repeat: false,
+                                    });
+                                    continue;
+                                }
+                            } else if self.midi_enabled && state & (1 | 4 | 8 | 64) == 0 {
+                                let key = (symbol as u8).to_ascii_lowercase();
+                                if symbol < 128
+                                    && elevate::musical::controller::computer_midi_keys()
+                                        .any(|mapped| mapped.as_bytes()[0] == key)
+                                {
+                                    let repeat = held.replace(key).is_some();
+                                    handle.push_midi_key(EditorMidiKey::Key { key, down, repeat });
+                                    continue;
+                                }
+                            }
+                        }
                         if symbol == 0x20 {
                             if !down {
                                 self.space.key(false, event.key.time as u64);
@@ -155,5 +203,8 @@ impl Drop for Window {
             }
             self.view.setFrame(ptr::null_mut());
         }
+        // El plugin puede retener el frame. La ventana se destruye al cerrar
+        // la vista aunque el frame viva más tiempo.
+        self.x11.close_window();
     }
 }

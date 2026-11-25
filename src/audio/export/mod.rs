@@ -1,18 +1,21 @@
 //! Exportación offline: snapshot → bloques mezclados → codecs C. No importa GPUI/CPAL.
 mod files;
-mod hilo;
 mod job;
 mod lame;
 mod native;
+mod plugins;
+pub(crate) use plugins::Plugins;
 mod render;
 mod sndfile;
-mod sources;
 mod soxr;
 #[cfg(test)]
 mod tests;
 
-use super::{AudioClip, piano::PianoSnapshot};
-use elevate::{devices::utility_slot::UtilityState, musical::clip::MidiClip};
+use super::{TrackInput, drums::DrumInput};
+use elevate::{
+    devices::utility_slot::UtilityState,
+    musical::{time::Meter, track::TrackId},
+};
 use std::{
     path::PathBuf,
     sync::{
@@ -22,28 +25,20 @@ use std::{
     },
 };
 
-pub(crate) use hilo::HiloExportBranch;
 pub(crate) use job::start;
 
+use super::playback::{Stem, StemBuffers};
 #[derive(Clone)]
-pub(crate) struct TrackMix {
-    pub name: String,
-    pub gain: f32,
-    pub fx_gain: f32,
-    pub pan: f32,
-}
-
 pub(crate) struct Snapshot {
-    pub audio: Vec<AudioClip>,
-    pub midi: Vec<MidiClip>,
-    pub piano: Option<PianoSnapshot>,
-    pub sampler: Option<(Vec<usize>, super::sampler::SamplerSnapshot)>,
-    pub hilo: Vec<HiloExportBranch>,
-    pub tracks: Vec<TrackMix>,
+    pub inputs: Vec<TrackInput>,
+    pub drums: Option<DrumInput>,
+    pub tracks: Vec<(TrackId, String)>,
     pub utility: UtilityState,
+    pub master_fx_gain: f32,
+    pub master_rack: Option<Arc<super::effects::Rack>>,
     pub bpm: f64,
+    pub meter: Meter,
 }
-
 #[derive(Debug)]
 pub(crate) struct Report {
     pub paths: Vec<PathBuf>,

@@ -14,7 +14,7 @@ impl IHostApplicationTrait for Host {
             return kInvalidArgument;
         }
         let mut buffer = [0; 128];
-        for (out, code) in buffer.iter_mut().zip("Hay DAW".encode_utf16()) {
+        for (out, code) in buffer.iter_mut().zip("Jap Studio".encode_utf16()) {
             *out = code;
         }
         unsafe {
@@ -24,15 +24,34 @@ impl IHostApplicationTrait for Host {
     }
     unsafe fn createInstance(
         &self,
-        _: *mut TUID,
-        _: *mut TUID,
+        cid: *mut TUID,
+        iid: *mut TUID,
         object: *mut *mut std::ffi::c_void,
     ) -> tresult {
-        if !object.is_null() {
-            unsafe {
-                *object = std::ptr::null_mut();
-            }
+        if object.is_null() || cid.is_null() || iid.is_null() {
+            return kInvalidArgument;
         }
-        kNoInterface
+        unsafe {
+            *object = std::ptr::null_mut();
+            if *cid != *iid {
+                return kNoInterface;
+            }
+            *object = if *cid == IMessage_iid {
+                vst3::ComWrapper::new(super::message::Message::new())
+                    .to_com_ptr::<IMessage>()
+                    .unwrap()
+                    .into_raw()
+                    .cast()
+            } else if *cid == IAttributeList_iid {
+                vst3::ComWrapper::new(super::message::Attributes::default())
+                    .to_com_ptr::<IAttributeList>()
+                    .unwrap()
+                    .into_raw()
+                    .cast()
+            } else {
+                return kNoInterface;
+            };
+        }
+        kResultOk
     }
 }

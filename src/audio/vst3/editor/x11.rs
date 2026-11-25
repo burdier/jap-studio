@@ -6,6 +6,9 @@ use std::{
     rc::Rc,
 };
 pub(super) type Display = c_void;
+
+// Fondo opaco para las visuales ARGB. Las de 24 bits usan solo el RGB.
+const EDITOR_BACKGROUND_PIXEL: c_ulong = 0xff20_2224;
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub(super) struct Header {
@@ -50,8 +53,16 @@ pub(super) struct Key {
     x_root: c_int,
     y_root: c_int,
     pub state: c_uint,
-    keycode: c_uint,
+    pub keycode: c_uint,
     same_screen: c_int,
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub(super) struct Focus {
+    pub header: Header,
+    pub window: c_ulong,
+    pub mode: c_int,
+    pub detail: c_int,
 }
 #[repr(C)]
 pub(super) union Event {
@@ -59,6 +70,7 @@ pub(super) union Event {
     pub client: Client,
     pub configure: Configure,
     pub key: Key,
+    pub focus: Focus,
     pad: [c_long; 24],
 }
 pub(super) struct X11 {
@@ -76,7 +88,9 @@ pub(super) struct X11 {
     next: unsafe extern "C" fn(*mut Display, *mut Event) -> c_int,
     lookup: unsafe extern "C" fn(*mut Key, *mut c_char, c_int, *mut c_ulong, *mut c_void) -> c_int,
     keysym_to_keycode: unsafe extern "C" fn(*mut Display, c_ulong) -> u8,
-    grab_key: unsafe extern "C" fn(*mut Display, c_int, c_uint, c_ulong, c_int, c_int, c_int),
+    grab_key:
+        unsafe extern "C" fn(*mut Display, c_int, c_uint, c_ulong, c_int, c_int, c_int) -> c_int,
+    ungrab_key: unsafe extern "C" fn(*mut Display, c_int, c_uint, c_ulong) -> c_int,
     destroy: unsafe extern "C" fn(*mut Display, c_ulong) -> c_int,
     close: unsafe extern "C" fn(*mut Display) -> c_int,
 }
@@ -129,6 +143,8 @@ impl X11 {
                 *mut c_ulong,
                 c_int,
             ) -> c_int = symbol(library, c"XSetWMProtocols")?;
+            let detectable: unsafe extern "C" fn(*mut Display, c_int, *mut c_int) -> c_int =
+                symbol(library, c"XkbSetDetectableAutoRepeat")?;
             // Resolver todo antes de abrir recursos X11 para que los errores no filtren handles.
             let mut api = Self {
                 library,
@@ -146,6 +162,7 @@ impl X11 {
                 lookup: symbol(library, c"XLookupString")?,
                 keysym_to_keycode: symbol(library, c"XKeysymToKeycode")?,
                 grab_key: symbol(library, c"XGrabKey")?,
+                ungrab_key: symbol(library, c"XUngrabKey")?,
                 destroy: symbol(library, c"XDestroyWindow")?,
                 close: symbol(library, c"XCloseDisplay")?,
             };
@@ -154,6 +171,7 @@ impl X11 {
                 std::mem::forget(api);
                 return Err("El editor VST3 requiere DISPLAY (X11/XWayland)".into());
             }
+            detectable(api.display, 1, ptr::null_mut());
             api.window = create(
                 api.display,
                 root(api.display),
@@ -163,7 +181,7 @@ impl X11 {
                 height,
                 0,
                 0,
-                0x202224,
+                EDITOR_BACKGROUND_PIXEL,
             );
             select(api.display, api.window, (1 << 17) | (1 << 21) | 1 | 2);
             // Un grab pasivo sobre el host recibe Espacio aunque el foco esté
@@ -177,6 +195,40 @@ impl X11 {
             api.protocols = atom(api.display, c"WM_PROTOCOLS".as_ptr(), 0);
             protocols(api.display, api.window, &mut api.delete, 1);
             Ok(api)
+        }
+    }
+    pub fn close_window(&self) {
+        unsafe {
+            (self.destroy)(self.display, self.window);
+            (self.flush)(self.display);
+        }
+    }
+
+    pub fn grab_midi_keys(&self, enabled: bool) {
+        unsafe {
+            for key in elevate::musical::controller::computer_midi_keys() {
+                let code = (self.keysym_to_keycode)(self.display, u64::from(key.as_bytes()[0]));
+                if code == 0 {
+                    continue;
+                }
+                // Captura teclas musicales sin Ctrl/Alt/Shift; acepta Caps y Num Lock.
+                for modifiers in [0, 2, 16, 18] {
+                    if enabled {
+                        (self.grab_key)(
+                            self.display,
+                            i32::from(code),
+                            modifiers,
+                            self.window,
+                            0,
+                            1,
+                            1,
+                        );
+                    } else {
+                        (self.ungrab_key)(self.display, i32::from(code), modifiers, self.window);
+                    }
+                }
+            }
+            (self.flush)(self.display);
         }
     }
     pub fn poll(&self) -> Option<Event> {
@@ -221,7 +273,6 @@ impl Drop for X11 {
     fn drop(&mut self) {
         unsafe {
             if !self.display.is_null() {
-                (self.destroy)(self.display, self.window);
                 (self.close)(self.display);
             }
             libc::dlclose(self.library);

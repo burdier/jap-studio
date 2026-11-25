@@ -6,6 +6,7 @@ use crate::audio::{
 use elevate::musical::clip::ClipProps;
 fn clip(value: [f32; 2], start_beat: f64, frames: usize) -> AudioClip {
     AudioClip {
+        processing: Default::default(),
         id: elevate::musical::clip::ClipId::fresh(),
         name: "fixture".into(),
         file: Arc::new(AudioFile {
@@ -27,13 +28,55 @@ fn clip(value: [f32; 2], start_beat: f64, frames: usize) -> AudioClip {
 fn track(id: u32, clips: Vec<AudioClip>) -> TrackInput {
     TrackInput {
         id: TrackId(id),
+        parent: None,
+        is_return: false,
+        sends: Vec::new(),
+        source_audible: true,
+        audible: true,
         clips,
         gain: 1.,
         pan: 0.,
         fx_gain: 1.,
         rack: None,
         midi: None,
+        automation: Default::default(),
     }
+}
+#[test]
+fn group_runs_after_its_children_and_applies_fx_once() {
+    let mut group = track(1, vec![]);
+    group.rack = Some(Rack::new(Plan::Gain(0.5), 0));
+    group.gain = 0.5;
+    let mut first = track(2, vec![clip([0.25, 0.], 0., 256)]);
+    first.parent = Some(group.id);
+    let mut second = track(3, vec![clip([0.5, 0.], 0., 256)]);
+    second.parent = Some(group.id);
+    let outside = track(4, vec![clip([0.125, 0.], 0., 256)]);
+    let mut mix = Mix::prepare(
+        vec![group, first, second, outside],
+        None,
+        48_000,
+        120.,
+        Meter::default(),
+    )
+    .unwrap();
+    let mut frames = [[0.; 2]; 256];
+    let mut stems = StemBuffers::from([
+        (Stem::Track(TrackId(1)), [[0.; 2]; 256]),
+        (Stem::Track(TrackId(2)), [[0.; 2]; 256]),
+    ]);
+    mix.render_block(0, &mut frames, None, None, false, Some(&mut stems));
+    assert_eq!(frames[255], [0.3125, 0.]);
+    assert_eq!(stems[&Stem::Track(TrackId(1))][255], [0.1875, 0.]);
+    assert_eq!(stems[&Stem::Track(TrackId(2))][255], [0.25, 0.]);
+}
+
+#[test]
+fn pdc_aligns_children_before_bus_and_roots_before_master() {
+    let (longest, input, output) = compensation(&[7, 3, 11, 4], &[None, Some(0), Some(0), None]);
+    assert_eq!(longest, 18);
+    assert_eq!(input, [11, 0, 0, 0]);
+    assert_eq!(output, [0, 8, 0, 14]);
 }
 #[test]
 fn track_meter_measures_post_fader_signal_before_the_master_sum() {
@@ -783,6 +826,8 @@ fn drums_and_wav_use_the_same_frame_clock() {
         sampler: Default::default(),
         choke_group: None,
         mix: Default::default(),
+        timing_offset: 0,
+        timing_mode: elevate::musical::drums::OffsetMode::Fixed,
     });
     let mut pattern = Pattern::new(Tick(PPQ)).unwrap();
     pattern
@@ -806,4 +851,144 @@ fn drums_and_wav_use_the_same_frame_clock() {
     let mut frames = vec![[0.0; 2]; 1024];
     mix.render(0, &mut frames);
     assert!(frames.iter().any(|f| (f[0] - 0.1).abs() > 0.001));
+}
+
+#[test]
+fn track_automation_ramps_volume_and_pan_across_blocks() {
+    use elevate::musical::track_automation::TrackAutomation;
+    let mut auto = TrackAutomation::default();
+    // 120 BPM @ 48 kHz => 24 000 frames por negra.
+    // Volumen de 0.0 (en beat 0) a 0.75 (unidad 1.0x en beat 2).
+    auto.volume.upsert(0.0, 0.0);
+    auto.volume.upsert(2.0, 0.75);
+    // Pan de izquierda total (0.0 => -1.0) en beat 0 a derecha total (1.0 => +1.0) en beat 2.
+    auto.pan.upsert(0.0, 0.0);
+    auto.pan.upsert(2.0, 1.0);
+
+    let mut input = track(1, vec![clip([0.5, 0.5], 0.0, 96_000)]);
+    input.automation = auto;
+    let mut mix = Mix::prepare(
+        vec![input],
+        None,
+        48_000,
+        120.0,
+        elevate::musical::time::Meter::default(),
+    )
+    .unwrap();
+
+    // En beat 0 el volumen automatizado es 0.0 (tras suavizado del primer bloque converge a ~0).
+    let mut at_start = vec![[0.0; 2]; 1024];
+    mix.render(0, &mut at_start);
+    let tail_start = at_start[1023];
+    assert!(tail_start[0].abs() < 0.05 && tail_start[1].abs() < 0.05);
+
+    // En beat 2 (frame 48_000) el volumen es 1.0x y el pan es derecha total (+1.0 => L=0, R=0.5).
+    let mut at_end = vec![[0.0; 2]; 1024];
+    mix.render(48_000, &mut at_end);
+    let tail_end = at_end[1023];
+    assert!(
+        tail_end[0].abs() < 1e-4,
+        "canal L debe estar silenciado con pan R: {:?}",
+        tail_end
+    );
+    assert!(
+        (tail_end[1] - 0.5).abs() < 0.02,
+        "canal R debe estar cerca de 0.5 con volumen 0 dB y pan R: {:?}",
+        tail_end
+    );
+}
+
+#[test]
+fn parallel_pool_produces_exact_same_samples_as_sequential_render() {
+    use elevate::musical::track_automation::TrackAutomation;
+    let make_inputs = || {
+        let mut group = track(100, vec![]);
+        group.rack = Some(Rack::new(Plan::Gain(0.8), 0));
+        let mut inputs = vec![group];
+        for i in 1..=8u32 {
+            let mut t = track(
+                i,
+                vec![clip([0.05 * i as f32, -0.03 * i as f32], 0.0, 4096)],
+            );
+            if i <= 4 {
+                t.parent = Some(TrackId(100));
+            }
+            let mut auto = TrackAutomation::default();
+            auto.volume.upsert(0.0, 0.25 + 0.05 * i as f32);
+            auto.volume.upsert(1.0, 0.85);
+            auto.pan.upsert(0.0, (i as f32) / 9.0);
+            t.automation = auto;
+            inputs.push(t);
+        }
+        inputs
+    };
+
+    let mut parallel_mix = Mix::prepare(
+        make_inputs(),
+        None,
+        48_000,
+        120.0,
+        elevate::musical::time::Meter::default(),
+    )
+    .unwrap();
+    let mut seq_mix = Mix::prepare(
+        make_inputs(),
+        None,
+        48_000,
+        120.0,
+        elevate::musical::time::Meter::default(),
+    )
+    .unwrap();
+    seq_mix.disable_pool();
+
+    let mut out_par = vec![[0.0; 2]; 4096];
+    let mut out_seq = vec![[0.0; 2]; 4096];
+    parallel_mix.render(0, &mut out_par);
+    seq_mix.render(0, &mut out_seq);
+    assert_eq!(out_par, out_seq);
+    assert!(out_par.iter().any(|f| f[0].abs() > 0.05));
+}
+
+#[test]
+fn send_return_routes_track_post_fader_through_return_fx_into_master() {
+    let mut source = track(1, vec![clip([0.5, 0.5], 0.0, 2048)]);
+    source.gain = 0.5;
+    source.sends = vec![(TrackId(2), 0.5)];
+
+    let mut ret = track(2, vec![]);
+    ret.is_return = true;
+    ret.rack = Some(Rack::new(Plan::Gain(2.0), 0));
+    ret.pan = 1.0; // 100% derecha
+
+    let mut mix = Mix::prepare(
+        vec![source, ret],
+        None,
+        48_000,
+        120.0,
+        elevate::musical::time::Meter::default(),
+    )
+    .unwrap();
+
+    // Pista 1 post-fader = [0.25, 0.25].
+    // Envío 0.5 → Return 2 recibe [0.125, 0.125], FX 2.0x → [0.25, 0.25], pan R → [0.0, 0.25].
+    // Suma en master = [0.25, 0.50].
+    let mut out = vec![[0.0; 2]; 512];
+    mix.render(0, &mut out);
+    let tail = out[511];
+    assert!(
+        (tail[0] - 0.25).abs() < 1e-4 && (tail[1] - 0.50).abs() < 1e-4,
+        "esperado [0.25, 0.50], obtenido {:?}",
+        tail
+    );
+
+    // Actualizar envíos en vivo sin bloqueos (quitar envío a 0%) → solo queda la señal seca.
+    mix.tracks[0].control.sends.publish(Vec::new());
+    let mut dry_only = vec![[0.0; 2]; 512];
+    mix.render(512, &mut dry_only);
+    let tail_dry = dry_only[511];
+    assert!(
+        (tail_dry[0] - 0.25).abs() < 1e-4 && (tail_dry[1] - 0.25).abs() < 1e-4,
+        "esperado solo señal seca [0.25, 0.25], obtenido {:?}",
+        tail_dry
+    );
 }

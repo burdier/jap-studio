@@ -1,15 +1,27 @@
 //! Carga del módulo Linux (también wrappers yabridge). Nunca desde el callback.
 use std::{
+    collections::HashMap,
     ffi::{CStr, CString, c_void},
-    path::Path,
+    path::{Path, PathBuf},
     ptr,
+    sync::{Mutex, OnceLock},
 };
 use vst3::{ComPtr, Interface, Steinberg::*};
 
 pub(super) struct Module {
     pub factory: Option<ComPtr<IPluginFactory>>,
-    handle: *mut c_void,
+    path: PathBuf,
+}
+struct Loaded {
+    handle: usize,
+    users: usize,
+    factory: unsafe extern "C" fn() -> *mut IPluginFactory,
     exit: unsafe extern "C" fn() -> bool,
+}
+// ModuleEntry/Exit pertenecen al bundle. Un bounce puede solaparse con Play y con otros editores.
+fn libraries() -> &'static Mutex<HashMap<PathBuf, Loaded>> {
+    static TABLE: OnceLock<Mutex<HashMap<PathBuf, Loaded>>> = OnceLock::new();
+    TABLE.get_or_init(Default::default)
 }
 impl Module {
     pub fn open(bundle: &Path) -> Result<Self, String> {
@@ -34,6 +46,19 @@ impl Module {
             .join("Contents")
             .join(format!("{}-linux", std::env::consts::ARCH))
             .join(format!("{}.so", name.to_string_lossy()));
+        let key = binary
+            .canonicalize()
+            .map_err(|e| format!("{}: {e}", binary.display()))?;
+        let mut libraries = libraries().lock().map_err(|e| e.to_string())?;
+        if let Some(lib) = libraries.get_mut(&key) {
+            let factory =
+                unsafe { ComPtr::from_raw((lib.factory)()) }.ok_or("VST3: fábrica vacía")?;
+            lib.users += 1;
+            return Ok(Self {
+                factory: Some(factory),
+                path: key,
+            });
+        }
         let path =
             CString::new(binary.as_os_str().as_encoded_bytes()).map_err(|e| e.to_string())?;
         unsafe {
@@ -67,15 +92,23 @@ impl Module {
                 libc::dlclose(handle);
                 return Err("VST3: ModuleEntry falló".into());
             }
-            let Some(factory) = ComPtr::from_raw(factory()) else {
+            let Some(interface) = ComPtr::from_raw(factory()) else {
                 exit();
                 libc::dlclose(handle);
                 return Err("VST3: fábrica vacía".into());
             };
+            libraries.insert(
+                key.clone(),
+                Loaded {
+                    handle: handle as usize,
+                    users: 1,
+                    factory,
+                    exit,
+                },
+            );
             Ok(Self {
-                factory: Some(factory),
-                handle,
-                exit,
+                factory: Some(interface),
+                path: key,
             })
         }
     }
@@ -124,9 +157,16 @@ impl Module {
 impl Drop for Module {
     fn drop(&mut self) {
         self.factory.take();
-        unsafe {
-            (self.exit)();
-            libc::dlclose(self.handle);
+        let mut libraries = libraries().lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(lib) = libraries.get_mut(&self.path) {
+            lib.users -= 1;
+            if lib.users == 0 {
+                unsafe {
+                    (lib.exit)();
+                    libc::dlclose(lib.handle as *mut c_void);
+                }
+                libraries.remove(&self.path);
+            }
         }
     }
 }

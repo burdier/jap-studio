@@ -18,11 +18,25 @@ pub(crate) struct SfizzEngine {
 unsafe impl Send for SfizzEngine {}
 impl SfizzEngine {
     pub fn prepare(snapshot: SamplerSnapshot, rate: u32) -> Result<Self, String> {
-        Self::prepare_layers(vec![(snapshot.asset, 1, 127)], snapshot.params, rate)
+        Self::prepare_layers(
+            vec![(
+                snapshot.asset,
+                (1, 127),
+                0,
+                elevate::musical::drums::OffsetMode::Fixed,
+            )],
+            snapshot.params,
+            rate,
+        )
     }
 
     pub fn prepare_layers(
-        layers: Vec<(Arc<SampleAsset>, u8, u8)>,
+        layers: Vec<(
+            Arc<SampleAsset>,
+            (u8, u8),
+            u16,
+            elevate::musical::drums::OffsetMode,
+        )>,
         params: SamplerParams,
         rate: u32,
     ) -> Result<Self, String> {
@@ -41,7 +55,9 @@ impl SfizzEngine {
         .map_err(|e| e.to_string())?;
         let text = layers
             .iter()
-            .map(|(asset, lo, hi)| sfz::region(asset, &params, (*lo, *hi)))
+            .map(|(asset, velocity, offset, mode)| {
+                sfz::region(asset, &params, *velocity, *offset, *mode)
+            })
             .collect::<Vec<_>>()
             .join("\n");
         let text = CString::new(text).map_err(|e| e.to_string())?;
@@ -53,7 +69,7 @@ impl SfizzEngine {
             api,
             synth,
             held: [false; 128],
-            _assets: layers.into_iter().map(|(asset, _, _)| asset).collect(),
+            _assets: layers.into_iter().map(|(asset, _, _, _)| asset).collect(),
             params,
         };
         unsafe {
@@ -63,6 +79,10 @@ impl SfizzEngine {
             if !(result.api.load)(synth, path.as_ptr(), text.as_ptr()) {
                 return Err("sfizz no pudo cargar el sample".into());
             }
+            // El sampler y el mixer del DAW controlan la ganancia. Sfizz arranca
+            // con un recorte global y el volumen MIDI (CC7) por debajo de unidad.
+            (result.api.volume)(synth, 0.0);
+            (result.api.cc)(synth, 0, 7, 127);
         }
         let params = result.params.clone();
         result.parameters(&params);

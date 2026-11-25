@@ -14,6 +14,11 @@ impl StereoPan {
 
     pub fn apply(&self, frames: &mut [[f32; 2]]) {
         let position = f32::from_bits(self.0.load(Ordering::Relaxed)).clamp(-1.0, 1.0);
+        Self::apply_position(frames, position);
+    }
+
+    pub fn apply_position(frames: &mut [[f32; 2]], position: f32) {
+        let position = position.clamp(-1.0, 1.0);
         let left_gain = 1.0 - position.max(0.0);
         let right_gain = 1.0 + position.min(0.0);
         for frame in frames {

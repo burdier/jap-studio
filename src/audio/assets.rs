@@ -89,6 +89,22 @@ impl AudioFile {
         if frames.is_empty() {
             return Err("El archivo no contiene muestras".into());
         }
+        Ok(Self::from_frames(
+            path.file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned(),
+            Some(std::fs::canonicalize(path).map_err(|e| e.to_string())?),
+            sample_rate,
+            frames,
+        ))
+    }
+    pub(super) fn from_frames(
+        name: String,
+        source_path: Option<PathBuf>,
+        sample_rate: u32,
+        frames: Vec<StereoFrame>,
+    ) -> Self {
         let peaks: Vec<[f32; 2]> = frames
             .chunks(PEAK_FRAMES)
             .map(|block| {
@@ -103,18 +119,14 @@ impl AudioFile {
         let max_peak = peaks.iter().fold(0.05_f32, |acc, &[low, high]| {
             acc.max(low.abs()).max(high.abs())
         });
-        Ok(Self {
-            source_path: Some(std::fs::canonicalize(path).map_err(|error| error.to_string())?),
-            name: path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned(),
+        Self {
+            name,
+            source_path,
             sample_rate,
             frames,
             peaks,
             max_peak,
-        })
+        }
     }
 }
 
@@ -124,6 +136,7 @@ pub(crate) struct AudioClip {
     /// Nombre de la instancia, independiente del archivo compartido.
     pub name: String,
     pub file: Arc<AudioFile>,
+    pub processing: super::sample_edit::Processing,
     /// Ubicación elegida para este clip después de colectar recursos.
     pub source_path_override: Option<PathBuf>,
     pub track: usize,
@@ -136,6 +149,10 @@ pub(crate) struct AudioClip {
 }
 
 impl AudioClip {
+    pub fn crossfade_root(&self) -> ClipId {
+        self.processing.edit.crossfade_root.unwrap_or(self.id)
+    }
+
     pub fn project_metadata(&self, track: TrackId) -> Result<ProjectAudioClip, String> {
         let path = self
             .source_path_override
@@ -150,6 +167,7 @@ impl AudioClip {
             id: self.id,
             track,
             source,
+            edit: self.processing.edit.clone(),
             name: self.name.clone(),
             start_beat: self.start_beat,
             trim_start: self.trim_start,
@@ -162,11 +180,20 @@ impl AudioClip {
     pub fn duplicate(&self) -> Self {
         let mut copy = self.clone();
         copy.id = ClipId::fresh();
+        copy.processing.edit.crossfade = None;
+        copy.processing.edit.crossfade_root = None;
         copy
     }
+    pub fn cycle_seconds(&self) -> f64 {
+        (self.file.duration() - self.trim_start).max(0.0)
+    }
     pub fn length_seconds(&self) -> f64 {
-        let available = (self.file.duration() - self.trim_start).max(0.0);
-        self.trim_len.map_or(available, |len| len.min(available))
+        let available = self.cycle_seconds();
+        if self.props.looped {
+            self.trim_len.unwrap_or(available).max(0.0)
+        } else {
+            self.trim_len.map_or(available, |len| len.min(available))
+        }
     }
     pub fn length_beats(&self, bpm: f64) -> f64 {
         self.length_seconds() * bpm / 60.0

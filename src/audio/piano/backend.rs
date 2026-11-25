@@ -11,6 +11,41 @@ pub(crate) enum SynthBackend {
 }
 
 impl SynthBackend {
+    pub fn scheduled(
+        &mut self,
+        channel: u8,
+        event: elevate::musical::scheduler::ScheduledEvent,
+        cycle: u64,
+        reserved: u16,
+    ) {
+        use elevate::musical::scheduler::EventKind;
+        if let EventKind::Control { lane, value } = event.kind {
+            let (command, a, b) = lane.midi(value);
+            self.midi(command | channel, a, b);
+            return;
+        }
+        if !event.expression.plays(event.note, cycle) {
+            return;
+        }
+        if event.initial_pitch_cents.is_some()
+            && let Self::Vst(voice) = self
+            && voice.note_pitch_event(event, reserved)
+        {
+            return;
+        }
+        match event.kind {
+            EventKind::NoteOn { velocity } => {
+                self.note_on_expression(channel, event.pitch, velocity, event.expression);
+            }
+            EventKind::NoteOff => self.midi(
+                0x80 | channel,
+                event.pitch,
+                event.expression.release_velocity,
+            ),
+            _ => {}
+        }
+    }
+
     pub fn new(
         sf_path: &Path,
         sound_font: &Arc<SoundFont>,

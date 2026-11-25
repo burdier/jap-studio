@@ -59,7 +59,12 @@ impl Piece {
                         assets.insert(source.clone(), asset.clone());
                         asset
                     };
-                    Ok((asset, layer.velocity_min, layer.velocity_max))
+                    Ok((
+                        asset,
+                        (layer.velocity_min, layer.velocity_max),
+                        layer.start_offset,
+                        layer.offset_mode,
+                    ))
                 })
                 .collect::<Result<Vec<_>, String>>()?;
             Sound::Samples(SfizzEngine::prepare_layers(
@@ -220,9 +225,33 @@ impl PreparedKit {
         }
     }
 
-    pub fn sum(&mut self, state: &DrumBlock, output: &mut [StereoFrame]) {
+    pub fn finish_input(&mut self) {
+        for piece in &mut self.pieces {
+            if let Sound::Samples(engine) = &mut piece.sound {
+                engine.all_off();
+            }
+        }
+    }
+
+    pub fn sum(
+        &mut self,
+        state: &DrumBlock,
+        output: &mut [StereoFrame],
+        mut taps: Option<&mut crate::audio::playback::StemBuffers>,
+    ) {
         let count = output.len();
         let mut bus = [[0.0; 2]; BLOCK];
+        // La envolvente del fader y el paneo del bus se calculan una vez para todas las piezas.
+        let mut master_gain = [[1.0; 2]; BLOCK];
+        if taps.is_some() {
+            apply_mix(
+                &mut self.volume,
+                &self.pan,
+                state.bus_gain,
+                state.bus_pan,
+                &mut master_gain[..count],
+            );
+        }
         let decay = (1.0 - self.peak_decay * count as f32).max(0.0);
         for piece in &mut self.pieces {
             let Some(control) = state.piece(piece.id) else {
@@ -237,19 +266,34 @@ impl PreparedKit {
                 frames,
             );
             control.peak.measure(frames, decay);
+            if let Some(stem) = taps
+                .as_deref_mut()
+                .and_then(|s| s.get_mut(&crate::audio::playback::Stem::Drum(piece.id)))
+            {
+                for ((out, frame), g) in stem.iter_mut().zip(frames.iter()).zip(&master_gain) {
+                    *out = [frame[0] * g[0], frame[1] * g[1]];
+                }
+            }
             for (sum, frame) in bus.iter_mut().zip(frames) {
                 sum[0] += frame[0];
                 sum[1] += frame[1];
             }
         }
         let frames = &mut bus[..count];
-        apply_mix(
-            &mut self.volume,
-            &self.pan,
-            state.bus_gain,
-            state.bus_pan,
-            frames,
-        );
+        if taps.is_some() {
+            for (frame, g) in frames.iter_mut().zip(&master_gain) {
+                frame[0] *= g[0];
+                frame[1] *= g[1];
+            }
+        } else {
+            apply_mix(
+                &mut self.volume,
+                &self.pan,
+                state.bus_gain,
+                state.bus_pan,
+                frames,
+            );
+        }
         state.bus_peak.measure(frames, decay);
         for (sum, frame) in output.iter_mut().zip(frames) {
             sum[0] += frame[0];

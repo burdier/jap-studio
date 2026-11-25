@@ -15,6 +15,7 @@ use elevate::{
 };
 use rtrb::{Consumer, Producer, RingBuffer};
 
+#[derive(Clone)]
 pub(crate) struct DrumInput {
     pub score: Option<DrumScore>,
     pub kit: DrumKit,
@@ -67,28 +68,39 @@ impl PreparedDrums {
         self.kit.has_one_shot_tail()
     }
 
-    pub fn render(&mut self, at: u64, output: &mut [StereoFrame], state: &DrumBlock) {
+    pub fn finish_input(&mut self) {
+        self.kit.finish_input();
+    }
+
+    pub fn render_block(
+        &mut self,
+        at: u64,
+        output: &mut [StereoFrame],
+        state: &DrumBlock,
+        tail: bool,
+        taps: Option<&mut crate::audio::playback::StemBuffers>,
+    ) {
         self.handoff.install(&mut self.kit, state.voice_revision);
         let mode = state.plan.as_ref().map(|plan| plan.repeat);
-        if self.last_end.is_some_and(|end| end != at) || self.previous_mode != mode {
+        if !tail && (self.last_end.is_some_and(|end| end != at) || self.previous_mode != mode) {
             self.kit.cut();
         }
         self.kit.apply_controls(state);
-        for _ in 0..32 {
+        for _ in 0..if tail { 0 } else { 32 } {
             let Ok(note) = self.previews.pop() else {
                 break;
             };
             self.kit
                 .trigger(state, note.piece, note.pitch, note.velocity, 0);
         }
-        match &state.plan {
+        match state.plan.as_ref().filter(|_| !tail) {
             Some(plan) if plan.repeat => {
                 self.render_cycle(&plan.pattern, at, output.len(), state);
             }
             Some(plan) => self.render_window(&plan.pattern, at, output.len(), 0, 0, state),
             None => self.kit.render_segment(0, output.len()),
         }
-        self.kit.sum(state, output);
+        self.kit.sum(state, output, taps);
         self.last_end = Some(at.saturating_add(output.len() as u64));
         self.previous_mode = mode;
     }

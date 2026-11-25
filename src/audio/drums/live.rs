@@ -73,7 +73,7 @@ impl LiveDrums {
         bpm: f64,
     ) -> Result<(Self, VoiceHandoff), String> {
         let time = TimeBase::new(rate, bpm).map_err(|error| error.to_string())?;
-        let plan = compile(score.as_ref(), time)?;
+        let plan = compile(score.as_ref(), &kit, time)?;
         let state = Arc::new(Publication::new(DrumBlock::new(&kit, plan, None, 0)));
         let (incoming, next) = RingBuffer::new(1);
         let (garbage, retired) = RingBuffer::new(1);
@@ -104,8 +104,8 @@ impl LiveDrums {
     }
 
     pub fn edit(&mut self, kit: &DrumKit, score: Option<&DrumScore>) -> Result<(), String> {
-        if self.score.as_ref() != score {
-            let plan = compile(score, self.time)?;
+        if self.score.as_ref() != score || !same_timing_config(&self.kit, kit) {
+            let plan = compile(score, kit, self.time)?;
             self.score = score.cloned();
             self.publish(kit, plan);
         } else {
@@ -116,7 +116,11 @@ impl LiveDrums {
 
     pub fn edit_kit(&mut self, kit: &DrumKit) {
         if self.kit != *kit {
-            let plan = self.state.read(|block| block.plan.clone());
+            let plan = if !same_timing_config(&self.kit, kit) {
+                compile(self.score.as_ref(), kit, self.time).ok().flatten()
+            } else {
+                self.state.read(|block| block.plan.clone())
+            };
             self.publish(kit, plan);
         }
     }
@@ -197,11 +201,83 @@ impl LiveDrums {
     }
 }
 
-fn compile(score: Option<&DrumScore>, time: TimeBase) -> Result<Option<Arc<DrumPlan>>, String> {
+fn same_timing_config(a: &DrumKit, b: &DrumKit) -> bool {
+    a.pieces.len() == b.pieces.len()
+        && a.pieces.iter().zip(&b.pieces).all(|(a, b)| {
+            a.id == b.id && a.timing_offset == b.timing_offset && a.timing_mode == b.timing_mode
+        })
+}
+
+fn apply_piece_timing(
+    pattern: &elevate::musical::model::Pattern,
+    kit: &DrumKit,
+    repeat: bool,
+) -> Result<elevate::musical::model::Pattern, String> {
+    use elevate::musical::{drums::OffsetMode, time::Tick};
+    let has_timing = kit.pieces.iter().any(|p| p.timing_offset != 0);
+    if !has_timing {
+        return Ok(pattern.clone());
+    }
+    let length = pattern.length().0.max(1);
+    let mut counts: HashMap<InstrumentId, usize> = HashMap::new();
+    let mut notes = pattern.notes().to_vec();
+    for note in &mut notes {
+        let Some(piece) = kit.pieces.iter().find(|p| p.id == note.instrument) else {
+            continue;
+        };
+        if piece.timing_offset == 0 {
+            continue;
+        }
+        let idx = counts.entry(piece.id).or_insert(0);
+        let note_index = *idx;
+        *idx += 1;
+        let offset = i64::from(piece.timing_offset);
+        let delta = match piece.timing_mode {
+            OffsetMode::Fixed => offset,
+            OffsetMode::EachNote => {
+                if note_index % 2 == 1 {
+                    offset
+                } else {
+                    0
+                }
+            }
+            OffsetMode::Random => {
+                let mag = offset.abs();
+                if mag == 0 {
+                    0
+                } else {
+                    let seed = (u64::from(piece.id.0) << 32)
+                        ^ (note.start.0 as u64).wrapping_mul(2_654_435_761)
+                        ^ (note_index as u64).wrapping_mul(1_013_904_223);
+                    let mixed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+                    let span = (mag * 2 + 1) as u64;
+                    ((mixed >> 16) % span) as i64 - mag
+                }
+            }
+        };
+        let shifted = if repeat {
+            (note.start.0 + delta).rem_euclid(length)
+        } else {
+            (note.start.0 + delta).clamp(0, length - 1)
+        };
+        note.start = Tick(shifted);
+        note.duration = Tick(note.duration.0.min(length - shifted).max(1));
+    }
+    pattern
+        .with_notes(notes, pattern.next_id())
+        .map_err(|error| error.to_string())
+}
+
+fn compile(
+    score: Option<&DrumScore>,
+    kit: &DrumKit,
+    time: TimeBase,
+) -> Result<Option<Arc<DrumPlan>>, String> {
     score
         .map(|score| {
-            let pattern = PreparedPattern::compile(&score.pattern, time)
-                .map_err(|error| error.to_string())?;
+            let shifted = apply_piece_timing(&score.pattern, kit, score.repeat)?;
+            let pattern =
+                PreparedPattern::compile(&shifted, time).map_err(|error| error.to_string())?;
             // El Arrangement termina después de la última ventana visible o la cola
             // acotada del último golpe. El loop conserva la longitud del patrón.
             let mut end = pattern.length_frames().saturating_add(1);

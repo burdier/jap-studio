@@ -6,9 +6,11 @@ use std::sync::Arc;
 pub(super) struct ClipSource {
     file: Arc<AudioFile>,
     converted: Option<Arc<Vec<StereoFrame>>>,
+    pub(super) fades: Vec<super::crossfade::Ramp>,
     start: u64,
     offset: u64,
     end: u64,
+    loop_len: Option<u64>,
 }
 impl ClipSource {
     /// Los recursos ya están decodificados/remuestreados; preparar fuera del callback.
@@ -18,15 +20,29 @@ impl ClipSource {
         rate: u32,
         beats_per_second: f64,
     ) -> Self {
-        let rate = f64::from(rate);
-        let start = (clip.start_beat / beats_per_second * rate).round() as u64;
+        let rate_f = f64::from(rate);
+        let start = (clip.start_beat / beats_per_second * rate_f).round() as u64;
+        let offset = (clip.trim_start * rate_f).round() as u64;
+        let total = converted
+            .as_deref()
+            .map_or(clip.file.frames.len(), Vec::len) as u64;
+        let loop_len = clip
+            .props
+            .looped
+            .then(|| total.saturating_sub(offset))
+            .filter(|&len| len > 0);
         Self {
             file: clip.file.clone(),
+            fades: Vec::new(),
             converted,
             start,
-            offset: (clip.trim_start * rate).round() as u64,
-            end: start.saturating_add((clip.length_seconds() * rate).round() as u64),
+            offset,
+            end: start.saturating_add((clip.length_seconds() * rate_f).round() as u64),
+            loop_len,
         }
+    }
+    pub fn start_frame(&self) -> u64 {
+        self.start
     }
     pub fn end_frame(&self) -> u64 {
         self.end
@@ -40,11 +56,20 @@ impl ClipSource {
             *frame = absolute
                 .checked_sub(self.start)
                 .filter(|_| absolute < self.end)
+                .map(|relative| match self.loop_len {
+                    Some(len) => relative % len,
+                    None => relative,
+                })
                 .and_then(|relative| relative.checked_add(self.offset))
                 .and_then(|source| usize::try_from(source).ok())
                 .and_then(|source| samples.get(source))
                 .copied()
                 .unwrap_or([0.; 2]);
+            for fade in &self.fades {
+                let gain = fade.gain(absolute);
+                frame[0] *= gain;
+                frame[1] *= gain;
+            }
         }
     }
 }
@@ -55,6 +80,7 @@ mod tests {
     use elevate::musical::clip::ClipProps;
     fn clip() -> AudioClip {
         AudioClip {
+            processing: Default::default(),
             id: elevate::musical::clip::ClipId::fresh(),
             file: Arc::new(AudioFile {
                 name: "fixture".into(),
@@ -105,5 +131,22 @@ mod tests {
         assert_eq!(source.end_frame(), 16);
         source.render(u64::MAX, &mut output);
         assert_eq!(output, [[0.; 2]; 8]);
+    }
+
+    #[test]
+    fn looped_clip_wraps_seamlessly_across_cycles() {
+        let mut c = clip();
+        c.start_beat = 0.0;
+        c.trim_start = 2.0; // offset = 8 frames en un archivo de 12 -> ciclo de 4 frames [8,9,10,11]
+        c.props.looped = true;
+        c.trim_len = Some(2.5); // 10 frames totales -> 2.5 ciclos
+        let source = ClipSource::new(&c, None, 4, 2.);
+        let mut output = [[0.; 2]; 12];
+        source.render(0, &mut output);
+        let lefts: Vec<f32> = output.iter().map(|f| f[0]).collect();
+        assert_eq!(
+            lefts,
+            vec![8., 9., 10., 11., 8., 9., 10., 11., 8., 9., 0., 0.]
+        );
     }
 }

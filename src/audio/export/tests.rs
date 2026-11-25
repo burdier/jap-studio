@@ -1,7 +1,7 @@
 //! Integración real de render, codecs C y decodificación independiente (sin ventana/CPAL).
 use super::*;
 use crate::audio::{
-    AudioFile,
+    AudioClip, AudioFile, HiloBranchInput, MidiTrackInput,
     piano::{PianoSettings, PianoSnapshot, VoiceSource},
 };
 use elevate::{
@@ -50,6 +50,7 @@ impl Drop for Temp {
 
 fn clip(frames: Vec<[f32; 2]>, rate: u32) -> AudioClip {
     AudioClip {
+        processing: Default::default(),
         id: elevate::musical::clip::ClipId::fresh(),
         name: "Fuente".into(),
         file: Arc::new(AudioFile {
@@ -69,28 +70,41 @@ fn clip(frames: Vec<[f32; 2]>, rate: u32) -> AudioClip {
     }
 }
 fn snapshot(audio: Vec<AudioClip>) -> Snapshot {
+    let tracks = ["Uno", "Dos"]
+        .map(|name| (Track::new(name, TrackKind::Audio).id, name.to_string()))
+        .to_vec();
+    let inputs = tracks
+        .iter()
+        .enumerate()
+        .map(|(index, (id, _))| TrackInput {
+            id: *id,
+            parent: None,
+            is_return: false,
+            sends: Vec::new(),
+            source_audible: true,
+            audible: true,
+            gain: 1.,
+            pan: 0.,
+            fx_gain: 1.,
+            rack: None,
+            midi: None,
+            automation: Default::default(),
+            clips: audio
+                .iter()
+                .filter(|c| c.track == index && !c.props.muted)
+                .cloned()
+                .collect(),
+        })
+        .collect();
     Snapshot {
-        audio,
-        midi: Vec::new(),
-        piano: None,
-        sampler: None,
-        hilo: Vec::new(),
-        tracks: vec![
-            TrackMix {
-                name: "Uno".into(),
-                gain: 1.0,
-                fx_gain: 1.0,
-                pan: 0.0,
-            },
-            TrackMix {
-                name: "Dos".into(),
-                gain: 1.0,
-                fx_gain: 1.0,
-                pan: 0.0,
-            },
-        ],
+        inputs,
+        tracks,
+        drums: None,
         utility: UtilityState::default(),
-        bpm: 120.0,
+        master_fx_gain: 1.0,
+        master_rack: None,
+        bpm: 120.,
+        meter: Default::default(),
     }
 }
 fn run(snapshot: Snapshot, options: ExportOptions) -> Report {
@@ -103,22 +117,11 @@ fn run(snapshot: Snapshot, options: ExportOptions) -> Report {
     .unwrap()
 }
 fn render(snapshot: &Snapshot, command: &str) -> Vec<[f32; 2]> {
-    let options = ExportOptions::parse(command).unwrap();
-    let range = render::range(snapshot, &options).unwrap();
-    let mut output = Vec::new();
-    render::render(
-        snapshot,
-        &options,
-        &[0, 1],
-        range,
-        &AtomicBool::new(false),
-        |block, _| {
-            output.extend_from_slice(block);
-            Ok(())
-        },
-    )
-    .unwrap();
-    output
+    let temp = Temp::new();
+    let mut options = temp.options(command);
+    options.bits = elevate::export::BitDepth::Float32;
+    let paths = run(snapshot.clone(), options).paths;
+    AudioFile::decode(&paths[0]).unwrap().frames.clone()
 }
 
 #[test]
@@ -137,10 +140,10 @@ fn overlap_trim_gain_pan_and_utility_match_stems_and_master() {
         let mut muted = a.clone();
         muted.props.muted = true;
         let mut snap = snapshot(vec![a, b, muted]);
-        snap.tracks[0].gain = 0.5;
-        snap.tracks[0].pan = -1.0;
-        snap.tracks[1].gain = 0.25;
-        snap.tracks[1].pan = 1.0;
+        snap.inputs[0].gain = 0.5;
+        snap.inputs[0].pan = -1.0;
+        snap.inputs[1].gain = 0.25;
+        snap.inputs[1].pan = 1.0;
         snap.utility = UtilityState {
             inserted: true,
             gain: 2.0,
@@ -171,7 +174,7 @@ fn overlap_trim_gain_pan_and_utility_match_stems_and_master() {
     assert_eq!(cropped.len(), 480);
     assert_eq!(cropped, master.frames[1440..1920]);
     let mut muted_track = make();
-    muted_track.tracks[0].gain = 0.0;
+    muted_track.inputs[0].gain = 0.0;
     assert!(render(&muted_track, "export").iter().all(|f| f[0] == 0.0));
     let tail = render(&make(), "export -start 0.06 -length 0.02 -tail 0.02");
     assert_eq!(tail.len(), 1440);
@@ -300,17 +303,27 @@ fn midi_offline_uses_soundfont_settings_and_preserves_pre_roll_for_cropped_expor
         .add_note(InstrumentId(1), Tick(0), Tick(480), 60, 110)
         .unwrap();
     let mut snap = snapshot(Vec::new());
-    snap.midi.push(MidiClip::new("Piano", 0, 0.25, pattern));
-    snap.piano = Some(PianoSnapshot {
-        path: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("assets/soundfonts/UprightPianoKW-20220221.sf2"),
-        settings: PianoSettings {
-            maximum_polyphony: 64,
-            reverb_and_chorus: false,
-        },
-        midi: vec![(0xB0, 7, 100), (0xC0, 0, 0)],
-        master_volume: 0.7,
-        filter: Default::default(),
+    let instrument = InstrumentId(1);
+    let mut track = Track::new("Piano", TrackKind::Synth);
+    track.id = snap.inputs[0].id;
+    track.instrument = Some(instrument);
+    snap.inputs[0].midi = Some(MidiTrackInput {
+        index: 0,
+        track,
+        instrument,
+        clips: vec![MidiClip::new("Piano", 0, 0.25, pattern)],
+        hilo: None,
+        source: VoiceSource::Piano(PianoSnapshot {
+            path: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("assets/soundfonts/UprightPianoKW-20220221.sf2"),
+            settings: PianoSettings {
+                maximum_polyphony: 64,
+                reverb_and_chorus: false,
+            },
+            midi: vec![(0xB0, 7, 100), (0xC0, 0, 0)],
+            master_volume: 0.7,
+            filter: Default::default(),
+        }),
     });
     let all = render(&snap, "export -tail 0.1");
     assert!(all[..6000].iter().all(|f| *f == [0.0; 2]));
@@ -324,7 +337,10 @@ fn midi_offline_uses_soundfont_settings_and_preserves_pre_roll_for_cropped_expor
     {
         assert!((a - b).abs() < 1e-5);
     }
-    snap.piano.as_mut().unwrap().filter = elevate::devices::filter::FilterSettings {
+    let VoiceSource::Piano(piano) = &mut snap.inputs[0].midi.as_mut().unwrap().source else {
+        unreachable!()
+    };
+    piano.filter = elevate::devices::filter::FilterSettings {
         enabled: true,
         cutoff: 40.,
         ..Default::default()
@@ -335,7 +351,10 @@ fn midi_offline_uses_soundfont_settings_and_preserves_pre_roll_for_cropped_expor
         energy(&filtered) < energy(&all) * 0.1,
         "el filtro del snapshot debe procesar el SoundFont exportado"
     );
-    snap.piano.as_mut().unwrap().master_volume = 0.0;
+    let VoiceSource::Piano(piano) = &mut snap.inputs[0].midi.as_mut().unwrap().source else {
+        unreachable!()
+    };
+    piano.master_volume = 0.0;
     let silent = render(&snap, "export");
     let peak = silent
         .iter()
@@ -384,29 +403,45 @@ fn hilo_export_routes_two_pianos_to_master_and_branch_stems() {
             filter: Default::default(),
         };
         let mut snap = snapshot(Vec::new());
-        snap.tracks = ["Hilo", "A", "B"]
-            .map(|name| TrackMix {
-                name: name.into(),
-                gain: 1.0,
-                fx_gain: 1.0,
-                pan: 0.0,
-            })
-            .to_vec();
-        snap.midi.push(MidiClip::new("Notas", 0, 0.0, pattern));
-        snap.hilo = branches
+        snap.tracks = vec![
+            (group.id, "Hilo".into()),
+            (branches[0].id, "A".into()),
+            (branches[1].id, "B".into()),
+        ];
+        let clip = MidiClip::new("Notas", 0, 0.0, pattern);
+        snap.inputs = branches
             .into_iter()
             .enumerate()
-            .map(|(branch_index, track)| HiloExportBranch {
-                track_index: branch_index + 1,
-                group_index: 0,
-                branch_index,
-                instruments: instruments.to_vec(),
-                mode: HiloMode::RoundRobin,
-                weave: None,
-                track,
-                source: VoiceSource::Piano(PianoSnapshot {
-                    master_volume: if branch_index == 0 { 0.7 } else { 0.3 },
-                    ..piano.clone()
+            .map(|(branch_index, track)| TrackInput {
+                id: track.id,
+                parent: None,
+                is_return: false,
+                sends: Vec::new(),
+                source_audible: true,
+                audible: true,
+                clips: vec![],
+                gain: 1.,
+                fx_gain: 1.,
+                pan: 0.,
+                rack: None,
+                automation: Default::default(),
+                midi: Some(MidiTrackInput {
+                    index: branch_index + 1,
+                    instrument: instruments[branch_index],
+                    track,
+                    clips: vec![],
+                    source: VoiceSource::Piano(PianoSnapshot {
+                        master_volume: if branch_index == 0 { 0.7 } else { 0.3 },
+                        ..piano.clone()
+                    }),
+                    hilo: Some(HiloBranchInput {
+                        clips: vec![clip.clone()],
+                        group_index: 0,
+                        branch_index,
+                        instruments: instruments.to_vec(),
+                        mode: HiloMode::RoundRobin,
+                        weave: None,
+                    }),
                 }),
             })
             .collect();
@@ -415,15 +450,16 @@ fn hilo_export_routes_two_pianos_to_master_and_branch_stems() {
     let master = run(make(), temp.options("export -n HiloMaster.wav -bits 32f"));
     let master = AudioFile::decode(&master.paths[0]).unwrap();
     let mut routed = make();
-    let target = routed.hilo[0].track.parent.unwrap();
-    routed.tracks.push(TrackMix {
-        name: "Secuencia".into(),
-        gain: 1.0,
-        fx_gain: 1.0,
-        pan: 0.0,
-    });
-    routed.midi[0].track = 3;
-    routed.midi[0].hilo_target = Some(target);
+    let target = routed.tracks[0].0;
+    routed.tracks.push((
+        Track::new("Secuencia", TrackKind::Synth).id,
+        "Secuencia".into(),
+    ));
+    for input in &mut routed.inputs {
+        let clip = &mut input.midi.as_mut().unwrap().hilo.as_mut().unwrap().clips[0];
+        clip.track = 3;
+        clip.hilo_target = Some(target);
+    }
     let routed = run(routed, temp.options("export -n HiloEnviado.wav -bits 32f"));
     let routed = AudioFile::decode(&routed.paths[0]).unwrap();
     assert_eq!(routed.frames, master.frames);
@@ -455,4 +491,27 @@ fn hilo_export_routes_two_pianos_to_master_and_branch_stems() {
             assert!((master[channel] - a[channel] - b[channel]).abs() < 2e-5);
         }
     }
+}
+
+#[test]
+fn master_fx_processes_master_mix_and_respects_master_fx_flag() {
+    let temp = Temp::new();
+    let mut snap = snapshot(vec![clip(vec![[0.4, -0.4]; 2400], 48_000)]);
+    snap.master_rack = Some(crate::audio::effects::Rack::new(
+        crate::audio::effects::Plan::Gain(0.5),
+        48_000,
+    ));
+    let with_fx = run(
+        snap.clone(),
+        temp.options("export -n MasterFxOn.wav -bits 32f -master-fx on"),
+    );
+    let with_fx = AudioFile::decode(&with_fx.paths[0]).unwrap();
+    assert!((with_fx.frames[1000][0] - 0.2).abs() < 1e-4);
+
+    let without_fx = run(
+        snap,
+        temp.options("export -n MasterFxOff.wav -bits 32f -master-fx off"),
+    );
+    let without_fx = AudioFile::decode(&without_fx.paths[0]).unwrap();
+    assert!((without_fx.frames[1000][0] - 0.4).abs() < 1e-4);
 }

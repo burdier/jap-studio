@@ -145,6 +145,9 @@ impl VstInstrument {
         // Wine puede tardar en cerrar un diálogo: nunca esperarlo desde GPUI.
         self.editor = None;
     }
+    pub fn editor(&self) -> Option<&crate::audio::vst3::EditorHandle> {
+        self.editor.as_ref()
+    }
     pub fn open_editor(&self) {
         if let Some(editor) = &self.editor {
             editor.open();
@@ -157,11 +160,6 @@ impl VstInstrument {
     }
     pub fn editor_message(&self) -> Option<String> {
         self.editor.as_ref()?.take_message()
-    }
-    pub fn take_transport_toggles(&self) -> u32 {
-        self.editor
-            .as_ref()
-            .map_or(0, |editor| editor.take_transport_toggles())
     }
     pub fn clip_playing(&self) -> bool {
         self.player.as_ref().is_some_and(PianoPlayer::plan_playing)

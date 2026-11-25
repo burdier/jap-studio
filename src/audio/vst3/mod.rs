@@ -6,11 +6,13 @@ mod context;
 pub(crate) use context::TransportContext;
 mod editor;
 mod events;
-pub(crate) use editor::EditorHandle;
+pub(crate) use editor::{EditorHandle, EditorMidiKey, PendingState, PluginState};
 pub(crate) mod environment;
 mod host;
 mod lifecycle;
+mod message;
 mod module;
+mod note_pitch;
 mod parameters;
 mod process;
 pub(crate) mod scan;
@@ -26,14 +28,21 @@ pub(crate) struct VstEngine {
     processor: Option<ComPtr<IAudioProcessor>>,
     pub editor: EditorHandle,
     edits: rtrb::Consumer<editor::Edit>,
+    applied_edit: std::sync::Arc<std::sync::atomic::AtomicU64>,
     events: ComWrapper<Events>,
     events_interface: ComPtr<IEventList>,
     changes: ComWrapper<Changes>,
     changes_interface: ComPtr<IParameterChanges>,
+    feedback: ComWrapper<Changes>,
+    feedback_interface: ComPtr<IParameterChanges>,
+    to_controller: rtrb::Producer<(u32, f64)>,
     mapping: [[Option<u32>; 130]; 16],
+    mpe_pitch: bool,
+    mpe_voices: [Option<note_pitch::MpeVoice>; 15],
     held: [[bool; 128]; 16],
     pub name: String,
     pub failed: bool,
+    export_latency: Option<u32>,
     rate: f64,
     frame: i64,
     buffers: buffers::Buffers,

@@ -148,6 +148,17 @@ impl InstrumentVoice {
     pub fn midi(&self, status: u8, a: u8, b: u8) {
         self.shared.midi(self.route, status, a, b);
     }
+    pub fn note_pitch_event(
+        &self,
+        event: elevate::musical::scheduler::ScheduledEvent,
+        reserved: u16,
+    ) -> bool {
+        let mut handled = false;
+        self.shared.with_engine(self.route, |engine| {
+            handled = engine.note_pitch_event(event, reserved);
+        });
+        handled
+    }
     pub fn panic(&self) {
         self.shared.panic(self.route);
     }

@@ -2,10 +2,10 @@
 mod backend;
 mod filter;
 mod fluidsynth;
-mod offline;
 mod plan;
 mod prepare;
 mod render;
+mod snapshot;
 mod soundfont;
 mod voice;
 
@@ -19,9 +19,9 @@ use elevate::musical::{
     time::{PPQ, Tick, TimeBase},
 };
 pub(crate) use fluidsynth::is_available as fluidsynth_available;
-pub(crate) use offline::{OfflinePiano, PianoSnapshot};
 pub(crate) use prepare::PreparedPiano;
 use rtrb::{Consumer, Producer, RingBuffer};
+pub(crate) use snapshot::PianoSnapshot;
 pub(crate) use soundfont::{
     PresetEntry, SoundFontBank, discover as discover_soundfonts, load_path as load_soundfont,
 };
