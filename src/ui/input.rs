@@ -310,6 +310,14 @@ impl DawApp {
             self.export_arrangement_midi_dialog(cx);
             return;
         }
+        if cmd.trim().eq_ignore_ascii_case("kit.save") {
+            self.save_drum_kit_dialog(cx);
+            return;
+        }
+        if cmd.trim().eq_ignore_ascii_case("kit.load") {
+            self.load_drum_kit_dialog(cx);
+            return;
+        }
         if matches!(
             cmd.trim().to_ascii_lowercase().as_str(),
             "audio.to_midi" | "audio2midi"
@@ -489,6 +497,17 @@ impl DawApp {
             "auto.next" => self.cycle_automation_param(),
             "auto.vst" => self.automate_last_touched_vst(),
             "auto.clear" => self.clear_selected_track_automation(),
+            cmd if cmd.starts_with("drum.swing ") => {
+                if let Ok(val) = cmd.trim_start_matches("drum.swing ").trim().parse::<i16>() {
+                    let current = i16::from(self.pattern_editor.session.active_pattern().swing);
+                    let target = val.clamp(0, i16::from(elevate::musical::drums::DrumPattern::MAX_SWING));
+                    self.apply_pattern_action(super::pattern_editor::PatternAction::Swing(
+                        target - current,
+                    ));
+                } else {
+                    self.status_message = "Uso: :drum.swing <0..75>".into();
+                }
+            }
             "countin" | "count_in" => self.cycle_count_in(),
             other if other.starts_with("countin ") => {
                 match other.trim_start_matches("countin ").trim().parse::<u32>() {

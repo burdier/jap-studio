@@ -261,6 +261,25 @@ impl DawApp {
                                         }),
                                     ),
                             )
+                            .child(
+                                flat_control(ds, false, ds.warning)
+                                    .id("empty-load-drum-kit")
+                                    .h(px(30.0))
+                                    .px(px(14.0))
+                                    .rounded(px(ds.radius_md))
+                                    .text_size(px(11.5))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .text_color(rgb(ds.text))
+                                    .child("Cargar kit")
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(|this, _, _, cx| {
+                                            this.load_drum_kit_dialog(cx);
+                                            cx.stop_propagation();
+                                            cx.notify();
+                                        }),
+                                    ),
+                            )
                             .when(!self.explorer_visible(), |row| {
                                 row.child(
                                     flat_control(ds, false, ds.cyan)
@@ -485,7 +504,64 @@ impl DawApp {
                             cx.notify();
                         }),
                     ),
-            );
+            )
+            .child({
+                let swing = pattern.swing;
+                let has_swing = swing > 0;
+                flat_control(ds, has_swing, ds.warning)
+                    .id("drum-pattern-swing")
+                    .h(px(22.0))
+                    .px(px(8.0))
+                    .gap(px(4.0))
+                    .rounded(px(ds.radius_sm))
+                    .font_family("monospace")
+                    .text_size(px(10.0))
+                    .font_weight(if has_swing {
+                        FontWeight::SEMIBOLD
+                    } else {
+                        FontWeight::MEDIUM
+                    })
+                    .text_color(rgb(if has_swing { ds.text } else { ds.muted }))
+                    .tooltip(|window, cx| {
+                        Tooltip::new(
+                            "Swing del patrón (0–75%) · rueda o clic izq/der: ±5% · doble clic o Alt+clic: 0%",
+                        )
+                        .build(window, cx)
+                    })
+                    .when(has_swing, |el| el.child(led_dot(ds.warning, 4.5, true)))
+                    .child(format!("Swing {swing}%"))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
+                            let delta = if event.click_count >= 2 || event.modifiers.alt {
+                                i16::MIN
+                            } else {
+                                5
+                            };
+                            this.apply_pattern_action(PatternAction::Swing(delta));
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    )
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(|this, _, _, cx| {
+                            this.apply_pattern_action(PatternAction::Swing(-5));
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    )
+                    .on_scroll(cx.listener(|this, event: &gpui::ScrollEvent, _, cx| {
+                        let delta = f32::from(event.delta.pixel_delta(px(24.0)).y);
+                        if delta != 0.0 {
+                            this.apply_pattern_action(PatternAction::Swing(
+                                delta.signum() as i16 * 5,
+                            ));
+                            cx.stop_propagation();
+                            cx.notify();
+                        }
+                    }))
+            });
 
         let total_bars = editor.step_total_bars(meter);
         let bars_per_page = editor.step_bars_per_page();
@@ -798,6 +874,53 @@ impl DawApp {
                         cx.listener(|this, _, _, cx| {
                             this.pattern_editor.mixer_open = !this.pattern_editor.mixer_open;
                             this.mixer_drag = None;
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    ),
+            )
+            .child(
+                flat_control(ds, false, ds.cyan)
+                    .id("drum-save-kit")
+                    .h(px(22.0))
+                    .px(px(7.0))
+                    .rounded(px(ds.radius_sm))
+                    .text_size(px(10.0))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(rgb(ds.muted))
+                    .tooltip(|window, cx| {
+                        Tooltip::new(
+                            "Guardar kit completo (.haykit) con muestras, filtros y mezcla",
+                        )
+                        .build(window, cx)
+                    })
+                    .child("Guardar kit")
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, cx| {
+                            this.save_drum_kit_dialog(cx);
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    ),
+            )
+            .child(
+                flat_control(ds, false, ds.cyan)
+                    .id("drum-load-kit")
+                    .h(px(22.0))
+                    .px(px(7.0))
+                    .rounded(px(ds.radius_sm))
+                    .text_size(px(10.0))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(rgb(ds.muted))
+                    .tooltip(|window, cx| {
+                        Tooltip::new("Cargar un kit guardado (.haykit)").build(window, cx)
+                    })
+                    .child("Cargar kit")
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, cx| {
+                            this.load_drum_kit_dialog(cx);
                             cx.stop_propagation();
                             cx.notify();
                         }),

@@ -118,8 +118,9 @@ impl DawApp {
                 .pattern(cell.pattern)
                 .ok_or("Patrón de Canción inexistente")?;
             let beat = origin + cell.at.0 as f64 / PPQ as f64;
+            let swung = source.swung_notes()?;
             for (&track, piece) in used.iter().zip(&session.kit.pieces) {
-                let pattern = piece_pattern(&source.notes, piece.id)?;
+                let pattern = piece_pattern(&swung, piece.id)?;
                 let mut clip = MidiClip::new(
                     format!("{} · {}", source.name, piece.name),
                     track,

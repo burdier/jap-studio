@@ -223,7 +223,7 @@ impl DrumKit {
         Ok(id)
     }
 
-    pub(super) fn validate(&self) -> Result<HashSet<InstrumentId>, String> {
+    pub fn validate(&self) -> Result<HashSet<InstrumentId>, String> {
         if self.id.0 == 0 || !self.bus.validate() {
             return Err("Kit o bus de batería inválido".into());
         }

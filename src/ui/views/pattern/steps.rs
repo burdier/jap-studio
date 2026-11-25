@@ -627,12 +627,38 @@ impl DawApp {
             _ if occupied => color,
             _ => ds.muted,
         };
-        let overlay_label = notes.first().filter(|_| show_velocity).map(|note| {
-            if hits == 1 {
-                note.velocity.to_string()
-            } else {
+        let first_note = notes.first();
+        let root_pitch = self
+            .pattern_editor
+            .session
+            .kit
+            .pieces
+            .get(lane)
+            .map_or(36, |p| p.base_note());
+        let first_prob = first_note.map_or(100, |n| n.expression.probability);
+        let first_pitch_delta =
+            first_note.map_or(0, |n| i16::from(n.pitch) - i16::from(root_pitch));
+        let overlay_label = first_note.filter(|_| show_velocity).map(|note| {
+            if hits > 1 {
                 format!("×{hits}")
+            } else if first_pitch_delta != 0 {
+                format!("{first_pitch_delta:+}")
+            } else {
+                note.velocity.to_string()
             }
+        });
+        let prob_badge =
+            (occupied && first_prob < 100 && show_velocity).then(|| format!("{first_prob}%"));
+        let pad_tooltip = first_note.map(|note| {
+            let pitch_txt = if first_pitch_delta == 0 {
+                note_name(note.pitch)
+            } else {
+                format!("{} ({first_pitch_delta:+} st)", note_name(note.pitch))
+            };
+            format!(
+                "Vel {} · Prob {}% · {} · Rueda: vel · Shift+rueda: prob · Alt+rueda: pitch · Clic der: roll",
+                note.velocity, note.expression.probability, pitch_txt
+            )
         });
         div()
             .relative()
@@ -647,11 +673,14 @@ impl DawApp {
             .when(is_bar_divider, |column| {
                 column.border_l_2().border_color(rgb(ds.accent))
             })
-            .when(!is_bar_divider && at % meter.ticks_per_beat() == 0, |column| {
-                column
-                    .border_l_1()
-                    .border_color(rgb(beat_line(ds, meter, at)))
-            })
+            .when(
+                !is_bar_divider && at % meter.ticks_per_beat() == 0,
+                |column| {
+                    column
+                        .border_l_1()
+                        .border_color(rgb(beat_line(ds, meter, at)))
+                },
+            )
             .child(
                 flat_control(ds, occupied, color)
                     .id(("drum-step", lane * self.pattern_editor.step_count() + step))
@@ -666,10 +695,18 @@ impl DawApp {
                     .child(
                         div()
                             .text_color(rgb(dot_color))
+                            .when(occupied && first_prob < 100, |el| {
+                                el.opacity(0.35 + 0.65 * (f32::from(first_prob) / 100.0))
+                            })
                             .text_size(px(if occupied { 13.0 } else { 12.0 }))
                             .child(if occupied { "●" } else { "·" }),
                     )
                     .when_some(overlay_label, |pad, label| {
+                        let label_color = if first_pitch_delta != 0 && hits == 1 {
+                            ds.warning
+                        } else {
+                            ds.text
+                        };
                         pad.child(
                             div()
                                 .absolute()
@@ -685,18 +722,33 @@ impl DawApp {
                                 .border_1()
                                 .border_color(rgba((ds.text << 8) | 0x2a))
                                 .text_size(px(9.0))
-                                .text_color(rgb(ds.text))
+                                .text_color(rgb(label_color))
                                 .overflow_hidden()
                                 .child(label),
                         )
                     })
-                    .when(occupied, |pad| {
-                        pad.tooltip(|window, cx| {
-                            Tooltip::new(
-                                "Clic: reducir roll / borrar · clic derecho: dividir · rueda: velocity",
-                            )
-                            .build(window, cx)
-                        })
+                    .when_some(prob_badge, |pad, label| {
+                        pad.child(
+                            div()
+                                .absolute()
+                                .bottom(px(1.0))
+                                .left(px(1.5))
+                                .right(px(1.5))
+                                .h(px(10.0))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .rounded(px(2.0))
+                                .bg(rgba((ds.panel_dark << 8) | 0xb8))
+                                .text_size(px(7.5))
+                                .font_weight(gpui::FontWeight::SEMIBOLD)
+                                .text_color(rgb(ds.cyan))
+                                .overflow_hidden()
+                                .child(label),
+                        )
+                    })
+                    .when_some(pad_tooltip, |pad, tip| {
+                        pad.tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx))
                     })
                     .on_mouse_down(
                         MouseButton::Right,
@@ -729,11 +781,27 @@ impl DawApp {
                     .on_scroll(cx.listener(move |this, event: &gpui::ScrollEvent, _, cx| {
                         let delta = f32::from(event.delta.pixel_delta(px(24.0)).y);
                         if occupied && delta != 0.0 {
-                            this.apply_pattern_action(PatternAction::Velocity {
-                                lane,
-                                step,
-                                delta: delta.signum() as i16 * 5,
-                            });
+                            let dir = delta.signum();
+                            let action = if event.modifiers.shift {
+                                PatternAction::StepProbability {
+                                    lane,
+                                    step,
+                                    delta: dir as i16 * 5,
+                                }
+                            } else if event.modifiers.alt {
+                                PatternAction::StepPitch {
+                                    lane,
+                                    step,
+                                    delta: dir as i8,
+                                }
+                            } else {
+                                PatternAction::Velocity {
+                                    lane,
+                                    step,
+                                    delta: dir as i16 * 5,
+                                }
+                            };
+                            this.apply_pattern_action(action);
                             cx.stop_propagation();
                             cx.notify();
                         }

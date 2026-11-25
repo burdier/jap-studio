@@ -37,7 +37,7 @@ acotada de selección por NoteOn durante la reproducción.
   - Navegación directa por pestañas (`Arrangement F1`, `Drums F2`, `Mixer F3`), breadcrumb vivo, dock inferior con pestañas y paleta de comandos (`:` / `Ctrl+P`) siempre accesible sin modo Vim.
   - Doble clic sobre espacio vacío de la cabecera de pista abre su instrumento asociado (editor nativo VST3 o editor acoplado).
   - Transporte con **Tap Tempo** (`TAP` junto al LCD y `:tap`), contador `Mic` de ancho fijo, y temas de alto contraste **Cyberpunk Studio** y **Daylight Studio** persistidos en `~/.jaybu.profile`.
-  - Vista **Drums** con estado inicial limpio hasta soltar o cargar la primera muestra y barra única organizada en 4 cápsulas (`Patrones`, `Ritmo`, `Modo`, `Kit`), mostrando la matriz `Canción` solo cuando se activa ese modo.
+  - Vista **Drums** con estado inicial limpio hasta soltar/cargar la primera muestra o un preset `.haykit`, barra adaptable (`flex_wrap`) con paginador de compases (`1c | 2c`, páginas, `Seguir` y cero scroll horizontal), matriz `Canción` estilo Hydrogen (punto LED central sin borde), **Swing por patrón (`0–75%`)**, edición rápida en cada pad (**rueda**: velocity, **Shift+rueda**: probabilidad `5–100%` evaluada por vuelta en RT, **Alt+rueda**: pitch `±24 st`) y **Guardar/Cargar kit completo (`.haykit`)** (`:kit.save`, `:kit.load`, `:drum.swing`).
   - **Piano Roll** con pestaña **Acordes (Hay Chord)** responsive (4 cuadros visibles lado a lado sin recorte) y encuadre automático `RollViewport::for_clip` (~4 compases y ~22 semitonos legibles al abrir o reiniciar vista).
 
 - Pulsar un WAV en el Arrangement abre su editor a la izquierda. El WAV conserva EQ de campana y operaciones de rango por instancia en Loro y en la sesión compartida. Al seleccionar un clip MIDI, el piano roll se abre debajo del Arrangement. La afinación por clip admite ±24 semitonos y ±100 cents, conserva la duración y se escucha también al exportar. La selección, el zoom y el transporte de preescucha (pausa, volver al inicio y bucle del rango) son locales.
@@ -726,7 +726,6 @@ acotada de selección por NoteOn durante la reproducción.
 ## Todavía pendiente
 
 - **Panel de gestión MIDI Learn**: vista compacta para inspeccionar enlaces activos, ajustar rango `min/max` y desvincular controles concretos.
-- **Drums creativos**: Swing / Groove, probabilidad por paso, edición rápida de velocity/pitch por paso y guardado/carga de kits completos.
 - **Freeze persistente en proyecto**: guardar la referencia del audio congelado (o re-congelar bajo demanda) dentro del proyecto `.loro`.
 - **Tempo map y chase de notas sostenidas** al saltar el playhead dentro de un acorde o nota larga.
 - **Exportación offline de ramas Hilo con VST3** y soporte CLAP.
@@ -734,9 +733,8 @@ acotada de selección por NoteOn durante la reproducción.
 
 ## Próximos incrementos recomendados
 
-1. **Drums creativos** (Swing, probabilidad, velocity por paso y presets de kit).
-2. **Panel de gestión MIDI Learn** (inspección, rango `min/max` y borrado selectivo).
-3. **Freeze persistente + tempo map / chase de notas** y actualización del manifiesto Flatpak.
+1. **Panel de gestión MIDI Learn** (inspección, rango `min/max` y borrado selectivo).
+2. **Freeze persistente + tempo map / chase de notas** y actualización del manifiesto Flatpak.
 
 La futura arquitectura completa se mantiene como dirección; estos puntos son tareas
 concretas, no módulos vacíos ya creados.

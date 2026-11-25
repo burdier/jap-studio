@@ -227,6 +227,9 @@ impl DawApp {
             PatternAction::Toggle { .. }
                 | PatternAction::SplitStep { .. }
                 | PatternAction::Velocity { .. }
+                | PatternAction::StepProbability { .. }
+                | PatternAction::StepPitch { .. }
+                | PatternAction::Swing(_)
                 | PatternAction::Bars(_)
                 | PatternAction::InsertNote { .. }
                 | PatternAction::MoveNote(_)
@@ -367,5 +370,141 @@ impl DawApp {
         self.drum_pattern_playhead().map(|beat| {
             (beat * PPQ as f64 / self.pattern_editor.ticks_per_step() as f64).floor() as usize
         })
+    }
+
+    fn drum_kits_dir() -> std::path::PathBuf {
+        let dir = dirs::config_dir()
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default())
+            .join("hay-daw")
+            .join("kits");
+        let _ = std::fs::create_dir_all(&dir);
+        dir
+    }
+
+    pub(in crate::ui) fn save_drum_kit_dialog(&mut self, cx: &mut gpui::Context<Self>) {
+        let kit = self.pattern_editor.session.kit.clone();
+        if kit.pieces.is_empty() {
+            self.status_message = "Añade al menos una muestra antes de guardar un kit".into();
+            return;
+        }
+        let dir = Self::drum_kits_dir();
+        let suggested = format!(
+            "{}.haykit",
+            kit.pieces
+                .first()
+                .map(|p| p.name.as_str())
+                .unwrap_or("mi-kit")
+                .chars()
+                .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                })
+                .take(32)
+                .collect::<String>()
+        );
+        let prompt = cx.prompt_for_new_path(&dir, Some(&suggested));
+        cx.spawn(async move |this, cx| {
+            let result = prompt.await;
+            let _ = this.update(cx, |this, cx| {
+                match result {
+                    Ok(Ok(Some(mut path))) => {
+                        if path.extension().is_none() {
+                            path.set_extension("haykit");
+                        }
+                        match elevate::project::save_kit_preset(&kit, &path) {
+                            Ok(()) => {
+                                let name = path
+                                    .file_stem()
+                                    .map(|s| s.to_string_lossy().into_owned())
+                                    .unwrap_or_else(|| path.display().to_string());
+                                this.status_message = format!(
+                                    "Kit «{name}» guardado ({} piezas) → {}",
+                                    kit.pieces.len(),
+                                    path.display()
+                                );
+                            }
+                            Err(e) => {
+                                this.status_message = format!("Guardar kit: {e}");
+                            }
+                        }
+                    }
+                    Ok(Ok(None)) => {}
+                    _ => {
+                        this.status_message = "No se pudo abrir el diálogo para guardar kit".into();
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    pub(in crate::ui) fn load_drum_kit_dialog(&mut self, cx: &mut gpui::Context<Self>) {
+        let prompt = cx.prompt_for_paths(gpui::PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some("Cargar kit (.haykit)".into()),
+        });
+        cx.spawn(async move |this, cx| {
+            let result = prompt.await;
+            let _ = this.update(cx, |this, cx| {
+                match result {
+                    Ok(Ok(Some(paths))) => {
+                        if let Some(path) = paths.first() {
+                            this.load_drum_kit_from_path(path);
+                        }
+                    }
+                    Ok(Ok(None)) => {}
+                    _ => {
+                        this.status_message = "No se pudo abrir el selector de kits".into();
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    pub(in crate::ui) fn load_drum_kit_from_path(&mut self, path: &std::path::Path) {
+        match elevate::project::load_kit_preset(path) {
+            Ok(mut loaded) => {
+                // Conserva la identidad del kit de la sesión para no romper clips vinculados.
+                loaded.id = self.pattern_editor.session.kit.id;
+                let valid_ids: std::collections::HashSet<_> =
+                    loaded.pieces.iter().map(|p| p.id).collect();
+                let piece_count = loaded.pieces.len();
+                self.pattern_editor.session.kit = loaded;
+                for pat in &mut self.pattern_editor.session.patterns {
+                    let kept: Vec<_> = pat
+                        .notes
+                        .notes()
+                        .iter()
+                        .filter(|n| valid_ids.contains(&n.instrument))
+                        .cloned()
+                        .collect();
+                    if kept.len() != pat.notes.notes().len()
+                        && let Ok(cleaned) = pat.notes.with_notes(kept, pat.notes.next_id())
+                    {
+                        pat.notes = cleaned;
+                    }
+                }
+                self.pattern_editor.cursor_lane = 0;
+                self.pattern_editor.roll.piece = None;
+                self.pattern_editor.roll.reset_selection();
+                self.pattern_editor.waveforms.borrow_mut().clear();
+                self.publish_drum_edit();
+                self.refresh_project_dirty();
+                let name = path
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| path.display().to_string());
+                self.status_message = format!("Kit «{name}» cargado ({piece_count} piezas)");
+            }
+            Err(error) => {
+                self.status_message = format!("Cargar kit: {error}");
+            }
+        }
     }
 }

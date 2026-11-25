@@ -143,7 +143,8 @@ impl MidiClip {
         if let Some(target) = self.drum_target
             && let Some(source) = target.resolve(session)?
         {
-            self.pattern = piece_pattern(&source.notes, target.piece)?;
+            let swung = source.swung_notes()?;
+            self.pattern = piece_pattern(&swung, target.piece)?;
         }
         Ok(())
     }

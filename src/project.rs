@@ -14,6 +14,7 @@ use std::{
 mod audio;
 mod collect;
 mod drums;
+pub use drums::{load_kit_preset, save_kit_preset};
 mod instruments;
 pub use instruments::{ProjectPiano, ProjectSampler, ProjectVstInstrument};
 mod fx;

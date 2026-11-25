@@ -271,6 +271,7 @@ fn patterns(
                 notes: pattern,
                 meter,
                 grid: NoteGrid::default(),
+                swing: 0,
             });
         }
     }

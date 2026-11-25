@@ -22,6 +22,17 @@ pub(in crate::ui) enum PatternAction {
         step: usize,
         delta: i16,
     },
+    StepProbability {
+        lane: usize,
+        step: usize,
+        delta: i16,
+    },
+    StepPitch {
+        lane: usize,
+        step: usize,
+        delta: i8,
+    },
+    Swing(i16),
     Select(DrumPatternId),
     NewPattern,
     Grid(NoteGrid),
@@ -118,7 +129,9 @@ impl PatternEditor {
         let (piece, at, pitch) = match action {
             PatternAction::Toggle { lane, step }
             | PatternAction::SplitStep { lane, step }
-            | PatternAction::Velocity { lane, step, .. } => {
+            | PatternAction::Velocity { lane, step, .. }
+            | PatternAction::StepProbability { lane, step, .. }
+            | PatternAction::StepPitch { lane, step, .. } => {
                 let piece = self.session.kit.pieces.get(*lane)?;
                 if *step >= self.step_count() {
                     return None;
@@ -259,6 +272,65 @@ impl PatternEditor {
                         .map_err(|error| error.to_string())?;
                 }
                 Ok("Velocity actualizada")
+            }
+            PatternAction::StepProbability { lane, step, delta } => {
+                let ids: Vec<_> = self.step_notes(lane, step).map(|note| note.id).collect();
+                if ids.is_empty() {
+                    return Err(EditError::UnknownNote.to_string());
+                }
+                let pattern = &mut self.session.active_pattern_mut().notes;
+                let mut notes = pattern.notes().to_vec();
+                for note in &mut notes {
+                    if ids.contains(&note.id) {
+                        let next = (i32::from(note.expression.probability) + i32::from(delta))
+                            .clamp(5, 100) as u8;
+                        note.expression.probability = next;
+                    }
+                }
+                *pattern = pattern
+                    .with_notes(notes, pattern.next_id())
+                    .map_err(|error| error.to_string())?;
+                Ok("Probabilidad actualizada")
+            }
+            PatternAction::StepPitch { lane, step, delta } => {
+                let root = self
+                    .session
+                    .kit
+                    .pieces
+                    .get(lane)
+                    .map(|p| p.base_note())
+                    .ok_or_else(|| EditError::InvalidNote.to_string())?;
+                let min_pitch = i32::from(root).saturating_sub(24).max(0);
+                let max_pitch = (i32::from(root) + 24).min(127);
+                let ids: Vec<_> = self.step_notes(lane, step).map(|note| note.id).collect();
+                if ids.is_empty() {
+                    return Err(EditError::UnknownNote.to_string());
+                }
+                let pattern = &mut self.session.active_pattern_mut().notes;
+                let mut notes = pattern.notes().to_vec();
+                for note in &mut notes {
+                    if ids.contains(&note.id) {
+                        let next = (i32::from(note.pitch) + i32::from(delta))
+                            .clamp(min_pitch, max_pitch) as u8;
+                        note.pitch = next;
+                    }
+                }
+                *pattern = pattern
+                    .with_notes(notes, pattern.next_id())
+                    .map_err(|error| error.to_string())?;
+                Ok("Afinación de paso actualizada")
+            }
+            PatternAction::Swing(delta) => {
+                let pattern = self.session.active_pattern_mut();
+                pattern.swing = if delta == i16::MIN {
+                    0
+                } else {
+                    (i32::from(pattern.swing) + i32::from(delta)).clamp(
+                        0,
+                        i32::from(elevate::musical::drums::DrumPattern::MAX_SWING),
+                    ) as u8
+                };
+                Ok("Swing del patrón actualizado")
             }
             PatternAction::Select(id) => {
                 self.session.select(id)?;

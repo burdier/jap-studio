@@ -24,15 +24,47 @@ pub struct DrumPattern {
     pub notes: Pattern,
     pub meter: Meter,
     pub grid: NoteGrid,
+    /// Swing / Groove por patrón (`0..=75%`), retrasa los pasos impares de la rejilla.
+    pub swing: u8,
 }
 
 impl DrumPattern {
+    pub const MAX_SWING: u8 = 75;
+
     pub fn bar_count(&self) -> i64 {
         (self.notes.length().0 - 1) / self.meter.ticks_per_bar() + 1
     }
 
     pub fn step_count(&self) -> usize {
         ((self.notes.length().0 - 1) / self.grid.ticks().0 + 1) as usize
+    }
+
+    /// Devuelve el patrón con el swing aplicado sobre los pasos impares de `self.grid`.
+    /// Si `swing == 0`, presta el patrón original sin copiar.
+    pub fn swung_notes(&self) -> Result<Cow<'_, Pattern>, String> {
+        if self.swing == 0 || self.notes.notes().is_empty() {
+            return Ok(Cow::Borrowed(&self.notes));
+        }
+        let step_ticks = self.grid.ticks().0.max(1);
+        let length = self.notes.length().0.max(1);
+        let pct = i64::from(self.swing.min(Self::MAX_SWING));
+        let shift = (step_ticks * pct + 50) / 100;
+        if shift == 0 {
+            return Ok(Cow::Borrowed(&self.notes));
+        }
+        let mut notes = self.notes.notes().to_vec();
+        for note in &mut notes {
+            let step_index = note.start.0 / step_ticks;
+            if step_index % 2 == 1 {
+                let shifted = (note.start.0 + shift).min(length - 1);
+                note.start = Tick(shifted);
+                note.duration = Tick(note.duration.0.min(length - shifted).max(1));
+            }
+        }
+        self.notes
+            .with_notes(notes, self.notes.next_id())
+            .map(Cow::Owned)
+            .map_err(|error| error.to_string())
     }
 }
 
@@ -74,6 +106,7 @@ impl Default for DrumSession {
                 notes: Pattern::new(Tick(Meter::default().ticks_per_bar())).unwrap(),
                 meter: Meter::default(),
                 grid: NoteGrid::default(),
+                swing: 0,
             }],
             active: id,
             next_pattern_id: 2,
@@ -143,13 +176,16 @@ impl DrumSession {
             .next_pattern_id
             .checked_add(1)
             .ok_or("IDs de patrón agotados")?;
-        let DrumPattern { meter, grid, .. } = *self.active_pattern();
+        let DrumPattern {
+            meter, grid, swing, ..
+        } = *self.active_pattern();
         self.patterns.push(DrumPattern {
             id,
             name: format!("Patrón {}", id.0),
             notes,
             meter,
             grid,
+            swing,
         });
         self.next_pattern_id = next;
         self.active = id;
@@ -204,7 +240,7 @@ impl DrumSession {
     /// Patrón temporal para la audición. Las ocurrencias mantienen su vínculo editable.
     pub fn playback_pattern(&self) -> Result<Option<Cow<'_, Pattern>>, String> {
         match self.source {
-            DrumPlaybackSource::Pattern => Ok(Some(Cow::Borrowed(&self.active_pattern().notes))),
+            DrumPlaybackSource::Pattern => self.active_pattern().swung_notes().map(Some),
             DrumPlaybackSource::Arrangement => Ok(None),
             DrumPlaybackSource::Song => {
                 if self.song.is_empty() {
@@ -216,7 +252,8 @@ impl DrumSession {
                     let pattern = self
                         .pattern(cell.pattern)
                         .ok_or("Patrón de Canción inexistente")?;
-                    for note in pattern.notes.notes() {
+                    let swung = pattern.swung_notes()?;
+                    for note in swung.notes() {
                         let mut copy = note.clone();
                         copy.id = NoteId(notes.len() as u64 + 1);
                         copy.start.0 += cell.at.0;
@@ -238,6 +275,7 @@ impl DrumSession {
                 || pattern.id.0 >= self.next_pattern_id
                 || !ids.insert(pattern.id)
                 || pattern.name.trim().is_empty()
+                || pattern.swing > DrumPattern::MAX_SWING
                 || pattern.notes.length().0 > MAX_PATTERN_TICKS
                 || pattern.notes.next_id() > i64::MAX as u64
                 || pattern
