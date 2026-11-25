@@ -17,6 +17,10 @@ pub(in crate::ui) enum PatternAction {
         lane: usize,
         step: usize,
     },
+    ClearStep {
+        lane: usize,
+        step: usize,
+    },
     Velocity {
         lane: usize,
         step: usize,
@@ -35,6 +39,8 @@ pub(in crate::ui) enum PatternAction {
     Swing(i16),
     Select(DrumPatternId),
     NewPattern,
+    DeletePattern(DrumPatternId),
+    ClearPattern,
     Grid(NoteGrid),
     Bars(i64),
     Duplicate,
@@ -64,6 +70,7 @@ pub(in crate::ui) enum PatternAction {
         delta: i32,
     },
     AddPiece(String),
+    RemovePiece(usize),
     AddSample {
         piece: InstrumentId,
         path: String,
@@ -129,6 +136,7 @@ impl PatternEditor {
         let (piece, at, pitch) = match action {
             PatternAction::Toggle { lane, step }
             | PatternAction::SplitStep { lane, step }
+            | PatternAction::ClearStep { lane, step }
             | PatternAction::Velocity { lane, step, .. }
             | PatternAction::StepProbability { lane, step, .. }
             | PatternAction::StepPitch { lane, step, .. } => {
@@ -246,6 +254,18 @@ impl PatternEditor {
         Ok("Golpe subdividido")
     }
 
+    fn clear_step(&mut self, lane: usize, step: usize) -> Result<&'static str, String> {
+        let ids: Vec<_> = self.step_notes(lane, step).map(|note| note.id).collect();
+        if ids.is_empty() {
+            return Ok("Paso vacío");
+        }
+        let pattern = &mut self.session.active_pattern_mut().notes;
+        for id in ids {
+            pattern.remove_note(id).map_err(|error| error.to_string())?;
+        }
+        Ok("Paso borrado")
+    }
+
     pub(in crate::ui) fn apply(
         &mut self,
         action: PatternAction,
@@ -256,6 +276,7 @@ impl PatternEditor {
                 self.toggle(lane, step).map_err(|error| error.to_string())
             }
             PatternAction::SplitStep { lane, step } => self.split_step(lane, step),
+            PatternAction::ClearStep { lane, step } => self.clear_step(lane, step),
             PatternAction::Velocity { lane, step, delta } => {
                 let notes: Vec<_> = self
                     .step_notes(lane, step)
@@ -341,6 +362,16 @@ impl PatternEditor {
                 self.session.new_pattern()?;
                 self.cursor_step = 0;
                 Ok("Patrón vacío creado")
+            }
+            PatternAction::DeletePattern(id) => {
+                self.session.delete_pattern(id)?;
+                self.cursor_step = self.cursor_step.min(self.step_count().saturating_sub(1));
+                Ok("Patrón eliminado")
+            }
+            PatternAction::ClearPattern => {
+                self.session.clear_active_pattern()?;
+                self.roll.reset_selection();
+                Ok("Patrón vaciado")
             }
             PatternAction::Grid(grid) => {
                 let cursor = self.cursor_step as i64 * self.ticks_per_step();
@@ -431,6 +462,30 @@ impl PatternEditor {
                 self.mixer_open = false;
                 self.steps_scroll.scroll_to_item(self.cursor_lane);
                 Ok("Muestra añadida al kit")
+            }
+            PatternAction::RemovePiece(lane) => {
+                let removed = self.session.remove_piece(lane)?;
+                if self.roll.piece == Some(removed) {
+                    self.roll.piece = None;
+                    self.roll.reset_selection();
+                } else if self
+                    .roll
+                    .selected
+                    .is_some_and(|id| !self.pattern().notes().iter().any(|note| note.id == id))
+                {
+                    self.roll.reset_selection();
+                }
+                if self.session.kit.pieces.is_empty() {
+                    self.cursor_lane = 0;
+                    self.inspector_open = false;
+                    self.mixer_open = false;
+                    self.options = None;
+                } else {
+                    self.cursor_lane = self
+                        .cursor_lane
+                        .min(self.session.kit.pieces.len().saturating_sub(1));
+                }
+                Ok("Pieza eliminada del kit")
             }
             PatternAction::FillLane { lane, every } => self.fill_lane(lane, every),
             PatternAction::ClearLane(lane) => self.clear_lane(lane),

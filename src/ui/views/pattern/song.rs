@@ -8,9 +8,12 @@ use elevate::musical::{
     drums::{DrumPlaybackSource, DrumSongCell},
     time::{PPQ, Tick},
 };
-use gpui::{Context, Div, FontWeight, MouseButton, Stateful, div, prelude::*, px, rgb, rgba};
+use gpui::{
+    Context, Div, FontWeight, MouseButton, Stateful, component::tooltip::Tooltip, div, prelude::*,
+    px, rgb, rgba,
+};
 
-const LABEL_WIDTH: f32 = 104.0;
+const LABEL_WIDTH: f32 = 118.0;
 
 impl DawApp {
     pub(super) fn render_drum_song(&self, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -105,6 +108,7 @@ impl DawApp {
                     .child(header)
                     .children(session.patterns.iter().map(|pattern| {
                         let id = pattern.id;
+                        let can_delete = session.patterns.len() > 1;
                         div()
                             .flex()
                             .w_full()
@@ -113,15 +117,49 @@ impl DawApp {
                             .flex_shrink_0()
                             .gap(px(4.0))
                             .child(
-                                self.drum_action_chip(
-                                    pattern.name.clone(),
-                                    id == session.active,
-                                    PatternAction::Select(id),
-                                    cx,
-                                )
-                                .justify_start()
-                                .flex_shrink_0()
-                                .w(px(LABEL_WIDTH)),
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(2.0))
+                                    .flex_shrink_0()
+                                    .w(px(LABEL_WIDTH))
+                                    .child(
+                                        self.drum_action_chip(
+                                            pattern.name.clone(),
+                                            id == session.active,
+                                            PatternAction::Select(id),
+                                            cx,
+                                        )
+                                        .justify_start()
+                                        .flex_1()
+                                        .min_w_0(),
+                                    )
+                                    .when(can_delete, |row| {
+                                        row.child(
+                                            flat_control(ds, false, ds.danger)
+                                                .id(("drum-song-del-pat", id.0 as usize))
+                                                .w(px(20.0))
+                                                .h(px(22.0))
+                                                .rounded(px(ds.radius_sm))
+                                                .text_size(px(11.0))
+                                                .text_color(rgb(ds.danger))
+                                                .tooltip(|window, cx| {
+                                                    Tooltip::new("Eliminar patrón")
+                                                        .build(window, cx)
+                                                })
+                                                .child("×")
+                                                .on_mouse_down(
+                                                    MouseButton::Left,
+                                                    cx.listener(move |this, _, _, cx| {
+                                                        this.apply_pattern_action(
+                                                            PatternAction::DeletePattern(id),
+                                                        );
+                                                        cx.stop_propagation();
+                                                        cx.notify();
+                                                    }),
+                                                ),
+                                        )
+                                    }),
                             )
                             .children(columns.iter().enumerate().map(|(col_idx, &at)| {
                                 let cell = DrumSongCell { at, pattern: id };

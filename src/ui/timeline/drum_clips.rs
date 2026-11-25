@@ -4,8 +4,10 @@ use crate::ui::DawApp;
 use elevate::musical::{
     clip::MidiClip,
     drums::{
-        DrumClipTarget, DrumPatternId, DrumPlaybackSource, DrumSession, DrumSongCell, piece_pattern,
+        DrumClipTarget, DrumKitId, DrumPatternId, DrumPlaybackSource, DrumSession, DrumSongCell,
+        piece_pattern,
     },
+    model::InstrumentId,
     time::{PPQ, Tick},
     track::{Track, TrackKind},
 };
@@ -25,6 +27,31 @@ impl Timeline {
             }
         }
         Ok(())
+    }
+
+    /// Si se borra una pieza del kit, desvincula su destino en los clips del Arrangement
+    /// conservando sus notas MIDI para que el proyecto siga siendo válido.
+    pub(in crate::ui) fn detach_removed_drum_piece(&mut self, kit: DrumKitId, piece: InstrumentId) {
+        for clip in self.midi_clip.iter_mut().chain(&mut self.other_midi_clips) {
+            if clip
+                .drum_target
+                .is_some_and(|target| target.kit == kit && target.piece == piece)
+            {
+                clip.drum_target = None;
+            }
+        }
+    }
+
+    /// Si se borra un patrón, congela los clips del Arrangement que estaban enlazados a él.
+    pub(in crate::ui) fn detach_removed_drum_pattern(&mut self, pattern: DrumPatternId) {
+        for clip in self.midi_clip.iter_mut().chain(&mut self.other_midi_clips) {
+            if clip
+                .drum_target
+                .is_some_and(|target| target.linked && target.pattern == pattern)
+            {
+                clip.detach_drum_link();
+            }
+        }
     }
 }
 

@@ -170,6 +170,64 @@ impl DrumSession {
         self.insert_pattern(self.active_pattern().notes.clone())
     }
 
+    /// Elimina una pieza del kit y limpia sus notas en todos los patrones de la sesión.
+    pub fn remove_piece(
+        &mut self,
+        lane: usize,
+    ) -> Result<crate::musical::model::InstrumentId, String> {
+        let removed_id = self.kit.remove_piece(lane)?;
+        for pattern in &mut self.patterns {
+            let had_piece = pattern
+                .notes
+                .notes()
+                .iter()
+                .any(|note| note.instrument == removed_id);
+            if had_piece {
+                let kept = pattern
+                    .notes
+                    .notes()
+                    .iter()
+                    .filter(|note| note.instrument != removed_id)
+                    .cloned()
+                    .collect();
+                pattern.notes = pattern
+                    .notes
+                    .with_notes(kept, pattern.notes.next_id())
+                    .map_err(|error| error.to_string())?;
+            }
+        }
+        Ok(removed_id)
+    }
+
+    /// Elimina un patrón de la sesión y sus ocurrencias en Canción.
+    /// Siempre conserva al menos un patrón activo.
+    pub fn delete_pattern(&mut self, id: DrumPatternId) -> Result<(), String> {
+        if self.patterns.len() <= 1 {
+            return Err("Debe existir al menos un patrón".into());
+        }
+        let index = self
+            .patterns
+            .iter()
+            .position(|pattern| pattern.id == id)
+            .ok_or("Patrón de batería inexistente")?;
+        self.patterns.remove(index);
+        self.song.retain(|cell| cell.pattern != id);
+        if self.active == id {
+            let next_index = index.saturating_sub(1).min(self.patterns.len() - 1);
+            self.active = self.patterns[next_index].id;
+        }
+        Ok(())
+    }
+
+    /// Vacía todas las notas del patrón activo conservando duración, rejilla y swing.
+    pub fn clear_active_pattern(&mut self) -> Result<(), String> {
+        let pattern = &mut self.active_pattern_mut().notes;
+        *pattern = pattern
+            .with_notes(Vec::new(), pattern.next_id())
+            .map_err(|error| error.to_string())?;
+        Ok(())
+    }
+
     fn insert_pattern(&mut self, notes: Pattern) -> Result<DrumPatternId, String> {
         let id = DrumPatternId(self.next_pattern_id);
         let next = self
@@ -296,5 +354,119 @@ impl DrumSession {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn remove_piece_cleans_all_patterns_and_allows_empty_kit() {
+        let mut session = DrumSession::default();
+        let kick = session.kit.add_sample("kick.wav".into()).unwrap();
+        let snare = session.kit.add_sample("snare.wav".into()).unwrap();
+        let p1 = session.active;
+        session
+            .active_pattern_mut()
+            .notes
+            .add_note(kick, Tick(0), Tick(120), 36, 100)
+            .unwrap();
+        session
+            .active_pattern_mut()
+            .notes
+            .add_note(snare, Tick(480), Tick(120), 38, 100)
+            .unwrap();
+        let p2 = session.duplicate_active().unwrap();
+        assert_eq!(session.pattern(p2).unwrap().notes.notes().len(), 2);
+
+        let removed = session.remove_piece(0).unwrap();
+        assert_eq!(removed, kick);
+        assert_eq!(session.kit.pieces.len(), 1);
+        assert_eq!(session.pattern(p1).unwrap().notes.notes().len(), 1);
+        assert_eq!(session.pattern(p2).unwrap().notes.notes().len(), 1);
+        assert!(
+            session
+                .pattern(p1)
+                .unwrap()
+                .notes
+                .notes()
+                .iter()
+                .all(|n| n.instrument == snare)
+        );
+        session.validate().unwrap();
+
+        let removed_last = session.remove_piece(0).unwrap();
+        assert_eq!(removed_last, snare);
+        assert!(session.kit.pieces.is_empty());
+        assert!(session.pattern(p1).unwrap().notes.notes().is_empty());
+        assert!(session.pattern(p2).unwrap().notes.notes().is_empty());
+        session.validate().unwrap();
+    }
+
+    #[test]
+    fn delete_pattern_removes_song_cells_and_selects_neighbor() {
+        let mut session = DrumSession::default();
+        let p1 = session.active;
+        let p2 = session.new_pattern().unwrap();
+        let p3 = session.new_pattern().unwrap();
+        session
+            .set_song_cell(
+                DrumSongCell {
+                    at: Tick(0),
+                    pattern: p1,
+                },
+                true,
+            )
+            .unwrap();
+        session
+            .set_song_cell(
+                DrumSongCell {
+                    at: Tick(1920),
+                    pattern: p2,
+                },
+                true,
+            )
+            .unwrap();
+        session
+            .set_song_cell(
+                DrumSongCell {
+                    at: Tick(3840),
+                    pattern: p3,
+                },
+                true,
+            )
+            .unwrap();
+
+        session.select(p2).unwrap();
+        session.delete_pattern(p2).unwrap();
+        assert_eq!(session.active, p1);
+        assert_eq!(session.patterns.len(), 2);
+        assert!(session.song.iter().all(|cell| cell.pattern != p2));
+        session.validate().unwrap();
+
+        session.delete_pattern(p3).unwrap();
+        assert_eq!(session.patterns.len(), 1);
+        assert!(session.delete_pattern(p1).is_err());
+        session.validate().unwrap();
+    }
+
+    #[test]
+    fn clear_active_pattern_only_clears_active() {
+        let mut session = DrumSession::default();
+        let kick = session.kit.add_sample("kick.wav".into()).unwrap();
+        let p1 = session.active;
+        session
+            .active_pattern_mut()
+            .notes
+            .add_note(kick, Tick(0), Tick(120), 36, 100)
+            .unwrap();
+        let p2 = session.duplicate_active().unwrap();
+        assert_eq!(session.active, p2);
+
+        session.clear_active_pattern().unwrap();
+        assert!(session.pattern(p2).unwrap().notes.notes().is_empty());
+        assert_eq!(session.pattern(p1).unwrap().notes.notes().len(), 1);
+        session.validate().unwrap();
     }
 }

@@ -360,6 +360,8 @@ impl DawApp {
                     ),
             );
         }
+        let has_notes = !pattern.notes.notes().is_empty();
+        let active_id = session.active;
         pattern_capsule = pattern_capsule
             .child(
                 flat_control(ds, false, ds.accent)
@@ -400,7 +402,56 @@ impl DawApp {
                             cx.notify();
                         }),
                     ),
-            );
+            )
+            .child(
+                flat_control(ds, false, ds.warning)
+                    .id("drum-clear-pattern")
+                    .h(px(22.0))
+                    .px(px(7.0))
+                    .rounded(px(ds.radius_sm))
+                    .text_size(px(10.5))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(rgb(ds.muted))
+                    .when(!has_notes, |el| el.opacity(0.45))
+                    .tooltip(|window, cx| {
+                        Tooltip::new("Vaciar todos los pasos del patrón actual").build(window, cx)
+                    })
+                    .child("Limpiar")
+                    .when(has_notes, |el| {
+                        el.on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|this, _, _, cx| {
+                                this.apply_pattern_action(PatternAction::ClearPattern);
+                                cx.stop_propagation();
+                                cx.notify();
+                            }),
+                        )
+                    }),
+            )
+            .when(multiple_patterns, |cap| {
+                cap.child(
+                    flat_control(ds, false, ds.danger)
+                        .id("drum-delete-pattern")
+                        .w(px(22.0))
+                        .h(px(22.0))
+                        .rounded(px(ds.radius_sm))
+                        .text_size(px(12.0))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(rgb(ds.danger))
+                        .tooltip(|window, cx| {
+                            Tooltip::new("Eliminar patrón actual").build(window, cx)
+                        })
+                        .child("×")
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, _, _, cx| {
+                                this.apply_pattern_action(PatternAction::DeletePattern(active_id));
+                                cx.stop_propagation();
+                                cx.notify();
+                            }),
+                        ),
+                )
+            });
 
         // 2. Cápsula de ritmo (duración en compases + rejilla/pasos)
         let rhythm_capsule = drum_capsule(ds)
@@ -1167,6 +1218,8 @@ impl DawApp {
             ));
         }
 
+        let can_delete_pattern = self.pattern_editor.session.patterns.len() > 1;
+        let active_pattern = self.pattern_editor.session.active;
         panel = panel
             .child(menu_separator(ds))
             .child(section("Edición de pasos"))
@@ -1195,7 +1248,36 @@ impl DawApp {
                 "Duplicar patrón completo",
                 PatternAction::Duplicate,
                 cx,
-            ));
+            ))
+            .child(action_row(
+                "Vaciar patrón completo",
+                PatternAction::ClearPattern,
+                cx,
+            ))
+            .when(can_delete_pattern, |panel| {
+                panel.child(action_row(
+                    "Eliminar patrón actual",
+                    PatternAction::DeletePattern(active_pattern),
+                    cx,
+                ))
+            })
+            .child(menu_separator(ds))
+            .child(
+                menu_row(ds, "Eliminar pieza del kit", false, false)
+                    .text_color(rgb(ds.danger))
+                    .hover({
+                        let danger = ds.danger;
+                        move |row| row.bg(rgba((danger << 8) | 0x26))
+                    })
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, _, cx| {
+                            this.apply_pattern_action(PatternAction::RemovePiece(lane));
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    ),
+            );
 
         let close = std::rc::Rc::new(cx.listener(|this, _, _, cx| {
             this.pattern_editor.lane_menu = None;
@@ -1210,7 +1292,7 @@ impl DawApp {
         let y = menu
             .position
             .y
-            .min((viewport.height - px(380.0)).max(px(8.0)))
+            .min((viewport.height - px(450.0)).max(px(8.0)))
             .max(px(8.0));
         context_menu(gpui::point(x, y), close, panel)
     }

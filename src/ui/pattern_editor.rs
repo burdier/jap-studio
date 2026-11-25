@@ -222,15 +222,31 @@ impl DawApp {
     pub(super) fn apply_pattern_action(&mut self, action: PatternAction) {
         self.pattern_editor.lane_menu = None;
         let selected_pattern = self.pattern_editor.session.active;
+        let removed_piece = match &action {
+            PatternAction::RemovePiece(lane) => self
+                .pattern_editor
+                .session
+                .kit
+                .pieces
+                .get(*lane)
+                .map(|piece| (self.pattern_editor.session.kit.id, piece.id)),
+            _ => None,
+        };
+        let deleted_pattern = match &action {
+            PatternAction::DeletePattern(id) => Some(*id),
+            _ => None,
+        };
         let updates_notes = matches!(
             &action,
             PatternAction::Toggle { .. }
                 | PatternAction::SplitStep { .. }
+                | PatternAction::ClearStep { .. }
                 | PatternAction::Velocity { .. }
                 | PatternAction::StepProbability { .. }
                 | PatternAction::StepPitch { .. }
                 | PatternAction::Swing(_)
                 | PatternAction::Bars(_)
+                | PatternAction::ClearPattern
                 | PatternAction::InsertNote { .. }
                 | PatternAction::MoveNote(_)
                 | PatternAction::DeleteNote(_)
@@ -251,6 +267,8 @@ impl DawApp {
                 PatternAction::Select(_)
                     | PatternAction::Duplicate
                     | PatternAction::NewPattern
+                    | PatternAction::DeletePattern(_)
+                    | PatternAction::RemovePiece(_)
                     | PatternAction::SongCell(_)
                     | PatternAction::UseSource(_)
                     | PatternAction::CloneLane { .. }
@@ -267,6 +285,12 @@ impl DawApp {
                 #[cfg(feature = "p2p")]
                 if let Some(step) = touched_step {
                     self.mark_drum_step(step);
+                }
+                if let Some((kit, piece)) = removed_piece {
+                    self.timeline.detach_removed_drum_piece(kit, piece);
+                }
+                if let Some(pattern) = deleted_pattern {
+                    self.timeline.detach_removed_drum_pattern(pattern);
                 }
                 let editor = &mut self.pattern_editor;
                 editor.cursor_step = editor.cursor_step.min(editor.step_count() - 1);
@@ -289,6 +313,7 @@ impl DawApp {
                 } else if !updates_ruler {
                     self.publish_drum_mix();
                 }
+                self.refresh_project_dirty();
             }
             Err(error) => self.status_message = error,
         }
@@ -329,6 +354,11 @@ impl DawApp {
                 let lane = editor.cursor_lane;
                 let step = editor.cursor_step;
                 self.apply_pattern_action(PatternAction::Toggle { lane, step });
+            }
+            "delete" | "backspace" => {
+                let lane = editor.cursor_lane;
+                let step = editor.cursor_step;
+                self.apply_pattern_action(PatternAction::ClearStep { lane, step });
             }
             "h" | "left" => editor.cursor_step = editor.cursor_step.saturating_sub(1),
             "l" | "right" => {

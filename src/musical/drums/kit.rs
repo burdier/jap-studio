@@ -223,6 +223,13 @@ impl DrumKit {
         Ok(id)
     }
 
+    pub fn remove_piece(&mut self, lane: usize) -> Result<InstrumentId, String> {
+        if lane >= self.pieces.len() {
+            return Err("La pieza ya no existe".into());
+        }
+        Ok(self.pieces.remove(lane).id)
+    }
+
     pub fn validate(&self) -> Result<HashSet<InstrumentId>, String> {
         if self.id.0 == 0 || !self.bus.validate() {
             return Err("Kit o bus de batería inválido".into());

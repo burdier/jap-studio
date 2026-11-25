@@ -85,6 +85,32 @@ impl DawApp {
                                 this.choose_drum_sample(DrumSampleTarget::AddLayer(id), cx);
                                 cx.notify();
                             })),
+                    )
+                    .child(
+                        flat_control(ds, false, ds.danger)
+                            .id(("drum-inspector-remove-piece", id.0 as usize))
+                            .h(px(22.0))
+                            .px_2()
+                            .text_color(rgb(ds.danger))
+                            .tooltip(|window, cx| {
+                                Tooltip::new("Eliminar esta pieza y sus notas del kit")
+                                    .build(window, cx)
+                            })
+                            .child("Eliminar pieza")
+                            .on_mouse_down(MouseButton::Left, cx.listener(move |this, _, _, cx| {
+                                if let Some(lane) = this
+                                    .pattern_editor
+                                    .session
+                                    .kit
+                                    .pieces
+                                    .iter()
+                                    .position(|p| p.id == id)
+                                {
+                                    this.apply_pattern_action(PatternAction::RemovePiece(lane));
+                                }
+                                cx.stop_propagation();
+                                cx.notify();
+                            })),
                     ),
             )
             .child(

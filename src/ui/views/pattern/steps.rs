@@ -17,7 +17,7 @@ use gpui::{
     component::tooltip::Tooltip, div, fill, point, prelude::*, px, relative, rgb, rgba, size,
 };
 
-const NAME_WIDTH: f32 = 190.0;
+const NAME_WIDTH: f32 = 208.0;
 
 fn beat_surface(ds: &DesignSystem, meter: Meter, at: i64) -> u32 {
     let beat = (at % meter.ticks_per_bar()) / meter.ticks_per_beat();
@@ -414,11 +414,45 @@ impl DawApp {
                     )
                     .child(
                         div()
-                            .pr_2()
+                            .pr(px(3.0))
                             .text_color(rgb(ds.muted))
                             .child(note_name(root)),
                     )
                     .child(track_peak_meter(ds, peak))
+                    .child(
+                        div()
+                            .id(("drum-remove-piece", piece_id.0 as usize))
+                            .w(px(18.0))
+                            .h(px(18.0))
+                            .flex_shrink_0()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded(px(4.0))
+                            .text_size(px(12.0))
+                            .text_color(rgb(ds.muted))
+                            .cursor_pointer()
+                            .hover({
+                                let danger = ds.danger;
+                                move |style| {
+                                    style
+                                        .bg(rgba((danger << 8) | 0x26))
+                                        .text_color(rgb(danger))
+                                }
+                            })
+                            .tooltip(|window, cx| {
+                                Tooltip::new("Eliminar pieza del kit").build(window, cx)
+                            })
+                            .child("×")
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |this, _, _, cx| {
+                                    this.apply_pattern_action(PatternAction::RemovePiece(lane));
+                                    cx.stop_propagation();
+                                    cx.notify();
+                                }),
+                            ),
+                    )
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |this, _, _, cx| {
