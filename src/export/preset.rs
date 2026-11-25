@@ -54,12 +54,19 @@ impl ExportOptions {
                 .join(",")
         };
         let length = self.length_beats.map_or("all".into(), |n| n.to_string());
-        Ok(format!(
+        let mut command = format!(
             "export -n {name} {target} -out {} -sr {} -bits {bits} {mp3} {channels} -start {} -length {length} -tail {} -master-fx {fx} -tracks {tracks}",
             quote(directory),
             self.sample_rate,
             self.start_beat,
             self.tail_seconds
-        ))
+        );
+        if let Some(lufs) = self.normalize_lufs {
+            command.push_str(&format!(" -lufs {lufs}"));
+        }
+        if let Some(tp) = self.true_peak_limit_db {
+            command.push_str(&format!(" -tp {tp}"));
+        }
+        Ok(command)
     }
 }

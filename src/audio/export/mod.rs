@@ -2,6 +2,8 @@
 mod files;
 mod job;
 mod lame;
+mod mastering;
+pub(crate) use mastering::LoudnessSummary;
 mod native;
 mod plugins;
 pub(crate) use plugins::Plugins;
@@ -39,11 +41,13 @@ pub(crate) struct Snapshot {
     pub bpm: f64,
     pub meter: Meter,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct Report {
     pub paths: Vec<PathBuf>,
     /// Muestras de salida por encima de ±1 antes de convertir; float conserva headroom.
     pub overs: u64,
+    /// Medición EBU R128 del resultado exportado (LUFS integrado, True Peak, LRA y ajustes).
+    pub loudness: LoudnessSummary,
 }
 
 pub(crate) struct ExportJob {

@@ -32,6 +32,7 @@ acotada de selección por NoteOn durante la reproducción.
 - **Buses auxiliares Send / Return (FX)**: las pistas pueden enviar señal post-fader (`0–100%`) a uno o varios buses Return (`:return` o menú de pista / Mixer). `Mix::render_block` procesa en 3 fases deterministas (hojas → grupos → returns) con actualización sin bloqueos (`Publication`) durante Play, soporte *Solo Safe* para buses Return, exportación offline y persistencia en Loro (limpiando envíos huérfanos al borrar un Return).
 - **Mapeo unificado de parámetros y MIDI Learn persistente (Fase 1)**: `MidiBindTarget` direcciona por IDs estables (`TrackId`, `FxId`, `InstrumentId`) volumen, pan, envíos Return, parámetros de FX Lua/Hay y parámetros VST3 (efectos e instrumentos). El motor VST3 expone `last_touched()` global, `list_parameters()` y `set_parameter()` bidireccional sin bloquear RT (`:learn.vst` o botón *MIDI Learn último VST3*). Todos los enlaces se guardan y restauran en `.loro`.
 - **Freeze / Unfreeze de pistas**: congelado pre-fader / post-FX en segundo plano a WAV 32-bit float (`:freeze`, `:unfreeze`, menú contextual de pista o insignia `❄` en cabecera). Durante Play la pista congelada libera la CPU de su instrumento y su rack FX conservando vivos volumen, pan, mute, solo, automatización, grupo y envíos Return.
+- **Export Pro (LUFS / True Peak)**: medición EBU R128 (`ebur128`) al exportar máster o stems con reporte final (`LUFS-I`, `dBTP`, `LRA`, ganancia y reducción del limitador) en el diálogo y la barra de estado; normalización de sonoridad objetivo en 2 pasadas con RAM acotada (`-lufs -14|off`), limitador True Peak 4× con lookahead compensado sin perder frames (`-tp -1|off`), presets rápidos en «Exportar audio» y persistencia en `EXPORT_DEFAULTS`.
 - **Flujo de trabajo, Transporte, Drums y Piano Roll**:
   - Navegación directa por pestañas (`Arrangement F1`, `Drums F2`, `Mixer F3`), breadcrumb vivo, dock inferior con pestañas y paleta de comandos (`:` / `Ctrl+P`) siempre accesible sin modo Vim.
   - Doble clic sobre espacio vacío de la cabecera de pista abre su instrumento asociado (editor nativo VST3 o editor acoplado).
@@ -724,7 +725,6 @@ acotada de selección por NoteOn durante la reproducción.
 
 ## Todavía pendiente
 
-- **Export Pro (LUFS / True Peak)**: normalización de sonoridad objetivo (ej. `-14 LUFS`, `-1 dBTP`), limitador True Peak opcional y resumen final de medición al exportar máster o stems.
 - **Automatización de parámetros FX / VST3 / Envíos (Fase 2 del Mapeo)**: extender las curvas de automatización del Arrangement (hoy Volumen y Pan) a cualquier `FxParam`, `VstInstrumentParam` y `TrackSend` usando `list_parameters()` / `last_touched()`.
 - **Panel de gestión MIDI Learn**: vista compacta para inspeccionar enlaces activos, ajustar rango `min/max` y desvincular controles concretos.
 - **Drums creativos**: Swing / Groove, probabilidad por paso, edición rápida de velocity/pitch por paso y guardado/carga de kits completos.
@@ -735,10 +735,9 @@ acotada de selección por NoteOn durante la reproducción.
 
 ## Próximos incrementos recomendados
 
-1. **Export Pro (LUFS / True Peak)** sobre el pipeline existente de `src/audio/export/` y `ebur128`.
-2. **Automatización unificada (Fase 2)** reutilizando los IDs estables y `set_parameter()` de Fase 1.
-3. **Drums creativos** (Swing, probabilidad, velocity por paso y presets de kit).
-4. **Freeze persistente + tempo map / chase de notas** y actualización del manifiesto Flatpak.
+1. **Automatización unificada (Fase 2)** reutilizando los IDs estables y `set_parameter()` de Fase 1.
+2. **Drums creativos** (Swing, probabilidad, velocity por paso y presets de kit).
+3. **Freeze persistente + tempo map / chase de notas** y actualización del manifiesto Flatpak.
 
 La futura arquitectura completa se mantiene como dirección; estos puntos son tareas
 concretas, no módulos vacíos ya creados.

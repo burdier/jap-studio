@@ -35,6 +35,19 @@ impl DawApp {
                         [128, 192, 256, 320].map(|rate| (format!("{rate} kbps"), Mp3Mode::Cbr(rate))).to_vec()
                     } else { (0..=9).map(|q| (if q == 0 { "0 · mejor".into() } else { q.to_string() }, Mp3Mode::Vbr(q))).collect() }, |o, v| o.mp3 = v, cx)))
                 .child(self.export_choices("Canales", draft.mono, vec![("Estéreo".into(), false), ("Mono".into(), true)], |o, v| o.mono = v, cx))
+                .child(self.export_choices("Normalizar sonoridad (LUFS)", draft.normalize_lufs, vec![
+                    ("Desactivado".into(), None),
+                    ("-14 LUFS · Streaming".into(), Some(-14.0)),
+                    ("-16 LUFS · Podcast".into(), Some(-16.0)),
+                    ("-11 LUFS · CD".into(), Some(-11.0)),
+                    ("-9 LUFS · Club".into(), Some(-9.0)),
+                ], |o, v| o.normalize_lufs = v, cx))
+                .child(self.export_choices("Limitador True Peak", draft.true_peak_limit_db, vec![
+                    ("Desactivado".into(), None),
+                    ("-2.0 dBTP".into(), Some(-2.0)),
+                    ("-1.0 dBTP · Streaming".into(), Some(-1.0)),
+                    ("-0.3 dBTP · Mastering".into(), Some(-0.3)),
+                ], |o, v| o.true_peak_limit_db = v, cx))
                 .child(self.export_choices("Utility de salida", draft.master_fx, vec![("Auto · solo master".into(), None), ("Incluir".into(), Some(true)), ("Excluir".into(), Some(false))], |o, v| o.master_fx = v, cx))
                 .child(div().flex().flex_col().gap_2().child(self.export_label("Pistas incluidas"))
                     .child(div().flex().flex_wrap().gap_2()

@@ -61,6 +61,10 @@ pub struct ExportOptions {
     pub tail_seconds: f64,
     /// None: Utility solo en master. Some: decisión explícita del usuario.
     pub master_fx: Option<bool>,
+    /// Sonoridad integrada objetivo en LUFS (EBU R128). `None` desactiva la normalización.
+    pub normalize_lufs: Option<f64>,
+    /// Techo del limitador True Peak en dBTP. `None` desactiva el limitador.
+    pub true_peak_limit_db: Option<f64>,
 }
 
 impl Default for ExportOptions {
@@ -79,6 +83,8 @@ impl Default for ExportOptions {
             length_beats: None,
             tail_seconds: 0.0,
             master_fx: None,
+            normalize_lufs: None,
+            true_peak_limit_db: None,
         }
     }
 }
@@ -150,6 +156,44 @@ impl ExportOptions {
                 _ => {}
             }
         }
+        if self
+            .normalize_lufs
+            .is_some_and(|lufs| !lufs.is_finite() || !(-40.0..=-1.0).contains(&lufs))
+        {
+            return Err("Objetivo LUFS admitido: -40 a -1 LUFS".into());
+        }
+        if self
+            .true_peak_limit_db
+            .is_some_and(|tp| !tp.is_finite() || !(-12.0..=0.0).contains(&tp))
+        {
+            return Err("Techo True Peak admitido: -12 a 0 dBTP".into());
+        }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn loudness_and_true_peak_flags_round_trip_and_validate() {
+        let parsed = ExportOptions::parse("export -n Master.wav -lufs -14 -tp -1").unwrap();
+        assert_eq!(parsed.normalize_lufs, Some(-14.0));
+        assert_eq!(parsed.true_peak_limit_db, Some(-1.0));
+        let cmd = parsed.to_command().unwrap();
+        let reparsed = ExportOptions::parse(&cmd).unwrap();
+        assert_eq!(reparsed.normalize_lufs, Some(-14.0));
+        assert_eq!(reparsed.true_peak_limit_db, Some(-1.0));
+
+        let cleared =
+            ExportOptions::parse_with_defaults("export -lufs off -tp off", &parsed).unwrap();
+        assert_eq!(cleared.normalize_lufs, None);
+        assert_eq!(cleared.true_peak_limit_db, None);
+
+        assert!(ExportOptions::parse("export -lufs 0").is_err());
+        assert!(ExportOptions::parse("export -lufs -50").is_err());
+        assert!(ExportOptions::parse("export -tp 0.5").is_err());
+        assert!(ExportOptions::parse("export -tp -20").is_err());
     }
 }

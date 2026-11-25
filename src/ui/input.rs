@@ -448,7 +448,7 @@ impl DawApp {
             "track.solo" => self.toggle_track_solo(self.cursor_row),
             "export.settings" => self.open_export_settings(),
             "export.cancel" => self.cancel_export(),
-            "export.help" => self.status_message = "export -n Nombre.[wav,mp3,aiff,flac] -master|-individuals · -sr Hz -bits 16|24|32|32f -bitrate kbps|-vbr 0–9 -mono -tracks 1,3 -start beats -length beats -tail segundos -master-fx on|off -out carpeta · docs/EXPORT.md".into(),
+            "export.help" => self.status_message = "export -n Nombre.[wav,mp3,aiff,flac] -master|-individuals · -sr Hz -bits 16|24|32|32f -bitrate kbps|-vbr 0–9 -mono -lufs -14|off -tp -1|off -tracks 1,3 -start beats -length beats -tail segundos -master-fx on|off -out carpeta · docs/EXPORT.md".into(),
             "utility" | "utility.open" => self.open_utility(),
             "master.fx" | "mfx" => self.show_master_fx(),
             "utility.remove" => {

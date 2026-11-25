@@ -112,6 +112,20 @@ impl ExportOptions {
                         _ => return Err("Usa -master-fx on|off|auto".into()),
                     }
                 }
+                "-lufs" => {
+                    options.normalize_lufs = if value.eq_ignore_ascii_case("off") {
+                        None
+                    } else {
+                        Some(number(value)?)
+                    };
+                }
+                "-tp" | "-true-peak" => {
+                    options.true_peak_limit_db = if value.eq_ignore_ascii_case("off") {
+                        None
+                    } else {
+                        Some(number(value)?)
+                    };
+                }
                 "-tracks" => {
                     options.tracks.clear();
                     if value.eq_ignore_ascii_case("all") {

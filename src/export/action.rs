@@ -122,6 +122,38 @@ pub static SPEC: ActionSpec = ActionSpec {
                 off: "-master",
             },
         },
+        ActionParameter {
+            key: "lufs",
+            label: "Normalizar sonoridad",
+            hint: "Vacío: desactivado · Streaming -14 · Podcast -16 · Club -9",
+            kind: ParameterKind::Number {
+                unit: "LUFS",
+                min: -40.0,
+                min_exclusive: false,
+                max: -1.0,
+                step: 1.0,
+                whole: false,
+            },
+            default: "",
+            empty_value: Some("off"),
+            argument: Argument::Flag("-lufs"),
+        },
+        ActionParameter {
+            key: "true_peak",
+            label: "Limitador True Peak",
+            hint: "Vacío: desactivado · Streaming -1.0 · Mastering -0.3",
+            kind: ParameterKind::Number {
+                unit: "dBTP",
+                min: -12.0,
+                min_exclusive: false,
+                max: 0.0,
+                step: 0.5,
+                whole: false,
+            },
+            default: "",
+            empty_value: Some("off"),
+            argument: Argument::Flag("-tp"),
+        },
     ],
 };
 
@@ -159,6 +191,15 @@ impl ExportOptions {
             (
                 "individuals",
                 (self.target == Target::Individuals).to_string(),
+            ),
+            (
+                "lufs",
+                self.normalize_lufs.map_or(String::new(), |n| n.to_string()),
+            ),
+            (
+                "true_peak",
+                self.true_peak_limit_db
+                    .map_or(String::new(), |n| n.to_string()),
             ),
         ])
     }

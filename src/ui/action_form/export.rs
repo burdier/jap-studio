@@ -146,12 +146,7 @@ impl DawApp {
         {
             export.running = false;
             match result {
-                Ok(report) => {
-                    export.completed = Some(Report {
-                        paths: report.paths.clone(),
-                        overs: report.overs,
-                    })
-                }
+                Ok(report) => export.completed = Some(report.clone()),
                 Err(error) => form.error = Some(error.to_owned()),
             }
         }

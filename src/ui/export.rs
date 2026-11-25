@@ -146,6 +146,8 @@ impl DawApp {
             length_beats: Some(end_beat - start_beat),
             tail_seconds: 1.5,
             master_fx: Some(false),
+            normalize_lufs: None,
+            true_peak_limit_db: None,
         };
         self.stop_audio();
         match self.build_export_job_inner(options, Some(track.id)) {
@@ -376,6 +378,8 @@ impl DawApp {
                 1.0
             },
             master_fx: Some(false),
+            normalize_lufs: None,
+            true_peak_limit_db: None,
         };
         let source_midi_ids: Vec<ClipId> = clips.iter().map(|c| c.id).collect();
         self.stop_audio();
@@ -434,6 +438,28 @@ impl DawApp {
                             .and_then(|p| p.parent())
                             .map(|p| p.display().to_string())
                             .unwrap_or_default();
+                        let mut metrics = Vec::new();
+                        if let Some(lufs) = report.loudness.integrated_lufs {
+                            metrics.push(format!("{lufs:.1} LUFS"));
+                        }
+                        if let Some(tp) = report.loudness.true_peak_dbtp {
+                            metrics.push(format!("{tp:.1} dBTP"));
+                        }
+                        if report.loudness.applied_gain_db.abs() >= 0.05 {
+                            metrics
+                                .push(format!("gain {:+.1} dB", report.loudness.applied_gain_db));
+                        }
+                        if report.loudness.max_gain_reduction_db >= 0.05 {
+                            metrics.push(format!(
+                                "GR -{:.1} dB",
+                                report.loudness.max_gain_reduction_db
+                            ));
+                        }
+                        let metrics_text = if metrics.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" · {}", metrics.join(" · "))
+                        };
                         let peak = if report.overs == 0 {
                             String::new()
                         } else {
@@ -443,7 +469,7 @@ impl DawApp {
                             )
                         };
                         format!(
-                            "Exportados {} archivos → {folder}{peak}",
+                            "Exportados {} archivos → {folder}{metrics_text}{peak}",
                             report.paths.len()
                         )
                     }

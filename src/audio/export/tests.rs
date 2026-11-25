@@ -515,3 +515,81 @@ fn master_fx_processes_master_mix_and_respects_master_fx_flag() {
     let without_fx = AudioFile::decode(&without_fx.paths[0]).unwrap();
     assert!((without_fx.frames[1000][0] - 0.4).abs() < 1e-4);
 }
+
+#[test]
+fn lufs_normalization_and_true_peak_limiter_preserve_duration_and_hit_targets() {
+    let temp = Temp::new();
+    let sr = 48_000u32;
+    let total_frames = sr as usize; // 1.0 s exacta
+    let make_sine = |amp: f32| -> Snapshot {
+        let frames: Vec<[f32; 2]> = (0..total_frames)
+            .map(|i| {
+                let s = (i as f32 * std::f32::consts::TAU * 1000.0 / sr as f32).sin() * amp;
+                [s, s]
+            })
+            .collect();
+        snapshot(vec![clip(frames, sr)])
+    };
+
+    // 1. Normalización LUFS en 2 pasadas desde señal suave (~-26 LUFS) a -14 LUFS
+    let norm = run(
+        make_sine(0.08),
+        temp.options("export -n Norm.wav -bits 32f -lufs -14"),
+    );
+    let norm_audio = AudioFile::decode(&norm.paths[0]).unwrap();
+    assert_eq!(
+        norm_audio.frames.len(),
+        total_frames,
+        "la normalización en 2 pasadas debe conservar la duración exacta"
+    );
+    let lufs = norm.loudness.integrated_lufs.expect("LUFS medido");
+    assert!(
+        (lufs - (-14.0)).abs() < 0.25,
+        "esperado ~-14.0 LUFS, medido {lufs:.2}"
+    );
+    assert!(
+        norm.loudness.applied_gain_db > 5.0,
+        "debió aplicar ganancia positiva, obtuvo {:.2} dB",
+        norm.loudness.applied_gain_db
+    );
+
+    // 2. Limitador True Peak en 1 pasada sobre señal caliente (amp = 1.6 -> > +4 dBTP)
+    let lim = run(
+        make_sine(1.6),
+        temp.options("export -n Lim.wav -bits 32f -tp -1"),
+    );
+    let lim_audio = AudioFile::decode(&lim.paths[0]).unwrap();
+    assert_eq!(
+        lim_audio.frames.len(),
+        total_frames,
+        "el limitador lookahead debe compensar su latencia sin perder frames"
+    );
+    assert_eq!(
+        lim.overs, 0,
+        "el limitador True Peak debe evitar overs >0 dBFS"
+    );
+    let tp = lim.loudness.true_peak_dbtp.expect("True Peak medido");
+    assert!(
+        tp <= -0.95,
+        "True Peak debe respetar el techo de -1.0 dBTP, medido {tp:.2} dBTP"
+    );
+    assert!(
+        lim.loudness.max_gain_reduction_db > 3.0,
+        "debió registrar reducción de ganancia real, obtuvo {:.2} dB",
+        lim.loudness.max_gain_reduction_db
+    );
+
+    // 3. Combinado: normalización LUFS + techo True Peak (-9 LUFS / -1 dBTP)
+    let combo = run(
+        make_sine(0.1),
+        temp.options("export -n Combo.wav -bits 32f -lufs -9 -tp -1"),
+    );
+    let combo_audio = AudioFile::decode(&combo.paths[0]).unwrap();
+    assert_eq!(combo_audio.frames.len(), total_frames);
+    assert_eq!(combo.overs, 0);
+    let combo_tp = combo.loudness.true_peak_dbtp.expect("True Peak medido");
+    assert!(
+        combo_tp <= -0.95,
+        "True Peak combinado debe mantenerse <= -1 dBTP, medido {combo_tp:.2}"
+    );
+}
