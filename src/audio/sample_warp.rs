@@ -91,7 +91,7 @@ fn warp_repitch(input: &[StereoFrame], target_len: usize) -> Vec<StereoFrame> {
 }
 
 /// Detecta inicios de golpes (transientes) comparando envolvente rápida vs lenta.
-fn detect_transients(input: &[StereoFrame], rate: u32) -> Vec<usize> {
+pub(crate) fn detect_transients(input: &[StereoFrame], rate: u32) -> Vec<usize> {
     let sr = rate.max(8_000) as f32;
     let fast_a = (-1.0 / (0.002 * sr)).exp(); // 2 ms
     let slow_a = (-1.0 / (0.035 * sr)).exp(); // 35 ms
@@ -120,6 +120,85 @@ fn detect_transients(input: &[StereoFrame], rate: u32) -> Vec<usize> {
         cuts.push(input.len());
     }
     cuts
+}
+
+/// Genera exactamente `count` slices `(start_pct, end_pct)` en `0.0..=100.0` sobre un tramo
+/// `[range_start, range_end]` del audio (estilo MPC Chop: por transientes o división uniforme).
+pub(crate) fn slice_ranges(
+    input: &[StereoFrame],
+    rate: u32,
+    range_start: usize,
+    range_end: usize,
+    count: usize,
+    by_transients: bool,
+) -> Vec<(f32, f32)> {
+    let total = input.len();
+    let count = count.clamp(1, 32);
+    if total == 0 {
+        return Vec::new();
+    }
+    let a = range_start.min(total - 1);
+    let b = range_end.clamp(a + 1, total);
+    let span = b - a;
+
+    let mut cuts = if by_transients && span > 128 {
+        let raw = detect_transients(&input[a..b], rate);
+        // Tomar los cortes interiores (excluyendo 0 y span) puntuados por energía de ataque.
+        let win = ((rate.max(8_000) as usize) / 60).max(64); // ~16 ms
+        let mut scored: Vec<(usize, f32)> = raw
+            .into_iter()
+            .filter(|&c| c > 0 && c < span)
+            .map(|c| {
+                let end = (c + win).min(span);
+                let peak = input[a + c..a + end]
+                    .iter()
+                    .fold(0.0_f32, |m, f| m.max(f[0].abs().max(f[1].abs())));
+                (c, peak)
+            })
+            .collect();
+        scored.sort_by(|x, y| y.1.total_cmp(&x.1));
+        scored.truncate(count.saturating_sub(1));
+        let mut inner: Vec<usize> = scored.into_iter().map(|(c, _)| c).collect();
+        inner.sort_unstable();
+        inner.dedup();
+        let mut pts = Vec::with_capacity(count + 1);
+        pts.push(0);
+        pts.extend(inner);
+        pts.push(span);
+        // Si hubo menos transientes que `count`, subdividir el segmento más largo hasta llegar a `count`.
+        while pts.len() < count + 1 {
+            let Some((best_idx, _)) = pts
+                .windows(2)
+                .enumerate()
+                .max_by_key(|(_, w)| w[1].saturating_sub(w[0]))
+            else {
+                break;
+            };
+            let lo = pts[best_idx];
+            let hi = pts[best_idx + 1];
+            if hi - lo < 2 {
+                break;
+            }
+            pts.insert(best_idx + 1, lo + (hi - lo) / 2);
+        }
+        pts
+    } else {
+        (0..=count)
+            .map(|i| ((i as u64 * span as u64) / count as u64) as usize)
+            .collect()
+    };
+
+    if cuts.len() < 2 {
+        cuts = vec![0, span];
+    }
+    let inv = 100.0 / total as f64;
+    cuts.windows(2)
+        .filter_map(|w| {
+            let s = ((a + w[0]) as f64 * inv) as f32;
+            let e = ((a + w[1]) as f64 * inv) as f32;
+            (e > s + 0.05).then_some((s.clamp(0.0, 99.8), e.clamp(0.1, 100.0)))
+        })
+        .collect()
 }
 
 /// Modo Beats: preserva los transientes intactos en su nueva posición temporal y

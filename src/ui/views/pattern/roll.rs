@@ -106,9 +106,9 @@ impl DawApp {
                             if event.position.x < grid.notes.left()
                                 && let Some((_, pitch)) = grid.pick(key_position, length)
                             {
-                                if !this.preview_drum_piece(piece_id, pitch, 100) {
+                                if !this.trigger_drum_audition(piece_id, pitch, 100) {
                                     this.status_message =
-                                        "Pulsa Play para escuchar las teclas del kit".into();
+                                        "No se pudo abrir la salida de audio para la pieza".into();
                                 }
                             } else {
                                 this.begin_drum_roll_input(event.position, event.click_count);

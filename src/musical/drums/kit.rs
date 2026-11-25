@@ -1,6 +1,6 @@
 //! Piezas y capas del kit. Las rutas aún no representan muestras decodificadas.
 use crate::{
-    devices::sampler::{ATTACK, ROOT, SamplerParams},
+    devices::sampler::{ATTACK, END, ROOT, START, SamplerParams},
     musical::{model::InstrumentId, track::TrackMix},
 };
 use std::{collections::HashSet, path::Path};
@@ -238,6 +238,92 @@ impl DrumKit {
             timing_mode: OffsetMode::Fixed,
         });
         Ok(id)
+    }
+
+    /// Trocea un mismo archivo de audio en múltiples piezas consecutivas estilo MPC Chop.
+    /// Cada slice recibe su rango `START`/`END` en porcentaje y un grupo de corte mutuo opcional.
+    pub fn add_sliced_sample(
+        &mut self,
+        source: String,
+        base_name: &str,
+        slices: &[(f32, f32)],
+        choke_group: Option<u16>,
+        replace_existing: bool,
+    ) -> Result<Vec<InstrumentId>, String> {
+        if source.trim().is_empty() || source.contains('\0') {
+            return Err("Ruta de muestra inválida".into());
+        }
+        if slices.is_empty() {
+            return Err("No hay cortes válidos para enviar a los pads".into());
+        }
+        let base_count = if replace_existing {
+            0
+        } else {
+            self.pieces.len()
+        };
+        let available = MAX_DRUM_PIECES.saturating_sub(base_count);
+        if available == 0 {
+            return Err(format!("El kit admite hasta {MAX_DRUM_PIECES} piezas"));
+        }
+        let take = slices.len().min(available);
+        if replace_existing {
+            self.pieces.clear();
+        }
+        let clean_name = {
+            let trimmed = base_name.trim();
+            if trimmed.is_empty() {
+                Path::new(&source)
+                    .file_stem()
+                    .and_then(|n| n.to_str())
+                    .map(str::trim)
+                    .filter(|n| !n.is_empty())
+                    .unwrap_or("Chop")
+            } else {
+                trimmed
+            }
+        };
+        let mut next_id = self
+            .pieces
+            .iter()
+            .map(|piece| piece.id.0)
+            .fold(LAST_LEGACY_DRUM_ID, u32::max);
+        let mut created = Vec::with_capacity(take);
+        for (idx, &(start_pct, end_pct)) in slices.iter().take(take).enumerate() {
+            next_id = next_id
+                .checked_add(1)
+                .filter(|&id| id < u32::MAX)
+                .ok_or("IDs de pieza agotados")?;
+            let id = InstrumentId(next_id);
+            let mut sampler = SamplerParams::default();
+            sampler.apply_drum_preset();
+            sampler.play_full_sample();
+            sampler.filter = false;
+            sampler.set(ATTACK, 0.0);
+            sampler.keytrack = true;
+            sampler.set(ROOT, 36.0);
+            let s = start_pct.clamp(0.0, 99.8);
+            let e = end_pct.clamp((s + 0.1).min(100.0), 100.0);
+            sampler.set(END, e);
+            sampler.set(START, s);
+            self.pieces.push(DrumPiece {
+                id,
+                name: format!("{clean_name} {}", idx + 1),
+                layers: vec![DrumLayer {
+                    source: source.clone(),
+                    velocity_min: 1,
+                    velocity_max: 127,
+                    start_offset: 0,
+                    offset_mode: OffsetMode::Fixed,
+                }],
+                sampler,
+                choke_group: choke_group.filter(|&g| g != 0),
+                mix: DrumMix::default(),
+                timing_offset: 0,
+                timing_mode: OffsetMode::Fixed,
+            });
+            created.push(id);
+        }
+        Ok(created)
     }
 
     /// Duplica una pieza del kit justo debajo de la original.

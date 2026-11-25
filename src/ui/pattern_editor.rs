@@ -3,6 +3,7 @@ mod action;
 mod hydrogen;
 mod hydrogen_xml;
 mod inspector;
+mod mpc;
 mod roll;
 
 use super::{CenterView, DawApp, workspace_focus::Panel};
@@ -15,6 +16,10 @@ use gpui::{ScrollHandle, Task};
 
 pub(super) use action::PatternAction;
 pub(super) use inspector::DrumSampleTarget;
+pub(super) use mpc::{
+    DrumViewMode, MPC_BANK_COUNT, MPC_KEY_LABELS, MPC_PAD_COUNT, MPC_VISUAL_ROWS, MpcState,
+    NoteRepeatRate, SixteenLevelsMode,
+};
 
 pub(in crate::ui) const SONG_BARS_PER_PAGE: i64 = 8;
 
@@ -50,6 +55,8 @@ pub(super) struct PatternEditor {
     pub workspace_ratio: Option<f32>,
     pub inspector_open: bool,
     pub mixer_open: bool,
+    pub view_mode: DrumViewMode,
+    pub mpc: MpcState,
     pub roll: roll::DrumRoll,
     sample_task: Option<Task<()>>,
     /// Picos normalizados por muestra de percusión; `None` mientras decodifica o si falló.
@@ -78,6 +85,8 @@ impl Default for PatternEditor {
             workspace_ratio: None,
             inspector_open: false,
             mixer_open: false,
+            view_mode: DrumViewMode::Steps,
+            mpc: MpcState::default(),
             roll: Default::default(),
             sample_task: None,
             waveforms: Default::default(),

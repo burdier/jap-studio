@@ -121,6 +121,8 @@ impl DawApp {
             player: None,
             tail_player: None,
             file_playback: None,
+            drum_audition: None,
+            drum_note_repeat: std::sync::Arc::new(crate::audio::drums::NoteRepeatControl::default()),
             audio_loop: None,
             pattern_loop_beats: None,
             metronome: std::sync::Arc::new(crate::audio::metronome::MetronomeControl::new()),

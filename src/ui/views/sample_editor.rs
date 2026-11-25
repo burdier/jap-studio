@@ -119,6 +119,24 @@ impl DawApp {
         let accent = ds.accent;
         let signal = ds.cyan;
         let warning = ds.warning;
+        let orange = ds.orange;
+        let mpc_slice_frames: Vec<usize> = if tab == 4 {
+            let mpc = &self.pattern_editor.mpc;
+            let total_f = c.file.frames.len() as f64;
+            crate::audio::sample_warp::slice_ranges(
+                &c.file.frames,
+                c.file.sample_rate,
+                a,
+                b,
+                mpc.chop_slices,
+                mpc.chop_transients,
+            )
+            .into_iter()
+            .map(|(s_pct, _)| ((f64::from(s_pct) / 100.0) * total_f).round() as usize)
+            .collect()
+        } else {
+            Vec::new()
+        };
         let grid = ds.grid;
         let cursor_color = ds.text;
         let surface_bg = ds.arrangement_surface();
@@ -375,6 +393,14 @@ impl DawApp {
                                 let x = xpos(frame);
                                 paint(win, x, 0., 1.5, height, (warning << 8) | 0xc0);
                                 paint(win, x - 3., 0., 7., 6., (warning << 8) | 0xff);
+                            }
+                        }
+                        // Marcadores de corte MPC Chop cuando la pestaña MPC está abierta
+                        for &frame in &mpc_slice_frames {
+                            if (va..=vb).contains(&frame) {
+                                let x = xpos(frame);
+                                paint(win, x, 0., 1.5, height, (orange << 8) | 0xdc);
+                                paint(win, (x - 3.).max(0.), 0., 7., 5., (orange << 8) | 0xff);
                             }
                         }
                         // Cursor de preescucha
@@ -745,6 +771,9 @@ impl DawApp {
             .child(self.sample_button("Warp / Tono", tab == 3, cx, |s, _| {
                 s.timeline.sample_editor.tab = 3
             }))
+            .child(self.sample_button("✂ MPC Chop", tab == 4, cx, |s, _| {
+                s.timeline.sample_editor.tab = 4
+            }))
             .child(self.sample_button("Tejer EQ", false, cx, move |s, _| {
                 s.select_tejer_band(track_index, None)
             }))
@@ -854,7 +883,8 @@ impl DawApp {
                     .child(status_bar)
                     .child(tabs)
                     .when(tab == 3, |v| v.child(self.sample_tuning(c, cx)))
-                    .when(tab != 3, |v| v.child(self.sample_bell(c, cx)))
+                    .when(tab == 4, |v| v.child(self.sample_mpc_chop(c, a, b, cx)))
+                    .when(tab != 3 && tab != 4, |v| v.child(self.sample_bell(c, cx)))
                     .when(c.props.locked, |v| {
                         v.child(
                             div()
@@ -872,6 +902,222 @@ impl DawApp {
                         )
                     }),
             )
+    }
+
+    fn sample_mpc_chop(
+        &self,
+        c: &AudioClip,
+        range_start: usize,
+        range_end: usize,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        let ds = &self.ds;
+        let mpc = &self.pattern_editor.mpc;
+        let slices = mpc.chop_slices;
+        let by_transients = mpc.chop_transients;
+        let choke = mpc.chop_choke;
+        let source = c
+            .original_file()
+            .source_path
+            .as_ref()
+            .or(c.file.source_path.as_ref())
+            .and_then(|p| p.to_str())
+            .map(str::to_owned);
+        let clip_name = c.name.clone();
+        let file = c.file.clone();
+
+        let count_row = div()
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap_1()
+            .child(
+                div()
+                    .text_xs()
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_color(rgb(ds.orange))
+                    .mr(px(4.))
+                    .child("MPC CHOP"),
+            )
+            .children([4usize, 8, 16].into_iter().map(|n| {
+                let active = slices == n;
+                flat_control(ds, active, ds.orange)
+                    .id(("sample-chop-count", n))
+                    .h(px(22.))
+                    .px(px(8.))
+                    .rounded(px(4.))
+                    .font_family("monospace")
+                    .text_size(px(10.5))
+                    .text_color(rgb(if active { ds.text } else { ds.muted }))
+                    .child(format!("{n} pads"))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, _, cx| {
+                            this.pattern_editor.mpc.chop_slices = n;
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    )
+            }))
+            .child(div().w(px(1.)).h(px(14.)).mx(px(3.)).bg(rgb(ds.border)))
+            .child(
+                flat_control(ds, by_transients, ds.cyan)
+                    .id("sample-chop-transients")
+                    .h(px(22.))
+                    .px(px(8.))
+                    .rounded(px(4.))
+                    .text_size(px(10.5))
+                    .text_color(rgb(if by_transients { ds.text } else { ds.muted }))
+                    .child("Por transientes")
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, cx| {
+                            this.pattern_editor.mpc.chop_transients = true;
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    ),
+            )
+            .child(
+                flat_control(ds, !by_transients, ds.cyan)
+                    .id("sample-chop-equal")
+                    .h(px(22.))
+                    .px(px(8.))
+                    .rounded(px(4.))
+                    .text_size(px(10.5))
+                    .text_color(rgb(if !by_transients { ds.text } else { ds.muted }))
+                    .child("Rejilla igual")
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, cx| {
+                            this.pattern_editor.mpc.chop_transients = false;
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    ),
+            )
+            .child(
+                flat_control(ds, choke, ds.warning)
+                    .id("sample-chop-choke")
+                    .h(px(22.))
+                    .px(px(8.))
+                    .rounded(px(4.))
+                    .text_size(px(10.5))
+                    .text_color(rgb(if choke { ds.text } else { ds.muted }))
+                    .tooltip(|window, cx| {
+                        Tooltip::new("Choke mutuo (Grupo 1): cada slice corta al anterior")
+                            .build(window, cx)
+                    })
+                    .child(if choke { "Choke G1: ON" } else { "Choke: OFF" })
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, cx| {
+                            this.pattern_editor.mpc.chop_choke =
+                                !this.pattern_editor.mpc.chop_choke;
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    ),
+            );
+
+        let send_row = div()
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap_2()
+            .child({
+                let src = source.clone();
+                let name = clip_name.clone();
+                let f = file.clone();
+                flat_control(ds, true, ds.orange)
+                    .id("sample-chop-send-add")
+                    .h(px(26.))
+                    .px(px(12.))
+                    .rounded(px(5.))
+                    .text_size(px(11.))
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_color(rgb(ds.text))
+                    .child(format!("✂ Enviar {slices} slices a Pads MPC"))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, _, cx| {
+                            if let Some(path) = src.clone() {
+                                this.chop_audio_to_mpc_pads(
+                                    path,
+                                    &name,
+                                    &f.frames,
+                                    f.sample_rate,
+                                    range_start,
+                                    range_end,
+                                    slices,
+                                    by_transients,
+                                    choke,
+                                    false,
+                                );
+                            } else {
+                                this.status_message =
+                                    "Este clip no tiene archivo de origen en disco para trocear"
+                                        .into();
+                            }
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    )
+            })
+            .child({
+                let src = source;
+                let name = clip_name;
+                let f = file;
+                flat_control(ds, false, ds.danger)
+                    .id("sample-chop-send-replace")
+                    .h(px(26.))
+                    .px(px(10.))
+                    .rounded(px(5.))
+                    .text_size(px(10.5))
+                    .text_color(rgb(ds.muted))
+                    .tooltip(|window, cx| {
+                        Tooltip::new("Reemplaza el kit actual por estos slices en el Banco A")
+                            .build(window, cx)
+                    })
+                    .child("Reemplazar kit en Banco A")
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, _, cx| {
+                            if let Some(path) = src.clone() {
+                                this.chop_audio_to_mpc_pads(
+                                    path,
+                                    &name,
+                                    &f.frames,
+                                    f.sample_rate,
+                                    range_start,
+                                    range_end,
+                                    slices,
+                                    by_transients,
+                                    choke,
+                                    true,
+                                );
+                            } else {
+                                this.status_message =
+                                    "Este clip no tiene archivo de origen en disco para trocear"
+                                        .into();
+                            }
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    )
+            });
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .p_2()
+            .rounded(px(6.))
+            .bg(rgb(ds.panel_dark))
+            .border_1()
+            .border_color(rgb(ds.border))
+            .child(count_row)
+            .child(send_row)
     }
 
     fn sample_tuning(&self, c: &AudioClip, cx: &mut Context<Self>) -> Div {

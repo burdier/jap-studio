@@ -469,4 +469,32 @@ mod tests {
         assert_eq!(session.pattern(p1).unwrap().notes.notes().len(), 1);
         session.validate().unwrap();
     }
+
+    #[test]
+    fn add_sliced_sample_creates_choke_group_and_valid_ranges() {
+        let mut session = DrumSession::default();
+        let slices = vec![(0.0, 25.0), (25.0, 50.0), (50.0, 75.0), (75.0, 100.0)];
+        let created = session
+            .kit
+            .add_sliced_sample("break.wav".into(), "Break", &slices, Some(1), true)
+            .unwrap();
+        assert_eq!(created.len(), 4);
+        assert_eq!(session.kit.pieces.len(), 4);
+        assert_eq!(session.kit.pieces[0].name, "Break 1");
+        assert_eq!(session.kit.pieces[0].choke_group, Some(1));
+        assert!(!session.kit.pieces[0].sampler.filter);
+        assert_eq!(
+            session.kit.pieces[2]
+                .sampler
+                .get(crate::devices::sampler::START),
+            50.0
+        );
+        assert_eq!(
+            session.kit.pieces[2]
+                .sampler
+                .get(crate::devices::sampler::END),
+            75.0
+        );
+        session.validate().unwrap();
+    }
 }

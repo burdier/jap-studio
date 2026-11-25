@@ -229,6 +229,7 @@ impl DawApp {
                 .map(|score| crate::audio::drums::DrumInput {
                     score: Some(score),
                     kit: session.kit.clone(),
+                    note_repeat: None,
                 })
         } else {
             None

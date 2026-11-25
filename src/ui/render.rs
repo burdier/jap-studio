@@ -63,6 +63,7 @@ impl Render for DawApp {
         self.poll_export(cx);
         self.poll_audio_probe();
         self.poll_file_playback();
+        self.poll_mpc_live();
         self.poll_audio_recording();
         self.scan_palette_plugins(cx);
         if (self.fx.editor_track.is_some_and(|id| {
@@ -233,6 +234,13 @@ impl Render for DawApp {
             || self.settings.audio.probe.is_some()
             || self.instrument.loading()
             || (piano_editor && self.instrument.is_running())
+            || self.drum_note_repeat.is_active()
+            || self
+                .pattern_editor
+                .mpc
+                .pad_flash
+                .iter()
+                .any(|t| t.is_some_and(|at| at.elapsed().as_secs_f32() < 0.22))
         {
             cx.on_next_frame(window, |_, _, cx| cx.notify());
             window.request_animation_frame();
@@ -642,6 +650,7 @@ impl Render for DawApp {
                     this.piano_ui.drag = None;
                     this.release_mouse_note();
                     this.release_chord_audition();
+                    this.mpc_pad_release();
                     let dropped_to_sampler = this.sampler_ui.drop_hover.take().filter(|_| {
                         this.sampler_ui
                             .panel_bounds
@@ -695,6 +704,7 @@ impl Render for DawApp {
                     this.piano_ui.drag = None;
                     this.release_mouse_note();
                     this.release_chord_audition();
+                    this.mpc_pad_release();
                     let dropped_to_sampler = this.sampler_ui.drop_hover.take().filter(|_| {
                         this.sampler_ui
                             .panel_bounds

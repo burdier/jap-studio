@@ -418,6 +418,10 @@ impl Player {
             .map_or(Ok(()), |(drums, _)| drums.poll())
     }
 
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
     pub fn preview_drum(&mut self, note: DrumPreview) -> bool {
         self.drums
             .as_mut()

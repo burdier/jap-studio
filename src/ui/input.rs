@@ -149,6 +149,9 @@ impl DawApp {
         }
         let modifiers = event.keystroke.modifiers;
         if !modifiers.control && !modifiers.alt && !modifiers.platform {
+            if self.drums_panel_active() && self.handle_mpc_key_down(key, event.is_held) {
+                return;
+            }
             self.handle_workspace_key(key);
         }
     }
@@ -158,6 +161,9 @@ impl DawApp {
             .key_char
             .as_deref()
             .unwrap_or(&event.keystroke.key);
+        if self.handle_mpc_key_up(key) {
+            return;
+        }
         if let Some(message) = self.controller.key_up(key) {
             self.apply_midi([message]);
         }

@@ -638,18 +638,33 @@ impl DawApp {
                 }
                 MidiTarget::Instrument(_) => {}
                 MidiTarget::Sequencer => {
-                    if !self.pattern_editor.mixer_open
-                        && let MidiMessage::NoteOn { note, velocity } = message
-                    {
+                    if !self.pattern_editor.mixer_open {
                         if let Some(piece) = self.pattern_editor.roll.piece {
-                            self.preview_drum_piece(piece, note, velocity);
-                        } else {
-                            self.apply_pattern_action(PatternAction::Toggle {
-                                lane: self.pattern_editor.cursor_lane,
-                                step: self.pattern_editor.cursor_step,
-                            });
-                            let editor = &mut self.pattern_editor;
-                            editor.cursor_step = (editor.cursor_step + 1) % editor.step_count();
+                            if let MidiMessage::NoteOn { note, velocity } = message {
+                                self.trigger_drum_audition(piece, note, velocity);
+                            }
+                        } else if self.pattern_editor.view_mode
+                            == super::pattern_editor::DrumViewMode::Pads
+                        {
+                            match message {
+                                MidiMessage::NoteOn { note, velocity } => {
+                                    self.handle_mpc_midi_note(note, velocity, true);
+                                }
+                                MidiMessage::NoteOff { note } => {
+                                    self.handle_mpc_midi_note(note, 0, false);
+                                }
+                                MidiMessage::AllNotesOff => self.mpc_pad_release(),
+                                _ => {}
+                            }
+                        } else if let MidiMessage::NoteOn { note, velocity } = message {
+                            if !self.handle_mpc_midi_note(note, velocity, true) {
+                                self.apply_pattern_action(PatternAction::Toggle {
+                                    lane: self.pattern_editor.cursor_lane,
+                                    step: self.pattern_editor.cursor_step,
+                                });
+                                let editor = &mut self.pattern_editor;
+                                editor.cursor_step = (editor.cursor_step + 1) % editor.step_count();
+                            }
                         }
                     }
                 }

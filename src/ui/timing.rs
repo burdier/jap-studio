@@ -38,6 +38,7 @@ impl DawApp {
                     }
                     self.publish_clip_edit();
                 }
+                self.sync_mpc_note_repeat_bpm();
                 self.status_message = format!("Tempo: {bpm:.2} BPM");
             }
             Err(error) => self.status_message = error.to_string(),

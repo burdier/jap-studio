@@ -371,6 +371,7 @@ impl DawApp {
                 Ok(score) => Some(DrumInput {
                     score,
                     kit: self.pattern_editor.session.kit.clone(),
+                    note_repeat: Some(self.drum_note_repeat.clone()),
                 }),
                 Err(error) => {
                     self.status_message = error;
@@ -491,6 +492,7 @@ impl DawApp {
         }) {
             Ok(player) => {
                 let counting = player.is_counting_in();
+                self.drum_audition = None;
                 self.player = Some(player);
                 self.status_message = if counting {
                     format!(
@@ -538,6 +540,7 @@ impl DawApp {
     }
     /// Los editores publican una vez por acción confirmada. El callback solo ve el plan compilado.
     pub(in crate::ui) fn publish_drum_edit(&mut self) {
+        self.sync_drum_audition_kit();
         if !self
             .player
             .as_ref()
@@ -562,6 +565,7 @@ impl DawApp {
     }
 
     pub(in crate::ui) fn publish_drum_mix(&mut self) {
+        self.sync_drum_audition_kit();
         let session = &self.pattern_editor.session;
         if session.source == DrumPlaybackSource::Arrangement
             && let Some(player) = &self.player

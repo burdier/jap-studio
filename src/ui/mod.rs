@@ -95,6 +95,8 @@ struct DawApp {
     player: Option<Player>,
     tail_player: Option<Player>,
     file_playback: Option<file_playback::PendingPlayback>,
+    drum_audition: Option<crate::audio::drums::DrumAudition>,
+    drum_note_repeat: std::sync::Arc<crate::audio::drums::NoteRepeatControl>,
     audio_loop: Option<(f64, f64)>,
     pattern_loop_beats: Option<f64>,
     metronome: std::sync::Arc<crate::audio::metronome::MetronomeControl>,

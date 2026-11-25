@@ -844,6 +844,7 @@ fn drums_and_wav_use_the_same_frame_clock() {
                 repeat: true,
             }),
             kit,
+            note_repeat: None,
         }),
         48_000,
         120.0,

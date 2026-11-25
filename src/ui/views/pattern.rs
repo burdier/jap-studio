@@ -1,5 +1,6 @@
-//! Drums Latex: Canción arriba, conmutación de pasos y Piano Roll Light abajo.
+//! Drums Latex: Canción arriba, conmutación de pasos, Pads MPC y Piano Roll Light abajo.
 mod inspector;
+mod mpc;
 mod roll;
 mod song;
 mod steps;
@@ -11,7 +12,7 @@ use crate::ui::{
         meter::track_peak_meter,
     },
     explorer::ExplorerSampleDrag,
-    pattern_editor::{DrumSampleTarget, PatternAction, PatternOptions},
+    pattern_editor::{DrumSampleTarget, DrumViewMode, PatternAction, PatternOptions},
     workspace_focus::Panel,
 };
 use elevate::musical::{drums::DrumPlaybackSource, grid::NoteGrid};
@@ -95,6 +96,7 @@ impl DawApp {
         let show_song =
             has_kit && !editor.mixer_open && editor.session.source == DrumPlaybackSource::Song;
 
+        let show_toolbar = has_kit || editor.mixer_open || editor.view_mode == DrumViewMode::Pads;
         div()
             .id("drums-latex")
             .flex()
@@ -111,7 +113,7 @@ impl DawApp {
                 }
                 window.focus(&this.focus_handle, cx);
             }))
-            .when(has_kit || editor.mixer_open, |panel| {
+            .when(show_toolbar, |panel| {
                 panel
                     .child(self.render_drum_toolbar(cx))
                     .when(!editor.mixer_open && editor.options.is_some(), |p| {
@@ -148,6 +150,8 @@ impl DawApp {
                     )
                     .child(if editor.mixer_open {
                         self.render_drum_mixer(cx).into_any_element()
+                    } else if editor.view_mode == DrumViewMode::Pads && selected.is_none() {
+                        self.render_mpc_pads(cx).into_any_element()
                     } else if !has_kit {
                         self.render_drum_empty_state(cx).into_any_element()
                     } else if let Some(piece) = selected {
@@ -280,6 +284,25 @@ impl DawApp {
                                         }),
                                     ),
                             )
+                            .child(
+                                flat_control(ds, false, ds.orange)
+                                    .id("empty-open-mpc")
+                                    .h(px(30.0))
+                                    .px(px(14.0))
+                                    .rounded(px(ds.radius_md))
+                                    .text_size(px(11.5))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(rgb(ds.orange))
+                                    .child("Pads MPC")
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(|this, _, _, cx| {
+                                            this.pattern_editor.view_mode = DrumViewMode::Pads;
+                                            cx.stop_propagation();
+                                            cx.notify();
+                                        }),
+                                    ),
+                            )
                             .when(!self.explorer_visible(), |row| {
                                 row.child(
                                     flat_control(ds, false, ds.cyan)
@@ -316,10 +339,7 @@ impl DawApp {
         let beat_ticks = meter.ticks_per_beat();
         let length = pattern.notes.length().0;
         let can_shrink = length > bar_ticks;
-        let peak = self
-            .player
-            .as_ref()
-            .map_or(0.0, |player| player.drum_bus_peak());
+        let peak = self.mpc_bus_peak();
         let multiple_patterns = session.patterns.len() > 1;
 
         // 1. Cápsula de patrones (selector + crear + duplicar)
@@ -988,6 +1008,56 @@ impl DawApp {
                     .child(track_peak_meter(ds, peak)),
             );
 
+        // 0. Selector de superficie (Pasos · Pads MPC)
+        let view_capsule = drum_capsule(ds).children(
+            [
+                (
+                    "drum-view-steps",
+                    "Pasos",
+                    "Secuenciador por pasos clásico",
+                    DrumViewMode::Steps,
+                    ds.accent,
+                ),
+                (
+                    "drum-view-pads",
+                    "Pads MPC",
+                    "Matriz 4×4 MPC con 16 Levels, Note Repeat, Overdub y Chop",
+                    DrumViewMode::Pads,
+                    ds.orange,
+                ),
+            ]
+            .into_iter()
+            .map(|(id, label, tip, mode, color)| {
+                let active = !editor.mixer_open && editor.view_mode == mode;
+                flat_control(ds, active, color)
+                    .id(id)
+                    .h(px(22.0))
+                    .px(px(8.0))
+                    .gap(px(5.0))
+                    .rounded(px(ds.radius_sm))
+                    .text_size(px(10.5))
+                    .font_weight(if active {
+                        FontWeight::SEMIBOLD
+                    } else {
+                        FontWeight::MEDIUM
+                    })
+                    .text_color(rgb(if active { ds.text } else { ds.muted }))
+                    .tooltip(move |window, cx| Tooltip::new(tip).build(window, cx))
+                    .when(active, |el| el.child(led_dot(color, 4.5, true)))
+                    .child(label)
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, _, cx| {
+                            this.pattern_editor.mixer_open = false;
+                            this.pattern_editor.roll.piece = None;
+                            this.pattern_editor.view_mode = mode;
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    )
+            }),
+        );
+
         div()
             .id("drum-pattern-controls")
             .flex()
@@ -1002,6 +1072,7 @@ impl DawApp {
             .bg(rgb(ds.bg))
             .border_b_1()
             .border_color(rgba(if ds.is_dark() { 0xffffff0d } else { 0x0f172a12 }))
+            .child(view_capsule)
             .child(pattern_capsule)
             .when(!editor.mixer_open, |row| row.child(rhythm_capsule))
             .when_some(page_capsule, |row, cap| row.child(cap))
