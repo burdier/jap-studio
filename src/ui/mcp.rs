@@ -469,7 +469,7 @@ impl DawApp {
             "echo" | "delay" | "hay echo" | "hey echo" => "hay.fx.echo",
             "reverb" | "hay reverb" | "hey reverb" => "hay.fx.reverb",
             "double_volume" => "hay.fx.double_volume",
-            "filter" => "primitive.filter",
+            "filter" | "hay filter" | "hey filter" => "hay.fx.filter",
             "volume" => "primitive.volume",
             "convolver" | "cabinet" => elevate::musical::fx::cabinet::ID,
             _ => raw_id,
@@ -500,7 +500,7 @@ impl DawApp {
         }
         let name = key
             .as_str()
-            .map(str::trim)
+            .map(|s| s.trim().trim_matches('"').trim())
             .filter(|s| !s.is_empty())
             .ok_or("param debe ser un ID numérico o nombre/key de parámetro")?;
         if let Ok(parsed) = name.parse::<u32>() {
@@ -513,27 +513,62 @@ impl DawApp {
         } = &node.kind
         {
             if let Some(desc) = self.lua_components.registry.get(catalog_id) {
-                if let Some(ctrl) = desc.controls.iter().find(|c| {
-                    c.key.eq_ignore_ascii_case(&needle) || c.label.eq_ignore_ascii_case(&needle)
-                }) {
+                // Priorizar `key` exacta antes que `label` (ej. `decay` vs `decay_div` en Reverb).
+                if let Some(ctrl) = desc
+                    .controls
+                    .iter()
+                    .find(|c| c.key.eq_ignore_ascii_case(&needle))
+                {
                     return Ok(ctrl.id);
                 }
-                if let Some(ctrl) = desc.controls.iter().find(|c| {
-                    c.key.to_lowercase().contains(&needle)
-                        || c.label.to_lowercase().contains(&needle)
-                }) {
+                if let Some(ctrl) = desc
+                    .controls
+                    .iter()
+                    .find(|c| c.label.eq_ignore_ascii_case(&needle))
+                {
+                    return Ok(ctrl.id);
+                }
+                if let Some(ctrl) = desc
+                    .controls
+                    .iter()
+                    .find(|c| c.key.to_lowercase().contains(&needle))
+                {
+                    return Ok(ctrl.id);
+                }
+                if let Some(ctrl) = desc
+                    .controls
+                    .iter()
+                    .find(|c| c.label.to_lowercase().contains(&needle))
+                {
                     return Ok(ctrl.id);
                 }
             } else if let Some(dev) = elevate::devices::find(catalog_id) {
-                if let Some(spec) = dev.parameters.iter().find(|p| {
-                    p.key.eq_ignore_ascii_case(&needle) || p.name.eq_ignore_ascii_case(&needle)
-                }) {
+                if let Some(spec) = dev
+                    .parameters
+                    .iter()
+                    .find(|p| p.key.eq_ignore_ascii_case(&needle))
+                {
                     return Ok(spec.id.0);
                 }
-                if let Some(spec) = dev.parameters.iter().find(|p| {
-                    p.key.to_lowercase().contains(&needle)
-                        || p.name.to_lowercase().contains(&needle)
-                }) {
+                if let Some(spec) = dev
+                    .parameters
+                    .iter()
+                    .find(|p| p.name.eq_ignore_ascii_case(&needle))
+                {
+                    return Ok(spec.id.0);
+                }
+                if let Some(spec) = dev
+                    .parameters
+                    .iter()
+                    .find(|p| p.key.to_lowercase().contains(&needle))
+                {
+                    return Ok(spec.id.0);
+                }
+                if let Some(spec) = dev
+                    .parameters
+                    .iter()
+                    .find(|p| p.name.to_lowercase().contains(&needle))
+                {
                     return Ok(spec.id.0);
                 }
             }
