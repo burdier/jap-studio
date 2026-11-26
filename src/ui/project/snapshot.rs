@@ -192,7 +192,15 @@ impl Snapshot {
         existing_pianos: &[ProjectPiano],
         previous: &[AudioClip],
     ) -> Result<Vec<AudioClip>, String> {
-        self.prepare_resources_with_assets(root, files, existing_pianos, previous, &HashMap::new())
+        let (audio, _) = self.prepare_resources_with_assets(
+            root,
+            files,
+            existing_pianos,
+            previous,
+            &HashMap::new(),
+            false,
+        )?;
+        Ok(audio)
     }
 
     pub fn prepare_resources_with_assets(
@@ -202,9 +210,11 @@ impl Snapshot {
         existing_pianos: &[ProjectPiano],
         previous: &[AudioClip],
         shared_assets: &HashMap<String, PathBuf>,
-    ) -> Result<Vec<AudioClip>, String> {
+        tolerant_soundfont: bool,
+    ) -> Result<(Vec<AudioClip>, Vec<String>), String> {
+        let mut warnings = Vec::new();
         for piano in &mut self.pianos {
-            if !piano.source.is_empty() {
+            if !piano.source.is_empty() && !piano.source.starts_with("p2p-asset://") {
                 piano.source = root
                     .join(&piano.source)
                     .to_str()
@@ -212,8 +222,31 @@ impl Snapshot {
                     .into();
             }
             if !existing_pianos.contains(piano) {
-                Self::resolve_piano_source(piano)?;
-                crate::instruments::Piano::restore_project(piano)?;
+                match Self::resolve_piano_source(piano) {
+                    Ok(()) => {
+                        crate::instruments::Piano::restore_project(piano)?;
+                    }
+                    Err(err) if tolerant_soundfont => {
+                        if let Some(default_bank) =
+                            crate::audio::piano::discover_soundfonts().into_iter().next()
+                        {
+                            let missing_name = Path::new(&piano.source)
+                                .file_name()
+                                .map(|n| n.to_string_lossy().into_owned())
+                                .unwrap_or_else(|| piano.source.clone());
+                            warnings.push(format!(
+                                "SoundFont {missing_name} sustituido por {}",
+                                default_bank.name
+                            ));
+                            piano.source = default_bank.path.to_string_lossy().into_owned();
+                            piano.preset = 0;
+                            crate::instruments::Piano::restore_project(piano)?;
+                        } else {
+                            return Err(err);
+                        }
+                    }
+                    Err(err) => return Err(err),
+                }
             }
         }
         for sampler in &mut self.samplers {
@@ -288,7 +321,7 @@ impl Snapshot {
                 trim_len: clip.trim_len,
             });
         }
-        Ok(audio)
+        Ok((audio, warnings))
     }
 
     pub fn validate_support(&self) -> Result<(), String> {
@@ -601,6 +634,77 @@ impl Snapshot {
         }
         Ok(ready)
     }
+
+    /// Prepara instrumentos VST3 en modo tolerante (para P2P): carga los presentes en
+    /// esta máquina y conserva los ausentes en `missing` para no perderlos del proyecto.
+    pub fn prepare_vsts_tolerant(
+        &self,
+        previous: &[ProjectVstInstrument],
+        config: &crate::audio::device::AudioConfig,
+    ) -> (Vec<PreparedVst>, Vec<ProjectVstInstrument>, Vec<String>) {
+        if self.vsts.is_empty() {
+            return (Vec::new(), Vec::new(), Vec::new());
+        }
+        let mut catalog = None;
+        let mut ready = Vec::new();
+        let mut missing = Vec::new();
+        let mut warnings = Vec::new();
+        for state in &self.vsts {
+            let mut bundle = PathBuf::from(&state.bundle);
+            let mut class_id = state.class_id.clone();
+            if !bundle.exists() || class_id.is_empty() {
+                let plugins = catalog.get_or_insert_with(crate::audio::vst3::scan::discover);
+                if let Some(found) = plugins
+                    .iter()
+                    .filter(|p| {
+                        p.instrument
+                            && ((!class_id.is_empty()
+                                && p.class_id.eq_ignore_ascii_case(&class_id))
+                                || (class_id.is_empty() && p.name == state.name))
+                    })
+                    .min_by_key(|p| p.bridged)
+                {
+                    bundle = found.bundle.clone();
+                    class_id = found.class_id.clone();
+                }
+            }
+            if !bundle.exists() {
+                warnings.push(format!(
+                    "Falta instrumento VST3 {} (silenciado localmente)",
+                    state.name
+                ));
+                missing.push(state.clone());
+                continue;
+            }
+            if previous.contains(state) {
+                continue;
+            }
+            let loaded = if !class_id.is_empty() {
+                crate::audio::piano::PreparedPiano::load_vst_preset(
+                    bundle.clone(),
+                    class_id.clone(),
+                    state.preset.clone(),
+                    config,
+                )
+            } else {
+                crate::audio::piano::PreparedPiano::load_vst(&bundle, config, None)
+            };
+            match loaded {
+                Ok((prepared, name)) => ready.push((
+                    state.id,
+                    prepared,
+                    name,
+                    bundle,
+                    (!class_id.is_empty()).then_some(class_id),
+                )),
+                Err(e) => {
+                    warnings.push(format!("Instrumento VST3 {} en bypass ({e})", state.name));
+                    missing.push(state.clone());
+                }
+            }
+        }
+        (ready, missing, warnings)
+    }
 }
 
 fn resolve_audio_source(
@@ -608,16 +712,20 @@ fn resolve_audio_source(
     root: &Path,
     shared_assets: &HashMap<String, PathBuf>,
 ) -> PathBuf {
-    let candidate = root.join(raw);
-    if candidate.is_file() {
-        return candidate;
-    }
     if let Some(cached) = shared_assets.get(raw)
         && cached.is_file()
     {
         return cached.clone();
     }
-    if let Some(name) = Path::new(raw).file_name().and_then(|n| n.to_str())
+    let candidate = if raw.starts_with("p2p-asset://") {
+        PathBuf::from(raw)
+    } else {
+        root.join(raw)
+    };
+    if candidate.is_file() {
+        return candidate;
+    }
+    if let Some(name) = raw.rsplit('/').next().filter(|n| !n.is_empty())
         && let Some(cached) = shared_assets.get(&format!("name:{name}"))
         && cached.is_file()
     {

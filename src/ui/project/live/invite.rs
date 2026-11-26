@@ -73,7 +73,7 @@ impl DawApp {
         } else if dialog.copied {
             "Invitación copiada"
         } else if field.is_some() {
-            "Envía esta invitación a tu colaborador."
+            "Envía este enlace a tu colaborador. Puede unirse directo desde una sesión en blanco; los audios viajan solos."
         } else {
             "Preparando invitación…"
         };

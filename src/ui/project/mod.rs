@@ -162,6 +162,15 @@ impl DawApp {
                 });
             }
         }
+        #[cfg(feature = "p2p")]
+        if let Some(shared) = &self.project.shared {
+            for preserved in shared.preserved_vsts() {
+                let in_use = tracks.iter().any(|t| t.instrument == Some(preserved.id));
+                if in_use && !vsts.iter().any(|v| v.id == preserved.id) {
+                    vsts.push(preserved.clone());
+                }
+            }
+        }
         vsts.sort_by_key(|v| v.id.0);
         let mut automation = self.timeline.automation.clone();
         let valid_ids: Vec<_> = tracks.iter().map(|t| t.id).collect();

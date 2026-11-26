@@ -9,7 +9,12 @@ impl DawApp {
         next: Snapshot,
         audio: Vec<AudioClip>,
         effects: super::super::effects::PreparedEffects,
+        components: std::collections::BTreeMap<
+            elevate::musical::fx::FxId,
+            std::sync::Arc<crate::audio::effects::ComponentEffect>,
+        >,
         samplers: Vec<super::super::snapshot::PreparedSampler>,
+        vsts: Vec<super::super::snapshot::PreparedVst>,
     ) -> Result<(), String> {
         let mut restore = Vec::new();
         for state in next.pianos.iter().filter(|p| !before.pianos.contains(p)) {
@@ -31,6 +36,7 @@ impl DawApp {
                     .zip(&next.tracks)
                     .all(|(a, b)| super::super::snapshot::same_track_settings(a, b)));
         self.vst_effects.instances.extend(effects);
+        self.lua_components.instances.extend(components);
         if tracks_changed {
             self.invalidate_changed_fx(&next.tracks);
         }
@@ -67,6 +73,28 @@ impl DawApp {
             }
         }
         self.install_prepared_samplers(samplers);
+        for (id, prepared, name, bundle, class) in vsts {
+            let track_idx = self.tracks.iter().position(|t| t.instrument == Some(id));
+            let gain = track_idx.map_or(1.0, |idx| self.track_gain(idx));
+            let pan = track_idx.map_or(0.0, |idx| self.track_pan(idx));
+            let fx = track_idx.map_or(1.0, |idx| self.track_fx_gain(idx));
+            let mut inst = crate::instruments::vst::VstInstrument::new(id);
+            inst.install(
+                prepared,
+                name,
+                bundle,
+                class,
+                gain,
+                pan,
+                fx,
+                self.utility.clone(),
+            )?;
+            if self.vst.id == id || !self.vst.ready() {
+                self.vst = inst;
+            } else {
+                self.vst_instances.insert(id, inst);
+            }
+        }
         for (id, piano) in restore {
             if self.instrument.id() == id {
                 self.instrument.stop();

@@ -105,6 +105,13 @@ impl MenuGroup {
                 item!("Compartir sesión", "share", Command("project.share"), ""),
                 #[cfg(feature = "p2p")]
                 item!(
+                    "Sincronizar sesión (Sync)",
+                    "arrows-circle",
+                    Command("project.sync"),
+                    ""
+                ),
+                #[cfg(feature = "p2p")]
+                item!(
                     "Unirse",
                     "chain-link",
                     Command("project.join"),

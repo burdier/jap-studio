@@ -79,6 +79,31 @@ pub(super) fn prepare(
     previous_master: Option<&elevate::musical::fx::FxChain>,
     config: &AudioConfig,
 ) -> Result<PreparedEffects, String> {
+    let (ready, _) =
+        prepare_inner(tracks, previous, master_chain, previous_master, config, false)?;
+    Ok(ready)
+}
+
+/// Prepara efectos VST3 en modo tolerante (para P2P): los plugins ausentes en esta
+/// máquina quedan en bypass local y devuelven un aviso sin interrumpir la sesión.
+pub(super) fn prepare_tolerant(
+    tracks: &[Track],
+    previous: &[Track],
+    master_chain: &elevate::musical::fx::FxChain,
+    previous_master: Option<&elevate::musical::fx::FxChain>,
+    config: &AudioConfig,
+) -> Result<(PreparedEffects, Vec<String>), String> {
+    prepare_inner(tracks, previous, master_chain, previous_master, config, true)
+}
+
+fn prepare_inner(
+    tracks: &[Track],
+    previous: &[Track],
+    master_chain: &elevate::musical::fx::FxChain,
+    previous_master: Option<&elevate::musical::fx::FxChain>,
+    config: &AudioConfig,
+    tolerant: bool,
+) -> Result<(PreparedEffects, Vec<String>), String> {
     fn visit<'a>(
         nodes: &'a [FxNode],
         old: Option<&elevate::musical::fx::FxChain>,
@@ -112,32 +137,49 @@ pub(super) fn prepare(
     }
     visit(master_chain.nodes(), previous_master, &mut changed);
     let mut ready = PreparedEffects::new();
+    let mut warnings = Vec::new();
     if changed.is_empty() {
-        return Ok(ready);
+        return Ok((ready, warnings));
     }
     let plugins = scan::discover();
     for (node, class) in changed {
-        let plugin = plugins
+        let Some(plugin) = plugins
             .iter()
             .filter(|p| !p.instrument && p.class_id.eq_ignore_ascii_case(class))
             .min_by_key(|p| p.bridged)
-            .ok_or_else(|| {
-                format!(
-                    "Falta el efecto VST3 {} ({class}) en esta máquina",
-                    node.name
-                )
-            })?;
-        let preset = node.vst_preset.clone().ok_or("Falta el estado VST3")?;
-        let effect = Effect::restore_project(
+        else {
+            if tolerant {
+                warnings.push(format!("Falta efecto VST3 {} (en bypass local)", node.name));
+                continue;
+            }
+            return Err(format!(
+                "Falta el efecto VST3 {} ({class}) en esta máquina",
+                node.name
+            ));
+        };
+        let Some(preset) = node.vst_preset.clone() else {
+            if tolerant {
+                warnings.push(format!("{} sin preset VST3 (en bypass local)", node.name));
+                continue;
+            }
+            return Err("Falta el estado VST3".into());
+        };
+        match Effect::restore_project(
             plugin.bundle.clone(),
             plugin.class_id.clone(),
             preset,
             config,
-        )
-        .map_err(|e| format!("{}: {e}", node.name))?;
-        ready.insert(node.id, effect);
+        ) {
+            Ok(effect) => {
+                ready.insert(node.id, effect);
+            }
+            Err(e) if tolerant => {
+                warnings.push(format!("VST3 {} en bypass ({e})", node.name));
+            }
+            Err(e) => return Err(format!("{}: {e}", node.name)),
+        }
     }
-    Ok(ready)
+    Ok((ready, warnings))
 }
 
 pub(super) fn prepare_components(

@@ -23,6 +23,8 @@ impl DawApp {
             #[cfg(feature = "p2p")]
             "project.share" => self.share_project(window, cx),
             #[cfg(feature = "p2p")]
+            "project.sync" => self.force_sync_shared_project(cx),
+            #[cfg(feature = "p2p")]
             "project.join" => self.join_shared_project(cx),
             #[cfg(feature = "p2p")]
             "project.leave" => self.leave_shared_project(),

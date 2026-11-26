@@ -10,10 +10,11 @@ use std::{
 };
 use tokio::sync::{mpsc, oneshot};
 
-const PROTOCOL: &[u8] = b"hay/collab/live/4";
+const PROTOCOL: &[u8] = b"hay/collab/live/5";
 const INVITE_PREFIX: &str = "hay-live:";
 const QUEUE: usize = 256;
 const MAX_FRONTIERS: usize = 4096;
+const FORCE_SYNC_FRAME: u16 = u16::MAX - 1;
 const ASSET_FRAME: u16 = u16::MAX;
 const MAX_ASSET_KEY: usize = 4096;
 pub(crate) const MAX_ASSET_BYTES: usize = 32 * 1024 * 1024;
@@ -76,11 +77,13 @@ pub(crate) struct SharedAsset {
 pub(crate) enum Packet {
     Presence(Presence),
     Asset(SharedAsset),
+    ForceSync(Vec<u8>),
     Changes { base: Vec<u8>, bytes: Vec<u8> },
 }
 
 pub(crate) enum Event {
     Invitation(String),
+    Origin(u64),
     Asset(SharedAsset),
     Initial(Vec<u8>),
     Connected,
@@ -102,7 +105,7 @@ pub(crate) struct Room {
 }
 
 impl Room {
-    pub fn start(origin: u64, start: Start) -> Result<(Self, mpsc::Receiver<Event>)> {
+    pub fn start(origin: Option<u64>, start: Start) -> Result<(Self, mpsc::Receiver<Event>)> {
         let (outgoing, inbox) = mpsc::channel(QUEUE);
         let (events, receiver) = mpsc::channel(QUEUE);
         let (stop, canceled) = oneshot::channel();
@@ -142,6 +145,9 @@ impl Room {
         {
             return Err("El cambio supera el tamaño permitido por la sesión".into());
         }
+        if matches!(&packet, Packet::ForceSync(bytes) if bytes.len() > MAX_UPDATES) {
+            return Err("La sincronización supera 16 MiB de operaciones Loro".into());
+        }
         if matches!(&packet, Packet::Asset(asset)
             if asset.key.is_empty()
                 || asset.key.len() > MAX_ASSET_KEY
@@ -156,7 +162,7 @@ impl Room {
 }
 
 async fn session(
-    origin: u64,
+    origin: Option<u64>,
     start: Start,
     incoming: mpsc::Receiver<Packet>,
     events: &mpsc::Sender<Event>,
@@ -175,12 +181,13 @@ async fn session(
 }
 
 async fn connect(
-    origin: u64,
+    origin: Option<u64>,
     start: Start,
     events: &mpsc::Sender<Event>,
 ) -> Result<(Endpoint, Connection, SendStream, RecvStream)> {
     let (endpoint, connection, send, recv) = match start {
         Start::Share { updates, assets } => {
+            let origin = origin.ok_or("Falta origen de sesión")?;
             if updates.len() > MAX_UPDATES {
                 return Err("El proyecto supera 16 MiB de operaciones Loro".into());
             }
@@ -231,9 +238,8 @@ async fn connect(
                 .strip_prefix(INVITE_PREFIX)
                 .ok_or("Copia una invitación de sesión de Jap Studio")?;
             let invite = Invitation::decode(code)?;
-            if invite.origin != origin {
-                return Err("Abre una copia guardada del mismo proyecto para unirte".into());
-            }
+            // El origen viaja en el token: permite unirse sin tener una copia .loro previa.
+            events.send(Event::Origin(invite.origin)).await?;
             let endpoint = bind_endpoint(
                 Route::Auto,
                 invite.addr.relay_urls().next().cloned(),
@@ -296,6 +302,11 @@ async fn exchange(
                     .await?;
                 continue;
             }
+            if length == usize::from(FORCE_SYNC_FRAME) {
+                let bytes = receive_updates(recv).await?;
+                events.send(Event::Packet(Packet::ForceSync(bytes))).await?;
+                continue;
+            }
             if length == usize::from(ASSET_FRAME) {
                 let asset = receive_asset(recv).await?;
                 events.send(Event::Packet(Packet::Asset(asset))).await?;
@@ -324,6 +335,10 @@ async fn exchange(
                 Packet::Asset(asset) => {
                     send.write_all(&ASSET_FRAME.to_be_bytes()).await?;
                     send_asset(send, &asset).await?;
+                }
+                Packet::ForceSync(bytes) => {
+                    send.write_all(&FORCE_SYNC_FRAME.to_be_bytes()).await?;
+                    send_updates(send, &bytes).await?;
                 }
                 Packet::Changes { base, bytes } => {
                     send.write_all(&(base.len() as u16).to_be_bytes()).await?;

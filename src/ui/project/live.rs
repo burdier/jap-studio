@@ -27,15 +27,24 @@ const CONFLICT: &str = "Ediciones simultáneas · Sesión cerrada · Guarda tus 
 struct Incoming {
     base: Option<Vec<u8>>,
     bytes: Vec<u8>,
+    force_sync: bool,
 }
 
 struct Prepared {
     effects: super::effects::PreparedEffects,
+    components: std::collections::BTreeMap<
+        elevate::musical::fx::FxId,
+        std::sync::Arc<crate::audio::effects::ComponentEffect>,
+    >,
     initial: bool,
+    force_sync: bool,
     document: ProjectDoc,
     snapshot: Snapshot,
     audio: Vec<AudioClip>,
     samplers: Vec<super::snapshot::PreparedSampler>,
+    vsts: Vec<super::snapshot::PreparedVst>,
+    missing_vsts: Vec<elevate::project::ProjectVstInstrument>,
+    warnings: Vec<String>,
 }
 
 pub(super) struct SharedProject {
@@ -55,13 +64,21 @@ pub(super) struct SharedProject {
     clear_cut_after_updates: bool,
     root: PathBuf,
     last: Snapshot,
+    asset_paths: HashMap<String, PathBuf>,
+    path_to_asset: HashMap<PathBuf, String>,
     sent_assets: HashSet<String>,
-    received_assets: HashMap<String, PathBuf>,
+    preserved_vsts: Vec<elevate::project::ProjectVstInstrument>,
     inbox: VecDeque<Incoming>,
     prepare: Option<Task<()>>,
     prepared: Option<(Incoming, Result<Prepared, String>)>,
     _events: Task<()>,
     _flush: Task<()>,
+}
+
+impl SharedProject {
+    pub(super) fn preserved_vsts(&self) -> &[elevate::project::ProjectVstInstrument] {
+        &self.preserved_vsts
+    }
 }
 
 impl DawApp {
@@ -97,32 +114,122 @@ impl DawApp {
             }
             return;
         }
-        let result = self.shared_base().and_then(|document| {
+        let result = (|| {
+            if self.project_busy() {
+                return Err("Espera a que termine la operación en curso".into());
+            }
             let root = self
                 .project
                 .path
                 .as_deref()
                 .and_then(Path::parent)
-                .ok_or("Proyecto sin carpeta")?
-                .to_owned();
-            let updates = document.all_updates()?;
+                .map(ToOwned::to_owned)
+                .unwrap_or_else(collab_work_root);
+            let name = self
+                .project
+                .path
+                .as_deref()
+                .and_then(Path::file_stem)
+                .map(|s| s.to_string_lossy().into_owned())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "Sesión compartida".into());
+            let mut persisted = self.session_snapshot()?;
+            persisted.validate_support()?;
+            persisted.resolve_piano_sources()?;
+            let mut asset_paths = HashMap::new();
+            let mut path_to_asset = HashMap::new();
             let mut sent_assets = HashSet::new();
-            let initial_snapshot = Snapshot::from_document(&document)?;
-            let assets = collect_snapshot_assets(&initial_snapshot, &root, &mut sent_assets)?;
+            let assets = canonicalize_snapshot_assets(
+                &mut persisted,
+                &root,
+                &mut asset_paths,
+                &mut path_to_asset,
+                &mut sent_assets,
+                true,
+            )?;
+            let document = persisted.document_from(&name, self.project.document.as_deref())?;
+            let origin = document.collaboration_origin()?;
+            let updates = document.all_updates()?;
             self.start_shared_project(
                 document,
+                Some(origin),
                 Start::Share { updates, assets },
+                root,
+                asset_paths,
+                path_to_asset,
                 sent_assets,
                 cx,
             )
-        });
+        })();
         if let Err(error) = result {
             self.show_share_error(error);
         }
     }
 
+    pub(super) fn force_sync_shared_project(&mut self, cx: &mut Context<Self>) {
+        if self.project_busy() {
+            self.status_message = "Espera a que termine la operación en curso".into();
+            return;
+        }
+        let Some(mut shared) = self.project.shared.take() else {
+            self.status_message = "No hay una sesión compartida activa".into();
+            return;
+        };
+        let result = (|| -> Result<usize, String> {
+            if !shared.host {
+                return Err("Solo el dueño de la sesión puede sincronizar".into());
+            }
+            if !shared.connected {
+                return Err("Esperando a que se conecte tu invitado…".into());
+            }
+            let local = self.session_snapshot()?;
+            let mut persisted = local.clone();
+            persisted.validate_support()?;
+            persisted.resolve_piano_sources()?;
+            let assets = canonicalize_snapshot_assets(
+                &mut persisted,
+                &shared.root,
+                &mut shared.asset_paths,
+                &mut shared.path_to_asset,
+                &mut shared.sent_assets,
+                true,
+            )?;
+            let asset_count = assets.len();
+            let candidate = shared.document.collaboration_fork();
+            persisted.write_document(&candidate)?;
+            let bytes = candidate.all_updates()?;
+            for asset in assets {
+                shared.room.send(Packet::Asset(asset))?;
+            }
+            shared.room.send(Packet::ForceSync(bytes))?;
+            shared.document = candidate;
+            shared.last = local;
+            shared.inbox.clear();
+            shared.prepared = None;
+            Ok(asset_count)
+        })();
+        self.project.shared = Some(shared);
+        match result {
+            Ok(0) => {
+                self.status_message = "Sesión sincronizada con el invitado".into();
+            }
+            Ok(n) => {
+                self.status_message =
+                    format!("Sesión sincronizada ({n} archivos de audio enviados)");
+            }
+            Err(error) => {
+                self.status_message = error;
+            }
+        }
+        cx.notify();
+    }
+
     pub(super) fn join_shared_project(&mut self, cx: &mut Context<Self>) {
         if self.project.shared.is_some() || self.project.dialog.is_some() {
+            return;
+        }
+        if self.project_busy() {
+            self.status_message = "Espera a que termine la operación en curso".into();
             return;
         }
         let read = cx.read_from_clipboard_async();
@@ -137,8 +244,25 @@ impl DawApp {
                         .and_then(|item| item.text())
                         .filter(|text| text.trim_start().starts_with("hay-live:"))
                         .ok_or("Copia una invitación de Jap Studio y vuelve a pulsar Unirse")?;
-                    let document = this.shared_base()?;
-                    this.start_shared_project(document, Start::Join(invite), HashSet::new(), cx)
+                    // No hace falta tener el mismo proyecto guardado antes: el ID viaja en el token.
+                    let document = ProjectDoc::new("Sesión compartida")?;
+                    let root = this
+                        .project
+                        .path
+                        .as_deref()
+                        .and_then(Path::parent)
+                        .map(ToOwned::to_owned)
+                        .unwrap_or_else(collab_work_root);
+                    this.start_shared_project(
+                        document,
+                        None,
+                        Start::Join(invite),
+                        root,
+                        HashMap::new(),
+                        HashMap::new(),
+                        HashSet::new(),
+                        cx,
+                    )
                 })();
                 if let Err(error) = result {
                     this.status_message = error;
@@ -148,37 +272,20 @@ impl DawApp {
         }));
     }
 
-    fn shared_base(&mut self) -> Result<ProjectDoc, String> {
-        if self.project_busy() {
-            return Err("Espera a que termine la operación en curso".into());
-        }
-        self.project.checked = None;
-        self.refresh_project_dirty();
-        let bytes = self
-            .project
-            .document
-            .as_deref()
-            .filter(|_| !self.project.dirty)
-            .ok_or("Guarda esta copia del proyecto antes de compartir o unirte")?;
-        ProjectDoc::import(bytes)
-    }
-
+    #[allow(clippy::too_many_arguments)]
     fn start_shared_project(
         &mut self,
         document: ProjectDoc,
+        origin: Option<u64>,
         start: Start,
+        root: PathBuf,
+        asset_paths: HashMap<String, PathBuf>,
+        path_to_asset: HashMap<PathBuf, String>,
         sent_assets: HashSet<String>,
         cx: &mut Context<Self>,
     ) -> Result<(), String> {
         let host = matches!(&start, Start::Share { .. });
-        let root = self
-            .project
-            .path
-            .as_deref()
-            .and_then(std::path::Path::parent)
-            .ok_or("Proyecto sin carpeta")?
-            .to_owned();
-        let origin = document.collaboration_origin()?;
+        let initial_origin = origin.unwrap_or(0);
         let last = self.session_snapshot()?;
         let (room, mut events) = Room::start(origin, start).map_err(|e| e.to_string())?;
         let task = cx.spawn(async move |this, cx| {
@@ -209,7 +316,7 @@ impl DawApp {
         });
         self.project.shared = Some(SharedProject {
             document,
-            origin,
+            origin: initial_origin,
             room,
             host,
             connected: false,
@@ -221,8 +328,10 @@ impl DawApp {
             invite: None,
             root,
             last,
+            asset_paths,
+            path_to_asset,
             sent_assets,
-            received_assets: HashMap::new(),
+            preserved_vsts: Vec::new(),
             inbox: VecDeque::new(),
             prepare: None,
             prepared: None,
@@ -277,6 +386,9 @@ impl DawApp {
                 shared.invite = Some(invite);
                 self.status_message = "Invitación lista".into();
             }
+            Event::Origin(origin) => {
+                shared.origin = origin;
+            }
             Event::Connected => {
                 shared.connected = true;
                 if shared.initialized {
@@ -284,11 +396,14 @@ impl DawApp {
                 }
             }
             Event::Asset(asset) | Event::Packet(Packet::Asset(asset)) => {
-                match store_received_asset(shared.origin, &asset, &mut shared.received_assets) {
-                    Ok((label, local_path)) => {
-                        if let Some(s) = local_path.to_str() {
-                            shared.sent_assets.insert(s.to_owned());
-                        }
+                match store_received_asset(
+                    shared.origin,
+                    &asset,
+                    &mut shared.asset_paths,
+                    &mut shared.path_to_asset,
+                ) {
+                    Ok((label, _local_path)) => {
+                        shared.sent_assets.insert(asset.key);
                         self.status_message = format!("Audio sincronizado: {label}");
                     }
                     Err(error) => {
@@ -296,7 +411,20 @@ impl DawApp {
                     }
                 }
             }
-            Event::Initial(bytes) => self.enqueue_shared_update(Incoming { base: None, bytes }),
+            Event::Initial(bytes) => self.enqueue_shared_update(Incoming {
+                base: None,
+                bytes,
+                force_sync: false,
+            }),
+            Event::Packet(Packet::ForceSync(bytes)) => {
+                shared.inbox.clear();
+                shared.prepared = None;
+                self.enqueue_shared_update(Incoming {
+                    base: None,
+                    bytes,
+                    force_sync: true,
+                });
+            }
             Event::Packet(Packet::Presence(mut p)) => {
                 // La recepción es ordenada, pero materializar un cambio Loro es asíncrono.
                 shared.clear_cut_after_updates = p.band_cut.is_none()
@@ -313,6 +441,7 @@ impl DawApp {
                 self.enqueue_shared_update(Incoming {
                     base: Some(base),
                     bytes,
+                    force_sync: false,
                 });
             }
             Event::Ended(message) => {
@@ -377,10 +506,11 @@ impl DawApp {
             return Ok(());
         }
         let local = self.session_snapshot()?;
-        if local != shared.last {
-            if !shared.initialized {
-                return Err(CONFLICT.into());
-            }
+        let force_incoming = shared
+            .prepared
+            .as_ref()
+            .is_some_and(|(inc, _)| inc.force_sync);
+        if !force_incoming && shared.initialized && local != shared.last {
             self.publish_shared_snapshot(shared, local)?;
             if let Some((update, _)) = shared.prepared.take() {
                 // Hay una edición nueva desde que empezó la preparación.
@@ -394,8 +524,11 @@ impl DawApp {
                 prepared.snapshot,
                 prepared.audio,
                 prepared.effects,
+                prepared.components,
                 prepared.samplers,
+                prepared.vsts,
             )?;
+            shared.preserved_vsts = prepared.missing_vsts;
             shared.last = self.session_snapshot()?;
             shared.document = prepared.document;
             if shared.clear_cut_after_updates && shared.inbox.is_empty() {
@@ -407,6 +540,11 @@ impl DawApp {
             if prepared.initial {
                 shared.initialized = true;
                 self.shared_project_connected();
+            } else if prepared.force_sync {
+                self.status_message = "Sesión sincronizada por el anfitrión".into();
+            }
+            if !prepared.warnings.is_empty() {
+                self.status_message = format!("Aviso: {}", prepared.warnings.join(" · "));
             }
             cx.notify();
         } else if let Some(update) = shared.inbox.pop_front() {
@@ -425,9 +563,14 @@ impl DawApp {
         if persisted.pianos != shared.last.pianos {
             persisted.resolve_piano_sources()?;
         }
-        persisted.relativize_sources(&shared.root)?;
-        let new_assets =
-            collect_snapshot_assets(&persisted, &shared.root, &mut shared.sent_assets)?;
+        let new_assets = canonicalize_snapshot_assets(
+            &mut persisted,
+            &shared.root,
+            &mut shared.asset_paths,
+            &mut shared.path_to_asset,
+            &mut shared.sent_assets,
+            false,
+        )?;
         let candidate = shared.document.collaboration_fork();
         let version = candidate.collaboration_version();
         persisted.write_document(&candidate)?;
@@ -453,13 +596,16 @@ impl DawApp {
         cx: &mut Context<Self>,
     ) -> Result<(), String> {
         let document = shared.document.collaboration_fork();
-        let origin = shared.document.collaboration_origin()?;
+        let expected_origin = shared.origin;
         let root = shared.root.clone();
-        let received_assets = shared.received_assets.clone();
+        let asset_paths = shared.asset_paths.clone();
         let pianos = shared.last.pianos.clone();
         let previous_samplers = shared.last.samplers.clone();
+        let previous_vsts = shared.last.vsts.clone();
         let previous_tracks = shared.last.tracks.clone();
         let config = self.settings.audio.saved.clone();
+        let registry = self.lua_components.registry.clone();
+        let rate = config.sample_rate.unwrap_or(48_000);
         let previous: Vec<_> = self
             .timeline
             .clip
@@ -482,35 +628,52 @@ impl DawApp {
             .collect();
         let job = cx.background_spawn(async move {
             let result = (|| {
-                let initial = update.base.is_none();
+                let initial = update.base.is_none() && !update.force_sync;
+                let force_sync = update.force_sync;
                 let document = if let Some(base) = &update.base {
                     merge_shared_update(document, base, &update.bytes)?
                 } else {
                     ProjectDoc::import(&update.bytes)?
                 };
-                if document.collaboration_origin()? != origin {
+                if expected_origin != 0 && document.collaboration_origin()? != expected_origin {
                     return Err("El origen del proyecto compartido cambió".into());
                 }
                 let mut snapshot = Snapshot::from_document(&document)?;
-                let audio = snapshot.prepare_resources_with_assets(
+                let (audio, mut warnings) = snapshot.prepare_resources_with_assets(
                     &root,
                     files,
                     &pianos,
                     &previous,
-                    &received_assets,
+                    &asset_paths,
+                    true,
                 )?;
-                let effects = super::effects::prepare(
+                let (effects, fx_warnings) = super::effects::prepare_tolerant(
                     &snapshot.tracks,
                     &previous_tracks,
                     &snapshot.master_chain,
                     None,
                     &config,
                 )?;
+                warnings.extend(fx_warnings);
+                let components = super::effects::prepare_components(
+                    &snapshot.tracks,
+                    &snapshot.master_chain,
+                    &registry,
+                    rate,
+                )?;
                 let samplers = snapshot.prepare_samplers(&previous_samplers)?;
+                let (vsts, missing_vsts, vst_warnings) =
+                    snapshot.prepare_vsts_tolerant(&previous_vsts, &config);
+                warnings.extend(vst_warnings);
                 Ok(Prepared {
                     effects,
+                    components,
                     samplers,
+                    vsts,
+                    missing_vsts,
+                    warnings,
                     initial,
+                    force_sync,
                     document,
                     snapshot,
                     audio,
@@ -557,67 +720,28 @@ fn merge_shared_update(
     Ok(document)
 }
 
-fn collect_snapshot_assets(
-    snapshot: &Snapshot,
-    root: &Path,
-    sent: &mut HashSet<String>,
-) -> Result<Vec<SharedAsset>, String> {
-    let mut assets = Vec::new();
-    let sources = snapshot
-        .audio
-        .iter()
-        .map(|clip| clip.source.as_str())
-        .chain(snapshot.samplers.iter().map(|s| s.source.as_str()))
-        .chain(
-            snapshot
-                .drums
-                .kit
-                .pieces
-                .iter()
-                .flat_map(|piece| piece.layers.iter().map(|layer| layer.source.as_str())),
-        );
-
-    for raw in sources {
-        if raw.is_empty() || sent.contains(raw) {
-            continue;
-        }
-        let path = root.join(raw);
-        let Ok(meta) = std::fs::metadata(&path) else {
-            continue;
-        };
-        if !meta.is_file() {
-            continue;
-        }
-        if meta.len() as usize > MAX_ASSET_BYTES {
-            return Err(format!(
-                "El audio {} supera 32 MiB para envío P2P",
-                path.file_name()
-                    .unwrap_or(path.as_os_str())
-                    .to_string_lossy()
-            ));
-        }
-        let bytes = std::fs::read(&path)
-            .map_err(|e| format!("No se pudo leer audio {}: {e}", path.display()))?;
-        sent.insert(raw.to_owned());
-        assets.push(SharedAsset {
-            key: raw.to_owned(),
-            bytes,
-        });
-    }
-    Ok(assets)
+fn collab_work_root() -> PathBuf {
+    dirs::cache_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("jap-studio/collab-work")
 }
 
-fn store_received_asset(
-    origin: u64,
-    asset: &SharedAsset,
-    received: &mut HashMap<String, PathBuf>,
-) -> Result<(String, PathBuf), String> {
-    let raw_name = Path::new(&asset.key)
-        .file_name()
-        .and_then(|n| n.to_str())
+fn fnv1a_64(bytes: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for b in bytes {
+        hash ^= u64::from(*b);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
+}
+
+fn sanitize_asset_filename(raw: &str) -> String {
+    let base = raw
+        .rsplit(['/', '\\'])
+        .next()
         .filter(|n| !n.is_empty())
         .unwrap_or("sample.wav");
-    let clean_name: String = raw_name
+    let clean: String = base
         .chars()
         .map(|c| {
             if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | ' ') {
@@ -628,19 +752,116 @@ fn store_received_asset(
         })
         .take(96)
         .collect();
-    let clean_name = clean_name.trim_matches('.');
-    let clean_name = if clean_name.is_empty() {
-        "sample.wav"
+    let clean = clean.trim_matches('.');
+    if clean.is_empty() {
+        "sample.wav".into()
     } else {
-        clean_name
-    };
-
-    // Hash FNV-1a estable de 64 bits sobre la clave original para evitar colisiones de nombres.
-    let mut hash: u64 = 0xcbf29ce484222325;
-    for b in asset.key.as_bytes() {
-        hash ^= u64::from(*b);
-        hash = hash.wrapping_mul(0x100000001b3);
+        clean.into()
     }
+}
+
+/// Reescribe todas las rutas de audio del snapshot a claves portátiles por contenido
+/// (`p2p-asset://<hash>/<nombre>`) para eliminar problemas de rutas entre máquinas.
+fn canonicalize_snapshot_assets(
+    snapshot: &mut Snapshot,
+    root: &Path,
+    asset_paths: &mut HashMap<String, PathBuf>,
+    path_to_asset: &mut HashMap<PathBuf, String>,
+    sent: &mut HashSet<String>,
+    force_send_all: bool,
+) -> Result<Vec<SharedAsset>, String> {
+    let mut assets = Vec::new();
+    let mut queued = HashSet::new();
+    let sources = snapshot
+        .audio
+        .iter_mut()
+        .map(|clip| &mut clip.source)
+        .chain(snapshot.samplers.iter_mut().map(|s| &mut s.source))
+        .chain(
+            snapshot
+                .drums
+                .kit
+                .pieces
+                .iter_mut()
+                .flat_map(|piece| piece.layers.iter_mut().map(|layer| &mut layer.source)),
+        );
+
+    for source in sources {
+        if source.is_empty() {
+            continue;
+        }
+        let (key, local_path, cached_bytes) = if source.starts_with("p2p-asset://") {
+            let key = source.clone();
+            let Some(path) = asset_paths.get(&key).cloned() else {
+                continue;
+            };
+            (key, path, None)
+        } else {
+            let path = root.join(source.as_str());
+            let canonical = std::fs::canonicalize(&path).unwrap_or(path);
+            if let Some(existing_key) = path_to_asset.get(&canonical).cloned() {
+                *source = existing_key.clone();
+                (existing_key, canonical, None)
+            } else {
+                let Ok(meta) = std::fs::metadata(&canonical) else {
+                    continue;
+                };
+                if !meta.is_file() {
+                    continue;
+                }
+                if meta.len() as usize > MAX_ASSET_BYTES {
+                    return Err(format!(
+                        "El audio {} supera 32 MiB para envío P2P",
+                        canonical
+                            .file_name()
+                            .unwrap_or(canonical.as_os_str())
+                            .to_string_lossy()
+                    ));
+                }
+                let bytes = std::fs::read(&canonical)
+                    .map_err(|e| format!("No se pudo leer audio {}: {e}", canonical.display()))?;
+                let hash = fnv1a_64(&bytes);
+                let clean = sanitize_asset_filename(source);
+                let key = format!("p2p-asset://{hash:016x}/{clean}");
+                asset_paths.insert(key.clone(), canonical.clone());
+                asset_paths.insert(format!("name:{clean}"), canonical.clone());
+                path_to_asset.insert(canonical.clone(), key.clone());
+                *source = key.clone();
+                (key, canonical, Some(bytes))
+            }
+        };
+
+        let should_send = (force_send_all || !sent.contains(&key)) && queued.insert(key.clone());
+        if should_send {
+            let bytes = match cached_bytes {
+                Some(b) => b,
+                None => {
+                    let meta = std::fs::metadata(&local_path).map_err(|e| {
+                        format!("No se pudo leer audio {}: {e}", local_path.display())
+                    })?;
+                    if meta.len() as usize > MAX_ASSET_BYTES {
+                        return Err("Un archivo de audio supera 32 MiB para envío P2P".into());
+                    }
+                    std::fs::read(&local_path).map_err(|e| {
+                        format!("No se pudo leer audio {}: {e}", local_path.display())
+                    })?
+                }
+            };
+            sent.insert(key.clone());
+            assets.push(SharedAsset { key, bytes });
+        }
+    }
+    Ok(assets)
+}
+
+fn store_received_asset(
+    origin: u64,
+    asset: &SharedAsset,
+    asset_paths: &mut HashMap<String, PathBuf>,
+    path_to_asset: &mut HashMap<PathBuf, String>,
+) -> Result<(String, PathBuf), String> {
+    let clean_name = sanitize_asset_filename(&asset.key);
+    let hash = fnv1a_64(&asset.bytes);
 
     let dir = dirs::cache_dir()
         .unwrap_or_else(std::env::temp_dir)
@@ -657,7 +878,9 @@ fn store_received_asset(
         std::fs::rename(&tmp, &target).map_err(|e| e.to_string())?;
     }
 
-    received.insert(asset.key.clone(), target.clone());
-    received.insert(format!("name:{raw_name}"), target.clone());
-    Ok((raw_name.to_owned(), target))
+    let canonical = std::fs::canonicalize(&target).unwrap_or(target);
+    asset_paths.insert(asset.key.clone(), canonical.clone());
+    asset_paths.insert(format!("name:{clean_name}"), canonical.clone());
+    path_to_asset.insert(canonical.clone(), asset.key.clone());
+    Ok((clean_name, canonical))
 }
