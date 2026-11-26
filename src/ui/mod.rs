@@ -27,6 +27,7 @@ mod input;
 mod kit;
 mod lua_components;
 mod lua_tools;
+mod mcp;
 mod mixer;
 mod navigation;
 mod palette;
@@ -146,6 +147,8 @@ struct DawApp {
     script_task: Option<gpui::Task<()>>,
     lua_tools: lua_tools::LuaTools,
     lua_components: lua_components::LuaComponents,
+    _mcp_host: Option<crate::mcp::McpHost>,
+    _mcp_task: Option<gpui::Task<()>>,
     export_job: Option<crate::audio::export::ExportJob>,
     bounce_pending: Option<export::BounceTarget>,
     freeze_pending: Option<export::FreezeTarget>,

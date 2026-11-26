@@ -96,6 +96,7 @@ impl DawApp {
                 .map(|c| (c.id.clone(), c.name.clone(), c.description.clone()))
                 .collect(),
         );
+        let (mcp_host, mcp_task) = Self::start_mcp_bridge(cx);
         Self {
             timeline: Timeline::new(ds.timeline_pixels_per_beat),
             pattern_editor: PatternEditor::new(),
@@ -168,6 +169,8 @@ impl DawApp {
             vst_reloads: Default::default(),
             vst_task: None,
             vst_effects: Default::default(),
+            _mcp_host: mcp_host,
+            _mcp_task: mcp_task,
             export_job: None,
             bounce_pending: None,
             freeze_pending: None,

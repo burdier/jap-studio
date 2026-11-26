@@ -18,7 +18,7 @@ required-features = ["ui"]
 
 [features]
 default = ["ui", "p2p"]
-ui = ["dep:gpui", "dep:dirs", "dep:symphonia", "dep:cpal", "dep:rustysynth", "dep:particula-rs", "dep:fastrand", "dep:midir", "dep:rtrb", "dep:libc", "dep:realfft", "dep:vst3", "dep:ebur128", "dep:basic-pitch-rs"]
+ui = ["dep:gpui", "dep:dirs", "dep:symphonia", "dep:cpal", "dep:rustysynth", "dep:particula-rs", "dep:fastrand", "dep:midir", "dep:rtrb", "dep:libc", "dep:realfft", "dep:vst3", "dep:ebur128", "dep:basic-pitch-rs", "dep:serde", "dep:serde_json"]
 p2p = ["dep:iroh", "dep:tokio", "dep:base64", "dep:serde", "dep:serde_json"]
 
 [dependencies]
