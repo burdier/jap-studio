@@ -114,6 +114,14 @@ fn candidate_roots() -> Vec<PathBuf> {
     {
         roots.push(directory.join("assets/soundfonts"));
     }
+    if let Some(data_home) = std::env::var_os("XDG_DATA_HOME") {
+        roots.push(PathBuf::from(data_home).join("jap-studio/soundfonts"));
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        let home = PathBuf::from(home);
+        roots.push(home.join(".local/share/jap-studio/soundfonts"));
+        roots.push(home.join("Soundfonts"));
+    }
     roots
 }
 

@@ -13,7 +13,15 @@ DIST_DIR="$ROOT_DIR/dist"
 BUILD_DIR="$DIST_DIR/flatpak-build"
 REPO_DIR="$DIST_DIR/flatpak-repo"
 BUNDLE_PATH="$DIST_DIR/jap-studio-${VERSION}-${ARCH}.flatpak"
-BIN_SRC="${1:-$ROOT_DIR/target/release/daw-gpui}"
+FULL_SOUNDFONTS=0
+BIN_SRC="$ROOT_DIR/target/release/daw-gpui"
+for arg in "$@"; do
+  if [[ "$arg" == "--full" ]]; then
+    FULL_SOUNDFONTS=1
+  else
+    BIN_SRC="$arg"
+  fi
+done
 
 if [[ ! -x "$BIN_SRC" ]]; then
   echo "Error: no se encontró el binario release en $BIN_SRC" >&2
@@ -54,10 +62,24 @@ cp -a "$ROOT_DIR/assets/icons" "$APP_SHARE/assets/"
 cp -a "$ROOT_DIR/assets/scripts" "$APP_SHARE/assets/"
 cp -a "$ROOT_DIR/assets/textures" "$APP_SHARE/assets/"
 cp -a "$ROOT_DIR/assets/themes" "$APP_SHARE/assets/"
-# Incluir el SoundFont principal CC0 (55 MB) para mantener el bundle ligero (~100 MB)
+# Incluir el piano principal CC0 y el pack esencial de FreePats (pianos, bajos,
+# órganos, acústica, percusión GM, arpa, kalimba, vientos, pads), omitiendo solo
+# los bancos masivos (>150 MB c/u: EGuitarFSBS-* y MuldjordKit) salvo con --full.
 cp -a "$ROOT_DIR/assets/soundfonts/UprightPianoKW-20220221.sf2" "$APP_SHARE/assets/soundfonts/"
 cp -a "$ROOT_DIR/assets/soundfonts/cc0.txt" "$APP_SHARE/assets/soundfonts/"
 cp -a "$ROOT_DIR/assets/soundfonts/readme.txt" "$APP_SHARE/assets/soundfonts/"
+mkdir -p "$APP_SHARE/assets/soundfonts/freepats"
+if [[ "$FULL_SOUNDFONTS" == "1" ]]; then
+  cp -a "$ROOT_DIR/assets/soundfonts/freepats/." "$APP_SHARE/assets/soundfonts/freepats/"
+else
+  for f in "$ROOT_DIR/assets/soundfonts/freepats/"*; do
+    base="$(basename "$f")"
+    case "$base" in
+      EGuitarFSBS-*|MuldjordKit*) continue ;;
+    esac
+    cp -a "$f" "$APP_SHARE/assets/soundfonts/freepats/"
+  done
+fi
 
 install -m 755 "$ROOT_DIR/packaging/flatpak/jap-studio-launcher.sh" "$FILES/bin/jap-studio"
 install -m 644 "$ROOT_DIR/packaging/flatpak/${APP_ID}.desktop" "$FILES/share/applications/${APP_ID}.desktop"
