@@ -24,6 +24,7 @@ use rtrb::{Consumer, Producer, RingBuffer};
 pub(crate) use snapshot::PianoSnapshot;
 pub(crate) use soundfont::{
     PresetEntry, SoundFontBank, discover as discover_soundfonts, load_path as load_soundfont,
+    resolve_path as resolve_soundfont_path,
 };
 use std::sync::{
     Arc, Mutex,

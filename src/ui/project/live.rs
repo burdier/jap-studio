@@ -8,11 +8,17 @@ pub(super) use presence::IdentityDialog;
 use super::{DawApp, Snapshot};
 use crate::{
     audio::AudioClip,
-    collaboration::live::{Event, Packet, Presence, Room, Start},
+    collaboration::live::{
+        Event, MAX_ASSET_BYTES, Packet, Presence, Room, SharedAsset, Start,
+    },
 };
 use elevate::project::ProjectDoc;
 use gpui::{AppContext, Context, Task, Window};
-use std::{collections::VecDeque, path::PathBuf, time::Duration};
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 const FLUSH_INTERVAL: Duration = Duration::from_millis(100);
 const MAX_PENDING: usize = 32;
@@ -34,6 +40,7 @@ struct Prepared {
 
 pub(super) struct SharedProject {
     document: ProjectDoc,
+    origin: u64,
     room: Room,
     host: bool,
     connected: bool,
@@ -48,6 +55,8 @@ pub(super) struct SharedProject {
     clear_cut_after_updates: bool,
     root: PathBuf,
     last: Snapshot,
+    sent_assets: HashSet<String>,
+    received_assets: HashMap<String, PathBuf>,
     inbox: VecDeque<Incoming>,
     prepare: Option<Task<()>>,
     prepared: Option<(Incoming, Result<Prepared, String>)>,
@@ -89,8 +98,23 @@ impl DawApp {
             return;
         }
         let result = self.shared_base().and_then(|document| {
+            let root = self
+                .project
+                .path
+                .as_deref()
+                .and_then(Path::parent)
+                .ok_or("Proyecto sin carpeta")?
+                .to_owned();
             let updates = document.all_updates()?;
-            self.start_shared_project(document, Start::Share(updates), cx)
+            let mut sent_assets = HashSet::new();
+            let initial_snapshot = Snapshot::from_document(&document)?;
+            let assets = collect_snapshot_assets(&initial_snapshot, &root, &mut sent_assets)?;
+            self.start_shared_project(
+                document,
+                Start::Share { updates, assets },
+                sent_assets,
+                cx,
+            )
         });
         if let Err(error) = result {
             self.show_share_error(error);
@@ -114,7 +138,7 @@ impl DawApp {
                         .filter(|text| text.trim_start().starts_with("hay-live:"))
                         .ok_or("Copia una invitación de Jap Studio y vuelve a pulsar Unirse")?;
                     let document = this.shared_base()?;
-                    this.start_shared_project(document, Start::Join(invite), cx)
+                    this.start_shared_project(document, Start::Join(invite), HashSet::new(), cx)
                 })();
                 if let Err(error) = result {
                     this.status_message = error;
@@ -143,9 +167,10 @@ impl DawApp {
         &mut self,
         document: ProjectDoc,
         start: Start,
+        sent_assets: HashSet<String>,
         cx: &mut Context<Self>,
     ) -> Result<(), String> {
-        let host = matches!(&start, Start::Share(_));
+        let host = matches!(&start, Start::Share { .. });
         let root = self
             .project
             .path
@@ -153,9 +178,9 @@ impl DawApp {
             .and_then(std::path::Path::parent)
             .ok_or("Proyecto sin carpeta")?
             .to_owned();
+        let origin = document.collaboration_origin()?;
         let last = self.session_snapshot()?;
-        let (room, mut events) =
-            Room::start(document.collaboration_origin()?, start).map_err(|e| e.to_string())?;
+        let (room, mut events) = Room::start(origin, start).map_err(|e| e.to_string())?;
         let task = cx.spawn(async move |this, cx| {
             while let Some(event) = events.recv().await {
                 let done = matches!(event, Event::Ended(_));
@@ -184,6 +209,7 @@ impl DawApp {
         });
         self.project.shared = Some(SharedProject {
             document,
+            origin,
             room,
             host,
             connected: false,
@@ -195,6 +221,8 @@ impl DawApp {
             invite: None,
             root,
             last,
+            sent_assets,
+            received_assets: HashMap::new(),
             inbox: VecDeque::new(),
             prepare: None,
             prepared: None,
@@ -253,6 +281,19 @@ impl DawApp {
                 shared.connected = true;
                 if shared.initialized {
                     self.shared_project_connected();
+                }
+            }
+            Event::Asset(asset) | Event::Packet(Packet::Asset(asset)) => {
+                match store_received_asset(shared.origin, &asset, &mut shared.received_assets) {
+                    Ok((label, local_path)) => {
+                        if let Some(s) = local_path.to_str() {
+                            shared.sent_assets.insert(s.to_owned());
+                        }
+                        self.status_message = format!("Audio sincronizado: {label}");
+                    }
+                    Err(error) => {
+                        self.status_message = format!("Audio P2P: {error}");
+                    }
                 }
             }
             Event::Initial(bytes) => self.enqueue_shared_update(Incoming { base: None, bytes }),
@@ -385,11 +426,16 @@ impl DawApp {
             persisted.resolve_piano_sources()?;
         }
         persisted.relativize_sources(&shared.root)?;
+        let new_assets =
+            collect_snapshot_assets(&persisted, &shared.root, &mut shared.sent_assets)?;
         let candidate = shared.document.collaboration_fork();
         let version = candidate.collaboration_version();
         persisted.write_document(&candidate)?;
         self.credit_shared_edits(&candidate, &shared.last, &local)?;
         if candidate.collaboration_version() != version {
+            for asset in new_assets {
+                shared.room.send(Packet::Asset(asset))?;
+            }
             let bytes = candidate.collaboration_updates(&version)?;
             let base = shared.document.collaboration_frontiers().encode();
             shared.room.send(Packet::Changes { base, bytes })?;
@@ -409,6 +455,7 @@ impl DawApp {
         let document = shared.document.collaboration_fork();
         let origin = shared.document.collaboration_origin()?;
         let root = shared.root.clone();
+        let received_assets = shared.received_assets.clone();
         let pianos = shared.last.pianos.clone();
         let previous_samplers = shared.last.samplers.clone();
         let previous_tracks = shared.last.tracks.clone();
@@ -445,7 +492,13 @@ impl DawApp {
                     return Err("El origen del proyecto compartido cambió".into());
                 }
                 let mut snapshot = Snapshot::from_document(&document)?;
-                let audio = snapshot.prepare_resources(&root, files, &pianos, &previous)?;
+                let audio = snapshot.prepare_resources_with_assets(
+                    &root,
+                    files,
+                    &pianos,
+                    &previous,
+                    &received_assets,
+                )?;
                 let effects = super::effects::prepare(
                     &snapshot.tracks,
                     &previous_tracks,
@@ -502,4 +555,109 @@ fn merge_shared_update(
         document.merge(bytes)?;
     }
     Ok(document)
+}
+
+fn collect_snapshot_assets(
+    snapshot: &Snapshot,
+    root: &Path,
+    sent: &mut HashSet<String>,
+) -> Result<Vec<SharedAsset>, String> {
+    let mut assets = Vec::new();
+    let sources = snapshot
+        .audio
+        .iter()
+        .map(|clip| clip.source.as_str())
+        .chain(snapshot.samplers.iter().map(|s| s.source.as_str()))
+        .chain(
+            snapshot
+                .drums
+                .kit
+                .pieces
+                .iter()
+                .flat_map(|piece| piece.layers.iter().map(|layer| layer.source.as_str())),
+        );
+
+    for raw in sources {
+        if raw.is_empty() || sent.contains(raw) {
+            continue;
+        }
+        let path = root.join(raw);
+        let Ok(meta) = std::fs::metadata(&path) else {
+            continue;
+        };
+        if !meta.is_file() {
+            continue;
+        }
+        if meta.len() as usize > MAX_ASSET_BYTES {
+            return Err(format!(
+                "El audio {} supera 32 MiB para envío P2P",
+                path.file_name()
+                    .unwrap_or(path.as_os_str())
+                    .to_string_lossy()
+            ));
+        }
+        let bytes = std::fs::read(&path)
+            .map_err(|e| format!("No se pudo leer audio {}: {e}", path.display()))?;
+        sent.insert(raw.to_owned());
+        assets.push(SharedAsset {
+            key: raw.to_owned(),
+            bytes,
+        });
+    }
+    Ok(assets)
+}
+
+fn store_received_asset(
+    origin: u64,
+    asset: &SharedAsset,
+    received: &mut HashMap<String, PathBuf>,
+) -> Result<(String, PathBuf), String> {
+    let raw_name = Path::new(&asset.key)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .filter(|n| !n.is_empty())
+        .unwrap_or("sample.wav");
+    let clean_name: String = raw_name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | ' ') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .take(96)
+        .collect();
+    let clean_name = clean_name.trim_matches('.');
+    let clean_name = if clean_name.is_empty() {
+        "sample.wav"
+    } else {
+        clean_name
+    };
+
+    // Hash FNV-1a estable de 64 bits sobre la clave original para evitar colisiones de nombres.
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for b in asset.key.as_bytes() {
+        hash ^= u64::from(*b);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+
+    let dir = dirs::cache_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join(format!("jap-studio/collab/{origin:016x}"));
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let target = dir.join(format!("{hash:016x}_{clean_name}"));
+
+    let needs_write = std::fs::metadata(&target)
+        .map(|m| m.len() as usize != asset.bytes.len())
+        .unwrap_or(true);
+    if needs_write {
+        let tmp = target.with_extension(format!("tmp.{}", std::process::id()));
+        std::fs::write(&tmp, &asset.bytes).map_err(|e| e.to_string())?;
+        std::fs::rename(&tmp, &target).map_err(|e| e.to_string())?;
+    }
+
+    received.insert(asset.key.clone(), target.clone());
+    received.insert(format!("name:{raw_name}"), target.clone());
+    Ok((raw_name.to_owned(), target))
 }

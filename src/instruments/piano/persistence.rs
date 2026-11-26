@@ -31,19 +31,31 @@ impl Piano {
             piano.params.set(spec.id, *value);
         }
         if !state.source.is_empty() {
-            let path = std::path::PathBuf::from(&state.source);
-            if !path.is_file() {
-                return Err(format!("Falta SoundFont: {}", path.display()));
+            let path = crate::audio::piano::resolve_soundfont_path(&state.source)
+                .ok_or_else(|| format!("Falta SoundFont: {}", state.source))?;
+            let canonical = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+            let mut banks = discover_soundfonts();
+            if let Some(idx) = banks.iter().position(|b| {
+                std::fs::canonicalize(&b.path).unwrap_or_else(|_| b.path.clone()) == canonical
+            }) {
+                piano.banks = banks;
+                piano.bank_index = idx;
+            } else {
+                banks.insert(
+                    0,
+                    SoundFontBank {
+                        name: path
+                            .file_stem()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .into_owned(),
+                        path,
+                        credits: String::new(),
+                    },
+                );
+                piano.banks = banks;
+                piano.bank_index = 0;
             }
-            piano.banks = vec![SoundFontBank {
-                name: path
-                    .file_stem()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .into_owned(),
-                path,
-                credits: String::new(),
-            }];
         }
         piano.preset_index = state.preset as usize;
         InstrumentId::reserve_restored(state.id)?;

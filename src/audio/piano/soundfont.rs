@@ -104,6 +104,24 @@ pub(crate) fn discover() -> Vec<SoundFontBank> {
     banks
 }
 
+/// Resuelve una ruta de SoundFont guardada en un proyecto o recibida por P2P.
+/// Si la ruta original proviene de otra máquina (o entre binario local y Flatpak),
+/// busca el mismo archivo por nombre entre los bancos descubiertos localmente.
+pub(crate) fn resolve_path(raw: &str) -> Option<PathBuf> {
+    if raw.is_empty() {
+        return discover().into_iter().next().map(|b| b.path);
+    }
+    let path = Path::new(raw);
+    if path.is_file() {
+        return Some(path.to_path_buf());
+    }
+    let target_name = path.file_name()?;
+    discover()
+        .into_iter()
+        .find(|bank| bank.path.file_name() == Some(target_name))
+        .map(|bank| bank.path)
+}
+
 fn candidate_roots() -> Vec<PathBuf> {
     let mut roots = vec![
         Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/soundfonts"),

@@ -49,17 +49,17 @@ impl Snapshot {
     }
 
     fn resolve_piano_source(piano: &mut ProjectPiano) -> Result<(), String> {
-        if piano.source.is_empty() {
-            piano.source = crate::audio::piano::discover_soundfonts()
-                .first()
-                .ok_or("No hay SoundFont para guardar el piano")?
-                .path
-                .to_str()
-                .ok_or("Ruta no UTF-8")?
-                .into();
-        }
-        piano.source = std::fs::canonicalize(&piano.source)
-            .map_err(|e| format!("SoundFont {}: {e}", piano.source))?
+        let resolved = crate::audio::piano::resolve_soundfont_path(&piano.source).ok_or_else(
+            || {
+                if piano.source.is_empty() {
+                    "No hay SoundFont para guardar el piano".to_owned()
+                } else {
+                    format!("Falta SoundFont: {}", piano.source)
+                }
+            },
+        )?;
+        piano.source = std::fs::canonicalize(&resolved)
+            .unwrap_or(resolved)
             .to_str()
             .ok_or("Ruta no UTF-8")?
             .into();
@@ -188,9 +188,20 @@ impl Snapshot {
     pub fn prepare_resources(
         &mut self,
         root: &Path,
+        files: HashMap<PathBuf, Arc<AudioFile>>,
+        existing_pianos: &[ProjectPiano],
+        previous: &[AudioClip],
+    ) -> Result<Vec<AudioClip>, String> {
+        self.prepare_resources_with_assets(root, files, existing_pianos, previous, &HashMap::new())
+    }
+
+    pub fn prepare_resources_with_assets(
+        &mut self,
+        root: &Path,
         mut files: HashMap<PathBuf, Arc<AudioFile>>,
         existing_pianos: &[ProjectPiano],
         previous: &[AudioClip],
+        shared_assets: &HashMap<String, PathBuf>,
     ) -> Result<Vec<AudioClip>, String> {
         for piano in &mut self.pianos {
             if !piano.source.is_empty() {
@@ -201,29 +212,26 @@ impl Snapshot {
                     .into();
             }
             if !existing_pianos.contains(piano) {
-                crate::instruments::Piano::restore_project(piano)?;
                 Self::resolve_piano_source(piano)?;
+                crate::instruments::Piano::restore_project(piano)?;
             }
         }
         for sampler in &mut self.samplers {
-            sampler.source = root
-                .join(&sampler.source)
+            let resolved = resolve_audio_source(&sampler.source, root, shared_assets);
+            sampler.source = resolved
                 .to_str()
                 .ok_or("Ruta de sample no UTF-8")?
                 .into();
         }
         for piece in &mut self.drums.kit.pieces {
             for layer in &mut piece.layers {
-                layer.source = root
-                    .join(&layer.source)
-                    .to_str()
-                    .ok_or("Ruta no UTF-8")?
-                    .into();
+                let resolved = resolve_audio_source(&layer.source, root, shared_assets);
+                layer.source = resolved.to_str().ok_or("Ruta no UTF-8")?.into();
             }
         }
         let mut audio = Vec::new();
         for clip in &mut self.audio {
-            let source = root.join(&clip.source);
+            let source = resolve_audio_source(&clip.source, root, shared_assets);
             let (source, file) = match files.get(&source) {
                 Some(file) => (source, Arc::clone(file)),
                 None => {
@@ -593,4 +601,27 @@ impl Snapshot {
         }
         Ok(ready)
     }
+}
+
+fn resolve_audio_source(
+    raw: &str,
+    root: &Path,
+    shared_assets: &HashMap<String, PathBuf>,
+) -> PathBuf {
+    let candidate = root.join(raw);
+    if candidate.is_file() {
+        return candidate;
+    }
+    if let Some(cached) = shared_assets.get(raw)
+        && cached.is_file()
+    {
+        return cached.clone();
+    }
+    if let Some(name) = Path::new(raw).file_name().and_then(|n| n.to_str())
+        && let Some(cached) = shared_assets.get(&format!("name:{name}"))
+        && cached.is_file()
+    {
+        return cached.clone();
+    }
+    candidate
 }

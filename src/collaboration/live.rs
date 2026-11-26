@@ -10,10 +10,14 @@ use std::{
 };
 use tokio::sync::{mpsc, oneshot};
 
-const PROTOCOL: &[u8] = b"hay/collab/live/3";
+const PROTOCOL: &[u8] = b"hay/collab/live/4";
 const INVITE_PREFIX: &str = "hay-live:";
 const QUEUE: usize = 256;
 const MAX_FRONTIERS: usize = 4096;
+const ASSET_FRAME: u16 = u16::MAX;
+const MAX_ASSET_KEY: usize = 4096;
+pub(crate) const MAX_ASSET_BYTES: usize = 32 * 1024 * 1024;
+const MAX_INITIAL_ASSETS: usize = 128;
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Presence {
@@ -63,13 +67,21 @@ pub(crate) fn display_text(value: &str, limit: usize) -> String {
         .collect()
 }
 
+#[derive(Clone)]
+pub(crate) struct SharedAsset {
+    pub key: String,
+    pub bytes: Vec<u8>,
+}
+
 pub(crate) enum Packet {
     Presence(Presence),
+    Asset(SharedAsset),
     Changes { base: Vec<u8>, bytes: Vec<u8> },
 }
 
 pub(crate) enum Event {
     Invitation(String),
+    Asset(SharedAsset),
     Initial(Vec<u8>),
     Connected,
     Packet(Packet),
@@ -77,7 +89,10 @@ pub(crate) enum Event {
 }
 
 pub(crate) enum Start {
-    Share(Vec<u8>),
+    Share {
+        updates: Vec<u8>,
+        assets: Vec<SharedAsset>,
+    },
     Join(String),
 }
 
@@ -127,6 +142,13 @@ impl Room {
         {
             return Err("El cambio supera el tamaño permitido por la sesión".into());
         }
+        if matches!(&packet, Packet::Asset(asset)
+            if asset.key.is_empty()
+                || asset.key.len() > MAX_ASSET_KEY
+                || asset.bytes.len() > MAX_ASSET_BYTES)
+        {
+            return Err("El archivo de audio supera 32 MiB o tiene ruta inválida".into());
+        }
         self.outgoing
             .try_send(packet)
             .map_err(|_| "Se interrumpió el envío de cambios".into())
@@ -158,9 +180,12 @@ async fn connect(
     events: &mpsc::Sender<Event>,
 ) -> Result<(Endpoint, Connection, SendStream, RecvStream)> {
     let (endpoint, connection, send, recv) = match start {
-        Start::Share(updates) => {
+        Start::Share { updates, assets } => {
             if updates.len() > MAX_UPDATES {
                 return Err("El proyecto supera 16 MiB de operaciones Loro".into());
+            }
+            if assets.len() > MAX_INITIAL_ASSETS {
+                return Err("El proyecto supera el máximo de archivos de audio iniciales".into());
             }
             let endpoint = bind_endpoint(Route::Auto, None, false, PROTOCOL).await?;
             // Publicar la ruta de relay cuando esté disponible y conservar acceso local sin Internet.
@@ -193,6 +218,10 @@ async fn connect(
             if supplied != token {
                 return Err("La invitación no autoriza esta conexión".into());
             }
+            send.write_all(&(assets.len() as u32).to_be_bytes()).await?;
+            for asset in &assets {
+                send_asset(&mut send, asset).await?;
+            }
             send_updates(&mut send, &updates).await?;
             (endpoint, connection, send, recv)
         }
@@ -215,6 +244,16 @@ async fn connect(
             let connection = endpoint.connect(invite.addr, PROTOCOL).await?;
             let (mut send, mut recv) = connection.open_bi().await?;
             send.write_all(&invite.token).await?;
+            let mut count_buf = [0; 4];
+            recv.read_exact(&mut count_buf).await?;
+            let count = u32::from_be_bytes(count_buf) as usize;
+            if count > MAX_INITIAL_ASSETS {
+                return Err("Demasiados archivos de audio iniciales".into());
+            }
+            for _ in 0..count {
+                let asset = receive_asset(&mut recv).await?;
+                events.send(Event::Asset(asset)).await?;
+            }
             let bytes = receive_updates(&mut recv).await?;
             events.send(Event::Initial(bytes)).await?;
             (endpoint, connection, send, recv)
@@ -257,6 +296,11 @@ async fn exchange(
                     .await?;
                 continue;
             }
+            if length == usize::from(ASSET_FRAME) {
+                let asset = receive_asset(recv).await?;
+                events.send(Event::Packet(Packet::Asset(asset))).await?;
+                continue;
+            }
             if length > MAX_FRONTIERS {
                 return Err("Versión de colaboración inválida".into());
             }
@@ -277,6 +321,10 @@ async fn exchange(
                     send.write_all(&(data.len() as u16).to_be_bytes()).await?;
                     send.write_all(&data).await?;
                 }
+                Packet::Asset(asset) => {
+                    send.write_all(&ASSET_FRAME.to_be_bytes()).await?;
+                    send_asset(send, &asset).await?;
+                }
                 Packet::Changes { base, bytes } => {
                     send.write_all(&(base.len() as u16).to_be_bytes()).await?;
                     send.write_all(&base).await?;
@@ -287,4 +335,40 @@ async fn exchange(
         Ok(())
     };
     tokio::select! { result = reader => result, result = writer => result }
+}
+
+async fn send_asset(send: &mut SendStream, asset: &SharedAsset) -> Result<()> {
+    if asset.key.is_empty()
+        || asset.key.len() > MAX_ASSET_KEY
+        || asset.bytes.len() > MAX_ASSET_BYTES
+    {
+        return Err("Archivo de audio inválido o demasiado grande para P2P".into());
+    }
+    let key_bytes = asset.key.as_bytes();
+    send.write_all(&(key_bytes.len() as u16).to_be_bytes()).await?;
+    send.write_all(key_bytes).await?;
+    send.write_all(&(asset.bytes.len() as u32).to_be_bytes()).await?;
+    send.write_all(&asset.bytes).await?;
+    Ok(())
+}
+
+async fn receive_asset(recv: &mut RecvStream) -> Result<SharedAsset> {
+    let mut klen = [0; 2];
+    recv.read_exact(&mut klen).await?;
+    let klen = usize::from(u16::from_be_bytes(klen));
+    if klen == 0 || klen > MAX_ASSET_KEY {
+        return Err("Clave de archivo de audio inválida".into());
+    }
+    let mut key_buf = vec![0; klen];
+    recv.read_exact(&mut key_buf).await?;
+    let key = String::from_utf8(key_buf)?;
+    let mut blen = [0; 4];
+    recv.read_exact(&mut blen).await?;
+    let blen = u32::from_be_bytes(blen) as usize;
+    if blen > MAX_ASSET_BYTES {
+        return Err("Archivo de audio recibido supera 32 MiB".into());
+    }
+    let mut bytes = vec![0; blen];
+    recv.read_exact(&mut bytes).await?;
+    Ok(SharedAsset { key, bytes })
 }
