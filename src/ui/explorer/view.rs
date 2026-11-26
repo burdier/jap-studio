@@ -111,6 +111,7 @@ impl Render for Explorer {
                             .child(Input::new(input).w_full().cleanable(true)),
                     ))
                     .child(self.render_preview_controls(cx))
+                    .child(self.render_sample_profile())
                     .child(self.render_root_controls(cx))
                     .when_some(self.search_message(), |panel, text| panel.child(
                         div().px_2().pb_1().text_color(rgb(style.muted)).child(text),
@@ -136,6 +137,128 @@ impl Render for Explorer {
 }
 
 impl Explorer {
+    fn render_sample_profile(&self) -> Div {
+        let style = self.style;
+        let Some(path) = self
+            .selected_file()
+            .filter(|p| EntryKind::for_file(p) == EntryKind::Audio)
+        else {
+            return div();
+        };
+        let card = div()
+            .flex_shrink_0()
+            .mx_2()
+            .mb_2()
+            .px_2()
+            .py_1()
+            .rounded(px(style.radius))
+            .bg(rgb(style.hover))
+            .flex()
+            .flex_col()
+            .gap_1();
+
+        let Some(p) = self.selected_profile(&path) else {
+            return if self.preview.profile_loading {
+                card.child(
+                    div()
+                        .text_xs()
+                        .text_color(rgb(style.muted))
+                        .child("Analizando carácter acústico…"),
+                )
+            } else {
+                div()
+            };
+        };
+
+        let chip = |label: String, color: u32| {
+            div()
+                .px_1()
+                .rounded(px(3.0))
+                .bg(rgb(style.panel))
+                .text_xs()
+                .text_color(rgb(color))
+                .child(label)
+        };
+
+        let transient_color = if p.transient_strength < 0.35 {
+            style.muted
+        } else {
+            style.accent
+        };
+
+        let band_bar = |label: &'static str, pct: f32| {
+            let filled = (pct / 100.0).clamp(0.04, 1.0);
+            div()
+                .flex_1()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .gap(px(2.0))
+                .child(
+                    div()
+                        .flex()
+                        .justify_between()
+                        .text_xs()
+                        .text_color(rgb(style.muted))
+                        .child(label)
+                        .child(format!("{pct:.0}%")),
+                )
+                .child(
+                    div()
+                        .w_full()
+                        .h(px(3.0))
+                        .rounded(px(1.5))
+                        .bg(rgb(style.panel))
+                        .child(
+                            div()
+                                .h_full()
+                                .w(gpui::relative(filled))
+                                .rounded(px(1.5))
+                                .bg(rgb(style.accent)),
+                        ),
+                )
+        };
+
+        let mut tags = div()
+            .flex()
+            .flex_wrap()
+            .gap_1()
+            .child(chip(format!("{} · {:.2}s", p.role_hint, p.duration_seconds), style.text))
+            .child(chip(
+                format!("Transiente: {} ({:.0}ms)", p.transient_label, p.attack_ms),
+                transient_color,
+            ))
+            .child(chip(
+                format!("{} ({:.0} Hz)", p.brightness_label, p.spectral_centroid_hz),
+                style.muted,
+            ));
+
+        if let Some(note) = &p.pitch_note {
+            tags = tags.child(chip(format!("Tono {note}"), style.accent));
+        }
+
+        card.child(tags)
+            .child(
+                div()
+                    .flex()
+                    .gap_2()
+                    .pt(px(2.0))
+                    .child(band_bar("Sub", p.bands.sub_pct))
+                    .child(band_bar("Grv", p.bands.low_pct))
+                    .child(band_bar("Med", p.bands.mid_pct))
+                    .child(band_bar("Agd", p.bands.high_pct)),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(rgb(style.muted))
+                    .child(format!(
+                        "Decay {:.0} ms · Crest {:.1} dB · Pico {:.1} dBFS",
+                        p.decay_ms, p.crest_db, p.peak_dbfs
+                    )),
+            )
+    }
+
     fn render_root_controls(&self, cx: &mut Context<Self>) -> Div {
         let container = div()
             .flex_shrink_0()
@@ -436,6 +559,7 @@ impl Explorer {
                             }
                             window.focus(&this.focus, cx);
                             this.selected = Some(path.clone());
+                            this.schedule_profile_analysis(Some(path.clone()), cx);
                             this.toggle_sample_preview(path.clone(), cx);
                             cx.stop_propagation();
                         }),

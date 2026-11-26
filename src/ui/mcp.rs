@@ -1,7 +1,10 @@
 //! Adaptador de herramientas MCP hacia los controladores en vivo de `DawApp`.
 use super::{CenterView, DawApp, fx::FxTarget, pattern_editor::DrumViewMode};
 use crate::{
-    audio::{AudioClip, AudioFile},
+    audio::{
+        AudioClip, AudioFile,
+        sample_analysis::{SampleProfile, analyze_path},
+    },
     mcp::{IncomingMcpCall, IpcRequest, IpcResponse, McpHost},
 };
 use elevate::musical::{
@@ -30,7 +33,20 @@ impl DawApp {
             let mut receiver: Option<mpsc::Receiver<IncomingMcpCall>> = Some(rx);
             while let Some(rx) = receiver.take() {
                 let next = background
-                    .spawn(async move { rx.recv().ok().map(|call| (call, rx)) })
+                    .spawn(async move {
+                        loop {
+                            let Ok(call) = rx.recv() else {
+                                return None;
+                            };
+                            // Las herramientas puramente de disco/DSP (Explorer + análisis)
+                            // corren 100% en segundo plano sin tocar ni frenar el hilo de UI.
+                            if let Some(resp) = handle_background_mcp_call(&call.request) {
+                                let _ = call.reply.send(resp);
+                                continue;
+                            }
+                            return Some((call, rx));
+                        }
+                    })
                     .await;
                 let Some((call, rx)) = next else {
                     break;
@@ -76,7 +92,9 @@ impl DawApp {
             "set_fx_param" => self.mcp_set_fx_param(args),
             "write_midi_clip" => self.mcp_write_midi_clip(args),
             "write_drum_pattern" => self.mcp_write_drum_pattern(args),
-            "list_samples" => self.mcp_list_samples(args),
+            "list_samples" => mcp_list_samples_bg(args),
+            "browse_explorer" => mcp_browse_explorer_bg(args),
+            "analyze_sample" => mcp_analyze_sample_bg(args),
             "add_drum_piece" => self.mcp_add_drum_piece(args),
             "load_drum_kit" => self.mcp_load_drum_kit(args),
             "place_drum_pattern" => self.mcp_place_drum_pattern(args),
@@ -598,38 +616,6 @@ impl DawApp {
             .and_then(|chain| chain.find(fx_id))
             .map(|n| self.serialize_fx_node(n));
         Ok(json!({ "fx": updated }))
-    }
-
-    fn mcp_list_samples(&self, args: &Value) -> Result<Value, String> {
-        let query = args
-            .get("query")
-            .and_then(Value::as_str)
-            .map(|s| s.trim().to_lowercase())
-            .filter(|s| !s.is_empty());
-        let kind = args.get("kind").and_then(Value::as_str).unwrap_or("all");
-        let extra_dir = args
-            .get("directory")
-            .and_then(Value::as_str)
-            .map(PathBuf::from);
-        let limit = args
-            .get("limit")
-            .and_then(Value::as_u64)
-            .unwrap_or(60)
-            .clamp(1, 200) as usize;
-
-        let roots = discover_library_roots(extra_dir.as_deref());
-        let mut results = Vec::new();
-        for root in &roots {
-            if results.len() >= limit {
-                break;
-            }
-            collect_media_files(root, kind, query.as_deref(), limit, 0, &mut results);
-        }
-        Ok(json!({
-            "roots": roots.iter().map(|p| p.display().to_string()).collect::<Vec<_>>(),
-            "count": results.len(),
-            "items": results,
-        }))
     }
 
     fn mcp_add_drum_piece(&mut self, args: &Value) -> Result<Value, String> {
@@ -1289,6 +1275,360 @@ impl DawApp {
     }
 }
 
+fn handle_background_mcp_call(req: &IpcRequest) -> Option<IpcResponse> {
+    let result = match req.tool.as_str() {
+        "list_samples" => mcp_list_samples_bg(&req.arguments),
+        "browse_explorer" => mcp_browse_explorer_bg(&req.arguments),
+        "analyze_sample" => mcp_analyze_sample_bg(&req.arguments),
+        _ => return None,
+    };
+    Some(match result {
+        Ok(value) => IpcResponse {
+            ok: true,
+            result: value,
+        },
+        Err(error) => IpcResponse {
+            ok: false,
+            result: json!(error),
+        },
+    })
+}
+
+fn serialize_profile(p: &SampleProfile) -> Value {
+    json!({
+        "summary": p.summary,
+        "role_hint": p.role_hint,
+        "shape": p.shape,
+        "duration_seconds": p.duration_seconds,
+        "sample_rate": p.sample_rate,
+        "transient_label": p.transient_label,
+        "transient_strength": p.transient_strength,
+        "attack_ms": p.attack_ms,
+        "decay_ms": p.decay_ms,
+        "brightness_label": p.brightness_label,
+        "spectral_centroid_hz": p.spectral_centroid_hz,
+        "bands": {
+            "sub_pct": p.bands.sub_pct,
+            "low_pct": p.bands.low_pct,
+            "mid_pct": p.bands.mid_pct,
+            "high_pct": p.bands.high_pct,
+        },
+        "peak_dbfs": p.peak_dbfs,
+        "rms_dbfs": p.rms_dbfs,
+        "crest_db": p.crest_db,
+        "stereo_width": p.stereo_width,
+        "tonal": p.tonal,
+        "pitch_note": p.pitch_note,
+        "pitch_midi": p.pitch_midi,
+        "pitch_cents": p.pitch_cents,
+    })
+}
+
+fn matches_character(p: &SampleProfile, character: &str) -> bool {
+    match character {
+        "soft" => p.transient_strength < 0.45 || p.attack_ms >= 10.0,
+        "punchy" => p.transient_strength >= 0.56,
+        "dark" => p.spectral_centroid_hz < 1800.0,
+        "bright" => p.spectral_centroid_hz >= 3200.0 || p.bands.high_pct >= 35.0,
+        "tonal" => p.tonal,
+        "oneshot" => p.duration_seconds < 2.2,
+        "loop" => p.duration_seconds >= 2.2,
+        _ => true,
+    }
+}
+
+fn mcp_list_samples_bg(args: &Value) -> Result<Value, String> {
+    let query = args
+        .get("query")
+        .and_then(Value::as_str)
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty());
+    let kind = args.get("kind").and_then(Value::as_str).unwrap_or("all");
+    let extra_dir = args
+        .get("directory")
+        .and_then(Value::as_str)
+        .map(PathBuf::from);
+    let character = args
+        .get("character")
+        .and_then(Value::as_str)
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty());
+    let analyze = args
+        .get("analyze")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || character.is_some();
+    let limit = args
+        .get("limit")
+        .and_then(Value::as_u64)
+        .unwrap_or(if analyze { 16 } else { 60 })
+        .clamp(1, 200) as usize;
+    let scan_limit = if character.is_some() {
+        (limit * 4).min(80)
+    } else {
+        limit
+    };
+
+    let roots = discover_library_roots(extra_dir.as_deref());
+    let mut raw_items = Vec::new();
+    for root in &roots {
+        if raw_items.len() >= scan_limit {
+            break;
+        }
+        collect_media_files(root, kind, query.as_deref(), scan_limit, 0, &mut raw_items);
+    }
+
+    let mut items = Vec::new();
+    let mut analyzed_count = 0usize;
+    let max_analyze = if character.is_some() { 40 } else { 16 };
+    for mut item in raw_items {
+        if items.len() >= limit {
+            break;
+        }
+        let is_audio = item.get("kind").and_then(Value::as_str) == Some("audio");
+        if analyze && is_audio && analyzed_count < max_analyze {
+            if let Some(path_str) = item.get("path").and_then(Value::as_str) {
+                analyzed_count += 1;
+                match analyze_path(Path::new(path_str)) {
+                    Ok(profile) => {
+                        if let Some(ref ch) = character
+                            && !matches_character(&profile, ch)
+                        {
+                            continue;
+                        }
+                        if let Some(obj) = item.as_object_mut() {
+                            obj.insert("analysis".to_owned(), serialize_profile(&profile));
+                        }
+                    }
+                    Err(err) => {
+                        if character.is_some() {
+                            continue;
+                        }
+                        if let Some(obj) = item.as_object_mut() {
+                            obj.insert("analysis_error".to_owned(), json!(err));
+                        }
+                    }
+                }
+            }
+        } else if character.is_some() {
+            continue;
+        }
+        items.push(item);
+    }
+
+    Ok(json!({
+        "roots": roots.iter().map(|p| p.display().to_string()).collect::<Vec<_>>(),
+        "count": items.len(),
+        "analyzed": analyzed_count,
+        "items": items,
+    }))
+}
+
+fn mcp_browse_explorer_bg(args: &Value) -> Result<Value, String> {
+    let dir_arg = args
+        .get("directory")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+
+    let Some(dir_str) = dir_arg else {
+        let roots = discover_library_roots(None);
+        let mut entries = Vec::with_capacity(roots.len());
+        for root in &roots {
+            let (mut dirs_count, mut audio_count, mut kit_count) = (0usize, 0usize, 0usize);
+            if let Ok(read) = std::fs::read_dir(root) {
+                for entry in read.flatten() {
+                    let p = entry.path();
+                    if p.is_dir() {
+                        if !entry.file_name().to_string_lossy().starts_with('.') {
+                            dirs_count += 1;
+                        }
+                    } else if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
+                        match ext.to_lowercase().as_str() {
+                            "wav" | "wave" | "flac" | "mp3" | "ogg" | "oga" | "aiff" | "aif"
+                            | "m4a" | "aac" => audio_count += 1,
+                            "haykit" => kit_count += 1,
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            entries.push(json!({
+                "name": root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| root.display().to_string()),
+                "path": root.display().to_string(),
+                "subfolders": dirs_count,
+                "audio_files": audio_count,
+                "kits": kit_count,
+            }));
+        }
+        return Ok(json!({
+            "mode": "roots",
+            "count": entries.len(),
+            "roots": entries,
+        }));
+    };
+
+    let dir = Path::new(dir_str);
+    if !dir.is_dir() {
+        return Err(format!("La carpeta no existe: {dir_str}"));
+    }
+    let query = args
+        .get("query")
+        .and_then(Value::as_str)
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty());
+    let analyze = args
+        .get("analyze")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let limit = args
+        .get("limit")
+        .and_then(Value::as_u64)
+        .unwrap_or(60)
+        .clamp(1, 200) as usize;
+
+    let read = std::fs::read_dir(dir).map_err(|e| e.to_string())?;
+    let mut folders = Vec::new();
+    let mut files = Vec::new();
+    for entry in read.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.') {
+            continue;
+        }
+        if let Some(ref q) = query
+            && !name.to_lowercase().contains(q)
+        {
+            continue;
+        }
+        let path = entry.path();
+        if path.is_dir() {
+            folders.push((name, path));
+        } else {
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.to_lowercase())
+                .unwrap_or_default();
+            let kind = match ext.as_str() {
+                "wav" | "wave" | "flac" | "mp3" | "ogg" | "oga" | "aiff" | "aif" | "m4a"
+                | "aac" => "audio",
+                "haykit" => "kit",
+                "mid" | "midi" => "midi",
+                _ => continue,
+            };
+            files.push((name, path, kind));
+        }
+    }
+    folders.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+    files.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+
+    let mut entries = Vec::new();
+    for (name, path) in folders {
+        if entries.len() >= limit {
+            break;
+        }
+        entries.push(json!({
+            "kind": "directory",
+            "name": name,
+            "path": path.display().to_string(),
+        }));
+    }
+
+    let mut analyzed_count = 0usize;
+    for (name, path, kind) in files {
+        if entries.len() >= limit {
+            break;
+        }
+        let mut obj = json!({
+            "kind": kind,
+            "name": name,
+            "path": path.display().to_string(),
+        });
+        if analyze && kind == "audio" && analyzed_count < 12 {
+            analyzed_count += 1;
+            match analyze_path(&path) {
+                Ok(profile) => {
+                    if let Some(m) = obj.as_object_mut() {
+                        m.insert("analysis".to_owned(), serialize_profile(&profile));
+                    }
+                }
+                Err(err) => {
+                    if let Some(m) = obj.as_object_mut() {
+                        m.insert("analysis_error".to_owned(), json!(err));
+                    }
+                }
+            }
+        }
+        entries.push(obj);
+    }
+
+    Ok(json!({
+        "mode": "directory",
+        "directory": dir.display().to_string(),
+        "parent": dir.parent().map(|p| p.display().to_string()),
+        "count": entries.len(),
+        "analyzed": analyzed_count,
+        "entries": entries,
+    }))
+}
+
+fn mcp_analyze_sample_bg(args: &Value) -> Result<Value, String> {
+    let mut paths: Vec<String> = Vec::new();
+    if let Some(p) = args
+        .get("path")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        paths.push(p.to_owned());
+    }
+    if let Some(arr) = args.get("paths").and_then(Value::as_array) {
+        for item in arr {
+            if let Some(p) = item.as_str().map(str::trim).filter(|s| !s.is_empty()) {
+                if !paths.iter().any(|existing| existing == p) {
+                    paths.push(p.to_owned());
+                }
+            }
+        }
+    }
+    if paths.is_empty() {
+        return Err("Falta path o paths (hasta 24 archivos de audio)".into());
+    }
+    paths.truncate(24);
+
+    let mut results = Vec::with_capacity(paths.len());
+    for path_str in &paths {
+        let p = Path::new(path_str);
+        let name = p
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path_str.clone());
+        match analyze_path(p) {
+            Ok(profile) => results.push(json!({
+                "name": name,
+                "path": path_str,
+                "ok": true,
+                "analysis": serialize_profile(&profile),
+            })),
+            Err(err) => results.push(json!({
+                "name": name,
+                "path": path_str,
+                "ok": false,
+                "error": err,
+            })),
+        }
+    }
+
+    if results.len() == 1 {
+        Ok(results.into_iter().next().unwrap())
+    } else {
+        Ok(json!({
+            "count": results.len(),
+            "samples": results,
+        }))
+    }
+}
+
 fn discover_library_roots(extra: Option<&Path>) -> Vec<PathBuf> {
     let mut roots = Vec::new();
     let mut push_unique = |p: PathBuf| {
@@ -1301,12 +1641,10 @@ fn discover_library_roots(extra: Option<&Path>) -> Vec<PathBuf> {
     }
     if let Some(cfg) = dirs::config_dir() {
         let libs = cfg.join("hay-daw/libraries");
-        if let Ok(content) = std::fs::read_to_string(libs) {
-            for line in content.lines() {
-                let t = line.trim();
-                if !t.is_empty() {
-                    push_unique(PathBuf::from(t));
-                }
+        // Cargar con el mismo formato hex UTF-8 del Explorer visual.
+        if let Ok(saved) = elevate::explorer::persistence::load(&libs) {
+            for p in saved {
+                push_unique(p);
             }
         }
         push_unique(cfg.join("hay-daw/kits"));

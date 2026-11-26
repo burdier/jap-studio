@@ -21,6 +21,7 @@ pub(crate) mod piano;
 mod playback;
 mod publication;
 pub(crate) mod recorder;
+pub(crate) mod sample_analysis;
 pub(crate) mod sample_edit;
 mod sample_pitch;
 pub(crate) mod sample_preview;

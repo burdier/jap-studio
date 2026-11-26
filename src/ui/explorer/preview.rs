@@ -4,6 +4,7 @@ use crate::audio::{
     AudioFile,
     device::AudioConfig,
     fundamental,
+    sample_analysis::{SampleProfile, analyze_path},
     sample_preview::{PreparedSamplePreview, SamplePreview},
 };
 use elevate::explorer::EntryKind;
@@ -22,8 +23,11 @@ pub(super) struct Root {
 
 pub(super) struct Preview {
     pub root: Option<(PathBuf, Root)>,
+    pub profile: Option<(PathBuf, SampleProfile)>,
+    pub profile_loading: bool,
     pub phrase: bool,
     pub analysing: Option<Task<()>>,
+    profile_task: Option<Task<()>>,
     pub automatic: bool,
     pub level: u8,
     pub path: Option<PathBuf>,
@@ -36,8 +40,11 @@ impl Default for Preview {
     fn default() -> Self {
         Self {
             root: None,
+            profile: None,
+            profile_loading: false,
             phrase: false,
             analysing: None,
+            profile_task: None,
             automatic: false,
             level: 50,
             path: None,
@@ -91,6 +98,7 @@ impl Explorer {
     }
 
     pub(super) fn preview_selection(&mut self, audio: Option<PathBuf>, cx: &mut Context<Self>) {
+        self.schedule_profile_analysis(audio.clone(), cx);
         if self.preview.phrase && self.preview.path != audio {
             self.stop_preview();
         }
@@ -107,6 +115,53 @@ impl Explorer {
             }
             _ => {}
         }
+    }
+
+    pub(super) fn selected_profile(&self, path: &Path) -> Option<&SampleProfile> {
+        self.preview
+            .profile
+            .as_ref()
+            .filter(|(p, _)| p == path)
+            .map(|(_, profile)| profile)
+    }
+
+    pub(super) fn schedule_profile_analysis(
+        &mut self,
+        audio: Option<PathBuf>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(path) = audio else {
+            self.preview.profile_task = None;
+            self.preview.profile_loading = false;
+            return;
+        };
+        if self.selected_profile(&path).is_some() {
+            self.preview.profile_loading = false;
+            return;
+        }
+        self.preview.profile_loading = true;
+        let executor = cx.background_executor().clone();
+        self.preview.profile_task = Some(cx.spawn(async move |this, cx| {
+            // Pequeña espera para no decodificar filas intermedias al recorrer con flechas.
+            executor.timer(Duration::from_millis(65)).await;
+            let work_path = path.clone();
+            let result = executor
+                .spawn(async move { analyze_path(&work_path) })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.selected_file().as_ref() == Some(&path) {
+                    this.preview.profile_loading = false;
+                    if let Ok(profile) = result {
+                        let detected = profile
+                            .pitch_midi
+                            .map(|m| (m, profile.pitch_cents.unwrap_or(0)));
+                        this.set_detected_root(&path, detected);
+                        this.preview.profile = Some((path, profile));
+                    }
+                    cx.notify();
+                }
+            });
+        }));
     }
 
     pub(super) fn toggle_auto_preview(&mut self, cx: &mut Context<Self>) {

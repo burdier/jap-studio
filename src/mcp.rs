@@ -93,7 +93,7 @@ impl McpHost {
 }
 
 fn handle_ipc_client(mut stream: UnixStream, tx: mpsc::Sender<IncomingMcpCall>) {
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(20)));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(10)));
     let Ok(reader_stream) = stream.try_clone() else {
         return;
@@ -148,7 +148,7 @@ fn call_daw(path: &Path, request: &IpcRequest) -> Result<IpcResponse, String> {
             path.display()
         )
     })?;
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(20)));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(10)));
     let encoded = serde_json::to_string(request).map_err(|e| e.to_string())?;
     writeln!(stream, "{encoded}").map_err(|e| e.to_string())?;
@@ -430,14 +430,48 @@ fn tool_definitions() -> Value {
         },
         {
             "name": "list_samples",
-            "description": "Descubre archivos de audio (.wav, .flac, .mp3, .ogg, .aiff) y kits guardados (.haykit) en las carpetas de biblioteca del Explorador, ~/.config/hay-daw/kits o una carpeta específica.",
+            "description": "Descubre archivos de audio (.wav, .flac, .mp3, .ogg, .aiff) y kits guardados (.haykit) en tus bibliotecas reales del Explorer, ~/.config/hay-daw/kits o una carpeta específica. Si pasas analyze=true o character, analiza el audio (transiente, brillo, bandas, decay, tono) para elegir con criterio musical.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "query": { "type": "string", "description": "Filtro opcional por nombre/ruta (ej. 'kick', 'snare', 'hat', 'vinyl', 'lofi')." },
                     "kind": { "type": "string", "enum": ["all", "audio", "kit"], "default": "all" },
                     "directory": { "type": "string", "description": "Carpeta opcional adicional donde buscar." },
+                    "analyze": { "type": "boolean", "default": false, "description": "Si es true, añade la ficha acústica (transiente, brillo, bandas, decay, tono) a los resultados de audio (máx. 16)." },
+                    "character": {
+                        "type": "string",
+                        "enum": ["soft", "punchy", "dark", "bright", "tonal", "oneshot", "loop"],
+                        "description": "Filtra archivos de audio por carácter acústico real (implica análisis)."
+                    },
                     "limit": { "type": "integer", "minimum": 1, "maximum": 200, "default": 60 }
+                }
+            }
+        },
+        {
+            "name": "browse_explorer",
+            "description": "Navega el Explorador de bibliotecas exactamente como un humano: sin directory lista tus carpetas raíz configuradas en Jap Studio; con directory lista subcarpetas, samples de audio, MIDI y kits .haykit en ese nivel (opcionalmente con ficha acústica analyze=true).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "directory": { "type": "string", "description": "Carpeta a inspeccionar. Omitir para ver las raíces del Explorer." },
+                    "query": { "type": "string", "description": "Filtro opcional por nombre dentro de esa carpeta." },
+                    "analyze": { "type": "boolean", "default": false, "description": "Si es true, analiza los samples de audio listados (máx. 12) para ver transiente, brillo, bandas y tono." },
+                    "limit": { "type": "integer", "minimum": 1, "maximum": 200, "default": 60 }
+                }
+            }
+        },
+        {
+            "name": "analyze_sample",
+            "description": "Analiza acústicamente uno o varios archivos de audio (hasta 24) fuera del hilo RT y devuelve su carácter real: fuerza de transiente (débil/suave vs punchy/agresivo), ataque/decay en ms, brillo/centroide espectral, balance sub/graves/medios/agudos, pico/RMS/crest, estéreo, tono fundamental y resumen musical legible.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "description": "Ruta de un archivo de audio a analizar." },
+                    "paths": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Lista de rutas (hasta 24) para comparar varios samples candidatos lado a lado."
+                    }
                 }
             }
         },
@@ -598,9 +632,11 @@ mod tests {
             handle_jsonrpc_message(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#, &sock)
                 .unwrap();
         let tools = list["result"]["tools"].as_array().unwrap();
-        assert!(tools.len() >= 20);
+        assert!(tools.len() >= 22);
         assert!(tools.iter().any(|t| t["name"] == "get_project_state"));
         assert!(tools.iter().any(|t| t["name"] == "list_samples"));
+        assert!(tools.iter().any(|t| t["name"] == "browse_explorer"));
+        assert!(tools.iter().any(|t| t["name"] == "analyze_sample"));
         assert!(tools.iter().any(|t| t["name"] == "add_drum_piece"));
         assert!(tools.iter().any(|t| t["name"] == "place_drum_pattern"));
         assert!(tools.iter().any(|t| t["name"] == "set_fx_param"));
