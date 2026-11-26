@@ -1,16 +1,24 @@
 //! Adaptador de herramientas MCP hacia los controladores en vivo de `DawApp`.
 use super::{CenterView, DawApp, fx::FxTarget, pattern_editor::DrumViewMode};
-use crate::mcp::{IncomingMcpCall, IpcRequest, IpcResponse, McpHost};
+use crate::{
+    audio::{AudioClip, AudioFile},
+    mcp::{IncomingMcpCall, IpcRequest, IpcResponse, McpHost},
+};
 use elevate::musical::{
     clip::MidiClip,
+    drums::{DrumClipTarget, DrumPatternId, DrumPlaybackSource, DrumSongCell, piece_pattern},
+    fx::{FxEdit, FxId, FxKind, FxNode, SidechainSource},
     grid::NoteGrid,
     model::{InstrumentId, NoteEvent, NoteId, Pattern},
     time::{PPQ, Tick},
-    track::{MASTER_TRACK_ID, TrackEdit},
+    track::{MASTER_TRACK_ID, Track, TrackDevice, TrackEdit, TrackKind},
 };
 use gpui::{Context, Task};
 use serde_json::{Value, json};
-use std::sync::mpsc;
+use std::{
+    path::{Path, PathBuf},
+    sync::{Arc, mpsc},
+};
 
 impl DawApp {
     pub(super) fn start_mcp_bridge(cx: &mut Context<Self>) -> (Option<McpHost>, Option<Task<()>>) {
@@ -30,7 +38,7 @@ impl DawApp {
                 receiver = Some(rx);
                 let ok = this
                     .update(cx, |this, cx| {
-                        let response = this.handle_mcp_call(call.request);
+                        let response = this.handle_mcp_call(call.request, cx);
                         let _ = call.reply.send(response);
                         cx.notify();
                     })
@@ -43,8 +51,8 @@ impl DawApp {
         (Some(host), Some(task))
     }
 
-    fn handle_mcp_call(&mut self, req: IpcRequest) -> IpcResponse {
-        match self.dispatch_mcp(&req.tool, &req.arguments) {
+    fn handle_mcp_call(&mut self, req: IpcRequest, cx: &mut Context<Self>) -> IpcResponse {
+        match self.dispatch_mcp(&req.tool, &req.arguments, cx) {
             Ok(result) => IpcResponse { ok: true, result },
             Err(error) => IpcResponse {
                 ok: false,
@@ -53,20 +61,97 @@ impl DawApp {
         }
     }
 
-    fn dispatch_mcp(&mut self, tool: &str, args: &Value) -> Result<Value, String> {
+    fn dispatch_mcp(
+        &mut self,
+        tool: &str,
+        args: &Value,
+        cx: &mut Context<Self>,
+    ) -> Result<Value, String> {
         match tool {
             "get_project_state" => Ok(self.mcp_project_state()),
             "set_transport" => self.mcp_set_transport(args),
             "add_track" => self.mcp_add_track(args),
             "set_track_mix" => self.mcp_set_track_mix(args),
             "add_fx" => self.mcp_add_fx(args),
+            "set_fx_param" => self.mcp_set_fx_param(args),
             "write_midi_clip" => self.mcp_write_midi_clip(args),
             "write_drum_pattern" => self.mcp_write_drum_pattern(args),
+            "list_samples" => self.mcp_list_samples(args),
+            "add_drum_piece" => self.mcp_add_drum_piece(args),
+            "load_drum_kit" => self.mcp_load_drum_kit(args),
+            "place_drum_pattern" => self.mcp_place_drum_pattern(args),
+            "load_sampler_sample" => self.mcp_load_sampler_sample(args, cx),
+            "insert_audio_clip" => self.mcp_insert_audio_clip(args),
+            "delete_track" => self.mcp_delete_track(args),
+            "delete_clip" => self.mcp_delete_clip(args),
+            "export_audio" => self.mcp_export_audio(args),
             "set_view" => self.mcp_set_view(args),
             "trigger_mpc_pad" => self.mcp_trigger_mpc_pad(args),
             "run_command" => self.mcp_run_command(args),
             other => Err(format!("Herramienta MCP desconocida: {other}")),
         }
+    }
+
+    fn serialize_fx_node(&self, n: &FxNode) -> Value {
+        let mut params = Vec::new();
+        let mut catalog_id: Option<String> = None;
+        if let FxKind::Effect {
+            plugin_id,
+            parameters,
+        } = &n.kind
+        {
+            if let TrackDevice::Hay { catalog_id: cid } = plugin_id {
+                catalog_id = Some(cid.clone());
+                if let Some(desc) = self.lua_components.registry.get(cid) {
+                    for ctrl in &desc.controls {
+                        let val = parameters.get(&ctrl.id).copied().unwrap_or(ctrl.default);
+                        params.push(json!({
+                            "id": ctrl.id,
+                            "key": ctrl.key,
+                            "name": ctrl.label,
+                            "value": val,
+                            "min": ctrl.min,
+                            "max": ctrl.max,
+                            "unit": ctrl.unit,
+                        }));
+                    }
+                } else if let Some(dev) = elevate::devices::find(cid) {
+                    for spec in dev.parameters {
+                        let val = parameters.get(&spec.id.0).copied().unwrap_or(spec.default);
+                        params.push(json!({
+                            "id": spec.id.0,
+                            "key": spec.key,
+                            "name": spec.name,
+                            "value": val,
+                            "min": spec.min,
+                            "max": spec.max,
+                            "unit": spec.unit,
+                        }));
+                    }
+                } else {
+                    for (&pid, &val) in parameters {
+                        params.push(json!({ "id": pid, "value": val }));
+                    }
+                }
+            }
+        }
+        let sidechain = n.sidechain.map(|sc| match sc {
+            SidechainSource::Drums => json!("drums"),
+            SidechainSource::Track(tid) => self
+                .tracks
+                .iter()
+                .position(|t| t.id == tid)
+                .map(|i| json!(i))
+                .unwrap_or_else(|| json!(tid.0)),
+        });
+        json!({
+            "id": n.id.0,
+            "name": n.name,
+            "catalog_id": catalog_id,
+            "enabled": n.enabled,
+            "sidechain": sidechain,
+            "params": params,
+        })
     }
 
     fn mcp_project_state(&self) -> Value {
@@ -90,13 +175,7 @@ impl DawApp {
                     .chain
                     .nodes()
                     .iter()
-                    .map(|n| {
-                        json!({
-                            "id": n.id.0,
-                            "name": n.name,
-                            "enabled": n.enabled,
-                        })
-                    })
+                    .map(|n| self.serialize_fx_node(n))
                     .collect();
                 json!({
                     "index": i,
@@ -117,14 +196,43 @@ impl DawApp {
             .master_chain
             .nodes()
             .iter()
-            .map(|n| {
-                json!({
-                    "id": n.id.0,
-                    "name": n.name,
-                    "enabled": n.enabled,
-                })
-            })
+            .map(|n| self.serialize_fx_node(n))
             .collect();
+
+        let mut clips = Vec::new();
+        for c in self
+            .timeline
+            .midi_clip
+            .iter()
+            .chain(&self.timeline.other_midi_clips)
+        {
+            clips.push(json!({
+                "id": c.id.value(),
+                "kind": "midi",
+                "track": c.track,
+                "name": c.name,
+                "start_beat": c.start_beat,
+                "duration_beats": c.duration_beats(),
+                "notes": c.notes().len(),
+                "drum_pattern": c.drum_target.map(|t| t.pattern.0),
+            }));
+        }
+        let bpm = self.timeline.tempo.bpm();
+        for c in self
+            .timeline
+            .clip
+            .iter()
+            .chain(&self.timeline.other_audio_clips)
+        {
+            clips.push(json!({
+                "id": c.id.value(),
+                "kind": "audio",
+                "track": c.track,
+                "name": c.name,
+                "start_beat": c.start_beat,
+                "duration_beats": c.length_seconds() * bpm / 60.0,
+            }));
+        }
 
         let session = &self.pattern_editor.session;
         let active_pat = session.active_pattern();
@@ -144,6 +252,20 @@ impl DawApp {
                 })
             })
             .collect();
+        let patterns: Vec<Value> = session
+            .patterns
+            .iter()
+            .map(|pat| {
+                json!({
+                    "id": pat.id.0,
+                    "name": pat.name,
+                    "bars": pat.bar_count(),
+                    "grid": format!("1/{}", pat.grid.denominator()),
+                    "swing": pat.swing,
+                    "note_count": pat.notes.notes().len(),
+                })
+            })
+            .collect();
 
         let available_fx: Vec<String> = self
             .lua_components
@@ -152,8 +274,13 @@ impl DawApp {
             .map(|d| format!("{} ({})", d.id, d.name))
             .collect();
 
+        let library_roots: Vec<String> = discover_library_roots(None)
+            .into_iter()
+            .map(|p| p.display().to_string())
+            .collect();
+
         json!({
-            "tempo_bpm": self.timeline.tempo.bpm(),
+            "tempo_bpm": bpm,
             "meter": format!("{}/{}", self.timeline.meter.numerator(), self.timeline.meter.denominator()),
             "playing": self.player.is_some(),
             "metronome": self.metronome.is_enabled(),
@@ -167,9 +294,12 @@ impl DawApp {
             },
             "status_message": self.status_message,
             "tracks": tracks,
+            "clips": clips,
             "master_fx": master_fx,
             "available_hey_fx": available_fx,
+            "library_roots": library_roots,
             "drums": {
+                "source": format!("{:?}", session.source),
                 "active_pattern_id": active_pat.id.0,
                 "active_pattern_name": active_pat.name,
                 "grid": format!("1/{}", active_pat.grid.denominator()),
@@ -178,6 +308,7 @@ impl DawApp {
                 "note_count": active_pat.notes.notes().len(),
                 "mpc_bank": self.pattern_editor.mpc.bank,
                 "pieces": pieces,
+                "patterns": patterns,
             }
         })
     }
@@ -313,7 +444,6 @@ impl DawApp {
             node: None,
         };
 
-        // Alias amigables para que la IA pueda pedir "eq", "compressor", "echo", "reverb", etc.
         let resolved = match raw_id.to_lowercase().as_str() {
             "eq" | "hay eq" | "hey eq" => "hay.fx.eq",
             "comp" | "compressor" | "hay comp" | "hey comp" => "hay.fx.compressor",
@@ -333,10 +463,562 @@ impl DawApp {
         } else {
             self.insert_fx(target, resolved)?;
         }
+        let fx_node = self
+            .fx_chain(track_id)
+            .and_then(|c| c.nodes().last())
+            .map(|n| self.serialize_fx_node(n));
         self.refresh_project_dirty();
         Ok(json!({
             "inserted": resolved,
             "target": if track_id == MASTER_TRACK_ID { "master".to_owned() } else { format!("track {}", track_id.0) },
+            "fx": fx_node,
+            "status": self.status_message,
+        }))
+    }
+
+    fn resolve_fx_param_id(&self, node: &FxNode, key: &Value) -> Result<u32, String> {
+        if let Some(id) = key.as_u64() {
+            return Ok(id as u32);
+        }
+        let name = key
+            .as_str()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .ok_or("param debe ser un ID numérico o nombre/key de parámetro")?;
+        if let Ok(parsed) = name.parse::<u32>() {
+            return Ok(parsed);
+        }
+        let needle = name.to_lowercase();
+        if let FxKind::Effect {
+            plugin_id: TrackDevice::Hay { catalog_id },
+            ..
+        } = &node.kind
+        {
+            if let Some(desc) = self.lua_components.registry.get(catalog_id) {
+                if let Some(ctrl) = desc.controls.iter().find(|c| {
+                    c.key.eq_ignore_ascii_case(&needle) || c.label.eq_ignore_ascii_case(&needle)
+                }) {
+                    return Ok(ctrl.id);
+                }
+                if let Some(ctrl) = desc.controls.iter().find(|c| {
+                    c.key.to_lowercase().contains(&needle)
+                        || c.label.to_lowercase().contains(&needle)
+                }) {
+                    return Ok(ctrl.id);
+                }
+            } else if let Some(dev) = elevate::devices::find(catalog_id) {
+                if let Some(spec) = dev.parameters.iter().find(|p| {
+                    p.key.eq_ignore_ascii_case(&needle) || p.name.eq_ignore_ascii_case(&needle)
+                }) {
+                    return Ok(spec.id.0);
+                }
+                if let Some(spec) = dev.parameters.iter().find(|p| {
+                    p.key.to_lowercase().contains(&needle)
+                        || p.name.to_lowercase().contains(&needle)
+                }) {
+                    return Ok(spec.id.0);
+                }
+            }
+        }
+        Err(format!("Parámetro «{name}» no encontrado en {}", node.name))
+    }
+
+    fn mcp_set_fx_param(&mut self, args: &Value) -> Result<Value, String> {
+        let fx_id = FxId(
+            args.get("fx_id")
+                .and_then(Value::as_u64)
+                .ok_or("Falta fx_id")?,
+        );
+        let track_id = if let Some(idx) = args.get("track_index").and_then(Value::as_u64) {
+            let i = idx as usize;
+            self.tracks
+                .get(i)
+                .map(|t| t.id)
+                .ok_or_else(|| format!("Pista {i} fuera de rango"))?
+        } else {
+            MASTER_TRACK_ID
+        };
+        let node = self
+            .fx_chain(track_id)
+            .and_then(|chain| chain.find(fx_id))
+            .cloned()
+            .ok_or("Nodo FX no encontrado en ese destino")?;
+
+        let mut updates: Vec<(u32, f32)> = Vec::new();
+        if let (Some(param_key), Some(val)) =
+            (args.get("param"), args.get("value").and_then(Value::as_f64))
+        {
+            let pid = self.resolve_fx_param_id(&node, param_key)?;
+            updates.push((pid, val as f32));
+        }
+        if let Some(map) = args.get("params").and_then(Value::as_object) {
+            for (k, v) in map {
+                let Some(val) = v.as_f64() else {
+                    return Err(format!("Valor inválido para parámetro «{k}»"));
+                };
+                let pid = self.resolve_fx_param_id(&node, &Value::String(k.clone()))?;
+                updates.push((pid, val as f32));
+            }
+        }
+        for (pid, val) in updates {
+            self.edit_fx(track_id, FxEdit::Parameter(fx_id, pid, val))?;
+        }
+        if let Some(enabled) = args.get("enabled").and_then(Value::as_bool)
+            && node.enabled != enabled
+        {
+            self.edit_fx(track_id, FxEdit::Toggle(fx_id))?;
+        }
+        if let Some(sc_val) = args.get("sidechain") {
+            let source = if sc_val.is_null()
+                || sc_val
+                    .as_str()
+                    .is_some_and(|s| matches!(s.to_lowercase().as_str(), "none" | "off" | ""))
+            {
+                None
+            } else if sc_val
+                .as_str()
+                .is_some_and(|s| s.eq_ignore_ascii_case("drums"))
+            {
+                Some(SidechainSource::Drums)
+            } else if let Some(idx) = sc_val.as_u64() {
+                let tid = self
+                    .tracks
+                    .get(idx as usize)
+                    .map(|t| t.id)
+                    .ok_or_else(|| format!("Pista de sidechain {idx} fuera de rango"))?;
+                Some(SidechainSource::Track(tid))
+            } else {
+                return Err("sidechain debe ser 'none', 'drums' o un índice de pista".into());
+            };
+            self.edit_fx(track_id, FxEdit::Sidechain(fx_id, source))?;
+        }
+        self.refresh_project_dirty();
+        let updated = self
+            .fx_chain(track_id)
+            .and_then(|chain| chain.find(fx_id))
+            .map(|n| self.serialize_fx_node(n));
+        Ok(json!({ "fx": updated }))
+    }
+
+    fn mcp_list_samples(&self, args: &Value) -> Result<Value, String> {
+        let query = args
+            .get("query")
+            .and_then(Value::as_str)
+            .map(|s| s.trim().to_lowercase())
+            .filter(|s| !s.is_empty());
+        let kind = args.get("kind").and_then(Value::as_str).unwrap_or("all");
+        let extra_dir = args
+            .get("directory")
+            .and_then(Value::as_str)
+            .map(PathBuf::from);
+        let limit = args
+            .get("limit")
+            .and_then(Value::as_u64)
+            .unwrap_or(60)
+            .clamp(1, 200) as usize;
+
+        let roots = discover_library_roots(extra_dir.as_deref());
+        let mut results = Vec::new();
+        for root in &roots {
+            if results.len() >= limit {
+                break;
+            }
+            collect_media_files(root, kind, query.as_deref(), limit, 0, &mut results);
+        }
+        Ok(json!({
+            "roots": roots.iter().map(|p| p.display().to_string()).collect::<Vec<_>>(),
+            "count": results.len(),
+            "items": results,
+        }))
+    }
+
+    fn mcp_add_drum_piece(&mut self, args: &Value) -> Result<Value, String> {
+        let path_str = args
+            .get("path")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .ok_or("Falta path del archivo de audio")?;
+        let path = Path::new(path_str);
+        AudioFile::decode(path)
+            .map_err(|e| format!("No se pudo decodificar {}: {e}", path.display()))?;
+        let id = self
+            .pattern_editor
+            .session
+            .kit
+            .add_sample(path_str.to_owned())?;
+        let lane = self.pattern_editor.session.kit.pieces.len() - 1;
+        if let Some(piece) = self.pattern_editor.session.kit.pieces.get_mut(lane) {
+            if let Some(name) = args
+                .get("name")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                piece.name = name.to_owned();
+            }
+            if let Some(choke) = args.get("choke_group").and_then(Value::as_u64)
+                && choke > 0
+            {
+                piece.choke_group = Some(choke.min(u16::MAX as u64) as u16);
+            }
+        }
+        self.pattern_editor.cursor_lane = lane;
+        self.publish_drum_edit();
+        self.sync_drum_audition_kit();
+        self.refresh_project_dirty();
+        let piece = &self.pattern_editor.session.kit.pieces[lane];
+        self.status_message = format!("MCP: pieza «{}» añadida (lane {lane})", piece.name);
+        Ok(json!({
+            "lane": lane,
+            "id": id.0,
+            "name": piece.name,
+            "choke_group": piece.choke_group,
+        }))
+    }
+
+    fn mcp_load_drum_kit(&mut self, args: &Value) -> Result<Value, String> {
+        let path_str = args
+            .get("path")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .ok_or("Falta path del kit (.haykit)")?;
+        self.load_drum_kit_from_path(Path::new(path_str));
+        self.sync_drum_audition_kit();
+        Ok(json!({
+            "pieces": self.pattern_editor.session.kit.pieces.len(),
+            "status": self.status_message,
+        }))
+    }
+
+    fn mcp_place_drum_pattern(&mut self, args: &Value) -> Result<Value, String> {
+        let session_active = self.pattern_editor.session.active;
+        let pat_id = args
+            .get("pattern_id")
+            .and_then(Value::as_u64)
+            .map(|id| DrumPatternId(id as u32))
+            .unwrap_or(session_active);
+        let start_beat = args
+            .get("start_beat")
+            .and_then(Value::as_f64)
+            .unwrap_or(0.0)
+            .max(0.0);
+        let repeats = args
+            .get("repeats")
+            .and_then(Value::as_u64)
+            .unwrap_or(1)
+            .clamp(1, 64) as usize;
+        let target = args
+            .get("target")
+            .and_then(Value::as_str)
+            .unwrap_or("arrangement");
+
+        let source_pat = self
+            .pattern_editor
+            .session
+            .pattern(pat_id)
+            .cloned()
+            .ok_or_else(|| format!("Patrón {} inexistente", pat_id.0))?;
+        let pat_ticks = source_pat.notes.length().0.max(1);
+        let pat_beats = pat_ticks as f64 / PPQ as f64;
+
+        if target == "song" {
+            let base_tick = (start_beat * PPQ as f64).round() as i64;
+            for r in 0..repeats {
+                let cell = DrumSongCell {
+                    at: Tick(base_tick + r as i64 * pat_ticks),
+                    pattern: pat_id,
+                };
+                self.pattern_editor.session.set_song_cell(cell, true)?;
+            }
+            self.pattern_editor.session.source = DrumPlaybackSource::Song;
+            self.publish_drum_edit();
+            self.refresh_project_dirty();
+            return Ok(json!({
+                "target": "song",
+                "pattern_id": pat_id.0,
+                "start_beat": start_beat,
+                "repeats": repeats,
+            }));
+        }
+
+        // Volcar al Arrangement creando/reutilizando carriles Drum por pieza del kit.
+        if self.pattern_editor.session.kit.pieces.is_empty() {
+            return Err("El kit de Drums está vacío; añade piezas primero con add_drum_piece o load_drum_kit".into());
+        }
+        let kit_id = self.pattern_editor.session.kit.id;
+        let pieces = self.pattern_editor.session.kit.pieces.clone();
+        let mut tracks = self.tracks.clone();
+        let mut used = Vec::with_capacity(pieces.len());
+        for piece in &pieces {
+            let is_piece = |clip: &MidiClip| {
+                clip.drum_target
+                    .is_some_and(|t| t.kit == kit_id && t.piece == piece.id)
+            };
+            let existing = self
+                .timeline
+                .midi_clip
+                .iter()
+                .chain(&self.timeline.other_midi_clips)
+                .filter(|c| is_piece(c))
+                .map(|c| c.track)
+                .find(|idx| {
+                    !used.contains(idx)
+                        && tracks.get(*idx).is_some_and(|t| t.kind == TrackKind::Drum)
+                });
+            let track_idx = existing.unwrap_or_else(|| {
+                let idx = tracks.len();
+                tracks.push(Track::new(piece.name.clone(), TrackKind::Drum));
+                idx
+            });
+            used.push(track_idx);
+        }
+        if tracks.len() != self.tracks.len() {
+            let source_count = self.tracks.len();
+            let sources = (0..tracks.len())
+                .map(|i| (i < source_count).then_some(i))
+                .collect();
+            let mut levels = self.track_levels.clone();
+            let mut pans = self.track_pans.clone();
+            levels.resize(tracks.len(), 75);
+            pans.resize(tracks.len(), 50);
+            self.commit_track_plan(
+                tracks,
+                sources,
+                levels,
+                pans,
+                self.selected_tracks.clone(),
+                true,
+                false,
+                None,
+            );
+        }
+        let swung = source_pat.swung_notes()?;
+        let mut inserted = 0usize;
+        for r in 0..repeats {
+            let beat = start_beat + r as f64 * pat_beats;
+            for (&track_idx, piece) in used.iter().zip(&pieces) {
+                let pat = piece_pattern(&swung, piece.id)?;
+                if pat.notes().is_empty() {
+                    continue;
+                }
+                let mut clip = MidiClip::new(
+                    format!("{} · {}", source_pat.name, piece.name),
+                    track_idx,
+                    beat,
+                    pat,
+                );
+                clip.drum_target = Some(DrumClipTarget {
+                    kit: kit_id,
+                    piece: piece.id,
+                    pattern: source_pat.id,
+                    linked: true,
+                });
+                self.timeline.insert_midi_clip(clip);
+                inserted += 1;
+            }
+        }
+        self.pattern_editor.session.source = DrumPlaybackSource::Arrangement;
+        self.publish_drum_edit();
+        self.publish_clip_edit();
+        self.refresh_project_dirty();
+        self.status_message = format!(
+            "MCP: patrón «{}» colocado en beat {start_beat:.1} ({inserted} clips)",
+            source_pat.name
+        );
+        Ok(json!({
+            "target": "arrangement",
+            "pattern_id": pat_id.0,
+            "start_beat": start_beat,
+            "repeats": repeats,
+            "clips_inserted": inserted,
+        }))
+    }
+
+    fn mcp_load_sampler_sample(
+        &mut self,
+        args: &Value,
+        cx: &mut Context<Self>,
+    ) -> Result<Value, String> {
+        let index = args
+            .get("track_index")
+            .and_then(Value::as_u64)
+            .ok_or("Falta track_index")? as usize;
+        if index >= self.tracks.len() {
+            return Err(format!("Pista {index} fuera de rango"));
+        }
+        let path_str = args
+            .get("path")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .ok_or("Falta path del sample")?;
+        let path = PathBuf::from(path_str);
+        if !path.is_file() {
+            return Err(format!("Archivo no encontrado: {}", path.display()));
+        }
+        if let Some(id) = self.tracks[index].instrument
+            && self.is_sampler_id(id)
+        {
+            self.activate_sampler(id);
+            self.cursor_row = index;
+        } else {
+            self.add_sampler(index);
+        }
+        self.load_sample(path.clone(), cx);
+        Ok(json!({
+            "track_index": index,
+            "path": path.display().to_string(),
+            "status": self.status_message,
+        }))
+    }
+
+    fn mcp_insert_audio_clip(&mut self, args: &Value) -> Result<Value, String> {
+        let index = args
+            .get("track_index")
+            .and_then(Value::as_u64)
+            .ok_or("Falta track_index")? as usize;
+        if index >= self.tracks.len() {
+            return Err(format!("Pista {index} fuera de rango"));
+        }
+        let path_str = args
+            .get("path")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .ok_or("Falta path del archivo de audio")?;
+        let start_beat = args
+            .get("start_beat")
+            .and_then(Value::as_f64)
+            .unwrap_or(0.0)
+            .max(0.0);
+        let file = AudioFile::decode(Path::new(path_str))?;
+        let name = file.name.clone();
+        let dur_sec = file.frames.len() as f64 / f64::from(file.sample_rate.max(1));
+        let clip = AudioClip {
+            id: elevate::musical::clip::ClipId::fresh(),
+            name: name.clone(),
+            file: Arc::new(file),
+            processing: Default::default(),
+            source_path_override: None,
+            track: index,
+            start_beat,
+            props: Default::default(),
+            trim_start: 0.0,
+            trim_len: None,
+        };
+        let clip_id = clip.id.value();
+        self.timeline.insert_audio_clip(clip);
+        self.publish_clip_edit();
+        self.refresh_project_dirty();
+        self.status_message =
+            format!("MCP: clip de audio «{name}» insertado en beat {start_beat:.1}");
+        Ok(json!({
+            "clip_id": clip_id,
+            "track_index": index,
+            "name": name,
+            "start_beat": start_beat,
+            "duration_seconds": dur_sec,
+        }))
+    }
+
+    fn mcp_delete_track(&mut self, args: &Value) -> Result<Value, String> {
+        let index = args
+            .get("track_index")
+            .and_then(Value::as_u64)
+            .ok_or("Falta track_index")? as usize;
+        if index >= self.tracks.len() {
+            return Err(format!("Pista {index} fuera de rango"));
+        }
+        let removed_name = self.tracks[index].name.to_string();
+        self.select_track(index, false, false);
+        self.edit_track_structure(TrackEdit::Delete);
+        self.refresh_project_dirty();
+        Ok(json!({
+            "deleted_track": removed_name,
+            "remaining_tracks": self.tracks.len(),
+            "status": self.status_message,
+        }))
+    }
+
+    fn mcp_delete_clip(&mut self, args: &Value) -> Result<Value, String> {
+        let clip_id = args
+            .get("clip_id")
+            .and_then(Value::as_u64)
+            .ok_or("Falta clip_id")?;
+        let mut removed = false;
+        if self
+            .timeline
+            .midi_clip
+            .as_ref()
+            .is_some_and(|c| c.id.value() == clip_id)
+        {
+            self.timeline.midi_clip = self.timeline.other_midi_clips.pop();
+            removed = true;
+        } else if let Some(pos) = self
+            .timeline
+            .other_midi_clips
+            .iter()
+            .position(|c| c.id.value() == clip_id)
+        {
+            self.timeline.other_midi_clips.remove(pos);
+            removed = true;
+        } else if self
+            .timeline
+            .clip
+            .as_ref()
+            .is_some_and(|c| c.id.value() == clip_id)
+        {
+            self.timeline.clip = self.timeline.other_audio_clips.pop();
+            removed = true;
+        } else if let Some(pos) = self
+            .timeline
+            .other_audio_clips
+            .iter()
+            .position(|c| c.id.value() == clip_id)
+        {
+            self.timeline.other_audio_clips.remove(pos);
+            removed = true;
+        }
+        if !removed {
+            return Err(format!("Clip {clip_id} no encontrado"));
+        }
+        self.publish_clip_edit();
+        self.refresh_project_dirty();
+        self.status_message = format!("MCP: clip {clip_id} eliminado");
+        Ok(json!({ "deleted_clip_id": clip_id }))
+    }
+
+    fn mcp_export_audio(&mut self, args: &Value) -> Result<Value, String> {
+        let filename = args
+            .get("filename")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .ok_or("Falta filename (ej. 'lofi-beat.wav')")?;
+        let mut cmd = format!("export -n \"{filename}\" -master");
+        if let Some(sr) = args.get("sample_rate").and_then(Value::as_u64) {
+            cmd.push_str(&format!(" -sr {sr}"));
+        }
+        if let Some(bits) = args.get("bits").and_then(Value::as_u64) {
+            cmd.push_str(&format!(" -bits {bits}"));
+        }
+        if let Some(lufs) = args.get("lufs").and_then(Value::as_f64) {
+            cmd.push_str(&format!(" -lufs {lufs:.1}"));
+        }
+        if let Some(out_dir) = args
+            .get("output_dir")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            cmd.push_str(&format!(" -out \"{out_dir}\""));
+        }
+        self.start_export(&cmd);
+        Ok(json!({
+            "command": cmd,
+            "exporting": self.export_job.is_some(),
             "status": self.status_message,
         }))
     }
@@ -359,7 +1041,7 @@ impl DawApp {
             .and_then(Value::as_array)
             .ok_or("Falta el arreglo notes")?;
 
-        let mut max_end_ticks = 4 * PPQ; // mínimo 1 compás
+        let mut max_end_ticks = 4 * PPQ;
         let mut parsed = Vec::with_capacity(raw_notes.len());
         for item in raw_notes {
             let pitch = item
@@ -604,5 +1286,100 @@ impl DawApp {
             "command": cmd,
             "status": self.status_message,
         }))
+    }
+}
+
+fn discover_library_roots(extra: Option<&Path>) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    let mut push_unique = |p: PathBuf| {
+        if p.is_dir() && !roots.contains(&p) {
+            roots.push(p);
+        }
+    };
+    if let Some(dir) = extra {
+        push_unique(dir.to_path_buf());
+    }
+    if let Some(cfg) = dirs::config_dir() {
+        let libs = cfg.join("hay-daw/libraries");
+        if let Ok(content) = std::fs::read_to_string(libs) {
+            for line in content.lines() {
+                let t = line.trim();
+                if !t.is_empty() {
+                    push_unique(PathBuf::from(t));
+                }
+            }
+        }
+        push_unique(cfg.join("hay-daw/kits"));
+    }
+    if let Some(music) = dirs::audio_dir() {
+        push_unique(music);
+    }
+    if let Some(home) = dirs::home_dir() {
+        push_unique(home.join("Samples"));
+        push_unique(home.join("Music"));
+    }
+    roots
+}
+
+fn collect_media_files(
+    dir: &Path,
+    kind: &str,
+    query: Option<&str>,
+    limit: usize,
+    depth: usize,
+    out: &mut Vec<Value>,
+) {
+    if depth > 5 || out.len() >= limit {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut entries: Vec<_> = entries.flatten().collect();
+    entries.sort_by_key(|e| e.file_name());
+    for entry in entries {
+        if out.len() >= limit {
+            break;
+        }
+        let path = entry.path();
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        if meta.is_dir() {
+            let name = entry.file_name();
+            if name.to_string_lossy().starts_with('.') {
+                continue;
+            }
+            collect_media_files(&path, kind, query, limit, depth + 1, out);
+            continue;
+        }
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_lowercase())
+            .unwrap_or_default();
+        let item_kind = match ext.as_str() {
+            "wav" | "flac" | "mp3" | "ogg" | "aiff" | "aif" | "m4a" => "audio",
+            "haykit" => "kit",
+            _ => continue,
+        };
+        if kind != "all" && kind != item_kind {
+            continue;
+        }
+        let path_str = path.display().to_string();
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        if let Some(q) = query
+            && !path_str.to_lowercase().contains(q)
+        {
+            continue;
+        }
+        out.push(json!({
+            "kind": item_kind,
+            "name": name,
+            "path": path_str,
+        }));
     }
 }

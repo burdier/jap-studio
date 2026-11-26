@@ -427,6 +427,138 @@ fn tool_definitions() -> Value {
                     "command": { "type": "string" }
                 }
             }
+        },
+        {
+            "name": "list_samples",
+            "description": "Descubre archivos de audio (.wav, .flac, .mp3, .ogg, .aiff) y kits guardados (.haykit) en las carpetas de biblioteca del Explorador, ~/.config/hay-daw/kits o una carpeta específica.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "Filtro opcional por nombre/ruta (ej. 'kick', 'snare', 'hat', 'vinyl', 'lofi')." },
+                    "kind": { "type": "string", "enum": ["all", "audio", "kit"], "default": "all" },
+                    "directory": { "type": "string", "description": "Carpeta opcional adicional donde buscar." },
+                    "limit": { "type": "integer", "minimum": 1, "maximum": 200, "default": 60 }
+                }
+            }
+        },
+        {
+            "name": "add_drum_piece",
+            "description": "Carga un archivo de audio como nueva pieza/fila en el kit de Drums/MPC para que write_drum_pattern pueda programarla.",
+            "inputSchema": {
+                "type": "object",
+                "required": ["path"],
+                "properties": {
+                    "path": { "type": "string" },
+                    "name": { "type": "string" },
+                    "choke_group": { "type": "integer", "minimum": 1, "maximum": 64 }
+                }
+            }
+        },
+        {
+            "name": "load_drum_kit",
+            "description": "Carga un kit completo de batería (.haykit) en Drums/MPC.",
+            "inputSchema": {
+                "type": "object",
+                "required": ["path"],
+                "properties": {
+                    "path": { "type": "string" }
+                }
+            }
+        },
+        {
+            "name": "place_drum_pattern",
+            "description": "Coloca un patrón de Drums en el Arrangement en un beat concreto (creando o reutilizando carriles Drum) o en la matriz Canción de Drums.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "pattern_id": { "type": "integer", "minimum": 1, "description": "ID del patrón (por defecto el patrón activo)." },
+                    "start_beat": { "type": "number", "minimum": 0, "default": 0 },
+                    "repeats": { "type": "integer", "minimum": 1, "maximum": 64, "default": 1, "description": "Número de repeticiones consecutivas del patrón." },
+                    "target": { "type": "string", "enum": ["arrangement", "song"], "default": "arrangement" }
+                }
+            }
+        },
+        {
+            "name": "set_fx_param",
+            "description": "Ajusta parámetros, bypass o sidechain de un efecto FX existente en una pista o en el Master (consulta fx_id y nombres/IDs de parámetros en get_project_state).",
+            "inputSchema": {
+                "type": "object",
+                "required": ["fx_id"],
+                "properties": {
+                    "track_index": { "type": "integer", "minimum": 0, "description": "Omitir para editar un FX del bus Master." },
+                    "fx_id": { "type": "integer", "minimum": 1 },
+                    "param": { "description": "ID numérico o clave/nombre del parámetro (ej. 0, 'cutoff', 'mix', 'decay', 'threshold', 'gain')." },
+                    "value": { "type": "number" },
+                    "params": {
+                        "type": "object",
+                        "description": "Mapa opcional { clave_o_id: valor } para ajustar varios parámetros a la vez."
+                    },
+                    "enabled": { "type": "boolean" },
+                    "sidechain": { "description": "Fuente de sidechain: 'none', 'drums', o el índice numérico de pista fuente." }
+                }
+            }
+        },
+        {
+            "name": "load_sampler_sample",
+            "description": "Carga un archivo de audio en el Hay Sampler de una pista (si la pista no tiene Sampler, se lo asigna).",
+            "inputSchema": {
+                "type": "object",
+                "required": ["track_index", "path"],
+                "properties": {
+                    "track_index": { "type": "integer", "minimum": 0 },
+                    "path": { "type": "string" }
+                }
+            }
+        },
+        {
+            "name": "insert_audio_clip",
+            "description": "Inserta un archivo de audio (.wav, .flac, .mp3, .ogg) directamente como clip en una pista del Arrangement (ideal para texturas de vinilo, lluvia o loops).",
+            "inputSchema": {
+                "type": "object",
+                "required": ["track_index", "path"],
+                "properties": {
+                    "track_index": { "type": "integer", "minimum": 0 },
+                    "path": { "type": "string" },
+                    "start_beat": { "type": "number", "minimum": 0, "default": 0 }
+                }
+            }
+        },
+        {
+            "name": "delete_track",
+            "description": "Elimina una pista del Arrangement por su índice.",
+            "inputSchema": {
+                "type": "object",
+                "required": ["track_index"],
+                "properties": {
+                    "track_index": { "type": "integer", "minimum": 0 }
+                }
+            }
+        },
+        {
+            "name": "delete_clip",
+            "description": "Elimina un clip MIDI o de Audio del Arrangement por su clip_id (consulta los IDs en get_project_state).",
+            "inputSchema": {
+                "type": "object",
+                "required": ["clip_id"],
+                "properties": {
+                    "clip_id": { "type": "integer", "minimum": 1 }
+                }
+            }
+        },
+        {
+            "name": "export_audio",
+            "description": "Inicia la exportación del Arrangement a un archivo de audio (.wav, .flac, .mp3, .aiff) en disco.",
+            "inputSchema": {
+                "type": "object",
+                "required": ["filename"],
+                "properties": {
+                    "filename": { "type": "string", "description": "Nombre de archivo con extensión (ej. 'lofi-beat.wav' o 'lofi-beat.flac')." },
+                    "output_dir": { "type": "string", "description": "Carpeta destino opcional." },
+                    "sample_rate": { "type": "integer", "enum": [44100, 48000, 96000] },
+                    "bits": { "type": "integer", "enum": [16, 24, 32] },
+                    "lufs": { "type": "number", "description": "Normalización LUFS opcional (ej. -14 para YouTube)." }
+                }
+            }
         }
     ])
 }
@@ -466,10 +598,13 @@ mod tests {
             handle_jsonrpc_message(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#, &sock)
                 .unwrap();
         let tools = list["result"]["tools"].as_array().unwrap();
-        assert!(tools.len() >= 10);
+        assert!(tools.len() >= 20);
         assert!(tools.iter().any(|t| t["name"] == "get_project_state"));
-        assert!(tools.iter().any(|t| t["name"] == "write_midi_clip"));
-        assert!(tools.iter().any(|t| t["name"] == "write_drum_pattern"));
+        assert!(tools.iter().any(|t| t["name"] == "list_samples"));
+        assert!(tools.iter().any(|t| t["name"] == "add_drum_piece"));
+        assert!(tools.iter().any(|t| t["name"] == "place_drum_pattern"));
+        assert!(tools.iter().any(|t| t["name"] == "set_fx_param"));
+        assert!(tools.iter().any(|t| t["name"] == "export_audio"));
     }
 
     #[test]
