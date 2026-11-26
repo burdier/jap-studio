@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.burdier.JapStudio</id>
+  <name>Jap Studio</name>
+  <summary>Native GPU-accelerated DAW for Linux</summary>
+  <summary xml:lang="es">DAW nativo acelerado por GPU para Linux</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <launchable type="desktop-id">io.github.burdier.JapStudio.desktop</launchable>
+  <description>
+    <p>
+      Jap Studio is a native Rust and GPUI digital audio workstation built for fast beatmaking,
+      sound design, mixing, and collaborative music production on Linux.
+    </p>
+    <ul>
+      <li>Low-latency PipeWire/ALSA audio engine with live input monitoring and multi-track recording</li>
+      <li>Drums Sequencer and 4x4 MPC Pads with 16 Levels, real-time Note Repeat, Overdub, and transient Sample Chop</li>
+      <li>Built-in native effects: Hay EQ, Hay Comp (with Sidechain), Hay Limiter, Hay Echo, Hay Reverb (with Freeze), and Convolver</li>
+      <li>Audio Clip Warp (Re-Pitch, Beats, Complex), Piano Roll, Sampler, and VST3 plugin hosting</li>
+      <li>Real-time P2P session collaboration over Loro CRDT + Iroh QUIC and built-in MCP server for AI assistants</li>
+    </ul>
+  </description>
+  <categories>
+    <category>AudioVideo</category>
+    <category>Audio</category>
+    <category>Music</category>
+    <category>Midi</category>
+    <category>Sequencer</category>
+  </categories>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="0.8.0" date="2026-11-25">
+      <description>
+        <p>First public Flatpak beta release featuring native PCM Drums Sampler, 4x4 MPC Pads with Chop-to-Pads, Clip Warp, Hay Dynamics/Echo/Reverb with Tempo Sync &amp; Sidechain, P2P Collaboration, and MCP AI Server.</p>
+      </description>
+    </release>
+  </releases>
+</component>

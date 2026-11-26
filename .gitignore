@@ -1,6 +1,7 @@
 # Artefactos de compilación
 /target/
 /exports/
+/dist/
 
 # Metadatos locales del IDE y del agente
 /.idea/

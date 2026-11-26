@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Jap Studio
+GenericName=Digital Audio Workstation
+Comment=Native GPU-accelerated DAW with MPC Pads, Lua FX, P2P Collab, and MCP AI Bridge
+Comment[es]=DAW nativo acelerado por GPU con Pads MPC, FX en Lua, colaboración P2P y puente IA MCP
+Exec=jap-studio %F
+Icon=io.github.burdier.JapStudio
+Terminal=false
+Categories=AudioVideo;Audio;Music;Midi;Sequencer;
+Keywords=DAW;Audio;Music;MIDI;Synthesizer;Drums;MPC;Sequencer;Sampler;
+StartupNotify=true
+StartupWMClass=hay-daw
+MimeType=audio/wav;audio/flac;audio/mpeg;audio/ogg;audio/midi;
