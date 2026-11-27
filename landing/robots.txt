@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /video.html
+
+Sitemap: https://jap.sevenpitch.dev/sitemap.xml

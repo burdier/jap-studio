@@ -1,0 +1,16 @@
+{
+  "name": "Jap Studio — DAW open source en Rust + GPUI",
+  "short_name": "Jap Studio",
+  "description": "Un DAW donde no tienes que saltar de pantalla. Hay Synth, Pads MPC 4×4, VST3, FX con sidechain, P2P en vivo e IA MCP.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f1e8d4",
+  "theme_color": "#e8641f",
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

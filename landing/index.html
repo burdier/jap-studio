@@ -3,8 +3,139 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Jap Studio (Hay / Elevate) — un DAW sin cambiar de pantalla</title>
+<title>Jap Studio — DAW open source en Rust + GPUI para Linux y Windows</title>
+<meta name="description" content="Jap Studio (Hay / Elevate): DAW open source en Rust + GPUI en un solo lienzo. Hay Synth (.vital/.fxp), Pads MPC 4×4, VST3, FX con sidechain, P2P Loro+Iroh e IA MCP. Linux y Windows.">
+<meta name="keywords" content="Jap Studio, Hay DAW, DAW Linux, DAW Windows, DAW open source, Rust DAW, GPUI, Hay Synth, Vital presets, Serum fxp, MPC 4x4, VST3 Linux, P2P DAW, MCP audio AI, producción musical">
+<meta name="author" content="Jap Studio (burdier)">
+<meta name="robots" content="index, follow, max-image-preview:large, max-video-preview:-1, max-snippet:-1">
+<meta name="theme-color" content="#f1e8d4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1b1a18" media="(prefers-color-scheme: dark)">
+<link rel="canonical" href="https://jap.sevenpitch.dev/">
+<link rel="manifest" href="site.webmanifest">
 <link rel="icon" type="image/svg+xml" href="logo.svg">
+
+<!-- Open Graph (Facebook, WhatsApp, Discord, LinkedIn, Telegram) -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Jap Studio">
+<meta property="og:locale" content="es_ES">
+<meta property="og:url" content="https://jap.sevenpitch.dev/">
+<meta property="og:title" content="Jap Studio — Un DAW donde no tienes que saltar de pantalla">
+<meta property="og:description" content="DAW open source en Rust + GPUI para Linux y Windows. Hay Synth (.vital/.fxp), Pads MPC 4×4, VST3, FX con sidechain, colaboración P2P en vivo e IA nativa vía MCP.">
+<meta property="og:image" content="https://jap.sevenpitch.dev/og-image.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Jap Studio — Un DAW donde no tienes que saltar de pantalla. Rust + GPUI, Linux Flatpak, Windows x64, Hay Synth, P2P e IA MCP.">
+<meta property="og:video" content="https://jap.sevenpitch.dev/jap-studio-release.mp4">
+<meta property="og:video:type" content="video/mp4">
+<meta property="og:video:width" content="1920">
+<meta property="og:video:height" content="1080">
+
+<!-- Twitter / X Card -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Jap Studio — Un DAW open source en Rust + GPUI">
+<meta name="twitter:description" content="Arrangement, Piano roll, Hay Synth (.vital/.fxp), Pads MPC 4×4, VST3, FX con sidechain, P2P en vivo e IA MCP en un solo lienzo. Linux y Windows.">
+<meta name="twitter:image" content="https://jap.sevenpitch.dev/og-image.png">
+<meta name="twitter:image:alt" content="Cuaderno interactivo de Jap Studio — DAW open source en Rust + GPUI para Linux y Windows">
+
+<!-- Datos estructurados (Google Rich Results: SoftwareApplication + VideoObject + FAQ) -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://jap.sevenpitch.dev/#website",
+      "url": "https://jap.sevenpitch.dev/",
+      "name": "Jap Studio",
+      "inLanguage": "es"
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://jap.sevenpitch.dev/#app",
+      "name": "Jap Studio",
+      "alternateName": ["Hay DAW", "Elevate"],
+      "description": "DAW open source en Rust + GPUI que reúne Arrangement, Piano roll con MPE, Hay Synth wavetable (.vital/.fxp), Pads MPC 4×4 sin clics, FX nativos con sidechain, VST3, Explorer acústico, colaboración P2P (Loro + Iroh) y servidor MCP nativo en un solo lienzo.",
+      "url": "https://jap.sevenpitch.dev/",
+      "downloadUrl": "https://github.com/burdier/jap-studio/releases/tag/v0.8.0",
+      "codeRepository": "https://github.com/burdier/jap-studio",
+      "applicationCategory": "MultimediaApplication",
+      "applicationSubCategory": "Digital Audio Workstation",
+      "operatingSystem": "Linux, Windows",
+      "softwareVersion": "0.8.0",
+      "image": "https://jap.sevenpitch.dev/og-image.png",
+      "screenshot": "https://jap.sevenpitch.dev/og-image.png",
+      "isAccessibleForFree": true,
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "featureList": [
+        "Arrangement con Warp y Audio a MIDI",
+        "Piano roll con Pitch MPE y Hay Chord",
+        "Hay Synth wavetable con importación de presets .vital y .fxp",
+        "Drums PCM nativos y Pads MPC 4×4 con 16 Levels y Note Repeat RT",
+        "FX nativos con sidechain real, Spectrum y plugins VST3",
+        "Tejer y reglas programables en Lua",
+        "Explorer con analizador acústico DSP offline",
+        "Colaboración P2P en vivo con Loro CRDT e Iroh",
+        "Servidor MCP nativo con 22 herramientas para agentes de IA"
+      ]
+    },
+    {
+      "@type": "VideoObject",
+      "@id": "https://jap.sevenpitch.dev/#video",
+      "name": "Jap Studio v0.8.0 — Presentación (con efectos de sonido hechos dentro del DAW)",
+      "description": "Recorrido interactivo por los 12 componentes de Jap Studio (Rust + GPUI) con efectos de sonido diseñados, editados y mezclados dentro del propio DAW.",
+      "thumbnailUrl": ["https://jap.sevenpitch.dev/og-image.png"],
+      "contentUrl": "https://jap.sevenpitch.dev/jap-studio-release.mp4",
+      "embedUrl": "https://jap.sevenpitch.dev/",
+      "uploadDate": "2026-11-27T10:00:00-04:00",
+      "duration": "PT1M7S",
+      "inLanguage": "es"
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "https://jap.sevenpitch.dev/#faq",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "¿En qué sistemas operativos funciona Jap Studio?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Jap Studio funciona en Linux (mediante un paquete único .flatpak con PipeWire/ALSA y 23 bancos SoundFont) y en Windows x64 (paquete portable .zip con audio WASAPI y exportación WAV nativa)."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Jap Studio soporta plugins VST3 y presets de Vital o Serum?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Sí. Incluye Hay Synth, un sintetizador wavetable nativo que importa presets .vital, .vitalbank y .fxp (Serum), además de soporte para plugins VST3 con editor original y FX nativos con sidechain real."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Cómo funciona la colaboración P2P en vivo de Jap Studio?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Mediante Loro CRDT e Iroh QUIC: abres Archivo → Compartir sesión para copiar un token hay-live:... y otra persona se conecta por Archivo → Unirse sin cuentas ni servidores centrales, sincronizando pistas, MIDI, Drums, FX y transfiriendo samples automáticamente."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Cómo se integra la IA mediante MCP en Jap Studio?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Jap Studio incluye un servidor MCP nativo (--mcp) con 22 herramientas que permiten a clientes como Gemini CLI o Claude analizar tus samples con el Explorer acústico, crear pistas, escribir MIDI o patrones de Drums, ajustar perillas de FX y exportar audio."
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
 <script>
   (function () {
     try {
@@ -280,7 +411,7 @@
       <p class="intro-sub">Todos los efectos de sonido de este video se editaron dentro del propio DAW</p>
     </div>
     <div class="intro-frame">
-      <video id="introVideo" src="jap-studio-release.mp4" autoplay muted playsinline controls preload="auto"></video>
+      <video id="introVideo" src="jap-studio-release.mp4" poster="og-image.png" autoplay muted playsinline controls preload="metadata"></video>
       <button type="button" class="intro-sound" id="introUnmute">🔊 Activar sonido · SFX hechos en Jap Studio</button>
     </div>
     <div class="intro-bar">
