@@ -2,7 +2,7 @@
 set -euo pipefail
 
 APP_ID="dev.sevenpitch.jap"
-VERSION="0.8.0"
+VERSION="0.9.0"
 RUNTIME="org.freedesktop.Platform"
 SDK="org.freedesktop.Platform"
 RUNTIME_VER="25.08"

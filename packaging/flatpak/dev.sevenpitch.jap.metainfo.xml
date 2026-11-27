@@ -70,6 +70,12 @@
   </recommends>
   <content_rating type="oars-1.1" />
   <releases>
+    <release version="0.9.0" date="2026-11-27">
+      <url type="details">https://jap.sevenpitch.dev/</url>
+      <description>
+        <p>Polyphonic MPE in Hay Synth and Piano Roll (pitch curves, Slide Y, Pressure Z), full 5-language JSON i18n (ES/EN/PT/FR/JA), 3 shortcut profiles (Jap/Ableton/FL), global font sizing and redesigned Appearance settings, right-click clear on MIDI capture buffer, lock-free LFO modulation, live monitoring latency readout, and MPC pad-click crash fix.</p>
+      </description>
+    </release>
     <release version="0.8.0" date="2026-11-27">
       <url type="details">https://jap.sevenpitch.dev/</url>
       <description>

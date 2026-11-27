@@ -8,7 +8,7 @@
     <priority>1.0</priority>
     <video:video>
       <video:thumbnail_loc>https://jap.sevenpitch.dev/og-image.png</video:thumbnail_loc>
-      <video:title>Jap Studio v0.8.0 — Un DAW open source en Rust + GPUI sin cambiar de pantalla</video:title>
+      <video:title>Jap Studio v0.9.0 — Un DAW open source en Rust + GPUI sin cambiar de pantalla</video:title>
       <video:description>Presentación interactiva de los 12 componentes de Jap Studio para Linux y Windows. Todos los efectos de sonido y el audio del video fueron creados y mezclados dentro del propio DAW.</video:description>
       <video:content_loc>https://jap.sevenpitch.dev/jap-studio-release.mp4</video:content_loc>
       <video:duration>67</video:duration>
