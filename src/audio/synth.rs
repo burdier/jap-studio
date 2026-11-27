@@ -197,14 +197,58 @@ impl WavetableBank {
     }
 
     #[inline]
-    fn sample(&self, kind: WavetableKind, frame_pos: f32, phase: f32, hz: f32) -> f32 {
+    fn sample_prepared(
+        &self,
+        kind: WavetableKind,
+        sel: MipSelector,
+        phase: f32,
+    ) -> f32 {
         let t = (kind as usize).min(WT_TABLES - 1);
-        sample_mip_table(&self.mips[t], frame_pos, phase, hz)
+        sample_mip_prepared(&self.mips[t], sel, phase)
     }
 
     #[inline]
-    fn sample_custom(wt: &CustomWavetable, frame_pos: f32, phase: f32, hz: f32) -> f32 {
-        sample_mip_table(&wt.mips, frame_pos, phase, hz)
+    fn sample_custom_prepared(
+        wt: &CustomWavetable,
+        sel: MipSelector,
+        phase: f32,
+    ) -> f32 {
+        sample_mip_prepared(&wt.mips, sel, phase)
+    }
+}
+
+/// Índices precalculados de mip-map y frame para compartirlos entre todas las voces de unísono.
+#[derive(Clone, Copy)]
+struct MipSelector {
+    m0: usize,
+    m1: usize,
+    mf: f32,
+    f0: usize,
+    f1: usize,
+    ff: f32,
+}
+
+impl MipSelector {
+    #[inline]
+    fn new(frame_pos: f32, hz: f32) -> Self {
+        let mip_f = ((hz.max(60.0) / 115.0).max(1.0).log2()).clamp(0.0, (CUSTOM_WT_MIPS - 1) as f32);
+        let m0 = (mip_f.floor() as usize).min(CUSTOM_WT_MIPS - 2);
+        let m1 = m0 + 1;
+        let mf = mip_f - m0 as f32;
+
+        let fp = frame_pos.clamp(0.0, 1.0) * (WT_FRAMES - 1) as f32;
+        let f0 = (fp.floor() as usize).min(WT_FRAMES - 2);
+        let f1 = f0 + 1;
+        let ff = fp - f0 as f32;
+
+        Self {
+            m0,
+            m1,
+            mf,
+            f0,
+            f1,
+            ff,
+        }
     }
 }
 
@@ -229,35 +273,33 @@ fn cubic_read(table: &[f32; WT_SIZE], phase: f32) -> f32 {
     ((a0 * t + a1) * t + a2) * t + y1
 }
 
-/// Muestreo band-limited con selección continua de nivel mip según `hz` (0 aliasing).
+/// Muestreo band-limited rápido con selector precalculado (salta interpolación redundante).
 #[inline]
-fn sample_mip_table(
+fn sample_mip_prepared(
     mips: &[[[f32; WT_SIZE]; WT_FRAMES]; CUSTOM_WT_MIPS],
-    frame_pos: f32,
+    sel: MipSelector,
     phase: f32,
-    hz: f32,
 ) -> f32 {
-    let mip_f = ((hz.max(60.0) / 115.0).max(1.0).log2()).clamp(0.0, (CUSTOM_WT_MIPS - 1) as f32);
-    let m0 = (mip_f.floor() as usize).min(CUSTOM_WT_MIPS - 2);
-    let m1 = m0 + 1;
-    let mf = mip_f - m0 as f32;
-
-    let fp = frame_pos.clamp(0.0, 1.0) * (WT_FRAMES - 1) as f32;
-    let f0 = (fp.floor() as usize).min(WT_FRAMES - 2);
-    let f1 = f0 + 1;
-    let ff = fp - f0 as f32;
-
-    let s_m0 = {
-        let a = cubic_read(&mips[m0][f0], phase);
-        let b = cubic_read(&mips[m0][f1], phase);
-        a + (b - a) * ff
+    let read_mip = |m: usize| -> f32 {
+        if sel.ff < 0.005 {
+            cubic_read(&mips[m][sel.f0], phase)
+        } else if sel.ff > 0.995 {
+            cubic_read(&mips[m][sel.f1], phase)
+        } else {
+            let a = cubic_read(&mips[m][sel.f0], phase);
+            let b = cubic_read(&mips[m][sel.f1], phase);
+            a + (b - a) * sel.ff
+        }
     };
-    let s_m1 = {
-        let a = cubic_read(&mips[m1][f0], phase);
-        let b = cubic_read(&mips[m1][f1], phase);
-        a + (b - a) * ff
-    };
-    s_m0 + (s_m1 - s_m0) * mf
+    if sel.mf < 0.01 {
+        read_mip(sel.m0)
+    } else if sel.mf > 0.99 {
+        read_mip(sel.m1)
+    } else {
+        let s0 = read_mip(sel.m0);
+        let s1 = read_mip(sel.m1);
+        s0 + (s1 - s0) * sel.mf
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -267,6 +309,30 @@ enum EnvStage {
     Decay,
     Sustain,
     Release,
+    /// Micro-fade anti-click de 6 ms al robar/reemplazar una voz en MIDI rápido.
+    StealFade,
+}
+
+/// Coeficientes compartidos L/R del filtro TPT SVF (calcula `tan` una sola vez por par estéreo).
+#[derive(Clone, Copy)]
+struct SvfCoeffs {
+    k: f32,
+    a1: f32,
+    a2: f32,
+    a3: f32,
+}
+
+impl SvfCoeffs {
+    #[inline]
+    fn new(cutoff_hz: f32, q: f32, sr: f32) -> Self {
+        let fc = cutoff_hz.clamp(22.0, sr * 0.44);
+        let g = (PI * fc / sr).tan();
+        let k = 1.0 / q.clamp(0.5, 11.0);
+        let a1 = 1.0 / (1.0 + g * (g + k));
+        let a2 = g * a1;
+        let a3 = g * a2;
+        Self { k, a1, a2, a3 }
+    }
 }
 
 /// Filtro TPT SVF mono (pasa-bajos, pasa-banda, pasa-altos, notch) estable a cualquier frecuencia.
@@ -283,26 +349,20 @@ impl Svf {
     }
 
     #[inline]
-    fn process_all(&mut self, v0: f32, cutoff_hz: f32, q: f32, sr: f32) -> (f32, f32, f32, f32) {
-        let fc = cutoff_hz.clamp(22.0, sr * 0.44);
-        let g = (PI * fc / sr).tan();
-        let k = 1.0 / q.clamp(0.5, 11.0);
-        let a1 = 1.0 / (1.0 + g * (g + k));
-        let a2 = g * a1;
-        let a3 = g * a2;
+    fn process_coeffs(&mut self, v0: f32, c: SvfCoeffs) -> (f32, f32, f32, f32) {
         let v3 = v0 - self.ic2eq;
-        let v1 = a1 * self.ic1eq + a2 * v3;
-        let v2 = self.ic2eq + a2 * self.ic1eq + a3 * v3;
+        let v1 = c.a1 * self.ic1eq + c.a2 * v3;
+        let v2 = self.ic2eq + c.a2 * self.ic1eq + c.a3 * v3;
         self.ic1eq = 2.0 * v1 - self.ic1eq;
         self.ic2eq = 2.0 * v2 - self.ic2eq;
-        let hp = v0 - k * v1 - v2;
-        let notch = v0 - k * v1;
+        let hp = v0 - c.k * v1 - v2;
+        let notch = v0 - c.k * v1;
         (v2, v1, hp, notch) // (lp, bp, hp, notch)
     }
 
     #[inline]
     fn process(&mut self, v0: f32, cutoff_hz: f32, q: f32, sr: f32) -> (f32, f32) {
-        let (lp, bp, _, _) = self.process_all(v0, cutoff_hz, q, sr);
+        let (lp, bp, _, _) = self.process_coeffs(v0, SvfCoeffs::new(cutoff_hz, q, sr));
         (lp, bp)
     }
 }
@@ -514,21 +574,22 @@ impl Voice {
         self.stage = EnvStage::Attack;
         self.env2_stage = EnvStage::Attack;
         self.env3 = 1.0;
-        if params.voice.lfo1_retrigger {
-            self.lfo1_phase = 0.0;
-            self.lfo1_sh = self.next_noise();
-        }
-        if params.voice.lfo2_retrigger {
-            self.lfo2_phase = 0.0;
-            self.lfo2_sh = self.next_noise();
-        }
         if self.env < 0.001 {
+            self.env = 0.0;
             self.phase = [0.0, 0.21, 0.57];
             self.osc_a_uni = [0.0, 0.13, 0.37, 0.59, 0.71, 0.83, 0.91];
             self.osc_b_uni = [0.05, 0.19, 0.41, 0.63, 0.77, 0.89, 0.97];
             self.sub_phase = 0.0;
             self.mod_phase = 0.0;
             self.env2 = 0.0;
+            if params.voice.lfo1_retrigger {
+                self.lfo1_phase = 0.0;
+                self.lfo1_sh = self.next_noise();
+            }
+            if params.voice.lfo2_retrigger {
+                self.lfo2_phase = 0.0;
+                self.lfo2_sh = self.next_noise();
+            }
             self.cut_smooth = 70.0 * (250.0_f32).powf(params.tone.clamp(0.0, 1.0));
             self.svf_l.reset();
             self.svf_r.reset();
@@ -694,6 +755,9 @@ pub(crate) struct NativeSynthEngine {
     dc_y_l: f32,
     dc_x_r: f32,
     dc_y_r: f32,
+    gain_smooth: f32,
+    distance_smooth: f32,
+    chorus_mix_smooth: f32,
     age_counter: u64,
     last_freq: f32,
     sustain_pedal: bool,
@@ -711,6 +775,9 @@ impl NativeSynthEngine {
         let voices = (0..MAX_VOICES)
             .map(|i| Voice::new((i as u32 + 1) * 19937))
             .collect();
+        let init_gain = params.gain * 0.36;
+        let init_dist = params.distance;
+        let init_chorus = params.voice.chorus_mix;
         Self {
             params,
             sample_rate: sr,
@@ -722,6 +789,9 @@ impl NativeSynthEngine {
             dc_y_l: 0.0,
             dc_x_r: 0.0,
             dc_y_r: 0.0,
+            gain_smooth: init_gain,
+            distance_smooth: init_dist,
+            chorus_mix_smooth: init_chorus,
             age_counter: 0,
             last_freq: 0.0,
             sustain_pedal: false,
@@ -786,17 +856,44 @@ impl NativeSynthEngine {
                     self.params.engine,
                     SynthEngineKind::FoldAcid | SynthEngineKind::Wavetable
                 ));
+        let target = midi_to_hz(note);
+        self.sustained_notes[usize::from(note.min(127))] = false;
 
-        let slot = if mono_mode {
-            0
-        } else if let Some(idx) = self.voices.iter().position(|v| !v.active) {
+        // Legato verdadero en modo mono: si una nota está aún sostenida con glide activo,
+        // deslizar su frecuencia sin reiniciar fases ni envolvente (cero clicks).
+        if mono_mode && self.params.glide > 0.02 {
+            if let Some(legato_v) = self
+                .voices
+                .iter_mut()
+                .find(|v| v.active && !matches!(v.stage, EnvStage::Release | EnvStage::StealFade))
+            {
+                legato_v.note = note;
+                legato_v.age = self.age_counter;
+                legato_v.target_freq = target;
+                legato_v.velocity = (velocity.max(1) as f32 / 127.0).clamp(0.02, 1.0);
+                self.last_freq = target;
+                return;
+            }
+        }
+
+        // En modo mono o re-disparo de la misma nota, enviar voces previas a micro-fade de 6 ms
+        // en lugar de cortarlas en seco sobre la misma muestra.
+        for v in &mut self.voices {
+            if v.active && (mono_mode || v.note == note) && v.stage != EnvStage::StealFade {
+                v.stage = EnvStage::StealFade;
+                v.env2_stage = EnvStage::Release;
+            }
+        }
+
+        // Elegir voz libre primero; si todas están activas, robar la de menor amplitud en StealFade/Release.
+        let slot = if let Some(idx) = self.voices.iter().position(|v| !v.active) {
             idx
         } else if let Some(idx) = self
             .voices
             .iter()
             .enumerate()
-            .filter(|(_, v)| v.stage == EnvStage::Release)
-            .min_by_key(|(_, v)| v.age)
+            .filter(|(_, v)| matches!(v.stage, EnvStage::StealFade | EnvStage::Release))
+            .min_by(|(_, a), (_, b)| a.env.total_cmp(&b.env))
             .map(|(i, _)| i)
         {
             idx
@@ -804,7 +901,7 @@ impl NativeSynthEngine {
             self.voices
                 .iter()
                 .enumerate()
-                .min_by_key(|(_, v)| v.age)
+                .min_by(|(_, a), (_, b)| a.env.total_cmp(&b.env).then_with(|| a.age.cmp(&b.age)))
                 .map(|(i, _)| i)
                 .unwrap_or(0)
         };
@@ -813,11 +910,9 @@ impl NativeSynthEngine {
         let start_freq = if self.last_freq > 15.0 {
             self.last_freq
         } else {
-            midi_to_hz(note)
+            target
         };
-        let target = midi_to_hz(note);
         self.last_freq = target;
-        self.sustained_notes[usize::from(note.min(127))] = false;
         self.voices[slot].trigger(
             note,
             velocity,
@@ -953,10 +1048,20 @@ impl NativeSynthEngine {
             }
         };
 
-        let env2_atk_inc = inv_sr / (0.0015 + vp.env2_attack * vp.env2_attack * 2.2);
+        let env2_atk_inc = inv_sr / (0.0025 + vp.env2_attack * vp.env2_attack * 2.2);
         let env2_dec_mul = (-inv_sr / (0.02 + vp.env2_decay * vp.env2_decay * 3.0)).exp();
         let env2_rel_mul = (-inv_sr / (0.02 + vp.env2_release * vp.env2_release * 3.0)).exp();
         let env3_dec_mul = (-inv_sr / (0.012 + vp.env3_decay * vp.env3_decay * 0.9)).exp();
+        let dec_mul = (-inv_sr / decay_s.max(0.02)).exp();
+        let rel_mul = (-inv_sr / release_s.max(0.02)).exp();
+        let pitch_dec_mul = (-inv_sr / 0.042).exp();
+        let timbre_dec_mul = (-inv_sr / (0.10 + time * 0.85)).exp();
+        let steal_fade_dec = inv_sr / 0.006; // micro-fade lineal de 6 ms anti-click
+
+        let osc_a_base_ratio = 2.0_f32.powf(f32::from(vp.osc_a_semi) / 12.0);
+        let osc_b_base_ratio =
+            2.0_f32.powf((f32::from(vp.osc_b_semi) + vp.osc_b_fine * 0.5) / 12.0);
+        let keytrack_amt = vp.filter_keytrack.clamp(0.0, 1.0);
 
         let glide_coeff = if params.glide <= 0.02 {
             1.0
@@ -969,6 +1074,7 @@ impl NativeSynthEngine {
         let lfo_inc = lfo_hz * inv_sr;
         let base_out_gain = params.gain * self.master_volume * 0.36;
         let dc_r = 1.0 - (TAU * 18.0 * inv_sr).clamp(0.0005, 0.02);
+        let bus_smooth_a = (inv_sr / 0.004).clamp(0.001, 0.25);
 
         for i in 0..frames {
             let mut sum_l = 0.0_f32;
@@ -984,12 +1090,10 @@ impl NativeSynthEngine {
                     continue;
                 }
 
-                // ── ENV 1 (Amp) ──
+                // ── ENV 1 (Amp) con ataque mínimo 3.5 ms y micro-fade StealFade ──
                 let vel_eff = 1.0 - params.touch + params.touch * v.velocity;
-                let atk_s = (base_attack_s * (1.25 - 0.65 * vel_eff)).max(0.0015);
+                let atk_s = (base_attack_s * (1.25 - 0.65 * vel_eff)).max(0.0035);
                 let atk_inc = inv_sr / atk_s;
-                let dec_mul = (-inv_sr / decay_s.max(0.02)).exp();
-                let rel_mul = (-inv_sr / release_s.max(0.02)).exp();
 
                 match v.stage {
                     EnvStage::Off => {
@@ -1005,12 +1109,12 @@ impl NativeSynthEngine {
                     }
                     EnvStage::Decay => {
                         v.env = sustain_lvl + (v.env - sustain_lvl) * dec_mul;
-                        if is_hit && v.env < 0.0008 {
+                        if is_hit && v.env < 0.0002 {
                             v.env = 0.0;
                             v.stage = EnvStage::Off;
                             v.active = false;
                             continue;
-                        } else if !is_hit && (v.env - sustain_lvl).abs() < 0.001 {
+                        } else if !is_hit && (v.env - sustain_lvl).abs() < 0.0005 {
                             v.env = sustain_lvl;
                             v.stage = EnvStage::Sustain;
                         }
@@ -1018,7 +1122,16 @@ impl NativeSynthEngine {
                     EnvStage::Sustain => {}
                     EnvStage::Release => {
                         v.env *= rel_mul;
-                        if v.env < 0.0005 {
+                        if v.env < 0.00015 {
+                            v.env = 0.0;
+                            v.stage = EnvStage::Off;
+                            v.active = false;
+                            continue;
+                        }
+                    }
+                    EnvStage::StealFade => {
+                        v.env -= steal_fade_dec;
+                        if v.env <= 0.0 {
                             v.env = 0.0;
                             v.stage = EnvStage::Off;
                             v.active = false;
@@ -1029,7 +1142,7 @@ impl NativeSynthEngine {
 
                 // ── ENV 2 (Mod) ──
                 match v.env2_stage {
-                    EnvStage::Off => {}
+                    EnvStage::Off | EnvStage::StealFade => {}
                     EnvStage::Attack => {
                         v.env2 += env2_atk_inc;
                         if v.env2 >= 1.0 {
@@ -1056,8 +1169,8 @@ impl NativeSynthEngine {
 
                 // ── ENV 3 (Pitch / Punch) y envolventes rápidas ──
                 v.env3 *= env3_dec_mul;
-                v.pitch_env *= (-inv_sr / 0.042).exp();
-                v.timbre_env *= (-inv_sr / (0.10 + time * 0.85)).exp();
+                v.pitch_env *= pitch_dec_mul;
+                v.timbre_env *= timbre_dec_mul;
                 v.freq += (v.target_freq - v.freq) * glide_coeff;
 
                 // ── LFOs (organic motion + LFO 1 + LFO 2) ──
@@ -1144,8 +1257,12 @@ impl NativeSynthEngine {
                 // Frecuencias efectivas con pitch bend + drift + semitonos + Matrix pitch (±24 st).
                 let drift = 1.0 + lfo * params.motion * 0.0055;
                 let base_hz = (v.freq * self.pitch_bend_ratio * drift).clamp(20.0, sr * 0.42);
-                let osc_a_semi = f32::from(vp.osc_a_semi) + m.osc_a_pitch * 24.0;
-                let hz = (base_hz * 2.0_f32.powf(osc_a_semi / 12.0)).clamp(20.0, sr * 0.42);
+                let a_ratio = if m.osc_a_pitch.abs() < 1e-4 {
+                    osc_a_base_ratio
+                } else {
+                    osc_a_base_ratio * 2.0_f32.powf(m.osc_a_pitch * 2.0)
+                };
+                let hz = (base_hz * a_ratio).clamp(20.0, sr * 0.42);
 
                 let shape_eff = (params.shape + m.osc_a_pos).clamp(0.0, 1.0);
                 let osc_a_lvl = (vp.osc_a_level + m.osc_a_level).clamp(0.0, 1.5);
@@ -1157,13 +1274,17 @@ impl NativeSynthEngine {
                 // ── OSC B (Wavetable band-limited Hi-Fi + fuente FM/RM para OSC A) ──
                 let (mut ob_l, mut ob_r, mut ob_mono) = (0.0_f32, 0.0_f32, 0.0_f32);
                 if need_osc_b {
-                    let b_semi =
-                        f32::from(vp.osc_b_semi) + vp.osc_b_fine * 0.5 + m.osc_b_pitch * 24.0;
-                    let hz_b = (base_hz * 2.0_f32.powf(b_semi / 12.0)).clamp(16.0, sr * 0.44);
+                    let b_ratio = if m.osc_b_pitch.abs() < 1e-4 {
+                        osc_b_base_ratio
+                    } else {
+                        osc_b_base_ratio * 2.0_f32.powf(m.osc_b_pitch * 2.0)
+                    };
+                    let hz_b = (base_hz * b_ratio).clamp(16.0, sr * 0.44);
                     let pos_b = (vp.osc_b_pos + m.osc_b_pos).clamp(0.0, 1.0);
                     let uni_b = usize::from(vp.osc_b_unison.clamp(1, MAX_UNISON as u8));
                     let det_b = vp.osc_b_detune * 0.016;
-                    let norm_b = 1.0 / (uni_b as f32).powf(0.65);
+                    let norm_b = 1.0 / (uni_b as f32).sqrt();
+                    let sel_b = MipSelector::new(pos_b, hz_b);
                     for u in 0..uni_b {
                         let frac = if uni_b == 1 {
                             0.0
@@ -1173,9 +1294,9 @@ impl NativeSynthEngine {
                         let f_u = hz_b * (1.0 + frac * det_b);
                         v.osc_b_uni[u] = (v.osc_b_uni[u] + f_u * inv_sr).fract();
                         let s = if let Some(custom) = &params.custom_wt_b {
-                            WavetableBank::sample_custom(custom, pos_b, v.osc_b_uni[u], f_u)
+                            WavetableBank::sample_custom_prepared(custom, sel_b, v.osc_b_uni[u])
                         } else {
-                            self.wt.sample(vp.osc_b_table, pos_b, v.osc_b_uni[u], f_u)
+                            self.wt.sample_prepared(vp.osc_b_table, sel_b, v.osc_b_uni[u])
                         };
                         if u == 0 {
                             ob_mono = s;
@@ -1313,6 +1434,18 @@ impl NativeSynthEngine {
                         let spread_a = vp.osc_a_spread.clamp(0.0, 1.0);
                         let warp_amt = (vp.osc_a_warp + m.osc_a_warp).clamp(0.0, 1.0);
                         let norm_a = 1.0 / (uni_a as f32).sqrt();
+                        let mip_hz_a = match vp.osc_a_warp_mode {
+                            WarpMode::Off | WarpMode::Fold | WarpMode::RingMod => hz,
+                            WarpMode::Sync => hz * (1.0 + warp_amt * 3.5),
+                            WarpMode::Bend => hz * (1.0 + (warp_amt - 0.5).abs() * 1.5),
+                            WarpMode::FmFromB => hz * (1.0 + warp_amt * 2.0),
+                        };
+                        let sel_a = MipSelector::new(shape_eff, mip_hz_a);
+                        let bend_exp = if vp.osc_a_warp_mode == WarpMode::Bend {
+                            2.0_f32.powf((warp_amt - 0.5) * 2.2)
+                        } else {
+                            1.0
+                        };
                         let mut al = 0.0_f32;
                         let mut ar = 0.0_f32;
                         for u in 0..uni_a {
@@ -1324,26 +1457,16 @@ impl NativeSynthEngine {
                             let f_u = hz * (1.0 + frac * det_a);
                             v.osc_a_uni[u] = (v.osc_a_uni[u] + f_u * inv_sr).fract();
                             let ph = v.osc_a_uni[u];
-                            let (warped_ph, mip_hz) = match vp.osc_a_warp_mode {
-                                WarpMode::Off | WarpMode::Fold | WarpMode::RingMod => (ph, f_u),
-                                WarpMode::Sync => {
-                                    let mult = 1.0 + warp_amt * 3.5;
-                                    // Ventana suave en el reinicio del ciclo para evitar clicks de hard sync.
-                                    ((ph * mult).fract(), f_u * mult)
-                                }
-                                WarpMode::Bend => {
-                                    let exp = 2.0_f32.powf((warp_amt - 0.5) * 2.2);
-                                    (ph.powf(exp), f_u * (1.0 + (warp_amt - 0.5).abs() * 1.5))
-                                }
-                                WarpMode::FmFromB => (
-                                    (ph + ob_mono * warp_amt * 0.45).rem_euclid(1.0),
-                                    f_u * (1.0 + warp_amt * 2.0),
-                                ),
+                            let warped_ph = match vp.osc_a_warp_mode {
+                                WarpMode::Off | WarpMode::Fold | WarpMode::RingMod => ph,
+                                WarpMode::Sync => (ph * (1.0 + warp_amt * 3.5)).fract(),
+                                WarpMode::Bend => ph.powf(bend_exp),
+                                WarpMode::FmFromB => (ph + ob_mono * warp_amt * 0.45).rem_euclid(1.0),
                             };
                             let mut s = if let Some(custom) = &params.custom_wt_a {
-                                WavetableBank::sample_custom(custom, shape_eff, warped_ph, mip_hz)
+                                WavetableBank::sample_custom_prepared(custom, sel_a, warped_ph)
                             } else {
-                                self.wt.sample(vp.osc_a_table, shape_eff, warped_ph, mip_hz)
+                                self.wt.sample_prepared(vp.osc_a_table, sel_a, warped_ph)
                             };
                             match vp.osc_a_warp_mode {
                                 WarpMode::Fold => {
@@ -1410,9 +1533,11 @@ impl NativeSynthEngine {
                 let base_cut = 70.0 * (250.0_f32).powf(tone_eff);
                 let env_mod = 1.0 + v.timbre_env * (0.28 + 1.6 * vel_eff);
                 let lfo_mod = 1.0 + lfo * params.motion * 0.16;
-                let key_scale = (hz / 261.63)
-                    .powf(vp.filter_keytrack.clamp(0.0, 1.0))
-                    .clamp(0.45, 3.0);
+                let key_scale = if keytrack_amt < 0.005 {
+                    1.0
+                } else {
+                    (hz / 261.63).powf(keytrack_amt).clamp(0.45, 3.0)
+                };
                 let target_cut = (base_cut * env_mod * lfo_mod * key_scale).clamp(35.0, 18_500.0);
                 v.cut_smooth += (target_cut - v.cut_smooth) * 0.08;
                 let cutoff = v.cut_smooth;
@@ -1429,20 +1554,18 @@ impl NativeSynthEngine {
                     || vp.filter_kind != FilterKind::Lp12
                     || res_eff > 0.15
                 {
-                    let (lp_l, bp_l, hp_l, nt_l) =
-                        v.svf_l.process_all(sl * q_comp, cutoff, q, sr);
-                    let (lp_r, bp_r, hp_r, nt_r) =
-                        v.svf_r.process_all(sr_ch * q_comp, cutoff, q, sr);
+                    let c1 = SvfCoeffs::new(cutoff, q, sr);
+                    let (lp_l, bp_l, hp_l, nt_l) = v.svf_l.process_coeffs(sl * q_comp, c1);
+                    let (lp_r, bp_r, hp_r, nt_r) = v.svf_r.process_coeffs(sr_ch * q_comp, c1);
                     match vp.filter_kind {
                         FilterKind::Lp12 => {
                             sl = lp_l;
                             sr_ch = lp_r;
                         }
                         FilterKind::Lp24 => {
-                            let (lp2_l, _, _, _) =
-                                v.svf2_l.process_all(lp_l, cutoff, (q * 0.62).max(0.65), sr);
-                            let (lp2_r, _, _, _) =
-                                v.svf2_r.process_all(lp_r, cutoff, (q * 0.62).max(0.65), sr);
+                            let c2 = SvfCoeffs::new(cutoff, (q * 0.62).max(0.65), sr);
+                            let (lp2_l, _, _, _) = v.svf2_l.process_coeffs(lp_l, c2);
+                            let (lp2_r, _, _, _) = v.svf2_r.process_coeffs(lp_r, c2);
                             sl = lp2_l;
                             sr_ch = lp2_r;
                         }
@@ -1498,19 +1621,24 @@ impl NativeSynthEngine {
                 sum_r = apply_distortion(sum_r, vp.dist_mode, dist_drive, dist_mix);
             }
 
-            // ── Bus FX 2: Stereo Chorus ──
-            let chorus_mix = (vp.chorus_mix + bus_chorus_mod * inv_v).clamp(0.0, 1.0);
+            // ── Bus FX 2: Stereo Chorus (suavizado anti-click) ──
+            let chorus_target = (vp.chorus_mix + bus_chorus_mod * inv_v).clamp(0.0, 1.0);
+            self.chorus_mix_smooth += (chorus_target - self.chorus_mix_smooth) * bus_smooth_a;
             let (ch_l, ch_r) = self
                 .chorus
-                .process(sum_l, sum_r, chorus_mix, vp.chorus_rate, sr);
+                .process(sum_l, sum_r, self.chorus_mix_smooth, vp.chorus_rate, sr);
 
-            // ── Bus FX 3: Espacio (Room + Distance + absorción de aire) ──
-            let dist_eff = (params.distance + bus_dist_space_mod * inv_v).clamp(0.0, 1.0);
-            let (out_l, out_r) = self.space.process(ch_l, ch_r, params.room, dist_eff, sr);
+            // ── Bus FX 3: Espacio (Room + Distance suavizado + absorción de aire) ──
+            let dist_target = (params.distance + bus_dist_space_mod * inv_v).clamp(0.0, 1.0);
+            self.distance_smooth += (dist_target - self.distance_smooth) * bus_smooth_a;
+            let (out_l, out_r) =
+                self.space
+                    .process(ch_l, ch_r, params.room, self.distance_smooth, sr);
 
-            let final_gain = (base_out_gain * (1.0 + bus_out_mod * inv_v * 0.55)).clamp(0.0, 1.4);
-            left[i] = soft_limit(out_l * final_gain);
-            right[i] = soft_limit(out_r * final_gain);
+            let gain_target = (base_out_gain * (1.0 + bus_out_mod * inv_v * 0.55)).clamp(0.0, 1.4);
+            self.gain_smooth += (gain_target - self.gain_smooth) * bus_smooth_a;
+            left[i] = soft_limit(out_l * self.gain_smooth);
+            right[i] = soft_limit(out_r * self.gain_smooth);
         }
     }
 }
@@ -1900,6 +2028,79 @@ mod tests {
             decoded_total,
             entries.len(),
             "All ESW Reese presets should decode real custom wavetables"
+        );
+    }
+
+    #[test]
+    fn midi_rapid_notes_chords_and_mono_retrigger_have_zero_clicks_and_fast_cpu() {
+        let sr = 48_000u32;
+        // 1. Prueba de estrés MIDI realista: re-disparos rápidos, legato mono, cambios de nota y acordes.
+        let mut mono_reese = vital_factory_presets()[1].2.clone(); // Reese Growl (mono/glide + unison + dist + LP24)
+        mono_reese.glide = 0.55;
+        mono_reese.voice.env1_override = true;
+        mono_reese.voice.env1_attack = 0.0; // Peor caso: ataque 0 en preset
+        let mut engine = NativeSynthEngine::new(mono_reese, sr);
+
+        let block = 128usize;
+        let mut l = vec![0.0_f32; block];
+        let mut r = vec![0.0_f32; block];
+        let mut prev_l = 0.0_f32;
+        let mut prev_r = 0.0_f32;
+        let mut max_step = 0.0_f32;
+        let mut peak = 0.0_f32;
+        let seq = [48u8, 48, 51, 55, 53, 48, 46, 48, 60, 58, 55, 51, 48, 48, 55, 48];
+        for (step_idx, &note) in seq.iter().enumerate() {
+            engine.note_on(note, 118, 0.0);
+            for b in 0..16 {
+                // Alternar staccato (note_off en medio) y legato (sin note_off hasta la siguiente)
+                if step_idx % 2 == 0 && b == 10 {
+                    engine.note_off(note);
+                }
+                engine.render(&mut l, &mut r);
+                for (&xl, &xr) in l.iter().zip(&r) {
+                    assert!(xl.is_finite() && xr.is_finite());
+                    peak = peak.max(xl.abs().max(xr.abs()));
+                    max_step = max_step.max((xl - prev_l).abs()).max((xr - prev_r).abs());
+                    prev_l = xl;
+                    prev_r = xr;
+                }
+            }
+            if step_idx % 2 == 1 {
+                engine.note_off(note);
+            }
+        }
+        eprintln!("MIDI rapid mono retrigger: peak={peak:.3}, max_sample_step={max_step:.4}");
+        assert!(peak < 0.96, "Clipping in rapid MIDI: peak={peak}");
+        assert!(
+            max_step < 0.22,
+            "Click/discontinuity detected in rapid MIDI: max_step={max_step:.4}"
+        );
+
+        // 2. Benchmark CPU en acorde denso de 6 voces × 7 unison + OSC B + Sub + Chorus + Space (1 segundo = 48k samples).
+        let heavy = vital_factory_presets()[0].2.clone();
+        let mut poly = NativeSynthEngine::new(heavy, sr);
+        for note in [48, 55, 60, 64, 67, 72] {
+            poly.note_on(note, 112, 0.0);
+        }
+        let mut bl = vec![0.0_f32; 256];
+        let mut br = vec![0.0_f32; 256];
+        let start = std::time::Instant::now();
+        let mut poly_peak = 0.0_f32;
+        for _ in 0..(sr as usize / 256) {
+            poly.render(&mut bl, &mut br);
+            for (&xl, &xr) in bl.iter().zip(&br) {
+                poly_peak = poly_peak.max(xl.abs().max(xr.abs()));
+            }
+        }
+        let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
+        let cpu_pct = (elapsed_ms / 1000.0) * 100.0;
+        eprintln!(
+            "MIDI 6-voice x 7-unison CPU benchmark: {elapsed_ms:.1} ms / 1000 ms ({cpu_pct:.1}% RT), peak={poly_peak:.3}"
+        );
+        assert!(poly_peak < 0.96, "Clipping in 6-voice chord: peak={poly_peak}");
+        assert!(
+            elapsed_ms < 250.0,
+            "Synth RT callback too slow (risk of xruns): {elapsed_ms:.1} ms for 1s audio"
         );
     }
 }
