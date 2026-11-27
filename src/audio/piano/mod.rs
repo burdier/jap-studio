@@ -243,6 +243,18 @@ impl PianoPlayer {
         }
     }
 
+    pub fn drain_scope_samples(&self, out: &mut Vec<[f32; 2]>) {
+        out.clear();
+        if let Ok(mut samples) = self.spectrum.try_lock() {
+            for _ in 0..2048 {
+                let Ok(sample) = samples.pop() else {
+                    break;
+                };
+                out.push(sample);
+            }
+        }
+    }
+
     pub fn set_spectrum_enabled(&self, enabled: bool) {
         self.state
             .spectrum_enabled

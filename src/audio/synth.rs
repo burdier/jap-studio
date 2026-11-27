@@ -2103,4 +2103,53 @@ mod tests {
             "Synth RT callback too slow (risk of xruns): {elapsed_ms:.1} ms for 1s audio"
         );
     }
+
+    #[test]
+    fn real_esw_serum_fxp_pack_renders_hifi_clean_if_present() {
+        let dir = std::path::Path::new(
+            "/home/burdier/Music/Echo+Sound+Works+-+Reese+Basses/Echo Sound Works - Reese Basses/Serum/Echo Sound Works - Reeses",
+        );
+        if !dir.is_dir() {
+            return;
+        }
+        let mut count = 0usize;
+        let mut with_wt = 0usize;
+        for entry in std::fs::read_dir(dir).unwrap().flatten() {
+            let p = entry.path();
+            if p.extension().and_then(|e| e.to_str()) != Some("fxp") {
+                continue;
+            }
+            let (params, summary) = elevate::devices::serum_import::load_serum_fxp_file(&p)
+                .unwrap_or_else(|e| panic!("failed to parse {}: {e}", p.display()));
+            if summary.decoded_wts > 0 {
+                with_wt += 1;
+            }
+            let mut engine = NativeSynthEngine::new(params, 48_000);
+            engine.note_on(52, 112, 0.0);
+            let mut l = vec![0.0; 16_384];
+            let mut r = vec![0.0; 16_384];
+            engine.render(&mut l[..12_000], &mut r[..12_000]);
+            engine.note_off(52);
+            engine.render(&mut l[12_000..], &mut r[12_000..]);
+
+            let mut peak = 0.0_f32;
+            let mut sq = 0.0_f64;
+            for (&xl, &xr) in l.iter().zip(&r) {
+                assert!(xl.is_finite() && xr.is_finite(), "NaN in {}", summary.name);
+                peak = peak.max(xl.abs().max(xr.abs()));
+                sq += f64::from(xl * xl) + f64::from(xr * xr);
+            }
+            let rms = (sq / (l.len() as f64 * 2.0)).sqrt() as f32;
+            let rms_db = 20.0 * rms.max(1e-6).log10();
+            assert!(peak < 0.96, "Clipping in Serum {}: peak={peak:.3}", summary.name);
+            assert!(
+                rms_db > -34.0 && rms_db < -3.0,
+                "Out of range Serum {}: rms={rms_db:.1}, peak={peak:.3}",
+                summary.name
+            );
+            count += 1;
+        }
+        eprintln!("Serum .fxp ESW pack: {count} presets OK, {with_wt} with real embedded wavetables");
+        assert!(count >= 15);
+    }
 }

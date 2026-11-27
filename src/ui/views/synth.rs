@@ -422,6 +422,7 @@ impl DawApp {
             )
             .child(header)
             .child(engine_bar)
+            .child(self.render_synth_live_strip())
             .child(
                 div()
                     .id("synth-body")
@@ -462,6 +463,440 @@ impl DawApp {
                     .child(self.status_message.clone()),
             )
             .when_some(preset_overlay, |root, overlay| root.child(overlay))
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Visor en vivo (60 fps): Osciloscopio + Transiente deslizante + Curva ADSR/LFO viva
+    // Altura fija (74 px) -> cero saltos de layout.
+    // ──────────────────────────────────────────────────────────────────────────
+    fn render_synth_live_strip(&self) -> impl IntoElement + use<> {
+        let ds = &self.ds;
+        let params = &self.synth.params;
+        let vp = &params.voice;
+        let active_notes = self.synth.active_note_count();
+
+        let wave: Vec<f32> = if self.synth_ui.scope_active() && !self.synth_ui.scope_wave.is_empty()
+        {
+            self.synth_ui.scope_wave.clone()
+        } else if let Some(custom) = &params.custom_wt_a {
+            let fi = ((params.shape.clamp(0.0, 1.0) * 7.0).round() as usize).min(7);
+            (0..128).map(|i| custom.frames[fi][(i * 2).min(255)] * 0.72).collect()
+        } else {
+            (0..128)
+                .map(|i| {
+                    let ph = i as f32 / 128.0;
+                    ((ph * std::f32::consts::TAU).sin() * (1.0 - params.shape * 0.5)
+                        + (2.0 * ph - 1.0) * (params.shape * 0.5))
+                        * 0.60
+                })
+                .collect()
+        };
+        let live_audio = self.synth_ui.scope_active();
+        let trail = if self.synth_ui.transient_trail.is_empty() {
+            vec![0.0; 56]
+        } else {
+            self.synth_ui.transient_trail.clone()
+        };
+        let meter_l = self.synth_ui.meter_l;
+        let meter_r = self.synth_ui.meter_r;
+
+        // Tiempos ADSR reales para dibujar la curva y calcular dónde va el punto luminoso.
+        let (atk_s, dec_s, sus_lvl, rel_s) = if vp.env1_override {
+            (
+                0.0035 + vp.env1_attack * vp.env1_attack * 2.4,
+                0.02 + vp.env1_decay * vp.env1_decay * 3.5,
+                vp.env1_sustain.clamp(0.0, 1.0),
+                0.02 + vp.env1_release * vp.env1_release * 4.0,
+            )
+        } else {
+            let t = params.time;
+            match params.mode {
+                EnvelopeMode::Hit => (0.004, 0.08 + t * t * 2.2, 0.0, 0.04 + t * 0.45),
+                EnvelopeMode::Hold => (0.004 + t * 0.035, 0.14 + t * 0.9, 0.76, 0.08 + t * 1.1),
+                EnvelopeMode::Swell => (0.12 + t * t * 1.6, 0.30 + t * 1.2, 0.85, 0.28 + t * t * 2.6),
+            }
+        };
+
+        // Posición normalizada [0..1] del playhead sobre la curva ADSR [A:0..0.25, D:0.25..0.55, S:0.55..0.72, R:0.72..1.0].
+        let env_playhead: Option<(f32, f32)> = if active_notes > 0 {
+            let dt = self
+                .synth_ui
+                .note_started_at
+                .map_or(0.0, |t| t.elapsed().as_secs_f32());
+            if dt < atk_s {
+                let f = (dt / atk_s.max(0.004)).clamp(0.0, 1.0);
+                Some((f * 0.25, f))
+            } else if dt < atk_s + dec_s {
+                let f = ((dt - atk_s) / dec_s.max(0.02)).clamp(0.0, 1.0);
+                let y = 1.0 - (1.0 - sus_lvl) * f;
+                Some((0.25 + f * 0.30, y))
+            } else {
+                Some((0.64, sus_lvl))
+            }
+        } else if let Some(rel_t) = self.synth_ui.note_released_at {
+            let dt = rel_t.elapsed().as_secs_f32();
+            if dt < rel_s.min(1.6) {
+                let f = (dt / rel_s.max(0.03)).clamp(0.0, 1.0);
+                let y = sus_lvl * (1.0 - f).powi(2);
+                Some((0.72 + f * 0.28, y))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // Pulso vivo del LFO 1 (0..1)
+        let lfo_hz = if vp.lfo1_sync {
+            const MULT: [f32; 8] = [0.0625, 0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0];
+            let idx = ((vp.lfo1_rate * 7.0).round() as usize).min(7);
+            (self.timeline.tempo.bpm() as f32 / 60.0) * MULT[idx]
+        } else {
+            0.05 * (320.0_f32).powf(vp.lfo1_rate)
+        };
+        let lfo_phase = self
+            .synth_ui
+            .lfo_epoch
+            .map_or(0.0, |t| (t.elapsed().as_secs_f32() * lfo_hz).fract());
+        let lfo_val = ((lfo_phase * std::f32::consts::TAU).sin() * 0.5 + 0.5).clamp(0.0, 1.0);
+
+        let bg_col = ds.bg;
+        let border_col = ds.border;
+        let cyan_col = ds.cyan;
+        let accent_col = ds.accent;
+        let muted_col = ds.muted;
+
+        let scope_canvas = canvas(
+            move |_, _, _| (),
+            move |bounds, (), window, _| {
+                let w = f32::from(bounds.size.width).max(1.0);
+                let h = f32::from(bounds.size.height).max(1.0);
+                let mid = h * 0.5;
+                // Línea base central
+                window.paint_quad(fill(
+                    Bounds::new(
+                        point(bounds.left(), bounds.top() + px(mid)),
+                        size(px(w), px(1.0)),
+                    ),
+                    rgba((border_col << 8) | 0x90),
+                ));
+                let n = wave.len().max(2);
+                let dx = w / n as f32;
+                let glow = if live_audio {
+                    rgba((cyan_col << 8) | 0x38)
+                } else {
+                    rgba((muted_col << 8) | 0x24)
+                };
+                let stroke = if live_audio { rgb(cyan_col) } else { rgba((cyan_col << 8) | 0x88) };
+                for i in 0..n {
+                    let s = wave[i].clamp(-1.0, 1.0);
+                    let y = mid - s * (mid - 4.0);
+                    let prev_y = if i > 0 {
+                        mid - wave[i - 1].clamp(-1.0, 1.0) * (mid - 4.0)
+                    } else {
+                        y
+                    };
+                    let x = i as f32 * dx;
+                    // Relleno suave hacia el eje central
+                    let fill_top = y.min(mid);
+                    let fill_h = (y - mid).abs().max(1.0);
+                    window.paint_quad(fill(
+                        Bounds::new(
+                            point(bounds.left() + px(x), bounds.top() + px(fill_top)),
+                            size(px(dx.max(1.2)), px(fill_h)),
+                        ),
+                        glow,
+                    ));
+                    // Trazo continuo entre muestras consecutivas
+                    let seg_top = y.min(prev_y);
+                    let seg_h = (y - prev_y).abs().max(2.0);
+                    window.paint_quad(fill(
+                        Bounds::new(
+                            point(bounds.left() + px(x), bounds.top() + px(seg_top - 0.5)),
+                            size(px((dx + 0.8).max(1.8)), px(seg_h)),
+                        ),
+                        stroke,
+                    ));
+                }
+            },
+        )
+        .w_full()
+        .h(px(46.));
+
+        let transient_canvas = canvas(
+            move |_, _, _| (),
+            move |bounds, (), window, _| {
+                let w = f32::from(bounds.size.width).max(1.0);
+                let h = f32::from(bounds.size.height).max(1.0);
+                let meter_w = 18.0;
+                let plot_w = (w - meter_w - 6.0).max(10.0);
+                let n = trail.len().max(1);
+                let dx = plot_w / n as f32;
+                for (i, &lv) in trail.iter().enumerate() {
+                    let shaped = lv.clamp(0.0, 1.0).sqrt();
+                    let bh = (shaped * (h - 4.0)).max(1.5);
+                    let is_hot = lv > 0.45;
+                    let is_recent = i + 4 >= n;
+                    let col = if is_hot {
+                        rgb(accent_col)
+                    } else if is_recent && live_audio {
+                        rgb(cyan_col)
+                    } else {
+                        rgba((cyan_col << 8) | 0x9a)
+                    };
+                    window.paint_quad(fill(
+                        Bounds::new(
+                            point(bounds.left() + px(i as f32 * dx), bounds.top() + px(h - bh)),
+                            size(px((dx - 1.0).max(1.2)), px(bh)),
+                        ),
+                        col,
+                    ));
+                }
+                // Medidores estéreo L / R en tiempo real
+                let mx = plot_w + 6.0;
+                for (ch, lv) in [(0, meter_l), (1, meter_r)] {
+                    let cx_pos = mx + ch as f32 * 8.0;
+                    window.paint_quad(fill(
+                        Bounds::new(
+                            point(bounds.left() + px(cx_pos), bounds.top() + px(2.0)),
+                            size(px(5.0), px(h - 4.0)),
+                        ),
+                        rgba((border_col << 8) | 0x70),
+                    ));
+                    let mh = (lv.clamp(0.0, 1.0).sqrt() * (h - 4.0)).max(1.0);
+                    let mcol = if lv > 0.85 { rgb(accent_col) } else { rgb(cyan_col) };
+                    window.paint_quad(fill(
+                        Bounds::new(
+                            point(bounds.left() + px(cx_pos), bounds.top() + px(h - 2.0 - mh)),
+                            size(px(5.0), px(mh)),
+                        ),
+                        mcol,
+                    ));
+                }
+            },
+        )
+        .w_full()
+        .h(px(46.));
+
+        let adsr_canvas = canvas(
+            move |_, _, _| (),
+            move |bounds, (), window, _| {
+                let w = f32::from(bounds.size.width).max(1.0);
+                let h = f32::from(bounds.size.height).max(1.0);
+                let pad_y = 4.0;
+                let usable_h = (h - pad_y * 2.0).max(6.0);
+                // Muestrear curva ADSR en 48 columnas
+                let cols = 48usize;
+                let dx = w / cols as f32;
+                let sample_env = |u: f32| -> f32 {
+                    if u < 0.25 {
+                        (u / 0.25).clamp(0.0, 1.0)
+                    } else if u < 0.55 {
+                        let f = ((u - 0.25) / 0.30).clamp(0.0, 1.0);
+                        1.0 - (1.0 - sus_lvl) * f.powf(0.75)
+                    } else if u < 0.72 {
+                        sus_lvl
+                    } else {
+                        let f = ((u - 0.72) / 0.28).clamp(0.0, 1.0);
+                        sus_lvl * (1.0 - f).powi(2)
+                    }
+                };
+                for i in 0..cols {
+                    let u = i as f32 / (cols - 1) as f32;
+                    let val = sample_env(u);
+                    let y = pad_y + (1.0 - val) * usable_h;
+                    let fill_h = (h - y).max(1.0);
+                    window.paint_quad(fill(
+                        Bounds::new(
+                            point(bounds.left() + px(i as f32 * dx), bounds.top() + px(y)),
+                            size(px(dx.max(1.2)), px(fill_h)),
+                        ),
+                        rgba((accent_col << 8) | 0x30),
+                    ));
+                    window.paint_quad(fill(
+                        Bounds::new(
+                            point(bounds.left() + px(i as f32 * dx), bounds.top() + px(y - 1.0)),
+                            size(px((dx + 0.8).max(1.6)), px(2.0)),
+                        ),
+                        rgb(accent_col),
+                    ));
+                }
+                // Punto vivo recorriendo el transiente ADSR
+                if let Some((pu, py_val)) = env_playhead {
+                    let px_x = (pu * w).clamp(2.0, w - 3.0);
+                    let py_y = pad_y + (1.0 - py_val.clamp(0.0, 1.0)) * usable_h;
+                    window.paint_quad(fill(
+                        Bounds::new(
+                            point(bounds.left() + px(px_x - 0.5), bounds.top() + px(2.0)),
+                            size(px(1.5), px(h - 4.0)),
+                        ),
+                        rgba((cyan_col << 8) | 0x80),
+                    ));
+                    window.paint_quad(quad(
+                        Bounds::new(
+                            point(bounds.left() + px(px_x - 4.0), bounds.top() + px(py_y - 4.0)),
+                            size(px(8.0), px(8.0)),
+                        ),
+                        Corners::all(px(4.0)),
+                        rgb(cyan_col),
+                        Edges::all(px(1.0)),
+                        rgb(bg_col),
+                        gpui::BorderStyle::default(),
+                    ));
+                }
+            },
+        )
+        .w_full()
+        .h(px(46.));
+
+        let peak_db = if self.synth_ui.transient_peak > 1e-4 {
+            format!("{:+.0} dB", 20.0 * self.synth_ui.transient_peak.log10())
+        } else {
+            "-∞ dB".into()
+        };
+
+        div()
+            .flex_shrink_0()
+            .h(px(74.))
+            .px_3()
+            .py(px(5.))
+            .bg(rgb(ds.panel))
+            .border_b_1()
+            .border_color(rgb(ds.border))
+            .flex()
+            .items_stretch()
+            .gap_2()
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .px_2()
+                    .py(px(3.))
+                    .rounded(px(ds.radius_sm))
+                    .bg(rgb(ds.bg))
+                    .border_1()
+                    .border_color(rgb(if live_audio { ds.cyan } else { ds.border }))
+                    .flex()
+                    .flex_col()
+                    .justify_between()
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .text_size(px(9.))
+                            .child(
+                                div()
+                                    .font_weight(FontWeight::BOLD)
+                                    .text_color(rgb(ds.cyan))
+                                    .child(if live_audio {
+                                        "OSCILOSCOPIO · EN VIVO"
+                                    } else {
+                                        "WAVETABLE · OSC A"
+                                    }),
+                            )
+                            .child(
+                                div()
+                                    .font_family("monospace")
+                                    .text_color(rgb(ds.muted))
+                                    .child(if active_notes > 0 {
+                                        format!("{active_notes} voz")
+                                    } else {
+                                        "listo".into()
+                                    }),
+                            ),
+                    )
+                    .child(scope_canvas),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .px_2()
+                    .py(px(3.))
+                    .rounded(px(ds.radius_sm))
+                    .bg(rgb(ds.bg))
+                    .border_1()
+                    .border_color(rgb(ds.border))
+                    .flex()
+                    .flex_col()
+                    .justify_between()
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .text_size(px(9.))
+                            .child(
+                                div()
+                                    .font_weight(FontWeight::BOLD)
+                                    .text_color(rgb(ds.accent))
+                                    .child("TRANSIENTE · L/R"),
+                            )
+                            .child(
+                                div()
+                                    .w(px(46.))
+                                    .text_right()
+                                    .font_family("monospace")
+                                    .text_color(rgb(if live_audio { ds.text } else { ds.muted }))
+                                    .child(peak_db),
+                            ),
+                    )
+                    .child(transient_canvas),
+            )
+            .child(
+                div()
+                    .w(px(210.))
+                    .flex_shrink_0()
+                    .px_2()
+                    .py(px(3.))
+                    .rounded(px(ds.radius_sm))
+                    .bg(rgb(ds.bg))
+                    .border_1()
+                    .border_color(rgb(ds.border))
+                    .flex()
+                    .flex_col()
+                    .justify_between()
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .text_size(px(9.))
+                            .child(
+                                div()
+                                    .font_weight(FontWeight::BOLD)
+                                    .text_color(rgb(ds.accent))
+                                    .child("ENV 1 · ADSR"),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(4.))
+                                    .child(
+                                        div()
+                                            .text_color(rgb(ds.muted))
+                                            .child("LFO"),
+                                    )
+                                    .child(
+                                        div()
+                                            .w(px(34.))
+                                            .h(px(5.))
+                                            .rounded(px(3.))
+                                            .bg(rgb(ds.panel_dark))
+                                            .overflow_hidden()
+                                            .child(
+                                                div()
+                                                    .h_full()
+                                                    .w(px((lfo_val * 34.0).clamp(2.0, 34.0)))
+                                                    .bg(rgb(ds.cyan)),
+                                            ),
+                                    ),
+                            ),
+                    )
+                    .child(adsr_canvas),
+            )
     }
 
     // ──────────────────────────────────────────────────────────────────────────

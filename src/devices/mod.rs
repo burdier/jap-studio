@@ -8,6 +8,8 @@ pub mod synth;
 pub mod utility;
 pub mod utility_slot;
 #[cfg(feature = "ui")]
+pub mod serum_import;
+#[cfg(feature = "ui")]
 pub mod vital_import;
 
 use crate::{ComponentError, ParameterId, ParameterSpec, ProcessSpec, StereoFrame};

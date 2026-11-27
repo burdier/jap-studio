@@ -804,24 +804,35 @@ fn collect_vital_files(dir: &Path, depth: usize, out: &mut Vec<VitalPresetEntry>
     };
     for entry in rd.flatten() {
         let path = entry.path();
+        if let Some(fname) = path.file_name().and_then(|n| n.to_str()) {
+            if fname.starts_with('.') || fname == "__MACOSX" {
+                continue;
+            }
+        }
         if path.is_dir() {
             collect_vital_files(&path, depth - 1, out);
-        } else if path
-            .extension()
-            .and_then(|e| e.to_str())
-            .is_some_and(|e| e.eq_ignore_ascii_case("vital"))
-        {
-            let name = path
-                .file_stem()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned();
-            let pack = path
-                .parent()
-                .and_then(|p| p.file_name())
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "Vital".into());
-            out.push(VitalPresetEntry { name, pack, path });
+        } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+            let is_vital = ext.eq_ignore_ascii_case("vital");
+            let is_fxp = ext.eq_ignore_ascii_case("fxp") && {
+                use std::io::Read;
+                let mut hdr = [0u8; 64];
+                std::fs::File::open(&path)
+                    .and_then(|mut f| f.read_exact(&mut hdr))
+                    .is_ok_and(|()| super::serum_import::is_serum_fxp_header(&hdr))
+            };
+            if is_vital || is_fxp {
+                let name = path
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned();
+                let pack = path
+                    .parent()
+                    .and_then(|p| p.file_name())
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| if is_fxp { "Serum".into() } else { "Librería".into() });
+                out.push(VitalPresetEntry { name, pack, path });
+            }
         }
     }
 }

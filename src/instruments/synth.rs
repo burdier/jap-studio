@@ -111,6 +111,24 @@ impl Synth {
         self.player.as_ref().is_some_and(|p| p.failed())
     }
 
+    pub fn is_running(&self) -> bool {
+        self.player.is_some()
+    }
+
+    pub fn set_spectrum_enabled(&self, enabled: bool) {
+        if let Some(player) = &self.player {
+            player.set_spectrum_enabled(enabled);
+        }
+    }
+
+    pub fn drain_scope_samples(&self, out: &mut Vec<[f32; 2]>) {
+        if let Some(player) = &self.player {
+            player.drain_scope_samples(out);
+        } else {
+            out.clear();
+        }
+    }
+
     pub fn midi(&self, command: u8, data1: u8, data2: u8) {
         if let Some(player) = &self.player {
             player.midi(command, data1, data2);

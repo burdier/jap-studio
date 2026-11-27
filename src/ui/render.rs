@@ -97,6 +97,22 @@ impl Render for DawApp {
                 }
             }
         }
+        let synth_editor = self.synth_selected()
+            && (self.instrument_detached()
+                || self.fx.editor_track.is_some_and(|id| {
+                    self.arrangement_visible()
+                        && self
+                            .tracks
+                            .get(self.cursor_row)
+                            .is_some_and(|track| track.id == id)
+                }));
+        self.synth.set_spectrum_enabled(synth_editor);
+        if synth_editor {
+            let mut scratch = std::mem::take(&mut self.synth_ui.scope_scratch);
+            self.synth.drain_scope_samples(&mut scratch);
+            self.synth_ui.ingest_scope(&scratch);
+            self.synth_ui.scope_scratch = scratch;
+        }
         if let Some(tail) = &mut self.tail_player
             && (tail.finished() || tail.failed())
         {
@@ -224,6 +240,7 @@ impl Render for DawApp {
             || self.instrument.clip_playing()
             || self.sampler.clip_playing()
             || self.synth.active_note_count() > 0
+            || (synth_editor && self.synth_ui.scope_active())
             || self.vst_any_clip_playing()
             || self.vst_any_ready()
             || self.vst_task.is_some()

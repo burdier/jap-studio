@@ -5,6 +5,7 @@ use crate::{
 };
 use elevate::{
     devices::{
+        serum_import,
         synth::{
             EnvelopeMode, FACTORY_PRESETS, MATRIX_SLOTS, ModSlot, ModSource, ModTarget, RoomKind,
             SynthEngineKind, SynthParams, VoiceParams, cc, param, vital_factory_presets,
@@ -177,11 +178,91 @@ pub(super) struct SynthUi {
     pub vital_library_loaded: bool,
     pub vital_index: Option<usize>,
     pub vital_picker: Option<Task<()>>,
+    /// Telemetría visual en vivo (osciloscopio, historial de transientes, medidor L/R y fase ADSR/LFO).
+    pub scope_scratch: Vec<[f32; 2]>,
+    pub scope_wave: Vec<f32>,
+    pub transient_trail: Vec<f32>,
+    pub meter_l: f32,
+    pub meter_r: f32,
+    pub transient_peak: f32,
+    pub note_started_at: Option<std::time::Instant>,
+    pub note_released_at: Option<std::time::Instant>,
+    pub lfo_epoch: Option<std::time::Instant>,
 }
 
 impl SynthUi {
     pub fn dragging(&self) -> bool {
         self.knob_drag.is_some() || self.stage_drag
+    }
+
+    pub fn scope_active(&self) -> bool {
+        self.meter_l > 0.0025
+            || self.meter_r > 0.0025
+            || self.transient_peak > 0.0025
+            || self
+                .note_released_at
+                .is_some_and(|t| t.elapsed().as_secs_f32() < 1.8)
+    }
+
+    pub fn ingest_scope(&mut self, samples: &[[f32; 2]]) {
+        const WAVE_PTS: usize = 128;
+        const TRAIL_BARS: usize = 56;
+        if self.scope_wave.len() != WAVE_PTS {
+            self.scope_wave.resize(WAVE_PTS, 0.0);
+        }
+        if self.transient_trail.len() != TRAIL_BARS {
+            self.transient_trail.resize(TRAIL_BARS, 0.0);
+        }
+        if samples.is_empty() {
+            // Caída suave cuando no hay bloques nuevos en el frame.
+            self.meter_l *= 0.86;
+            self.meter_r *= 0.86;
+            self.transient_peak *= 0.90;
+            for w in &mut self.scope_wave {
+                *w *= 0.82;
+            }
+            if self.transient_peak > 0.001 || self.transient_trail.last().copied().unwrap_or(0.0) > 0.002 {
+                self.transient_trail.remove(0);
+                self.transient_trail.push(self.meter_l.max(self.meter_r));
+            }
+            return;
+        }
+        let mut pk_l = 0.0_f32;
+        let mut pk_r = 0.0_f32;
+        for &[l, r] in samples {
+            pk_l = pk_l.max(l.abs());
+            pk_r = pk_r.max(r.abs());
+        }
+        self.meter_l = pk_l.max(self.meter_l * 0.78).min(1.0);
+        self.meter_r = pk_r.max(self.meter_r * 0.78).min(1.0);
+        let blk_peak = pk_l.max(pk_r).min(1.0);
+        self.transient_peak = blk_peak.max(self.transient_peak * 0.88);
+
+        // Desplazar historial de transientes en tiempo real (izquierda = pasado, derecha = presente).
+        self.transient_trail.remove(0);
+        self.transient_trail.push(blk_peak);
+
+        // Osciloscopio disparado por cruce por cero ascendente para que la onda se vea nítida y estable.
+        let need = WAVE_PTS * 2;
+        let mut trig = 0usize;
+        if samples.len() > need {
+            let search_end = samples.len() - need;
+            for i in 1..search_end {
+                let prev = 0.5 * (samples[i - 1][0] + samples[i - 1][1]);
+                let cur = 0.5 * (samples[i][0] + samples[i][1]);
+                if prev <= 0.0 && cur > 0.0 {
+                    trig = i;
+                    break;
+                }
+            }
+        }
+        let avail = samples.len().saturating_sub(trig);
+        let stride = (avail / WAVE_PTS).max(1);
+        for i in 0..WAVE_PTS {
+            let idx = (trig + i * stride).min(samples.len() - 1);
+            let mono = 0.5 * (samples[idx][0] + samples[idx][1]);
+            self.scope_wave[i] = mono.clamp(-1.0, 1.0);
+        }
     }
 
     pub fn ensure_user_presets_loaded(&mut self) {
@@ -443,6 +524,12 @@ impl DawApp {
         let Some(track) = self.synth_track() else {
             return;
         };
+        let now = std::time::Instant::now();
+        self.synth_ui.note_started_at = Some(now);
+        self.synth_ui.note_released_at = None;
+        if self.synth_ui.lfo_epoch.is_none() || self.synth.params.voice.lfo1_retrigger {
+            self.synth_ui.lfo_epoch = Some(now);
+        }
         let id = self.active_synth_id;
         if self
             .player
@@ -498,6 +585,9 @@ impl DawApp {
                     self.synth.note_off_shared(note);
                 } else {
                     self.synth.note_off(note);
+                }
+                if self.synth.active_note_count() == 0 {
+                    self.synth_ui.note_released_at = Some(std::time::Instant::now());
                 }
                 self.midi_capture.record(
                     MidiMessage::NoteOff { note },
@@ -836,7 +926,7 @@ impl DawApp {
             files: true,
             directories: false,
             multiple: false,
-            prompt: Some("Importar preset .vital o banco .vitalbank".into()),
+            prompt: Some("Importar preset (.vital, .vitalbank, .fxp)".into()),
         });
         self.synth_ui.vital_picker = Some(cx.spawn(async move |this, cx| {
             let result = prompt.await;
@@ -888,6 +978,21 @@ impl DawApp {
                         "El archivo .vitalbank no contenía presets .vital".into();
                 }
                 Err(e) => self.status_message = format!("Importar .vitalbank: {e}"),
+            }
+            return;
+        }
+        if ext == "fxp" {
+            match serum_import::load_serum_fxp_file(&path) {
+                Ok((params, summary)) => {
+                    self.synth.params = params;
+                    self.push_all_synth_live();
+                    self.track_revision = self.track_revision.wrapping_add(1);
+                    self.status_message = format!(
+                        "Serum .fxp · {} ({}) · {} WT real(es) ({})",
+                        summary.name, summary.style, summary.decoded_wts, summary.osc_a_wt
+                    );
+                }
+                Err(e) => self.status_message = format!("Importar .fxp: {e}"),
             }
             return;
         }
