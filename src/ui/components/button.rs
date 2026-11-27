@@ -83,7 +83,11 @@ pub(in crate::ui) fn pill_button(
         )
     } else {
         (
-            if dark { ds.panel_dark } else { 0xf2f4f8 },
+            if dark {
+                ds.panel_dark
+            } else {
+                blend_color(ds.panel_hover, 0xffffff, 35)
+            },
             rgba(if dark { 0xffffff10 } else { 0x0f172a16 }),
             ds.text,
         )
@@ -160,7 +164,11 @@ pub(in crate::ui) fn flat_control(ds: &DesignSystem, active: bool, color: u32) -
             .hover(move |style| style.bg(rgb(hover)))
             .cursor_pointer()
     } else {
-        let bg = if dark { ds.panel_dark } else { 0xf2f4f8 };
+        let bg = if dark {
+            ds.panel_dark
+        } else {
+            blend_color(ds.panel_hover, 0xffffff, 35)
+        };
         let hover = blend_color(ds.panel_hover, color, if dark { 12 } else { 8 });
         let border = rgba(if dark { 0xffffff10 } else { 0x0f172a16 });
         div()

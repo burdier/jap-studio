@@ -121,9 +121,17 @@ const KNOWN: &[(&str, &str)] = &[
     ),
     ("tap", "Tap Tempo · marcar el pulso para calcular el BPM"),
     ("tempo", "Cambiar tempo"),
-    ("theme", "Cambiar tema (cyberpunk / daylight)"),
+    (
+        "theme",
+        "Cambiar tema (cyberpunk / daylight / cuaderno / cuaderno-oscuro)",
+    ),
     ("theme cyberpunk", "Tema Cyberpunk Studio (oscuro)"),
     ("theme daylight", "Tema Daylight Studio (claro)"),
+    ("theme cuaderno", "Tema Cuaderno Claro (papel y grafito)"),
+    (
+        "theme cuaderno-oscuro",
+        "Tema Cuaderno Oscuro (carbón y tiza)",
+    ),
     ("toolbar", "Selector de iconos de la barra"),
     ("track.delete", "Eliminar pista seleccionada"),
     ("track.duplicate", "Duplicar pista seleccionada"),

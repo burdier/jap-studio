@@ -8,6 +8,8 @@ pub(in crate::ui) enum ThemePreset {
     #[default]
     Cyberpunk,
     DaylightStudio,
+    Cuaderno,
+    CuadernoOscuro,
 }
 
 #[derive(Clone, Copy)]
@@ -31,12 +33,19 @@ pub(in crate::ui) struct ThemePalette {
 }
 
 impl ThemePreset {
-    pub const ALL: [Self; 2] = [Self::Cyberpunk, Self::DaylightStudio];
+    pub const ALL: [Self; 4] = [
+        Self::Cyberpunk,
+        Self::DaylightStudio,
+        Self::Cuaderno,
+        Self::CuadernoOscuro,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
             Self::Cyberpunk => "Cyberpunk Studio",
             Self::DaylightStudio => "Daylight Studio",
+            Self::Cuaderno => "Cuaderno Claro",
+            Self::CuadernoOscuro => "Cuaderno Oscuro",
         }
     }
 
@@ -44,6 +53,8 @@ impl ThemePreset {
         match self {
             Self::Cyberpunk => "cyberpunk",
             Self::DaylightStudio => "daylight",
+            Self::Cuaderno => "cuaderno",
+            Self::CuadernoOscuro => "cuaderno-oscuro",
         }
     }
 
@@ -56,6 +67,12 @@ impl ThemePreset {
         match cleaned.as_str() {
             "daylight" | "daylight-studio" | "daylight studio" | "daylight_studio"
             | "daylightlatte" | "latte" | "light" | "claro" => Self::DaylightStudio,
+            "cuaderno" | "cuaderno-claro" | "cuaderno claro" | "cuaderno_claro" | "sketchbook"
+            | "sketchbook-light" | "sketchbook light" | "paper" | "papel" => Self::Cuaderno,
+            "cuaderno-oscuro" | "cuaderno oscuro" | "cuaderno_oscuro" | "cuaderno-dark"
+            | "cuaderno dark" | "sketchbook-dark" | "sketchbook dark" | "pizarra" => {
+                Self::CuadernoOscuro
+            }
             _ => Self::Cyberpunk,
         }
     }
@@ -100,6 +117,44 @@ impl ThemePreset {
                 orange: 0xff5a1f,
                 pink: 0x9333ea,
                 grid: 0xcbd1de,
+            },
+            Self::Cuaderno => ThemePalette {
+                // Cuaderno de bocetos claro (landing/index.html): papel crema, grafito y tintas cálidas.
+                bg: 0xf1e8d4,
+                panel: 0xf4ecda,
+                panel_hover: 0xfbf4de,
+                panel_dark: 0xe4d9c0,
+                border: 0xc9bba0,
+                text: 0x3a3835,
+                muted: 0x6b6458,
+                accent: 0xc84c14,
+                accent_dim: 0xf2d7c2,
+                success: 0x357547,
+                warning: 0x9c6b0e,
+                danger: 0xb8321f,
+                cyan: 0x2f4f7a,
+                orange: 0xba5e14,
+                pink: 0x8f3f6c,
+                grid: 0xd8cfbc,
+            },
+            Self::CuadernoOscuro => ThemePalette {
+                // Cuaderno de bocetos oscuro (landing/index.html dark): papel carbón cálido y trazos tiza.
+                bg: 0x1b1a18,
+                panel: 0x211f1c,
+                panel_hover: 0x2c2925,
+                panel_dark: 0x141311,
+                border: 0x3d3832,
+                text: 0xe8e0d2,
+                muted: 0xa39b8e,
+                accent: 0xff8243,
+                accent_dim: 0x4a2919,
+                success: 0x6fbe82,
+                warning: 0xe6bf55,
+                danger: 0xee6b57,
+                cyan: 0x7ca7db,
+                orange: 0xe8a454,
+                pink: 0xd67fa8,
+                grid: 0x302c27,
             },
         }
     }
@@ -371,7 +426,7 @@ impl DesignSystem {
         if self.is_dark() {
             0x05040ad4
         } else {
-            0x9aa8bf92
+            (blend_color(self.panel_dark, 0x000000, 22) << 8) | 0x92
         }
     }
 
@@ -491,7 +546,7 @@ pub(in crate::ui) fn blend_color(base: u32, tint: u32, tint_percent: u32) -> u32
 
 #[cfg(test)]
 mod tests {
-    use super::DesignSystem;
+    use super::{DesignSystem, ThemePreset};
     use crate::ui::{
         cursor_fx::CursorFxMode,
         views::tracks::{TcpLayoutPreset, TcpWidget},
@@ -511,5 +566,23 @@ mod tests {
         assert_eq!(design.cursor_fx, CursorFxMode::NeonComet);
         assert_eq!(design.track_header.preset(), Some(TcpLayoutPreset::Compact));
         assert!(!design.track_header.is_visible(TcpWidget::Rec));
+    }
+
+    #[test]
+    fn cuaderno_light_and_dark_themes_parse_and_classify_polarity() {
+        let light = DesignSystem::from_profile("THEME=cuaderno\n");
+        assert_eq!(light.theme, ThemePreset::Cuaderno);
+        assert!(!light.is_dark());
+        assert_eq!(light.bg, 0xf1e8d4);
+        assert_eq!(ThemePreset::from_token("sketchbook"), ThemePreset::Cuaderno);
+
+        let dark = DesignSystem::from_profile("THEME=cuaderno-oscuro\n");
+        assert_eq!(dark.theme, ThemePreset::CuadernoOscuro);
+        assert!(dark.is_dark());
+        assert_eq!(dark.bg, 0x1b1a18);
+        assert_eq!(
+            ThemePreset::from_token("sketchbook-dark"),
+            ThemePreset::CuadernoOscuro
+        );
     }
 }
