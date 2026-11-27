@@ -86,6 +86,169 @@ impl PitchCurve {
         });
         Self(points.into())
     }
+
+    /// Rampa lineal continua desde `from_cents` (ataque) hasta `to_cents` (final).
+    pub fn glide(from_cents: i16, to_cents: i16) -> Self {
+        let from = from_cents.clamp(-PITCH_RANGE_CENTS, PITCH_RANGE_CENTS);
+        let to = to_cents.clamp(-PITCH_RANGE_CENTS, PITCH_RANGE_CENTS);
+        Self::new(vec![
+            PitchPoint { at: 0, cents: from },
+            PitchPoint {
+                at: u16::MAX,
+                cents: to,
+            },
+        ])
+        .unwrap_or_default()
+    }
+
+    /// Scoop expresivo: ataca desplazado (`from_cents`) y resuelve a 0 en el primer 25%.
+    pub fn scoop(from_cents: i16) -> Self {
+        let from = from_cents.clamp(-PITCH_RANGE_CENTS, PITCH_RANGE_CENTS);
+        Self::new(vec![
+            PitchPoint { at: 0, cents: from },
+            PitchPoint {
+                at: u16::MAX / 4,
+                cents: 0,
+            },
+            PitchPoint {
+                at: u16::MAX,
+                cents: 0,
+            },
+        ])
+        .unwrap_or_default()
+    }
+
+    /// Caída al final de la nota: sostiene afinación hasta el 65% y cae a `to_cents`.
+    pub fn fall(to_cents: i16) -> Self {
+        let to = to_cents.clamp(-PITCH_RANGE_CENTS, PITCH_RANGE_CENTS);
+        Self::new(vec![
+            PitchPoint { at: 0, cents: 0 },
+            PitchPoint {
+                at: (u32::from(u16::MAX) * 65 / 100) as u16,
+                cents: 0,
+            },
+            PitchPoint {
+                at: u16::MAX,
+                cents: to,
+            },
+        ])
+        .unwrap_or_default()
+    }
+
+    /// Vibrato senoidal expresivo con retardo suave de entrada (15% inicial).
+    pub fn vibrato(depth_cents: i16, cycles: u8) -> Self {
+        let depth = depth_cents.clamp(-PITCH_RANGE_CENTS, PITCH_RANGE_CENTS) as f64;
+        let cycles = cycles.clamp(1, 12);
+        let steps = (usize::from(cycles) * 4 + 2).min(MAX_PITCH_POINTS - 2);
+        let mut points = Vec::with_capacity(steps + 2);
+        points.push(PitchPoint { at: 0, cents: 0 });
+        for i in 1..=steps {
+            let t = i as f64 / (steps + 1) as f64;
+            let at = (t * f64::from(u16::MAX))
+                .round()
+                .clamp(1.0, f64::from(u16::MAX - 1)) as u16;
+            if points.last().is_some_and(|p| p.at >= at) {
+                continue;
+            }
+            let onset = ((t - 0.12) / 0.22).clamp(0.0, 1.0);
+            let env = onset * onset * (3.0 - 2.0 * onset);
+            let wave = (t * f64::from(cycles) * std::f64::consts::TAU).sin();
+            let cents = (depth * env * wave).round() as i16;
+            points.push(PitchPoint {
+                at,
+                cents: cents.clamp(-PITCH_RANGE_CENTS, PITCH_RANGE_CENTS),
+            });
+        }
+        points.push(PitchPoint {
+            at: u16::MAX,
+            cents: 0,
+        });
+        Self::new(points).unwrap_or_default()
+    }
+
+    /// Desliza el tramo final de la nota (último 35%) hacia `delta_cents` (legato hacia siguiente nota).
+    pub fn tail_slide(delta_cents: i16) -> Self {
+        let delta = delta_cents.clamp(-PITCH_RANGE_CENTS, PITCH_RANGE_CENTS);
+        if delta == 0 {
+            return Self::default();
+        }
+        Self::new(vec![
+            PitchPoint { at: 0, cents: 0 },
+            PitchPoint {
+                at: (u32::from(u16::MAX) * 65 / 100) as u16,
+                cents: 0,
+            },
+            PitchPoint {
+                at: u16::MAX,
+                cents: delta,
+            },
+        ])
+        .unwrap_or_default()
+    }
+
+    /// Ajusta cada punto de la curva al semitono entero más cercano (múltiplo de 100 cents).
+    pub fn quantize_semitones(&self) -> Self {
+        if self.0.is_empty() {
+            return Self::default();
+        }
+        let points = self
+            .0
+            .iter()
+            .map(|p| {
+                let snapped = ((f64::from(p.cents) / 100.0).round() * 100.0) as i16;
+                PitchPoint {
+                    at: p.at,
+                    cents: snapped.clamp(-PITCH_RANGE_CENTS, PITCH_RANGE_CENTS),
+                }
+            })
+            .collect();
+        Self::new(points).unwrap_or_else(|_| self.clone())
+    }
+
+    /// Invierte verticalmente la dirección de todos los bends (`-cents`).
+    pub fn invert(&self) -> Self {
+        if self.0.is_empty() {
+            return Self::default();
+        }
+        let points = self
+            .0
+            .iter()
+            .map(|p| PitchPoint {
+                at: p.at,
+                cents: (-p.cents).clamp(-PITCH_RANGE_CENTS, PITCH_RANGE_CENTS),
+            })
+            .collect();
+        Self::new(points).unwrap_or_else(|_| self.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mpe_curve_generators_respect_bounds_and_order() {
+        let g = PitchCurve::glide(0, 200);
+        assert_eq!(g.cents_at(0), 0);
+        assert_eq!(g.cents_at(u16::MAX), 200);
+        assert_eq!(g.invert().cents_at(u16::MAX), -200);
+
+        let scoop = PitchCurve::scoop(-200);
+        assert_eq!(scoop.cents_at(0), -200);
+        assert_eq!(scoop.cents_at(u16::MAX / 2), 0);
+
+        let fall = PitchCurve::fall(-1200);
+        assert_eq!(fall.cents_at(0), 0);
+        assert_eq!(fall.cents_at(u16::MAX), -1200);
+
+        let vib = PitchCurve::vibrato(50, 4);
+        assert!(vib.points().len() >= 10 && vib.points().len() <= MAX_PITCH_POINTS);
+        assert!(vib.points().iter().any(|p| p.cents.abs() >= 25));
+
+        let q = PitchCurve::glide(40, 165).quantize_semitones();
+        assert_eq!(q.cents_at(0), 0);
+        assert_eq!(q.cents_at(u16::MAX), 200);
+    }
 }
 
 pub fn pitch_fraction(offset: i64, duration: i64) -> u16 {

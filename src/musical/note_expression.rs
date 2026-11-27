@@ -6,6 +6,10 @@ pub struct NoteExpression {
     pub release_velocity: u8,
     pub probability: u8,
     pub pan: i8,
+    /// Eje Y MPE (CC 74 / Slide / Timbre por nota, 0..=127, neutro = 64).
+    pub slide: u8,
+    /// Eje Z MPE (Presión / Aftertouch por nota, 0..=127, neutro = 0).
+    pub pressure: u8,
 }
 impl Default for NoteExpression {
     fn default() -> Self {
@@ -13,12 +17,18 @@ impl Default for NoteExpression {
             release_velocity: 64,
             probability: 100,
             pan: 0,
+            slide: 64,
+            pressure: 0,
         }
     }
 }
 impl NoteExpression {
     pub fn valid(self) -> bool {
-        self.release_velocity <= 127 && self.probability <= 100 && (-64..=63).contains(&self.pan)
+        self.release_velocity <= 127
+            && self.probability <= 100
+            && (-64..=63).contains(&self.pan)
+            && self.slide <= 127
+            && self.pressure <= 127
     }
     /// La misma decisión para On y Off. Cada vuelta cambia el sorteo sin guardar voces.
     pub fn plays(self, note: NoteId, cycle: u64) -> bool {
@@ -42,6 +52,8 @@ pub enum NoteProperty {
     ReleaseVelocity,
     Probability,
     Pan,
+    Slide,
+    Pressure,
 }
 impl NoteProperty {
     pub fn value(self, note: &NoteEvent) -> i16 {
@@ -50,12 +62,14 @@ impl NoteProperty {
             Self::ReleaseVelocity => i16::from(note.expression.release_velocity),
             Self::Probability => i16::from(note.expression.probability),
             Self::Pan => i16::from(note.expression.pan),
+            Self::Slide => i16::from(note.expression.slide),
+            Self::Pressure => i16::from(note.expression.pressure),
         }
     }
     pub fn range(self) -> (i16, i16) {
         match self {
             Self::Velocity => (1, 127),
-            Self::ReleaseVelocity => (0, 127),
+            Self::ReleaseVelocity | Self::Slide | Self::Pressure => (0, 127),
             Self::Probability => (0, 100),
             Self::Pan => (-64, 63),
         }
@@ -88,6 +102,8 @@ impl NoteProperty {
             Self::ReleaseVelocity => note.expression.release_velocity = value as u8,
             Self::Probability => note.expression.probability = value as u8,
             Self::Pan => note.expression.pan = value as i8,
+            Self::Slide => note.expression.slide = value as u8,
+            Self::Pressure => note.expression.pressure = value as u8,
         }
         Ok(())
     }

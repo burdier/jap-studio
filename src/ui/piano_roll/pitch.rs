@@ -183,4 +183,147 @@ impl DawApp {
             let _ = clip.edit_pattern(|pattern| pattern.set_pitch_curve(note, curve));
         }
     }
+
+    fn mpe_target_notes(&self) -> Vec<NoteId> {
+        let Some(clip) = &self.timeline.midi_clip else {
+            return Vec::new();
+        };
+        if !self.piano_roll.selected_notes.is_empty() {
+            return self.piano_roll.selected_notes.clone();
+        }
+        if let Some(id) = self.piano_roll.selected {
+            return vec![id];
+        }
+        clip.notes().iter().map(|n| n.id).collect()
+    }
+
+    pub(super) fn apply_mpe_preset(&mut self, preset: super::MpePreset) {
+        use super::MpePreset;
+        let Some(clip) = self.timeline.midi_clip.as_ref() else {
+            return;
+        };
+        if clip.props.locked {
+            self.piano_roll.hint = "Clip bloqueado".into();
+            return;
+        }
+        let targets = self.mpe_target_notes();
+        if targets.is_empty() {
+            self.piano_roll.hint = "MPE · añade o selecciona notas primero".into();
+            return;
+        }
+        let updates: Vec<(NoteId, PitchCurve)> = match preset {
+            MpePreset::GlideUp2 => targets
+                .iter()
+                .map(|&id| (id, PitchCurve::glide(0, 200)))
+                .collect(),
+            MpePreset::GlideDown2 => targets
+                .iter()
+                .map(|&id| (id, PitchCurve::glide(0, -200)))
+                .collect(),
+            MpePreset::GlideUp12 => targets
+                .iter()
+                .map(|&id| (id, PitchCurve::glide(0, 1200)))
+                .collect(),
+            MpePreset::GlideDown12 => targets
+                .iter()
+                .map(|&id| (id, PitchCurve::glide(0, -1200)))
+                .collect(),
+            MpePreset::Scoop => targets
+                .iter()
+                .map(|&id| (id, PitchCurve::scoop(-200)))
+                .collect(),
+            MpePreset::Fall => targets
+                .iter()
+                .map(|&id| (id, PitchCurve::fall(-200)))
+                .collect(),
+            MpePreset::VibratoSubtle => targets
+                .iter()
+                .map(|&id| (id, PitchCurve::vibrato(30, 4)))
+                .collect(),
+            MpePreset::VibratoWide => targets
+                .iter()
+                .map(|&id| (id, PitchCurve::vibrato(75, 5)))
+                .collect(),
+            MpePreset::LegatoSlide => {
+                let mut ordered: Vec<_> = clip
+                    .notes()
+                    .iter()
+                    .filter(|n| targets.contains(&n.id))
+                    .collect();
+                ordered.sort_by_key(|n| (n.start.0, n.pitch));
+                ordered
+                    .windows(2)
+                    .map(|pair| {
+                        let delta_semi = i16::from(pair[1].pitch) - i16::from(pair[0].pitch);
+                        let delta_cents =
+                            (delta_semi * 100).clamp(-PITCH_RANGE_CENTS, PITCH_RANGE_CENTS);
+                        (pair[0].id, PitchCurve::tail_slide(delta_cents))
+                    })
+                    .collect()
+            }
+            MpePreset::QuantizePitch => clip
+                .notes()
+                .iter()
+                .filter(|n| targets.contains(&n.id) && !n.pitch_curve.points().is_empty())
+                .map(|n| (n.id, n.pitch_curve.quantize_semitones()))
+                .collect(),
+            MpePreset::InvertPitch => clip
+                .notes()
+                .iter()
+                .filter(|n| targets.contains(&n.id) && !n.pitch_curve.points().is_empty())
+                .map(|n| (n.id, n.pitch_curve.invert()))
+                .collect(),
+            MpePreset::ClearPitch => targets
+                .iter()
+                .map(|&id| (id, PitchCurve::default()))
+                .collect(),
+        };
+        if updates.is_empty() {
+            self.piano_roll.hint = "MPE · selecciona al menos 2 notas para Legato Slide".into();
+            return;
+        }
+        let count = updates.len();
+        self.stop_audio();
+        if let Some(clip) = self.timeline.midi_clip.as_mut() {
+            let _ = clip.edit_pattern(|pattern| {
+                for (id, curve) in updates {
+                    let _ = pattern.set_pitch_curve(id, curve);
+                }
+                Ok::<(), elevate::musical::model::EditError>(())
+            });
+        }
+        self.refresh_project_dirty();
+        self.piano_roll.hint = format!("MPE · curva aplicada a {count} nota(s)");
+    }
+
+    pub(super) fn apply_mpe_note_property(
+        &mut self,
+        property: elevate::musical::note_expression::NoteProperty,
+        value: i16,
+    ) {
+        let Some(clip) = self.timeline.midi_clip.as_ref() else {
+            return;
+        };
+        if clip.props.locked {
+            self.piano_roll.hint = "Clip bloqueado".into();
+            return;
+        }
+        let targets = self.mpe_target_notes();
+        if targets.is_empty() {
+            self.piano_roll.hint = "MPE · añade o selecciona notas primero".into();
+            return;
+        }
+        let count = targets.len();
+        self.stop_audio();
+        if let Some(clip) = self.timeline.midi_clip.as_mut() {
+            let _ = clip.edit_pattern(|pattern| {
+                for id in targets {
+                    let _ = pattern.set_note_property(id, property, value);
+                }
+                Ok::<(), elevate::musical::model::EditError>(())
+            });
+        }
+        self.refresh_project_dirty();
+        self.piano_roll.hint = format!("MPE · expresión ({value}) aplicada a {count} nota(s)");
+    }
 }

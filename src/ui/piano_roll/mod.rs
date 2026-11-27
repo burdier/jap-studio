@@ -103,6 +103,22 @@ pub(super) enum RollDrag {
     },
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(in crate::ui) enum MpePreset {
+    GlideUp2,
+    GlideDown2,
+    GlideUp12,
+    GlideDown12,
+    Scoop,
+    Fall,
+    VibratoSubtle,
+    VibratoWide,
+    LegatoSlide,
+    QuantizePitch,
+    InvertPitch,
+    ClearPitch,
+}
+
 #[derive(Clone, Copy)]
 pub(super) enum RollAction {
     Form(&'static str),
@@ -171,6 +187,10 @@ pub(super) enum RollAction {
     ChordSequenceInvert(usize, i8),
     ChordSequenceResize(i8),
     ChordSequenceInsert,
+    MpePreset(MpePreset),
+    MpeSetSlide(u8),
+    MpeSetPressure(u8),
+    MpeOpenLane(RollLane),
 }
 
 pub(super) struct PianoRoll {

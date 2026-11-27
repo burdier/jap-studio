@@ -8,6 +8,8 @@ pub enum RollLane {
     Velocity,
     ReleaseVelocity,
     Pan,
+    MpeSlide,
+    MpePressure,
     PitchBend,
     Probability,
     Modulation,
@@ -28,6 +30,8 @@ impl RollLane {
             Self::Velocity => "velocity",
             Self::ReleaseVelocity => "release_velocity",
             Self::Pan => "pan",
+            Self::MpeSlide => "mpe_slide",
+            Self::MpePressure => "mpe_pressure",
             Self::Probability => "probability",
             Self::PitchBend => "pitch",
             Self::Modulation => "cc1",
@@ -53,6 +57,8 @@ impl RollLane {
         use elevate::musical::note_expression::NoteProperty;
         match self {
             Self::Pan => Some(NoteProperty::Pan),
+            Self::MpeSlide => Some(NoteProperty::Slide),
+            Self::MpePressure => Some(NoteProperty::Pressure),
             Self::Velocity => Some(NoteProperty::Velocity),
             Self::ReleaseVelocity => Some(NoteProperty::ReleaseVelocity),
             Self::Probability => Some(NoteProperty::Probability),
@@ -111,6 +117,8 @@ impl RollLane {
             Self::Velocity => "Velocity",
             Self::ReleaseVelocity => "Release Velocity",
             Self::Pan => "Note Pan",
+            Self::MpeSlide => "MPE Slide (Timbre Y)",
+            Self::MpePressure => "MPE Pressure (Aftertouch Z)",
             Self::PitchBend => "Pitch Bend",
             Self::Probability => "Probability (Chance)",
             Self::Modulation => "Modulation Wheel (CC 1)",
@@ -132,6 +140,8 @@ impl RollLane {
             Self::Velocity => "Velocity",
             Self::ReleaseVelocity => "Rel Vel",
             Self::Pan => "Pan",
+            Self::MpeSlide => "MPE Slide",
+            Self::MpePressure => "MPE Press",
             Self::PitchBend => "Pitch Bend",
             Self::Probability => "Chance",
             Self::Modulation => "Mod CC1",
@@ -152,7 +162,9 @@ impl RollLane {
         match self {
             Self::Velocity => "Velocidad de pulsación de nota (1–127)",
             Self::ReleaseVelocity => "Velocidad de liberación de tecla (0–127)",
-            Self::Pan => "Pan por nota (-64 L .. 0 C .. +63 R); audio disponible con FluidSynth",
+            Self::Pan => "Pan por nota (-64 L .. 0 C .. +63 R); Hay Synth y FluidSynth",
+            Self::MpeSlide => "Eje Y MPE (Slide / Timbre CC 74 por nota, 0–127, neutro 64)",
+            Self::MpePressure => "Eje Z MPE (Presión / Aftertouch por nota, 0–127)",
             Self::PitchBend => "Inflexión continua de tono (-8192 .. +8191)",
             Self::Probability => "Probabilidad de disparo de nota (0%–100%)",
             Self::Modulation => "Rueda de modulación continua MIDI CC 1 (0–127)",
@@ -178,6 +190,8 @@ impl RollLane {
         match self {
             Self::Velocity
             | Self::ReleaseVelocity
+            | Self::MpeSlide
+            | Self::MpePressure
             | Self::Modulation
             | Self::Breath
             | Self::Foot
@@ -211,6 +225,8 @@ impl RollLane {
         match self {
             Self::Velocity => format!("{}", (f * 127.0).round().max(1.0) as u8),
             Self::ReleaseVelocity
+            | Self::MpeSlide
+            | Self::MpePressure
             | Self::Modulation
             | Self::Breath
             | Self::Foot
@@ -274,6 +290,16 @@ pub const LANE_MENU_ITEMS: &[LaneMenuItem] = &[
     },
     LaneMenuItem {
         lane: RollLane::Pan,
+        section: None,
+        separator_after: false,
+    },
+    LaneMenuItem {
+        lane: RollLane::MpeSlide,
+        section: None,
+        separator_after: false,
+    },
+    LaneMenuItem {
+        lane: RollLane::MpePressure,
         section: None,
         separator_after: false,
     },
@@ -356,6 +382,8 @@ mod tests {
             RollLane::Velocity,
             RollLane::ReleaseVelocity,
             RollLane::Pan,
+            RollLane::MpeSlide,
+            RollLane::MpePressure,
             RollLane::PitchBend,
             RollLane::Probability,
             RollLane::Modulation,
@@ -401,7 +429,7 @@ mod tests {
                 item.lane
             );
         }
-        assert_eq!(seen.len(), 15);
+        assert_eq!(seen.len(), 17);
     }
 
     #[test]

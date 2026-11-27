@@ -524,7 +524,7 @@ impl DawApp {
         let ds = &self.ds;
         let state = self.utility.state();
         let (fx_label, fx_color) = if !state.inserted {
-            ("SIN FX", ds.muted)
+            (self.tr("transport.no_fx"), ds.muted)
         } else if state.bypassed {
             ("BYPASS", ds.warning)
         } else {

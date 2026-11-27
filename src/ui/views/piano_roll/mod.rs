@@ -6,6 +6,7 @@ pub(super) mod control_lane;
 mod grid;
 pub(super) mod grid_background;
 mod inspector;
+mod mpe;
 pub(super) mod note_frame;
 mod toolbar;
 

@@ -184,6 +184,12 @@ impl DawApp {
                 cx,
             ))
             .child(self.roll_button(
+                "〜 MPE",
+                self.piano_roll.inspector_tab == 5 || self.piano_roll.tool == RollTool::Pitch,
+                RollAction::InspectorTab(5),
+                cx,
+            ))
+            .child(self.roll_button(
                 self.tr("piano_roll.velocity"),
                 false,
                 RollAction::Velocity,

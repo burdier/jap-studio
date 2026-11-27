@@ -55,7 +55,13 @@ impl VstEngine {
                 if let Some(index) = slot {
                     let channel = index + 1;
                     self.set_note_pitch(channel, f64::from(initial));
+                    if event.expression.slide != 64 {
+                        self.midi(0xb0 | channel as u8, 74, event.expression.slide);
+                    }
                     self.midi(0x90 | channel as u8, event.pitch, velocity);
+                    if event.expression.pressure > 0 {
+                        self.midi(0xd0 | channel as u8, event.expression.pressure, 0);
+                    }
                     self.mpe_voices[index] = Some(MpeVoice {
                         clip: event.clip,
                         note: event.note,

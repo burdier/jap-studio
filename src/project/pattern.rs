@@ -48,6 +48,14 @@ pub(super) fn write(
             .map_err(err)?;
         map.insert("pan", i64::from(note.expression.pan))
             .map_err(err)?;
+        if note.expression.slide != 64 || map.get("mpe_slide").is_some() {
+            map.insert("mpe_slide", i64::from(note.expression.slide))
+                .map_err(err)?;
+        }
+        if note.expression.pressure != 0 || map.get("mpe_pressure").is_some() {
+            map.insert("mpe_pressure", i64::from(note.expression.pressure))
+                .map_err(err)?;
+        }
         let points = note.pitch_curve.points();
         if !points.is_empty() || map.get("pitch_curve").is_some() {
             let values: Vec<_> = points
@@ -117,6 +125,17 @@ pub(super) fn read(
                 } else {
                     u8::try_from(read_i64(&note, "probability")?)
                         .map_err(|_| "Probabilidad inválida")?
+                },
+                slide: if note.get("mpe_slide").is_none() {
+                    64
+                } else {
+                    u8::try_from(read_i64(&note, "mpe_slide")?).map_err(|_| "MPE Slide inválido")?
+                },
+                pressure: if note.get("mpe_pressure").is_none() {
+                    0
+                } else {
+                    u8::try_from(read_i64(&note, "mpe_pressure")?)
+                        .map_err(|_| "MPE Pressure inválido")?
                 },
             },
             velocity: u8::try_from(read_i64(&note, "velocity")?)

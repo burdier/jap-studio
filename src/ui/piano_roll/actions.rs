@@ -222,7 +222,7 @@ impl DawApp {
             RollAction::ChooseClipColor => self.choose_roll_value("color"),
             RollAction::ChooseClip => self.choose_roll_value("clip"),
             RollAction::OpenSettings => self.open_settings(),
-            RollAction::InspectorTab(tab) => self.piano_roll.inspector_tab = tab.min(4),
+            RollAction::InspectorTab(tab) => self.piano_roll.inspector_tab = tab.min(5),
             RollAction::ChordDegree(deg) => {
                 self.piano_roll.chord_pad.select_degree(deg);
                 let name = super::chord::ChordPadState::degree_chord_name(
@@ -322,6 +322,24 @@ impl DawApp {
                 }
             }
             RollAction::ChordSequenceInsert => self.insert_chord_sequence(cx),
+            RollAction::MpePreset(preset) => self.apply_mpe_preset(preset),
+            RollAction::MpeSetSlide(value) => self.apply_mpe_note_property(
+                elevate::musical::note_expression::NoteProperty::Slide,
+                i16::from(value),
+            ),
+            RollAction::MpeSetPressure(value) => self.apply_mpe_note_property(
+                elevate::musical::note_expression::NoteProperty::Pressure,
+                i16::from(value),
+            ),
+            RollAction::MpeOpenLane(lane) => {
+                self.piano_roll.velocities = true;
+                self.piano_roll.active_lane = lane;
+                self.piano_roll.selected_control = None;
+                self.piano_roll.control_drag = false;
+                self.piano_roll.lane_span = None;
+                self.piano_roll.lane_menu = None;
+                self.piano_roll.hint = format!("MPE · {} · {}", lane.label(), lane.description());
+            }
             RollAction::Subdivide => {
                 self.execute_script_command("midi.subdivide", cx);
             }

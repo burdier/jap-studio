@@ -197,22 +197,13 @@ impl WavetableBank {
     }
 
     #[inline]
-    fn sample_prepared(
-        &self,
-        kind: WavetableKind,
-        sel: MipSelector,
-        phase: f32,
-    ) -> f32 {
+    fn sample_prepared(&self, kind: WavetableKind, sel: MipSelector, phase: f32) -> f32 {
         let t = (kind as usize).min(WT_TABLES - 1);
         sample_mip_prepared(&self.mips[t], sel, phase)
     }
 
     #[inline]
-    fn sample_custom_prepared(
-        wt: &CustomWavetable,
-        sel: MipSelector,
-        phase: f32,
-    ) -> f32 {
+    fn sample_custom_prepared(wt: &CustomWavetable, sel: MipSelector, phase: f32) -> f32 {
         sample_mip_prepared(&wt.mips, sel, phase)
     }
 }
@@ -231,7 +222,8 @@ struct MipSelector {
 impl MipSelector {
     #[inline]
     fn new(frame_pos: f32, hz: f32) -> Self {
-        let mip_f = ((hz.max(60.0) / 115.0).max(1.0).log2()).clamp(0.0, (CUSTOM_WT_MIPS - 1) as f32);
+        let mip_f =
+            ((hz.max(60.0) / 115.0).max(1.0).log2()).clamp(0.0, (CUSTOM_WT_MIPS - 1) as f32);
         let m0 = (mip_f.floor() as usize).min(CUSTOM_WT_MIPS - 2);
         let m1 = m0 + 1;
         let mf = mip_f - m0 as f32;
@@ -425,7 +417,10 @@ impl ChorusUnit {
         let wet_r = Self::read_delay(&self.buf_r, self.write_idx, dr);
         self.write_idx = (self.write_idx + 1) & (CHORUS_BUF - 1);
         let dry = 1.0 - mix * 0.35;
-        (in_l * dry + wet_l * mix * 0.72, in_r * dry + wet_r * mix * 0.72)
+        (
+            in_l * dry + wet_l * mix * 0.72,
+            in_r * dry + wet_r * mix * 0.72,
+        )
     }
 }
 
@@ -453,12 +448,25 @@ struct ModAccum {
     out_gain: f32,
 }
 
+#[derive(Clone, Copy)]
+struct MpePitchRamp {
+    from_cents: f32,
+    to_cents: f32,
+    elapsed: u64,
+    duration: u64,
+}
+
 struct Voice {
     active: bool,
     note: u8,
+    note_id: Option<(Option<u64>, u64)>,
     age: u64,
     velocity: f32,
     pan: f32,
+    mpe_cents: f32,
+    mpe_ramp: Option<MpePitchRamp>,
+    mpe_slide: f32,
+    mpe_pressure: f32,
     voice_rand: f32,
     freq: f32,
     target_freq: f32,
@@ -498,9 +506,14 @@ impl Voice {
         Self {
             active: false,
             note: 0,
+            note_id: None,
             age: 0,
             velocity: 0.0,
             pan: 0.0,
+            mpe_cents: 0.0,
+            mpe_ramp: None,
+            mpe_slide: 0.0,
+            mpe_pressure: 0.0,
             voice_rand: 0.0,
             freq: 261.63,
             target_freq: 261.63,
@@ -559,9 +572,14 @@ impl Voice {
         let target = midi_to_hz(note);
         self.active = true;
         self.note = note;
+        self.note_id = None;
         self.age = age;
         self.velocity = (velocity.max(1) as f32 / 127.0).clamp(0.02, 1.0);
         self.pan = pan.clamp(-1.0, 1.0);
+        self.mpe_cents = 0.0;
+        self.mpe_ramp = None;
+        self.mpe_slide = 0.0;
+        self.mpe_pressure = 0.0;
         self.voice_rand = self.next_noise() * 0.5 + 0.5;
         self.target_freq = target;
         self.freq = if params.glide > 0.02 && start_freq > 15.0 {
@@ -665,7 +683,10 @@ impl SpaceUnit {
             comb_lp_l: [0.0; 4],
             comb_lp_r: [0.0; 4],
             ap_l: [vec![0.0; sz(ap_base[0])], vec![0.0; sz(ap_base[1])]],
-            ap_r: [vec![0.0; sz(ap_base[0] + 19)], vec![0.0; sz(ap_base[1] + 23)]],
+            ap_r: [
+                vec![0.0; sz(ap_base[0] + 19)],
+                vec![0.0; sz(ap_base[1] + 23)],
+            ],
             ap_idx: [0; 2],
             air_l: 0.0,
             air_r: 0.0,
@@ -686,7 +707,14 @@ impl SpaceUnit {
     }
 
     #[inline]
-    fn process(&mut self, in_l: f32, in_r: f32, room: RoomKind, distance: f32, sr: f32) -> (f32, f32) {
+    fn process(
+        &mut self,
+        in_l: f32,
+        in_r: f32,
+        room: RoomKind,
+        distance: f32,
+        sr: f32,
+    ) -> (f32, f32) {
         let (fb_base, damp, wet_max) = match room {
             RoomKind::Close => (0.36, 0.58, 0.24),
             RoomKind::Wood => (0.64, 0.50, 0.42),
@@ -924,6 +952,77 @@ impl NativeSynthEngine {
         );
     }
 
+    /// Ejecuta un evento programado con expresión MPE completa por voz (pitch, slide Y, pressure Z, pan).
+    pub fn scheduled_mpe(&mut self, event: elevate::musical::scheduler::ScheduledEvent) {
+        use elevate::musical::scheduler::EventKind;
+        let key = (event.clip.map(|c| c.value()), event.note.0);
+        match event.kind {
+            EventKind::NoteOn { velocity } => {
+                let pan = f32::from(event.expression.pan) / 64.0;
+                self.note_on(event.pitch, velocity, pan);
+                // Etiqueta la voz recién disparada con su identidad y expresión MPE.
+                if let Some(voice) = self
+                    .voices
+                    .iter_mut()
+                    .filter(|v| v.active && v.note == event.pitch)
+                    .max_by_key(|v| v.age)
+                {
+                    voice.note_id = Some(key);
+                    voice.mpe_cents = event.initial_pitch_cents.map_or(0.0, f32::from);
+                    voice.mpe_ramp = None;
+                    voice.mpe_slide =
+                        ((f32::from(event.expression.slide) - 64.0) / 63.0).clamp(-1.0, 1.0);
+                    voice.mpe_pressure =
+                        (f32::from(event.expression.pressure) / 127.0).clamp(0.0, 1.0);
+                }
+            }
+            EventKind::PitchRamp {
+                from_cents,
+                to_cents,
+                frames,
+            } => {
+                if let Some(voice) = self
+                    .voices
+                    .iter_mut()
+                    .find(|v| v.active && v.note_id == Some(key))
+                {
+                    voice.mpe_cents = f32::from(from_cents);
+                    voice.mpe_ramp = (frames > 0).then_some(MpePitchRamp {
+                        from_cents: f32::from(from_cents),
+                        to_cents: f32::from(to_cents),
+                        elapsed: 0,
+                        duration: frames,
+                    });
+                }
+            }
+            EventKind::NoteOff => {
+                let mut matched = false;
+                for v in &mut self.voices {
+                    if v.active && v.note_id == Some(key) {
+                        matched = true;
+                        if self.sustain_pedal {
+                            self.sustained_notes[usize::from(v.note.min(127))] = true;
+                        } else {
+                            if v.stage != EnvStage::Release
+                                && (self.params.voice.env1_override
+                                    || self.params.mode != EnvelopeMode::Hit)
+                            {
+                                v.stage = EnvStage::Release;
+                            }
+                            if v.env2_stage != EnvStage::Release {
+                                v.env2_stage = EnvStage::Release;
+                            }
+                        }
+                    }
+                }
+                if !matched {
+                    self.note_off(event.pitch);
+                }
+            }
+            EventKind::Control { .. } => {}
+        }
+    }
+
     pub fn note_off(&mut self, note: u8) {
         if self.sustain_pedal {
             self.sustained_notes[usize::from(note.min(127))] = true;
@@ -972,8 +1071,35 @@ impl NativeSynthEngine {
         match command & 0xf0 {
             0x90 if data2 > 0 => self.note_on(data1, data2, 0.0),
             0x80 | 0x90 => self.note_off(data1),
+            0xa0 => {
+                // Polyphonic Key Pressure (Aftertouch por nota MPE)
+                let pressure = (f32::from(data2) / 127.0).clamp(0.0, 1.0);
+                for v in &mut self.voices {
+                    if v.active && v.note == data1 {
+                        v.mpe_pressure = pressure;
+                    }
+                }
+            }
+            0xd0 => {
+                // Channel Pressure (Aftertouch global / MPE)
+                let pressure = (f32::from(data1) / 127.0).clamp(0.0, 1.0);
+                for v in &mut self.voices {
+                    if v.active {
+                        v.mpe_pressure = pressure;
+                    }
+                }
+            }
             0xb0 => match data1 {
                 1 => self.mod_wheel = f32::from(data2) / 127.0,
+                74 => {
+                    // MPE Slide / Brightness (CC 74)
+                    let slide = ((f32::from(data2) - 64.0) / 63.0).clamp(-1.0, 1.0);
+                    for v in &mut self.voices {
+                        if v.active {
+                            v.mpe_slide = slide;
+                        }
+                    }
+                }
                 64 => {
                     let down = data2 >= 64;
                     self.sustain_pedal = down;
@@ -1030,7 +1156,13 @@ impl NativeSynthEngine {
             )
         } else {
             match params.mode {
-                EnvelopeMode::Hit => (0.002, 0.08 + time * time * 2.2, 0.0, 0.04 + time * 0.45, true),
+                EnvelopeMode::Hit => (
+                    0.002,
+                    0.08 + time * time * 2.2,
+                    0.0,
+                    0.04 + time * 0.45,
+                    true,
+                ),
                 EnvelopeMode::Hold => (
                     0.004 + time * 0.035,
                     0.14 + time * 0.9,
@@ -1234,14 +1366,22 @@ impl NativeSynthEngine {
                 }
 
                 // Avanzar LFO 1 y LFO 2 (con modulación de rate posible desde la Matrix).
-                let lfo1_hz = lfo_rate_hz((vp.lfo1_rate + m.lfo1_rate).clamp(0.0, 1.0), vp.lfo1_sync, self.bpm);
+                let lfo1_hz = lfo_rate_hz(
+                    (vp.lfo1_rate + m.lfo1_rate).clamp(0.0, 1.0),
+                    vp.lfo1_sync,
+                    self.bpm,
+                );
                 let next_p1 = v.lfo1_phase + lfo1_hz * inv_sr;
                 if next_p1 >= 1.0 {
                     v.lfo1_sh = v.next_noise();
                 }
                 v.lfo1_phase = next_p1.fract();
 
-                let lfo2_hz = lfo_rate_hz((vp.lfo2_rate + m.lfo2_rate).clamp(0.0, 1.0), vp.lfo2_sync, self.bpm);
+                let lfo2_hz = lfo_rate_hz(
+                    (vp.lfo2_rate + m.lfo2_rate).clamp(0.0, 1.0),
+                    vp.lfo2_sync,
+                    self.bpm,
+                );
                 let next_p2 = v.lfo2_phase + lfo2_hz * inv_sr;
                 if next_p2 >= 1.0 {
                     v.lfo2_sh = v.next_noise();
@@ -1254,9 +1394,28 @@ impl NativeSynthEngine {
                 bus_out_mod += m.out_gain;
                 bus_mod_voices += 1;
 
-                // Frecuencias efectivas con pitch bend + drift + semitonos + Matrix pitch (±24 st).
+                // ── Rampa MPE de pitch por voz (exacta por muestra) ──
+                if let Some(mut ramp) = v.mpe_ramp {
+                    let frac = (ramp.elapsed as f32 / ramp.duration.max(1) as f32).clamp(0.0, 1.0);
+                    v.mpe_cents = ramp.from_cents + frac * (ramp.to_cents - ramp.from_cents);
+                    ramp.elapsed = ramp.elapsed.saturating_add(1);
+                    if ramp.elapsed >= ramp.duration {
+                        v.mpe_cents = ramp.to_cents;
+                        v.mpe_ramp = None;
+                    } else {
+                        v.mpe_ramp = Some(ramp);
+                    }
+                }
+
+                // Frecuencias efectivas con pitch bend + MPE por voz + drift + semitonos + Matrix pitch (±24 st).
+                let mpe_ratio = if v.mpe_cents.abs() < 1e-3 {
+                    1.0
+                } else {
+                    2.0_f32.powf(v.mpe_cents / 1200.0)
+                };
                 let drift = 1.0 + lfo * params.motion * 0.0055;
-                let base_hz = (v.freq * self.pitch_bend_ratio * drift).clamp(20.0, sr * 0.42);
+                let base_hz =
+                    (v.freq * self.pitch_bend_ratio * mpe_ratio * drift).clamp(20.0, sr * 0.42);
                 let a_ratio = if m.osc_a_pitch.abs() < 1e-4 {
                     osc_a_base_ratio
                 } else {
@@ -1264,7 +1423,7 @@ impl NativeSynthEngine {
                 };
                 let hz = (base_hz * a_ratio).clamp(20.0, sr * 0.42);
 
-                let shape_eff = (params.shape + m.osc_a_pos).clamp(0.0, 1.0);
+                let shape_eff = (params.shape + m.osc_a_pos + v.mpe_slide * 0.35).clamp(0.0, 1.0);
                 let osc_a_lvl = (vp.osc_a_level + m.osc_a_level).clamp(0.0, 1.5);
                 let osc_b_lvl = (vp.osc_b_level + m.osc_b_level).clamp(0.0, 1.5);
                 let need_osc_b = osc_b_lvl > 0.001
@@ -1296,7 +1455,8 @@ impl NativeSynthEngine {
                         let s = if let Some(custom) = &params.custom_wt_b {
                             WavetableBank::sample_custom_prepared(custom, sel_b, v.osc_b_uni[u])
                         } else {
-                            self.wt.sample_prepared(vp.osc_b_table, sel_b, v.osc_b_uni[u])
+                            self.wt
+                                .sample_prepared(vp.osc_b_table, sel_b, v.osc_b_uni[u])
                         };
                         if u == 0 {
                             ob_mono = s;
@@ -1336,10 +1496,12 @@ impl NativeSynthEngine {
                         v.sub_phase = (v.sub_phase + (hz * 0.5) * inv_sr).fract();
                         let sub = (v.sub_phase * TAU).sin() * (0.28 * (1.0 - params.tone * 0.4));
                         let spread = 0.35 + params.body * 0.65;
-                        let l = (outs[0] * 0.55 + outs[1] * spread + outs[2] * (1.0 - spread) + sub)
-                            * 0.62;
-                        let r = (outs[0] * 0.55 + outs[2] * spread + outs[1] * (1.0 - spread) + sub)
-                            * 0.62;
+                        let l =
+                            (outs[0] * 0.55 + outs[1] * spread + outs[2] * (1.0 - spread) + sub)
+                                * 0.62;
+                        let r =
+                            (outs[0] * 0.55 + outs[2] * spread + outs[1] * (1.0 - spread) + sub)
+                                * 0.62;
                         (l, r)
                     }
                     SynthEngineKind::Pluck => {
@@ -1364,7 +1526,8 @@ impl NativeSynthEngine {
                         let rfrac = rpos - ridx as f32;
                         let ratio = RATIOS[ridx] + (RATIOS[ridx + 1] - RATIOS[ridx]) * rfrac;
                         v.mod_phase = (v.mod_phase + (hz * ratio) * inv_sr).fract();
-                        let fm_index = (0.35 + shape_eff * 4.2) * (0.25 + 0.75 * v.timbre_env)
+                        let fm_index = (0.35 + shape_eff * 4.2)
+                            * (0.25 + 0.75 * v.timbre_env)
                             * (0.4 + 0.6 * vel_eff);
                         let mod_sig = (v.mod_phase * TAU).sin() * fm_index;
                         v.phase[0] = (v.phase[0] + hz * inv_sr).fract();
@@ -1395,12 +1558,15 @@ impl NativeSynthEngine {
                     SynthEngineKind::FoldAcid => {
                         let dt = hz * inv_sr;
                         v.phase[0] = (v.phase[0] + dt).fract();
-                        v.phase[1] = (v.phase[1] + (hz * (1.0 + params.body * 0.007)) * inv_sr).fract();
+                        v.phase[1] =
+                            (v.phase[1] + (hz * (1.0 + params.body * 0.007)) * inv_sr).fract();
                         let raw_l = polyblep_saw(v.phase[0], dt);
                         let raw_r = polyblep_saw(v.phase[1], dt);
                         let fold = 1.0 + shape_eff * (2.6 + 2.4 * vel_eff);
-                        let fl = (raw_l * fold).sin() * 0.65 + (raw_l * (1.0 + shape_eff)).tanh() * 0.35;
-                        let fr = (raw_r * fold).sin() * 0.65 + (raw_r * (1.0 + shape_eff)).tanh() * 0.35;
+                        let fl =
+                            (raw_l * fold).sin() * 0.65 + (raw_l * (1.0 + shape_eff)).tanh() * 0.35;
+                        let fr =
+                            (raw_r * fold).sin() * 0.65 + (raw_r * (1.0 + shape_eff)).tanh() * 0.35;
                         (fl * 0.85, fr * 0.85)
                     }
                     SynthEngineKind::Texture => {
@@ -1461,7 +1627,9 @@ impl NativeSynthEngine {
                                 WarpMode::Off | WarpMode::Fold | WarpMode::RingMod => ph,
                                 WarpMode::Sync => (ph * (1.0 + warp_amt * 3.5)).fract(),
                                 WarpMode::Bend => ph.powf(bend_exp),
-                                WarpMode::FmFromB => (ph + ob_mono * warp_amt * 0.45).rem_euclid(1.0),
+                                WarpMode::FmFromB => {
+                                    (ph + ob_mono * warp_amt * 0.45).rem_euclid(1.0)
+                                }
                             };
                             let mut s = if let Some(custom) = &params.custom_wt_a {
                                 WavetableBank::sample_custom_prepared(custom, sel_a, warped_ph)
@@ -1473,7 +1641,8 @@ impl NativeSynthEngine {
                                     s = (s * (1.0 + warp_amt * 2.8)).sin();
                                 }
                                 WarpMode::RingMod => {
-                                    s = s * (1.0 - warp_amt * 0.8) + (s * ob_mono) * (warp_amt * 0.8);
+                                    s = s * (1.0 - warp_amt * 0.8)
+                                        + (s * ob_mono) * (warp_amt * 0.8);
                                 }
                                 _ => {}
                             }
@@ -1529,7 +1698,11 @@ impl NativeSynthEngine {
                     sr_ch = (sr_ch * g).tanh() * comp;
                 }
 
-                let tone_eff = (params.tone + m.filter_cutoff * 0.75).clamp(0.0, 1.0);
+                let tone_eff = (params.tone
+                    + m.filter_cutoff * 0.75
+                    + v.mpe_slide * 0.28
+                    + v.mpe_pressure * 0.32)
+                    .clamp(0.0, 1.0);
                 let base_cut = 70.0 * (250.0_f32).powf(tone_eff);
                 let env_mod = 1.0 + v.timbre_env * (0.28 + 1.6 * vel_eff);
                 let lfo_mod = 1.0 + lfo * params.motion * 0.16;
@@ -1624,9 +1797,9 @@ impl NativeSynthEngine {
             // ── Bus FX 2: Stereo Chorus (suavizado anti-click) ──
             let chorus_target = (vp.chorus_mix + bus_chorus_mod * inv_v).clamp(0.0, 1.0);
             self.chorus_mix_smooth += (chorus_target - self.chorus_mix_smooth) * bus_smooth_a;
-            let (ch_l, ch_r) = self
-                .chorus
-                .process(sum_l, sum_r, self.chorus_mix_smooth, vp.chorus_rate, sr);
+            let (ch_l, ch_r) =
+                self.chorus
+                    .process(sum_l, sum_r, self.chorus_mix_smooth, vp.chorus_rate, sr);
 
             // ── Bus FX 3: Espacio (Room + Distance suavizado + absorción de aire) ──
             let dist_target = (params.distance + bus_dist_space_mod * inv_v).clamp(0.0, 1.0);
@@ -1888,13 +2061,10 @@ mod tests {
         let mut l = vec![0.0; 16_384];
         let mut r = vec![0.0; 16_384];
         engine.render(&mut l, &mut r);
-        let peak = l
-            .iter()
-            .chain(&r)
-            .fold(0.0_f32, |m, &x| {
-                assert!(x.is_finite());
-                m.max(x.abs())
-            });
+        let peak = l.iter().chain(&r).fold(0.0_f32, |m, &x| {
+            assert!(x.is_finite());
+            m.max(x.abs())
+        });
         let rms = (l.iter().map(|x| x * x).sum::<f32>() / l.len() as f32).sqrt();
         let rms_db = 20.0 * rms.max(1e-6).log10();
         assert!(peak < 0.96, "Hard clipping detected: peak={peak}");
@@ -1963,7 +2133,10 @@ mod tests {
         let dc_offset = (dc_sum / (l.len() as f64 * 2.0)).abs();
         let rms = (sq_sum / (l.len() as f64 * 2.0)).sqrt() as f32;
         let rms_db = 20.0 * rms.max(1e-6).log10();
-        assert!(peak < 0.96, "Hard clipping on imported heavy patch: peak={peak}");
+        assert!(
+            peak < 0.96,
+            "Hard clipping on imported heavy patch: peak={peak}"
+        );
         assert!(dc_offset < 0.03, "Excessive DC offset: {dc_offset}");
         assert!(rms_db > -26.0 && rms_db < -3.0, "rms_db={rms_db:.1}");
     }
@@ -1978,7 +2151,11 @@ mod tests {
         }
         let entries = elevate::devices::vital_import::extract_vitalbank(bank)
             .expect("should extract ESW Reese Basses bank");
-        assert!(entries.len() >= 10, "expected >= 10 presets, got {}", entries.len());
+        assert!(
+            entries.len() >= 10,
+            "expected >= 10 presets, got {}",
+            entries.len()
+        );
 
         let mut decoded_total = 0usize;
         for entry in &entries {
@@ -2048,7 +2225,9 @@ mod tests {
         let mut prev_r = 0.0_f32;
         let mut max_step = 0.0_f32;
         let mut peak = 0.0_f32;
-        let seq = [48u8, 48, 51, 55, 53, 48, 46, 48, 60, 58, 55, 51, 48, 48, 55, 48];
+        let seq = [
+            48u8, 48, 51, 55, 53, 48, 46, 48, 60, 58, 55, 51, 48, 48, 55, 48,
+        ];
         for (step_idx, &note) in seq.iter().enumerate() {
             engine.note_on(note, 118, 0.0);
             for b in 0..16 {
@@ -2097,7 +2276,10 @@ mod tests {
         eprintln!(
             "MIDI 6-voice x 7-unison CPU benchmark: {elapsed_ms:.1} ms / 1000 ms ({cpu_pct:.1}% RT), peak={poly_peak:.3}"
         );
-        assert!(poly_peak < 0.96, "Clipping in 6-voice chord: peak={poly_peak}");
+        assert!(
+            poly_peak < 0.96,
+            "Clipping in 6-voice chord: peak={poly_peak}"
+        );
         assert!(
             elapsed_ms < 250.0,
             "Synth RT callback too slow (risk of xruns): {elapsed_ms:.1} ms for 1s audio"
@@ -2141,7 +2323,11 @@ mod tests {
             }
             let rms = (sq / (l.len() as f64 * 2.0)).sqrt() as f32;
             let rms_db = 20.0 * rms.max(1e-6).log10();
-            assert!(peak < 0.96, "Clipping in Serum {}: peak={peak:.3}", summary.name);
+            assert!(
+                peak < 0.96,
+                "Clipping in Serum {}: peak={peak:.3}",
+                summary.name
+            );
             assert!(
                 rms_db > -34.0 && rms_db < -3.0,
                 "Out of range Serum {}: rms={rms_db:.1}, peak={peak:.3}",
@@ -2149,7 +2335,9 @@ mod tests {
             );
             count += 1;
         }
-        eprintln!("Serum .fxp ESW pack: {count} presets OK, {with_wt} with real embedded wavetables");
+        eprintln!(
+            "Serum .fxp ESW pack: {count} presets OK, {with_wt} with real embedded wavetables"
+        );
         assert!(count >= 15);
     }
 }

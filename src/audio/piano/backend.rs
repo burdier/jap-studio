@@ -28,6 +28,10 @@ impl SynthBackend {
         if !event.expression.plays(event.note, cycle) {
             return;
         }
+        if let Self::NativeSynth(synth) = self {
+            synth.scheduled_mpe(event);
+            return;
+        }
         if event.initial_pitch_cents.is_some()
             && let Self::Vst(voice) = self
             && voice.note_pitch_event(event, reserved)

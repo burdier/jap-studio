@@ -571,6 +571,9 @@ fn paint_notes(
                     ds,
                     window,
                 );
+                if !note.pitch_curve.points().is_empty() {
+                    paint_pitch_curve(*grid, note, &note.pitch_curve, ds.cyan, false, window, cx);
+                }
             }
         });
         if !pitch_mode && show_note_names && width > 30.0 {
