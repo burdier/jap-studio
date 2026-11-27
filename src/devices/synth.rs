@@ -4,15 +4,95 @@ use std::sync::Arc;
 
 pub const CUSTOM_WT_FRAMES: usize = 8;
 pub const CUSTOM_WT_SIZE: usize = 256;
+pub const CUSTOM_WT_MIPS: usize = 6;
 
-/// Wavetable custom de 8 frames × 256 muestras (importada desde `.vital` u otra fuente).
-#[derive(Clone, Debug, PartialEq)]
+/// Wavetable custom Hi-Fi de 8 frames × 256 muestras con 6 mip-maps band-limited
+/// (armónicos recortados por octava vía DFT fuera del callback RT: 0 aliasing en RT).
+#[derive(Clone, Debug)]
 pub struct CustomWavetable {
     pub name: String,
     pub frames: [[f32; CUSTOM_WT_SIZE]; CUSTOM_WT_FRAMES],
+    /// Mip-maps precomputados `[mip][frame][sample]` (máx. armónicos: 96, 48, 24, 12, 6, 3).
+    pub mips: Box<[[[f32; CUSTOM_WT_SIZE]; CUSTOM_WT_FRAMES]; CUSTOM_WT_MIPS]>,
+}
+
+impl PartialEq for CustomWavetable {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && self.frames == other.frames
+    }
+}
+
+/// Construye 6 niveles mip-map band-limited (recorte espectral exacto) desde 8 frames de 256 muestras.
+pub fn build_bandlimited_mips(
+    frames: &[[f32; CUSTOM_WT_SIZE]; CUSTOM_WT_FRAMES],
+) -> Box<[[[f32; CUSTOM_WT_SIZE]; CUSTOM_WT_FRAMES]; CUSTOM_WT_MIPS]> {
+    const MAX_HARM: [usize; CUSTOM_WT_MIPS] = [96, 48, 24, 12, 6, 3];
+    let mut mips = Box::new([[[0.0_f32; CUSTOM_WT_SIZE]; CUSTOM_WT_FRAMES]; CUSTOM_WT_MIPS]);
+    let n = CUSTOM_WT_SIZE;
+    let inv_n = 2.0 / n as f32;
+    let tau = std::f32::consts::TAU;
+
+    // Precomputar tabla trigonométrica para DFT rápido y exacto (fuera de RT).
+    let mut cos_tbl = vec![0.0_f32; n];
+    let mut sin_tbl = vec![0.0_f32; n];
+    for i in 0..n {
+        let ang = (i as f32 / n as f32) * tau;
+        cos_tbl[i] = ang.cos();
+        sin_tbl[i] = ang.sin();
+    }
+
+    for (fi, frame) in frames.iter().enumerate() {
+        // Análisis espectral hasta armónico 96 (excluye DC k=0).
+        let mut re = [0.0_f32; 97];
+        let mut im = [0.0_f32; 97];
+        for k in 1..=96 {
+            let mut r = 0.0_f32;
+            let mut im_acc = 0.0_f32;
+            for i in 0..n {
+                let idx = (k * i) & (n - 1);
+                let x = frame[i];
+                r += x * cos_tbl[idx];
+                im_acc -= x * sin_tbl[idx];
+            }
+            re[k] = r * inv_n;
+            im[k] = im_acc * inv_n;
+        }
+        // Síntesis por nivel mip con ventana suave en el borde de corte (evita Gibbs ringing).
+        for (mi, &max_h) in MAX_HARM.iter().enumerate() {
+            let dst = &mut mips[mi][fi];
+            let mut peak = 1e-5_f32;
+            for i in 0..n {
+                let mut acc = 0.0_f32;
+                for k in 1..=max_h {
+                    let idx = (k * i) & (n - 1);
+                    let w = if k * 4 > max_h * 3 {
+                        let t = (k as f32 - max_h as f32 * 0.75) / (max_h as f32 * 0.25).max(1.0);
+                        0.5 * (1.0 + (t * std::f32::consts::PI).cos())
+                    } else {
+                        1.0
+                    };
+                    acc += w * (re[k] * cos_tbl[idx] - im[k] * sin_tbl[idx]);
+                }
+                dst[i] = acc;
+                peak = peak.max(acc.abs());
+            }
+            if peak > 0.02 {
+                let scale = 0.92 / peak;
+                for s in dst.iter_mut() {
+                    *s *= scale;
+                }
+            }
+        }
+    }
+    mips
 }
 
 impl CustomWavetable {
+    pub fn new(name: String, frames: [[f32; CUSTOM_WT_SIZE]; CUSTOM_WT_FRAMES]) -> Self {
+        let mips = build_bandlimited_mips(&frames);
+        Self { name, frames, mips }
+    }
+
     /// Codifica de forma compacta en `i16` little-endian (4 KB por tabla) para `.loro` y P2P.
     pub fn to_i16_bytes(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity(CUSTOM_WT_FRAMES * CUSTOM_WT_SIZE * 2);
@@ -38,7 +118,7 @@ impl CustomWavetable {
                 idx += 2;
             }
         }
-        Some(Self { name, frames })
+        Some(Self::new(name, frames))
     }
 }
 
@@ -1679,7 +1759,7 @@ pub fn vital_factory_presets() -> Vec<(&'static str, &'static str, SynthParams)>
             time: 0.45,
             touch: 0.85,
             glide: 0.0,
-            gain: 0.74,
+            gain: 0.92,
             preset_name: "Crystal FM Pluck".into(),
             custom_wt_a: None,
             custom_wt_b: None,
@@ -1699,7 +1779,7 @@ pub fn vital_factory_presets() -> Vec<(&'static str, &'static str, SynthParams)>
                 filter_res: 0.22,
                 env1_override: true,
                 env1_attack: 0.004,
-                env1_decay: 0.38,
+                env1_decay: 0.44,
                 env1_sustain: 0.0,
                 env1_release: 0.36,
                 env2_attack: 0.002,
@@ -1795,10 +1875,10 @@ pub fn vital_factory_presets() -> Vec<(&'static str, &'static str, SynthParams)>
             body: 0.88,
             motion: 0.52,
             mode: EnvelopeMode::Swell,
-            time: 0.76,
+            time: 0.52,
             touch: 0.64,
             glide: 0.14,
-            gain: 0.68,
+            gain: 0.88,
             preset_name: "Glass Motion Pad".into(),
             custom_wt_a: None,
             custom_wt_b: None,

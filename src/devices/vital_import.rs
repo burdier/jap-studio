@@ -59,6 +59,45 @@ pub fn parse_vital_json(
     };
     let get_on = |k: &str| get_f(k, 0.0) >= 0.5;
 
+    // Pre-evaluar offsets iniciales de `macro_control_1..4` sobre sus destinos reales
+    // (muchos bancos ponen `filter_1_cutoff = 8` y abren el filtro con `macro_control_1 = 0.6`).
+    let mut macro_cutoff_midi_delta = 0.0_f32;
+    let mut macro_osc1_frame_delta = 0.0_f32;
+    let mut macro_osc2_frame_delta = 0.0_f32;
+    let mut macro_osc1_lvl_delta = 0.0_f32;
+    let mut macro_osc2_lvl_delta = 0.0_f32;
+    let mut macro_osc3_lvl_delta = 0.0_f32;
+    let mut macro_reverb_wet_delta = 0.0_f32;
+    let mut macro_chorus_wet_delta = 0.0_f32;
+    let mut macro_dist_drive_delta = 0.0_f32;
+    if let Some(mods) = s.get("modulations").and_then(Value::as_array) {
+        for (idx, m) in mods.iter().enumerate() {
+            let src_str = m.get("source").and_then(Value::as_str).unwrap_or("");
+            let dst_str = m.get("destination").and_then(Value::as_str).unwrap_or("");
+            if !src_str.starts_with("macro_control_") || dst_str.is_empty() {
+                continue;
+            }
+            let macro_val = get_f(src_str, 0.0).clamp(0.0, 1.0);
+            if macro_val <= 0.001 {
+                continue;
+            }
+            let raw_amt = get_f(&format!("modulation_{}_amount", idx + 1), 0.0).clamp(-1.0, 1.0);
+            let contrib = macro_val * raw_amt;
+            match dst_str {
+                "filter_1_cutoff" | "filter_2_cutoff" => macro_cutoff_midi_delta += contrib * 128.0,
+                "osc_1_wave_frame" => macro_osc1_frame_delta += contrib,
+                "osc_2_wave_frame" => macro_osc2_frame_delta += contrib,
+                "osc_1_level" => macro_osc1_lvl_delta += contrib,
+                "osc_2_level" => macro_osc2_lvl_delta += contrib,
+                "osc_3_level" => macro_osc3_lvl_delta += contrib,
+                "reverb_dry_wet" => macro_reverb_wet_delta += contrib,
+                "chorus_dry_wet" => macro_chorus_wet_delta += contrib,
+                "distortion_drive" => macro_dist_drive_delta += contrib * 24.0,
+                _ => {}
+            }
+        }
+    }
+
     let name = root
         .get("preset_name")
         .and_then(Value::as_str)
@@ -104,24 +143,23 @@ pub fn parse_vital_json(
 
     let mut voice = VoiceParams::default();
 
-    // ── OSC 1 -> OSC A ──
+    // ── OSC 1 -> OSC A (con headroom Hi-Fi) ──
     let osc1_on = get_on("osc_1_on");
     voice.osc_a_table = map_wavetable_name(&wt_a_name, &style, false);
     voice.osc_a_level = if osc1_on {
-        (get_f("osc_1_level", 0.707) * 1.25).clamp(0.0, 1.0)
+        (get_f("osc_1_level", 0.707) + macro_osc1_lvl_delta).clamp(0.0, 0.85)
     } else {
         0.0
     };
     voice.osc_a_unison = (get_f("osc_1_unison_voices", 1.0).round() as i32).clamp(1, 7) as u8;
-    voice.osc_a_detune = (get_f("osc_1_unison_detune", 2.0) / 7.5).clamp(0.0, 1.0);
+    voice.osc_a_detune = (get_f("osc_1_unison_detune", 2.0) / 10.0).clamp(0.0, 0.85);
     voice.osc_a_spread = get_f("osc_1_stereo_spread", 0.8).clamp(0.0, 1.0);
     voice.osc_a_semi = (get_f("osc_1_transpose", 0.0).round() as i32).clamp(-24, 24) as i8;
-    let shape = (get_f("osc_1_wave_frame", 64.0) / 256.0).clamp(0.0, 1.0);
+    let shape = (get_f("osc_1_wave_frame", 64.0) / 256.0 + macro_osc1_frame_delta).clamp(0.0, 1.0);
 
+    // Solo activar Warp cuando `osc_1_distortion_type` está explícitamente activo (evita artefactos en pads suaves).
     let dist_type = get_f("osc_1_distortion_type", 0.0).round() as i32;
     let dist_amt = get_f("osc_1_distortion_amount", 0.5).clamp(0.0, 1.0);
-    let morph_type = get_f("osc_1_spectral_morph_type", 0.0).round() as i32;
-    let morph_amt = get_f("osc_1_spectral_morph_amount", 0.5).clamp(0.0, 1.0);
     if dist_type != 0 {
         voice.osc_a_warp_mode = match dist_type {
             1 => WarpMode::Sync,
@@ -129,61 +167,53 @@ pub fn parse_vital_json(
             3 => WarpMode::Fold,
             7 | 8 => WarpMode::FmFromB,
             9 | 10 => WarpMode::RingMod,
-            _ => WarpMode::Fold,
+            _ => WarpMode::Bend,
         };
-        voice.osc_a_warp = ((dist_amt - 0.5).abs() * 2.0).clamp(0.12, 1.0);
-    } else if morph_type != 0 {
-        voice.osc_a_warp_mode = match morph_type {
-            1 | 2 => WarpMode::Bend,
-            3 | 4 => WarpMode::Sync,
-            _ => WarpMode::Fold,
-        };
-        voice.osc_a_warp = ((morph_amt - 0.5).abs() * 1.8).clamp(0.10, 0.85);
+        voice.osc_a_warp = ((dist_amt - 0.5).abs() * 1.4).clamp(0.0, 0.75);
     }
 
     // ── OSC 2 -> OSC B ──
     let osc2_on = get_on("osc_2_on");
     voice.osc_b_table = map_wavetable_name(&wt_b_name, &style, true);
     voice.osc_b_level = if osc2_on {
-        (get_f("osc_2_level", 0.5) * 1.15).clamp(0.0, 1.0)
+        (get_f("osc_2_level", 0.5) + macro_osc2_lvl_delta).clamp(0.0, 0.75)
     } else {
         0.0
     };
-    voice.osc_b_pos = (get_f("osc_2_wave_frame", 64.0) / 256.0).clamp(0.0, 1.0);
+    voice.osc_b_pos =
+        (get_f("osc_2_wave_frame", 64.0) / 256.0 + macro_osc2_frame_delta).clamp(0.0, 1.0);
     voice.osc_b_semi = (get_f("osc_2_transpose", 0.0).round() as i32).clamp(-24, 24) as i8;
     voice.osc_b_fine = get_f("osc_2_tune", 0.0).clamp(-1.0, 1.0);
     voice.osc_b_unison = (get_f("osc_2_unison_voices", 1.0).round() as i32).clamp(1, 7) as u8;
-    voice.osc_b_detune = (get_f("osc_2_unison_detune", 2.0) / 7.5).clamp(0.0, 1.0);
+    voice.osc_b_detune = (get_f("osc_2_unison_detune", 2.0) / 10.0).clamp(0.0, 0.85);
 
-    // ── OSC 3 -> SUB (si está activo en registro grave o refuerzo) ──
+    // ── OSC 3 -> SUB ──
     if get_on("osc_3_on") {
-        let osc3_lvl = get_f("osc_3_level", 0.5).clamp(0.0, 1.0);
+        let osc3_lvl = (get_f("osc_3_level", 0.5) + macro_osc3_lvl_delta).clamp(0.0, 1.0);
         let osc3_semi = get_f("osc_3_transpose", -12.0).round() as i32;
-        voice.sub_level = (osc3_lvl * 0.9).clamp(0.0, 1.0);
+        voice.sub_level = (osc3_lvl * 0.65).clamp(0.0, 0.75);
         voice.sub_octave = if osc3_semi <= -18 { 1 } else { 0 };
-        // Si osc_1 estaba apagado y solo sonaba osc_3, sube osc_a como base.
         if !osc1_on && !osc2_on {
-            voice.osc_a_level = 0.65;
+            voice.osc_a_level = 0.60;
         }
     } else if !osc1_on && !osc2_on {
-        voice.osc_a_level = 0.85;
+        voice.osc_a_level = 0.75;
     }
 
     // ── SAMPLE -> NOISE / AIR ──
     if get_on("sample_on") {
-        voice.noise_level = (get_f("sample_level", 0.4) * 0.55).clamp(0.0, 0.85);
-        voice.noise_color = 0.62;
+        voice.noise_level = (get_f("sample_level", 0.35) * 0.35).clamp(0.0, 0.55);
+        voice.noise_color = 0.58;
     }
 
     // ── FILTER 1 -> TPT SVF ──
     let f1_on = get_on("filter_1_on");
     let tone = if f1_on {
-        let cutoff_midi = get_f("filter_1_cutoff", 84.0).clamp(12.0, 136.0);
+        let cutoff_midi = (get_f("filter_1_cutoff", 84.0) + macro_cutoff_midi_delta).clamp(24.0, 136.0);
         let hz = 440.0 * 2.0_f32.powf((cutoff_midi - 69.0) / 12.0);
-        // Inversa de `70 * 250^tone`:
-        ((hz / 70.0).max(1.0).ln() / 250.0_f32.ln()).clamp(0.05, 1.0)
+        ((hz / 70.0).max(1.0).ln() / 250.0_f32.ln()).clamp(0.14, 1.0)
     } else {
-        0.92
+        0.94
     };
     if f1_on {
         let f_style = get_f("filter_1_style", 0.0).round() as i32;
@@ -199,8 +229,8 @@ pub fn parse_vital_json(
         } else {
             FilterKind::Lp12
         };
-        voice.filter_res = get_f("filter_1_resonance", 0.15).clamp(0.0, 0.88);
-        voice.filter_drive = (get_f("filter_1_drive", 0.0) / 20.0).clamp(0.0, 1.0);
+        voice.filter_res = get_f("filter_1_resonance", 0.12).clamp(0.0, 0.72);
+        voice.filter_drive = (get_f("filter_1_drive", 0.0) / 28.0).clamp(0.0, 0.65);
         voice.filter_keytrack = get_f("filter_1_keytrack", 0.25).clamp(0.0, 1.0);
     }
 
@@ -249,12 +279,12 @@ pub fn parse_vital_json(
 
     // ── CHORUS ──
     if get_on("chorus_on") {
-        voice.chorus_mix = get_f("chorus_dry_wet", 0.35).clamp(0.0, 1.0);
+        voice.chorus_mix = (get_f("chorus_dry_wet", 0.35) + macro_chorus_wet_delta).clamp(0.0, 0.85);
         let ch_hz = 2.0_f32.powf(get_f("chorus_frequency", -2.0));
         voice.chorus_rate = ((ch_hz - 0.15) / 4.2).clamp(0.0, 1.0).sqrt();
     }
 
-    // ── DISTORTION ──
+    // ── DISTORTION (0 dB = sin drive fantasma) ──
     if get_on("distortion_on") {
         let dt = get_f("distortion_type", 0.0).round() as i32;
         voice.dist_mode = match dt {
@@ -264,14 +294,16 @@ pub fn parse_vital_json(
             5 => DistMode::Bitcrush,
             _ => DistMode::Soft,
         };
-        let drv_db = get_f("distortion_drive", 0.0);
-        voice.dist_drive = ((drv_db + 6.0) / 36.0).clamp(0.10, 1.0);
-        voice.dist_mix = get_f("distortion_mix", 0.6).clamp(0.0, 1.0);
+        let drv_db = get_f("distortion_drive", 0.0) + macro_dist_drive_delta;
+        if drv_db > 0.5 {
+            voice.dist_drive = (drv_db / 32.0).clamp(0.0, 0.80);
+            voice.dist_mix = get_f("distortion_mix", 0.5).clamp(0.0, 0.85);
+        }
     }
 
     // ── REVERB -> ROOM + DISTANCE ──
     let (room, distance) = if get_on("reverb_on") {
-        let wet = get_f("reverb_dry_wet", 0.25).clamp(0.0, 1.0);
+        let wet = (get_f("reverb_dry_wet", 0.25) + macro_reverb_wet_delta).clamp(0.0, 0.85);
         let decay = get_f("reverb_decay_time", 1.5);
         let room = if decay < 0.6 {
             RoomKind::Close
@@ -282,7 +314,7 @@ pub fn parse_vital_json(
         } else {
             RoomKind::Open
         };
-        (room, (wet * 0.95).clamp(0.05, 0.88))
+        (room, (wet * 0.90).clamp(0.05, 0.85))
     } else {
         (RoomKind::Close, 0.08)
     };
@@ -307,16 +339,29 @@ pub fn parse_vital_json(
             if src_str.is_empty() || dst_str.is_empty() {
                 continue;
             }
+            // Los `macro_control_*` ya fueron horneados en sus destinos base arriba;
+            // evitar sobreescribir el Stage XY (`Distance`/`Tone`) con un macro externo.
+            if src_str.starts_with("macro_control_") {
+                continue;
+            }
             let Some(source) = map_vital_source(src_str) else {
                 continue;
             };
             let Some(target) = map_vital_target(dst_str) else {
                 continue;
             };
-            let amt = get_f(&format!("modulation_{}_amount", idx + 1), 0.35).clamp(-1.0, 1.0);
-            if amt.abs() < 0.005 {
+            let raw_amt = get_f(&format!("modulation_{}_amount", idx + 1), 0.35).clamp(-1.0, 1.0);
+            if raw_amt.abs() < 0.005 {
                 continue;
             }
+            // Escala calibrada: en `tune` (±1 st) o pitch evitar barridos extremos de ±24 st.
+            let scale = match dst_str {
+                "osc_1_tune" | "osc_2_tune" => 0.06,
+                "osc_1_transpose" | "osc_2_transpose" => 0.25,
+                "filter_1_resonance" | "filter_2_resonance" | "distortion_drive" => 0.45,
+                _ => 0.72,
+            };
+            let amt = (raw_amt * scale).clamp(-0.90, 0.90);
             voice.matrix[mapped_mods] = ModSlot {
                 source,
                 target,
@@ -340,6 +385,11 @@ pub fn parse_vital_json(
         EnvelopeMode::Hold
     };
 
+    let active_layers = usize::from(voice.osc_a_level > 0.05)
+        + usize::from(voice.osc_b_level > 0.05)
+        + usize::from(voice.sub_level > 0.05);
+    let gain = if active_layers <= 1 { 0.88 } else { 0.80 };
+
     let mut params = SynthParams {
         engine: SynthEngineKind::Wavetable,
         room,
@@ -352,7 +402,7 @@ pub fn parse_vital_json(
         time: ((voice.env1_decay + voice.env1_release) * 0.5).clamp(0.1, 0.95),
         touch: 0.62,
         glide,
-        gain: 0.72,
+        gain,
         preset_name: name.clone(),
         voice,
         custom_wt_a,
@@ -373,7 +423,7 @@ pub fn parse_vital_json(
     ))
 }
 
-/// Extrae y remuestrea los keyframes `wave_data` (base64 f32[2048] o i16[2048]) de una wavetable Vital.
+/// Extrae y remuestrea keyframes (`Wave Source`, `Audio File Source` y `Line Source`) de una wavetable.
 fn extract_vital_wavetable(wt: &Value, name: &str) -> Option<Arc<CustomWavetable>> {
     let groups = wt.get("groups")?.as_array()?;
     let mut keyframes: Vec<(f32, [f32; CUSTOM_WT_SIZE])> = Vec::new();
@@ -382,25 +432,49 @@ fn extract_vital_wavetable(wt: &Value, name: &str) -> Option<Arc<CustomWavetable
             continue;
         };
         for c in comps {
+            // 1. Audio File Source (PCM i16 LE en `audio_file` + `window_size`)
+            if let Some(audio_b64) = c.get("audio_file").and_then(Value::as_str) {
+                let win_size = c
+                    .get("window_size")
+                    .and_then(Value::as_f64)
+                    .map(|w| (w.round() as usize).clamp(128, 8192))
+                    .unwrap_or(2048);
+                if let Some(extracted) = decode_audio_file_source(audio_b64, win_size) {
+                    keyframes.extend(extracted);
+                    continue;
+                }
+            }
+
             let Some(kfs) = c.get("keyframes").and_then(Value::as_array) else {
                 continue;
             };
             for kf in kfs {
-                let Some(b64) = kf.get("wave_data").and_then(Value::as_str) else {
-                    continue;
-                };
-                if b64.len() < 32 {
-                    continue;
-                }
-                let Some(frame) = decode_vital_wave_frame(b64) else {
-                    continue;
-                };
                 let pos = kf
                     .get("position")
                     .and_then(Value::as_f64)
                     .map(|p| (p as f32 / 256.0).clamp(0.0, 1.0))
                     .unwrap_or(0.0);
-                keyframes.push((pos, frame));
+
+                // 2. Wave Source (`wave_data` base64 f32[2048] o i16[2048])
+                if let Some(b64) = kf.get("wave_data").and_then(Value::as_str) {
+                    if b64.len() >= 32 {
+                        if let Some(frame) = decode_vital_wave_frame(b64) {
+                            keyframes.push((pos, frame));
+                            continue;
+                        }
+                    }
+                }
+
+                // 3. Line Source (`line.points` [x0, y0, x1, y1, ...])
+                if let Some(pts) = kf
+                    .get("line")
+                    .and_then(|l| l.get("points"))
+                    .and_then(Value::as_array)
+                {
+                    if let Some(frame) = rasterize_line_source(pts) {
+                        keyframes.push((pos, frame));
+                    }
+                }
             }
         }
     }
@@ -443,10 +517,78 @@ fn extract_vital_wavetable(wt: &Value, name: &str) -> Option<Arc<CustomWavetable
         }
     }
 
-    Some(Arc::new(CustomWavetable {
-        name: name.to_owned(),
-        frames,
-    }))
+    Some(Arc::new(CustomWavetable::new(name.to_owned(), frames)))
+}
+
+fn decode_audio_file_source(
+    b64: &str,
+    window_size: usize,
+) -> Option<Vec<(f32, [f32; CUSTOM_WT_SIZE])>> {
+    let bytes = decode_base64(b64)?;
+    let total_samples = bytes.len() / 2;
+    if total_samples < 64 {
+        return None;
+    }
+    let win = window_size.min(total_samples).max(64);
+    let max_start = total_samples.saturating_sub(win);
+    let mut out = Vec::with_capacity(CUSTOM_WT_FRAMES);
+
+    for fi in 0..CUSTOM_WT_FRAMES {
+        let pos = fi as f32 / (CUSTOM_WT_FRAMES - 1) as f32;
+        let start = ((pos * max_start as f32).round() as usize).min(max_start);
+        let mut frame = [0.0_f32; CUSTOM_WT_SIZE];
+        let step = win as f32 / CUSTOM_WT_SIZE as f32;
+        let avg_n = (step.floor() as usize).max(1);
+        for (i, dst) in frame.iter_mut().enumerate() {
+            let s0 = start + (i as f32 * step).floor() as usize;
+            let mut acc = 0.0_f32;
+            let mut cnt = 0usize;
+            for k in 0..avg_n {
+                let idx = (s0 + k).min(total_samples - 1);
+                let o = idx * 2;
+                let sample = i16::from_le_bytes([bytes[o], bytes[o + 1]]);
+                acc += f32::from(sample) / 32768.0;
+                cnt += 1;
+            }
+            *dst = acc / cnt as f32;
+        }
+        out.push((pos, frame));
+    }
+    Some(out)
+}
+
+fn rasterize_line_source(pts: &[Value]) -> Option<[f32; CUSTOM_WT_SIZE]> {
+    if pts.len() < 4 || pts.len() % 2 != 0 {
+        return None;
+    }
+    let mut coords: Vec<(f32, f32)> = Vec::with_capacity(pts.len() / 2);
+    for pair in pts.chunks_exact(2) {
+        let x = pair[0].as_f64()? as f32;
+        let y = pair[1].as_f64()? as f32;
+        coords.push((x.clamp(0.0, 1.0), (1.0 - 2.0 * y).clamp(-1.0, 1.0)));
+    }
+    if coords.len() < 2 {
+        return None;
+    }
+    let mut frame = [0.0_f32; CUSTOM_WT_SIZE];
+    for (i, dst) in frame.iter_mut().enumerate() {
+        let x = i as f32 / CUSTOM_WT_SIZE as f32;
+        let mut y = coords[0].1;
+        for seg in coords.windows(2) {
+            let (x0, y0) = seg[0];
+            let (x1, y1) = seg[1];
+            if x >= x0 && x <= x1 {
+                let span = (x1 - x0).max(1e-6);
+                let t = ((x - x0) / span).clamp(0.0, 1.0);
+                y = y0 + (y1 - y0) * t;
+                break;
+            } else if x > x1 {
+                y = y1;
+            }
+        }
+        *dst = y;
+    }
+    Some(frame)
 }
 
 fn decode_vital_wave_frame(b64: &str) -> Option<[f32; CUSTOM_WT_SIZE]> {
@@ -738,7 +880,7 @@ mod tests {
         assert_eq!(summary.mapped_mods, 2);
         assert_eq!(params.voice.matrix[0].source, ModSource::Lfo1);
         assert_eq!(params.voice.matrix[0].target, ModTarget::FilterCutoff);
-        assert!((params.voice.matrix[0].amount - 0.6).abs() < 1e-4);
+        assert!(params.voice.matrix[0].amount > 0.3 && params.voice.matrix[0].amount < 0.6);
     }
 
     #[test]

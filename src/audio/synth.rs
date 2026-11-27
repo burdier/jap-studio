@@ -1,8 +1,9 @@
 //! Motor DSP polifónico en tiempo real de Hay Synth (Stage + Voice Lab estilo Vital + Mod Matrix).
 //! 0 asignaciones en render, 0 bloqueos, 0 dependencias externas.
 use elevate::devices::synth::{
-    CustomWavetable, DistMode, EnvelopeMode, FilterKind, LfoShape, ModSource, ModTarget, RoomKind,
-    SynthEngineKind, SynthParams, WarpMode, WavetableKind, cc,
+    CUSTOM_WT_MIPS, CustomWavetable, DistMode, EnvelopeMode, FilterKind, LfoShape, ModSource,
+    ModTarget, RoomKind, SynthEngineKind, SynthParams, WarpMode, WavetableKind,
+    build_bandlimited_mips, cc,
 };
 use std::f32::consts::{PI, TAU};
 use std::sync::Arc;
@@ -15,9 +16,9 @@ const WT_FRAMES: usize = 8;
 const WT_SIZE: usize = 256;
 const CHORUS_BUF: usize = 2048;
 
-/// Banco de 8 wavetables × 8 frames × 256 muestras precomputado fuera del callback RT (~64 KB).
+/// Banco Hi-Fi de 8 wavetables × 6 mip-maps band-limited × 8 frames × 256 muestras.
 struct WavetableBank {
-    data: Box<[[[f32; WT_SIZE]; WT_FRAMES]; WT_TABLES]>,
+    mips: Vec<Box<[[[f32; WT_SIZE]; WT_FRAMES]; CUSTOM_WT_MIPS]>>,
 }
 
 impl WavetableBank {
@@ -189,59 +190,74 @@ impl WavetableBank {
             }
         }
 
-        Self { data }
+        let mips = (0..WT_TABLES)
+            .map(|t| build_bandlimited_mips(&data[t]))
+            .collect();
+        Self { mips }
     }
 
     #[inline]
-    fn sample(&self, kind: WavetableKind, frame_pos: f32, phase: f32) -> f32 {
+    fn sample(&self, kind: WavetableKind, frame_pos: f32, phase: f32, hz: f32) -> f32 {
         let t = (kind as usize).min(WT_TABLES - 1);
-        let fp = frame_pos.clamp(0.0, 1.0) * (WT_FRAMES - 1) as f32;
-        let f0 = (fp.floor() as usize).min(WT_FRAMES - 2);
-        let f1 = f0 + 1;
-        let ff = fp - f0 as f32;
-
-        let p = phase.fract();
-        let p = if p < 0.0 { p + 1.0 } else { p };
-        let idx_f = p * WT_SIZE as f32;
-        let i0 = (idx_f as usize) & (WT_SIZE - 1);
-        let i1 = (i0 + 1) & (WT_SIZE - 1);
-        let pf = idx_f - idx_f.floor();
-
-        let a0 = self.data[t][f0][i0];
-        let a1 = self.data[t][f0][i1];
-        let s0 = a0 + (a1 - a0) * pf;
-
-        let b0 = self.data[t][f1][i0];
-        let b1 = self.data[t][f1][i1];
-        let s1 = b0 + (b1 - b0) * pf;
-
-        s0 + (s1 - s0) * ff
+        sample_mip_table(&self.mips[t], frame_pos, phase, hz)
     }
 
     #[inline]
-    fn sample_custom(wt: &CustomWavetable, frame_pos: f32, phase: f32) -> f32 {
-        let fp = frame_pos.clamp(0.0, 1.0) * (WT_FRAMES - 1) as f32;
-        let f0 = (fp.floor() as usize).min(WT_FRAMES - 2);
-        let f1 = f0 + 1;
-        let ff = fp - f0 as f32;
-
-        let p = phase.fract();
-        let p = if p < 0.0 { p + 1.0 } else { p };
-        let idx_f = p * WT_SIZE as f32;
-        let i0 = (idx_f as usize) & (WT_SIZE - 1);
-        let i1 = (i0 + 1) & (WT_SIZE - 1);
-        let pf = idx_f - idx_f.floor();
-
-        let a0 = wt.frames[f0][i0];
-        let a1 = wt.frames[f0][i1];
-        let s0 = a0 + (a1 - a0) * pf;
-
-        let b0 = wt.frames[f1][i0];
-        let b1 = wt.frames[f1][i1];
-        let s1 = b0 + (b1 - b0) * pf;
-
-        s0 + (s1 - s0) * ff
+    fn sample_custom(wt: &CustomWavetable, frame_pos: f32, phase: f32, hz: f32) -> f32 {
+        sample_mip_table(&wt.mips, frame_pos, phase, hz)
     }
+}
+
+/// Interpolación cúbica Catmull-Rom de 4 puntos (Hi-Fi, elimina ruido de cuantización lineal).
+#[inline]
+fn cubic_read(table: &[f32; WT_SIZE], phase: f32) -> f32 {
+    let p = phase.fract();
+    let p = if p < 0.0 { p + 1.0 } else { p };
+    let idx_f = p * WT_SIZE as f32;
+    let i1 = (idx_f as usize) & (WT_SIZE - 1);
+    let i0 = i1.wrapping_sub(1) & (WT_SIZE - 1);
+    let i2 = (i1 + 1) & (WT_SIZE - 1);
+    let i3 = (i1 + 2) & (WT_SIZE - 1);
+    let t = idx_f - idx_f.floor();
+    let y0 = table[i0];
+    let y1 = table[i1];
+    let y2 = table[i2];
+    let y3 = table[i3];
+    let a0 = -0.5 * y0 + 1.5 * y1 - 1.5 * y2 + 0.5 * y3;
+    let a1 = y0 - 2.5 * y1 + 2.0 * y2 - 0.5 * y3;
+    let a2 = -0.5 * y0 + 0.5 * y2;
+    ((a0 * t + a1) * t + a2) * t + y1
+}
+
+/// Muestreo band-limited con selección continua de nivel mip según `hz` (0 aliasing).
+#[inline]
+fn sample_mip_table(
+    mips: &[[[f32; WT_SIZE]; WT_FRAMES]; CUSTOM_WT_MIPS],
+    frame_pos: f32,
+    phase: f32,
+    hz: f32,
+) -> f32 {
+    let mip_f = ((hz.max(60.0) / 115.0).max(1.0).log2()).clamp(0.0, (CUSTOM_WT_MIPS - 1) as f32);
+    let m0 = (mip_f.floor() as usize).min(CUSTOM_WT_MIPS - 2);
+    let m1 = m0 + 1;
+    let mf = mip_f - m0 as f32;
+
+    let fp = frame_pos.clamp(0.0, 1.0) * (WT_FRAMES - 1) as f32;
+    let f0 = (fp.floor() as usize).min(WT_FRAMES - 2);
+    let f1 = f0 + 1;
+    let ff = fp - f0 as f32;
+
+    let s_m0 = {
+        let a = cubic_read(&mips[m0][f0], phase);
+        let b = cubic_read(&mips[m0][f1], phase);
+        a + (b - a) * ff
+    };
+    let s_m1 = {
+        let a = cubic_read(&mips[m1][f0], phase);
+        let b = cubic_read(&mips[m1][f1], phase);
+        a + (b - a) * ff
+    };
+    s_m0 + (s_m1 - s_m0) * mf
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -404,6 +420,7 @@ struct Voice {
     env2_stage: EnvStage,
     env3: f32,
     noise_lp: f32,
+    cut_smooth: f32,
     svf_l: Svf,
     svf_r: Svf,
     svf2_l: Svf,
@@ -445,6 +462,7 @@ impl Voice {
             env2_stage: EnvStage::Off,
             env3: 0.0,
             noise_lp: 0.0,
+            cut_smooth: 2400.0,
             svf_l: Svf::default(),
             svf_r: Svf::default(),
             svf2_l: Svf::default(),
@@ -511,6 +529,7 @@ impl Voice {
             self.sub_phase = 0.0;
             self.mod_phase = 0.0;
             self.env2 = 0.0;
+            self.cut_smooth = 70.0 * (250.0_f32).powf(params.tone.clamp(0.0, 1.0));
             self.svf_l.reset();
             self.svf_r.reset();
             self.svf2_l.reset();
@@ -613,7 +632,7 @@ impl SpaceUnit {
             RoomKind::Hall => (0.79, 0.36, 0.58),
             RoomKind::Open => (0.87, 0.24, 0.72),
         };
-        let fb = (fb_base + distance * 0.09).min(0.92);
+        let fb = (fb_base + distance * 0.09).min(0.90);
         let mono_in = 0.5 * (in_l + in_r);
 
         let mut acc_l = 0.0_f32;
@@ -625,8 +644,11 @@ impl SpaceUnit {
             let yr = self.comb_r[i][ir];
             self.comb_lp_l[i] = yl * (1.0 - damp) + self.comb_lp_l[i] * damp;
             self.comb_lp_r[i] = yr * (1.0 - damp) + self.comb_lp_r[i] * damp;
-            self.comb_l[i][il] = mono_in + in_l * 0.25 + self.comb_lp_l[i] * fb;
-            self.comb_r[i][ir] = mono_in + in_r * 0.25 + self.comb_lp_r[i] * fb;
+            // Protección suave en realimentación: evita que acordes densos saturen la sala.
+            self.comb_l[i][il] =
+                ((mono_in * 0.45 + in_l * 0.20) + self.comb_lp_l[i] * fb).clamp(-2.5, 2.5);
+            self.comb_r[i][ir] =
+                ((mono_in * 0.45 + in_r * 0.20) + self.comb_lp_r[i] * fb).clamp(-2.5, 2.5);
             self.comb_idx[i] = self.comb_idx[i].wrapping_add(1);
             acc_l += yl;
             acc_r += yr;
@@ -668,6 +690,10 @@ pub(crate) struct NativeSynthEngine {
     voices: Vec<Voice>,
     chorus: ChorusUnit,
     space: SpaceUnit,
+    dc_x_l: f32,
+    dc_y_l: f32,
+    dc_x_r: f32,
+    dc_y_r: f32,
     age_counter: u64,
     last_freq: f32,
     sustain_pedal: bool,
@@ -692,6 +718,10 @@ impl NativeSynthEngine {
             voices,
             chorus: ChorusUnit::new(),
             space: SpaceUnit::new(sr),
+            dc_x_l: 0.0,
+            dc_y_l: 0.0,
+            dc_x_r: 0.0,
+            dc_y_r: 0.0,
             age_counter: 0,
             last_freq: 0.0,
             sustain_pedal: false,
@@ -937,7 +967,8 @@ impl NativeSynthEngine {
 
         let lfo_hz = (self.bpm / 60.0) * (0.25 + params.motion * 1.75);
         let lfo_inc = lfo_hz * inv_sr;
-        let base_out_gain = params.gain * self.master_volume * 0.42;
+        let base_out_gain = params.gain * self.master_volume * 0.36;
+        let dc_r = 1.0 - (TAU * 18.0 * inv_sr).clamp(0.0005, 0.02);
 
         for i in 0..frames {
             let mut sum_l = 0.0_f32;
@@ -1123,7 +1154,7 @@ impl NativeSynthEngine {
                     || (params.engine == SynthEngineKind::Wavetable
                         && matches!(vp.osc_a_warp_mode, WarpMode::FmFromB | WarpMode::RingMod));
 
-                // ── OSC B (Wavetable independiente + fuente FM/RM para OSC A) ──
+                // ── OSC B (Wavetable band-limited Hi-Fi + fuente FM/RM para OSC A) ──
                 let (mut ob_l, mut ob_r, mut ob_mono) = (0.0_f32, 0.0_f32, 0.0_f32);
                 if need_osc_b {
                     let b_semi =
@@ -1131,8 +1162,8 @@ impl NativeSynthEngine {
                     let hz_b = (base_hz * 2.0_f32.powf(b_semi / 12.0)).clamp(16.0, sr * 0.44);
                     let pos_b = (vp.osc_b_pos + m.osc_b_pos).clamp(0.0, 1.0);
                     let uni_b = usize::from(vp.osc_b_unison.clamp(1, MAX_UNISON as u8));
-                    let det_b = vp.osc_b_detune * 0.025;
-                    let norm_b = 1.0 / (uni_b as f32).sqrt();
+                    let det_b = vp.osc_b_detune * 0.016;
+                    let norm_b = 1.0 / (uni_b as f32).powf(0.65);
                     for u in 0..uni_b {
                         let frac = if uni_b == 1 {
                             0.0
@@ -1142,9 +1173,9 @@ impl NativeSynthEngine {
                         let f_u = hz_b * (1.0 + frac * det_b);
                         v.osc_b_uni[u] = (v.osc_b_uni[u] + f_u * inv_sr).fract();
                         let s = if let Some(custom) = &params.custom_wt_b {
-                            WavetableBank::sample_custom(custom, pos_b, v.osc_b_uni[u])
+                            WavetableBank::sample_custom(custom, pos_b, v.osc_b_uni[u], f_u)
                         } else {
-                            self.wt.sample(vp.osc_b_table, pos_b, v.osc_b_uni[u])
+                            self.wt.sample(vp.osc_b_table, pos_b, v.osc_b_uni[u], f_u)
                         };
                         if u == 0 {
                             ob_mono = s;
@@ -1278,7 +1309,7 @@ impl NativeSynthEngine {
                     }
                     SynthEngineKind::Wavetable => {
                         let uni_a = usize::from(vp.osc_a_unison.clamp(1, MAX_UNISON as u8));
-                        let det_a = (vp.osc_a_detune + m.osc_a_detune).clamp(0.0, 1.0) * 0.028;
+                        let det_a = (vp.osc_a_detune + m.osc_a_detune).clamp(0.0, 1.0) * 0.016;
                         let spread_a = vp.osc_a_spread.clamp(0.0, 1.0);
                         let warp_amt = (vp.osc_a_warp + m.osc_a_warp).clamp(0.0, 1.0);
                         let norm_a = 1.0 / (uni_a as f32).sqrt();
@@ -1293,26 +1324,33 @@ impl NativeSynthEngine {
                             let f_u = hz * (1.0 + frac * det_a);
                             v.osc_a_uni[u] = (v.osc_a_uni[u] + f_u * inv_sr).fract();
                             let ph = v.osc_a_uni[u];
-                            let warped_ph = match vp.osc_a_warp_mode {
-                                WarpMode::Off | WarpMode::Fold | WarpMode::RingMod => ph,
-                                WarpMode::Sync => (ph * (1.0 + warp_amt * 5.0)).fract(),
-                                WarpMode::Bend => {
-                                    let exp = 2.0_f32.powf((warp_amt - 0.5) * 3.0);
-                                    ph.powf(exp)
+                            let (warped_ph, mip_hz) = match vp.osc_a_warp_mode {
+                                WarpMode::Off | WarpMode::Fold | WarpMode::RingMod => (ph, f_u),
+                                WarpMode::Sync => {
+                                    let mult = 1.0 + warp_amt * 3.5;
+                                    // Ventana suave en el reinicio del ciclo para evitar clicks de hard sync.
+                                    ((ph * mult).fract(), f_u * mult)
                                 }
-                                WarpMode::FmFromB => (ph + ob_mono * warp_amt * 0.85).rem_euclid(1.0),
+                                WarpMode::Bend => {
+                                    let exp = 2.0_f32.powf((warp_amt - 0.5) * 2.2);
+                                    (ph.powf(exp), f_u * (1.0 + (warp_amt - 0.5).abs() * 1.5))
+                                }
+                                WarpMode::FmFromB => (
+                                    (ph + ob_mono * warp_amt * 0.45).rem_euclid(1.0),
+                                    f_u * (1.0 + warp_amt * 2.0),
+                                ),
                             };
                             let mut s = if let Some(custom) = &params.custom_wt_a {
-                                WavetableBank::sample_custom(custom, shape_eff, warped_ph)
+                                WavetableBank::sample_custom(custom, shape_eff, warped_ph, mip_hz)
                             } else {
-                                self.wt.sample(vp.osc_a_table, shape_eff, warped_ph)
+                                self.wt.sample(vp.osc_a_table, shape_eff, warped_ph, mip_hz)
                             };
                             match vp.osc_a_warp_mode {
                                 WarpMode::Fold => {
-                                    s = (s * (1.0 + warp_amt * 4.5)).sin();
+                                    s = (s * (1.0 + warp_amt * 2.8)).sin();
                                 }
                                 WarpMode::RingMod => {
-                                    s = s * (1.0 - warp_amt) + (s * ob_mono) * warp_amt;
+                                    s = s * (1.0 - warp_amt * 0.8) + (s * ob_mono) * (warp_amt * 0.8);
                                 }
                                 _ => {}
                             }
@@ -1320,17 +1358,17 @@ impl NativeSynthEngine {
                             al += s * (1.0 - pan_u).min(1.0);
                             ar += s * (1.0 + pan_u).min(1.0);
                         }
-                        (al * norm_a * 0.82, ar * norm_a * 0.82)
+                        (al * norm_a * 0.78, ar * norm_a * 0.78)
                     }
                 };
 
                 sl *= osc_a_lvl;
                 sr_ch *= osc_a_lvl;
 
-                // Sumar OSC B audible
+                // Sumar OSC B audible con headroom limpio
                 if osc_b_lvl > 0.001 {
-                    sl += ob_l * osc_b_lvl * 0.72;
-                    sr_ch += ob_r * osc_b_lvl * 0.72;
+                    sl += ob_l * osc_b_lvl * 0.48;
+                    sr_ch += ob_r * osc_b_lvl * 0.48;
                 }
 
                 // Sumar SUB dedicado (-1 o -2 oct)
@@ -1338,7 +1376,7 @@ impl NativeSynthEngine {
                 if sub_lvl > 0.001 {
                     let sub_div = if vp.sub_octave == 0 { 0.5 } else { 0.25 };
                     v.sub_phase = (v.sub_phase + (base_hz * sub_div) * inv_sr).fract();
-                    let sub_sig = (v.sub_phase * TAU).sin() * sub_lvl * 0.55;
+                    let sub_sig = (v.sub_phase * TAU).sin() * sub_lvl * 0.40;
                     sl += sub_sig;
                     sr_ch += sub_sig;
                 }
@@ -1355,36 +1393,46 @@ impl NativeSynthEngine {
                     } else {
                         v.noise_lp
                     };
-                    sl += n_sig * noise_lvl * 0.35;
-                    sr_ch += n_sig * noise_lvl * 0.35;
+                    sl += n_sig * noise_lvl * 0.22;
+                    sr_ch += n_sig * noise_lvl * 0.22;
                 }
 
-                // ── Filtro TPT SVF (LP12 / LP24 / BP12 / HP12 / Notch) + Drive pre-filtro ──
+                // ── Filtro TPT SVF Hi-Fi (suavizado anti-zipper + compensación de Q) ──
                 let pre_drive = (vp.filter_drive + m.filter_drive).clamp(0.0, 1.0);
                 if pre_drive > 0.005 {
-                    let g = 1.0 + pre_drive * 3.8;
-                    sl = (sl * g).tanh();
-                    sr_ch = (sr_ch * g).tanh();
+                    let g = 1.0 + pre_drive * 2.4;
+                    let comp = 1.0 / g.sqrt();
+                    sl = (sl * g).tanh() * comp;
+                    sr_ch = (sr_ch * g).tanh() * comp;
                 }
 
-                let tone_eff = (params.tone + m.filter_cutoff * 0.85).clamp(0.0, 1.0);
+                let tone_eff = (params.tone + m.filter_cutoff * 0.75).clamp(0.0, 1.0);
                 let base_cut = 70.0 * (250.0_f32).powf(tone_eff);
-                let env_mod = 1.0 + v.timbre_env * (0.35 + 2.1 * vel_eff);
-                let lfo_mod = 1.0 + lfo * params.motion * 0.18;
+                let env_mod = 1.0 + v.timbre_env * (0.28 + 1.6 * vel_eff);
+                let lfo_mod = 1.0 + lfo * params.motion * 0.16;
                 let key_scale = (hz / 261.63)
                     .powf(vp.filter_keytrack.clamp(0.0, 1.0))
-                    .clamp(0.45, 3.2);
-                let cutoff = (base_cut * env_mod * lfo_mod * key_scale).clamp(30.0, 19_000.0);
-                let res_eff = (vp.filter_res + m.filter_res).clamp(0.0, 1.0);
-                let q = if params.engine == SynthEngineKind::FoldAcid {
-                    1.0 + shape_eff * 3.5 + res_eff * 4.5
-                } else {
-                    0.65 + res_eff * 7.5
-                };
+                    .clamp(0.45, 3.0);
+                let target_cut = (base_cut * env_mod * lfo_mod * key_scale).clamp(35.0, 18_500.0);
+                v.cut_smooth += (target_cut - v.cut_smooth) * 0.08;
+                let cutoff = v.cut_smooth;
 
-                if params.engine != SynthEngineKind::Pluck || vp.filter_kind != FilterKind::Lp12 || res_eff > 0.15 {
-                    let (lp_l, bp_l, hp_l, nt_l) = v.svf_l.process_all(sl, cutoff, q, sr);
-                    let (lp_r, bp_r, hp_r, nt_r) = v.svf_r.process_all(sr_ch, cutoff, q, sr);
+                let res_eff = (vp.filter_res + m.filter_res).clamp(0.0, 0.90);
+                let q = if params.engine == SynthEngineKind::FoldAcid {
+                    0.95 + shape_eff * 2.4 + res_eff * 2.6
+                } else {
+                    0.65 + res_eff * 4.0
+                };
+                let q_comp = 1.0 / (1.0 + res_eff * 0.55);
+
+                if params.engine != SynthEngineKind::Pluck
+                    || vp.filter_kind != FilterKind::Lp12
+                    || res_eff > 0.15
+                {
+                    let (lp_l, bp_l, hp_l, nt_l) =
+                        v.svf_l.process_all(sl * q_comp, cutoff, q, sr);
+                    let (lp_r, bp_r, hp_r, nt_r) =
+                        v.svf_r.process_all(sr_ch * q_comp, cutoff, q, sr);
                     match vp.filter_kind {
                         FilterKind::Lp12 => {
                             sl = lp_l;
@@ -1392,15 +1440,15 @@ impl NativeSynthEngine {
                         }
                         FilterKind::Lp24 => {
                             let (lp2_l, _, _, _) =
-                                v.svf2_l.process_all(lp_l, cutoff, (q * 0.72).max(0.65), sr);
+                                v.svf2_l.process_all(lp_l, cutoff, (q * 0.62).max(0.65), sr);
                             let (lp2_r, _, _, _) =
-                                v.svf2_r.process_all(lp_r, cutoff, (q * 0.72).max(0.65), sr);
+                                v.svf2_r.process_all(lp_r, cutoff, (q * 0.62).max(0.65), sr);
                             sl = lp2_l;
                             sr_ch = lp2_r;
                         }
                         FilterKind::Bp12 => {
-                            sl = bp_l * 1.35;
-                            sr_ch = bp_r * 1.35;
+                            sl = bp_l * 1.15;
+                            sr_ch = bp_r * 1.15;
                         }
                         FilterKind::Hp12 => {
                             sl = hp_l;
@@ -1413,10 +1461,10 @@ impl NativeSynthEngine {
                     }
                 }
 
-                // Calor analógico suave con la intensidad del toque.
-                let drive = 1.0 + vel_eff * (0.16 + params.body * 0.30);
-                sl = (sl * drive).tanh();
-                sr_ch = (sr_ch * drive).tanh();
+                // Calor analógico suave sin aplastar dinámicas.
+                let drive = 1.0 + vel_eff * (0.10 + params.body * 0.20);
+                sl = soft_sat(sl * drive);
+                sr_ch = soft_sat(sr_ch * drive);
 
                 let amp = v.env * (0.28 + 0.72 * vel_eff);
                 let voice_pan = (v.pan + m.pan).clamp(-1.0, 1.0);
@@ -1426,13 +1474,23 @@ impl NativeSynthEngine {
                 sum_r += sr_ch * amp * pan_r;
             }
 
+            // DC blocker 18 Hz antes de FX para que el reverb nunca acumule offset.
+            let y_l = sum_l - self.dc_x_l + dc_r * self.dc_y_l;
+            self.dc_x_l = sum_l;
+            self.dc_y_l = y_l;
+            let y_r = sum_r - self.dc_x_r + dc_r * self.dc_y_r;
+            self.dc_x_r = sum_r;
+            self.dc_y_r = y_r;
+            sum_l = y_l;
+            sum_r = y_r;
+
             let inv_v = if bus_mod_voices > 0 {
                 1.0 / bus_mod_voices as f32
             } else {
                 0.0
             };
 
-            // ── Bus FX 1: Distortion ──
+            // ── Bus FX 1: Distortion (compensada en ganancia) ──
             let dist_drive = (vp.dist_drive + bus_dist_mod * inv_v).clamp(0.0, 1.0);
             let dist_mix = vp.dist_mix.clamp(0.0, 1.0);
             if dist_mix > 0.001 && dist_drive > 0.001 {
@@ -1450,9 +1508,9 @@ impl NativeSynthEngine {
             let dist_eff = (params.distance + bus_dist_space_mod * inv_v).clamp(0.0, 1.0);
             let (out_l, out_r) = self.space.process(ch_l, ch_r, params.room, dist_eff, sr);
 
-            let final_gain = (base_out_gain * (1.0 + bus_out_mod * inv_v * 0.65)).clamp(0.0, 1.6);
-            left[i] = (out_l * final_gain).tanh();
-            right[i] = (out_r * final_gain).tanh();
+            let final_gain = (base_out_gain * (1.0 + bus_out_mod * inv_v * 0.55)).clamp(0.0, 1.4);
+            left[i] = soft_limit(out_l * final_gain);
+            right[i] = soft_limit(out_r * final_gain);
         }
     }
 }
@@ -1487,16 +1545,39 @@ fn lfo_rate_hz(rate: f32, sync: bool, bpm: f32) -> f32 {
     }
 }
 
+/// Saturación suave transparente: completamente lineal debajo de 0.72.
+#[inline]
+fn soft_sat(x: f32) -> f32 {
+    let a = x.abs();
+    if a <= 0.72 {
+        x
+    } else {
+        x.signum() * (0.72 + 0.28 * ((a - 0.72) / 0.28).tanh())
+    }
+}
+
+/// Limitador de salida Hi-Fi transparente: cero coloración hasta 0.80, techo seguro en 0.96.
+#[inline]
+fn soft_limit(x: f32) -> f32 {
+    let a = x.abs();
+    if a <= 0.80 {
+        x
+    } else {
+        x.signum() * (0.80 + 0.16 * ((a - 0.80) / 0.16).tanh())
+    }
+}
+
 #[inline]
 fn apply_distortion(x: f32, mode: DistMode, drive: f32, mix: f32) -> f32 {
-    let g = 1.0 + drive * 8.0;
+    let g = 1.0 + drive * 3.5;
+    let norm = 1.0 / g.powf(0.55);
     let wet = match mode {
-        DistMode::Soft => (x * g).tanh(),
-        DistMode::Hard => (x * g).clamp(-0.92, 0.92),
-        DistMode::Fold => (x * (1.0 + drive * 4.5)).sin(),
+        DistMode::Soft => (x * g).tanh() * norm,
+        DistMode::Hard => (x * g).clamp(-0.90, 0.90) * norm,
+        DistMode::Fold => (x * (1.0 + drive * 2.5)).sin() * 0.75,
         DistMode::Bitcrush => {
-            let steps = (32.0 - drive * 26.0).max(4.0);
-            ((x * (1.0 + drive * 2.0)) * steps).round() / steps
+            let steps = (36.0 - drive * 28.0).max(6.0);
+            ((x * (1.0 + drive * 1.4)) * steps).round() / steps * 0.85
         }
     };
     x * (1.0 - mix) + wet * mix
@@ -1658,5 +1739,167 @@ mod tests {
         let dark = brightness(base);
         let bright = brightness(mapped);
         assert!(bright > dark * 1.5, "dark={dark}, bright={bright}");
+    }
+
+    #[test]
+    fn polyphonic_chord_with_custom_saw_wavetable_renders_hifi_without_clipping() {
+        // Sierra cruda con salto brusco -> los 6 mip-maps DFT deben eliminar aliasing y evitar clipping en acordes.
+        let mut raw_frames = [[0.0_f32; 256]; 8];
+        for frame in &mut raw_frames {
+            for (i, s) in frame.iter_mut().enumerate() {
+                *s = (i as f32 / 256.0) * 2.0 - 1.0;
+            }
+        }
+        let mut params = vital_factory_presets()[0].2.clone(); // 7x unison + OSC B + Sub + Chorus
+        params.custom_wt_a = Some(Arc::new(CustomWavetable::new("Raw Saw".into(), raw_frames)));
+        let mut engine = NativeSynthEngine::new(params, 48_000);
+        // Acorde de 4 notas en registro medio-alto
+        for note in [60, 64, 67, 72] {
+            engine.note_on(note, 115, 0.0);
+        }
+        let mut l = vec![0.0; 16_384];
+        let mut r = vec![0.0; 16_384];
+        engine.render(&mut l, &mut r);
+        let peak = l
+            .iter()
+            .chain(&r)
+            .fold(0.0_f32, |m, &x| {
+                assert!(x.is_finite());
+                m.max(x.abs())
+            });
+        let rms = (l.iter().map(|x| x * x).sum::<f32>() / l.len() as f32).sqrt();
+        let rms_db = 20.0 * rms.max(1e-6).log10();
+        assert!(peak < 0.96, "Hard clipping detected: peak={peak}");
+        assert!(rms_db > -28.0 && rms_db < -5.0, "rms_db={rms_db:.1}");
+    }
+
+    #[test]
+    fn imported_heavy_patch_chord_renders_hifi_without_clipping_or_dc() {
+        let json = r#"{
+            "preset_name": "Heavy Imported Lead",
+            "settings": {
+                "osc_1_on": 1.0,
+                "osc_1_level": 1.0,
+                "osc_1_unison_voices": 8.0,
+                "osc_1_unison_detune": 4.5,
+                "osc_1_stereo_spread": 1.0,
+                "osc_2_on": 1.0,
+                "osc_2_level": 0.9,
+                "osc_2_transpose": 12.0,
+                "osc_2_unison_voices": 4.0,
+                "osc_2_unison_detune": 3.0,
+                "osc_3_on": 1.0,
+                "osc_3_level": 0.8,
+                "osc_3_transpose": -12.0,
+                "filter_1_on": 1.0,
+                "filter_1_cutoff": 95.0,
+                "filter_1_resonance": 0.65,
+                "filter_1_drive": 10.0,
+                "distortion_on": 1.0,
+                "distortion_drive": 14.0,
+                "distortion_mix": 0.8,
+                "chorus_on": 1.0,
+                "chorus_dry_wet": 0.5,
+                "reverb_on": 1.0,
+                "reverb_dry_wet": 0.45,
+                "env_1_attack": 0.01,
+                "env_1_decay": 0.6,
+                "env_1_sustain": 0.85,
+                "env_1_release": 0.4,
+                "modulations": [
+                    { "source": "lfo_1", "destination": "filter_1_cutoff", "amount": 0.6 },
+                    { "source": "env_2", "destination": "osc_1_wave_frame", "amount": 0.5 }
+                ]
+            }
+        }"#;
+        let (params, _summary) =
+            elevate::devices::vital_import::parse_vital_json(json, "Heavy Imported Lead")
+                .expect("heavy patch should parse");
+        let mut engine = NativeSynthEngine::new(params, 48_000);
+        for note in [57, 60, 64, 69] {
+            engine.note_on(note, 120, 0.0);
+        }
+        let mut l = vec![0.0; 24_000];
+        let mut r = vec![0.0; 24_000];
+        engine.render(&mut l, &mut r);
+
+        let mut peak = 0.0_f32;
+        let mut dc_sum = 0.0_f64;
+        let mut sq_sum = 0.0_f64;
+        for (&xl, &xr) in l.iter().zip(&r) {
+            assert!(xl.is_finite() && xr.is_finite());
+            peak = peak.max(xl.abs().max(xr.abs()));
+            dc_sum += f64::from(xl) + f64::from(xr);
+            sq_sum += f64::from(xl * xl) + f64::from(xr * xr);
+        }
+        let dc_offset = (dc_sum / (l.len() as f64 * 2.0)).abs();
+        let rms = (sq_sum / (l.len() as f64 * 2.0)).sqrt() as f32;
+        let rms_db = 20.0 * rms.max(1e-6).log10();
+        assert!(peak < 0.96, "Hard clipping on imported heavy patch: peak={peak}");
+        assert!(dc_offset < 0.03, "Excessive DC offset: {dc_offset}");
+        assert!(rms_db > -26.0 && rms_db < -3.0, "rms_db={rms_db:.1}");
+    }
+
+    #[test]
+    fn real_esw_reese_bank_renders_hifi_clean_if_present() {
+        let bank = std::path::Path::new(
+            "/home/burdier/Music/Echo+Sound+Works+-+Reese+Basses/Echo Sound Works - Reese Basses/Vital/ESW - Reese Basses V1.vitalbank",
+        );
+        if !bank.is_file() {
+            return;
+        }
+        let entries = elevate::devices::vital_import::extract_vitalbank(bank)
+            .expect("should extract ESW Reese Basses bank");
+        assert!(entries.len() >= 10, "expected >= 10 presets, got {}", entries.len());
+
+        let mut decoded_total = 0usize;
+        for entry in &entries {
+            let (params, summary) = elevate::devices::vital_import::load_vital_file(&entry.path)
+                .unwrap_or_else(|e| panic!("failed to load {}: {e}", entry.name));
+            if summary.decoded_wts > 0 {
+                decoded_total += 1;
+            }
+            let mut engine = NativeSynthEngine::new(params, 48_000);
+            // Nota C4 (60): estos Reese traen transpose -24/-12, así que C4 suena en C2 (65 Hz).
+            engine.note_on(60, 110, 0.0);
+            let mut l = vec![0.0; 24_000];
+            let mut r = vec![0.0; 24_000];
+            engine.render(&mut l[..18_000], &mut r[..18_000]);
+            engine.note_off(60);
+            engine.render(&mut l[18_000..], &mut r[18_000..]);
+
+            let mut peak = 0.0_f32;
+            let mut dc_sum = 0.0_f64;
+            let mut sq_sum = 0.0_f64;
+            for (&xl, &xr) in l.iter().zip(&r) {
+                assert!(xl.is_finite() && xr.is_finite(), "NaN in {}", entry.name);
+                peak = peak.max(xl.abs().max(xr.abs()));
+                dc_sum += f64::from(xl) + f64::from(xr);
+                sq_sum += f64::from(xl * xl) + f64::from(xr * xr);
+            }
+            let dc = (dc_sum / (l.len() as f64 * 2.0)).abs();
+            let rms = (sq_sum / (l.len() as f64 * 2.0)).sqrt() as f32;
+            let rms_db = 20.0 * rms.max(1e-6).log10();
+            eprintln!(
+                "ESW {:30} | wts={} | peak={:.3} | rms={:5.1} dB | dc={:.4}",
+                entry.name, summary.decoded_wts, peak, rms_db, dc
+            );
+            assert!(
+                peak < 0.96,
+                "Clipping in {}: peak={peak:.3}, rms={rms_db:.1}",
+                entry.name
+            );
+            assert!(
+                rms_db > -36.0 && rms_db < -3.0,
+                "Out-of-range loudness in {}: rms={rms_db:.1}, peak={peak:.3}",
+                entry.name
+            );
+            assert!(dc < 0.04, "DC offset in {}: {dc:.4}", entry.name);
+        }
+        assert_eq!(
+            decoded_total,
+            entries.len(),
+            "All ESW Reese presets should decode real custom wavetables"
+        );
     }
 }
