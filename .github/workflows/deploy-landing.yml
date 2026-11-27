@@ -41,3 +41,12 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: "5cdf8bf2a8971c17014c8573798d4b7e"
           wranglerVersion: "4"
+
+      - name: Deploy download wrapper to dl.sevenpitch.dev
+        if: steps.check.outputs.ok == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: "5cdf8bf2a8971c17014c8573798d4b7e"
+          wranglerVersion: "4"
+          command: deploy -c cloudflare/wrangler-dl.jsonc

@@ -1,0 +1,31 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "jap-studio-dl",
+  "main": "dl-worker.js",
+  "compatibility_date": "2026-01-01",
+  "observability": {
+    "enabled": true,
+    "traces": {
+      "enabled": true
+    }
+  },
+  "routes": [
+    {
+      "pattern": "dl.sevenpitch.dev",
+      "custom_domain": true
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      "bucket_name": "jap-studio-releases"
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "jap-studio-downloads",
+      "database_id": "1fe64c57-886e-4d21-873c-2d437f332162"
+    }
+  ]
+}
