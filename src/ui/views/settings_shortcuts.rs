@@ -1,4 +1,4 @@
-use crate::ui::{DawApp, components::button::chip_option, i18n::UiText, shortcuts::ShortcutPreset};
+use crate::ui::{DawApp, components::button::chip_option, shortcuts::ShortcutPreset};
 use gpui::{Context, IntoElement, MouseButton, div, prelude::*, px, relative, rgb};
 
 impl DawApp {
@@ -32,7 +32,7 @@ impl DawApp {
                                 div()
                                     .text_xs()
                                     .text_color(rgb(ds.cyan))
-                                    .child(self.tr(UiText::ShortcutPresetHeading)),
+                                    .child(self.tr("shortcuts.preset_heading")),
                             )
                             .child(
                                 div()
@@ -45,7 +45,7 @@ impl DawApp {
                         div()
                             .text_xs()
                             .text_color(rgb(ds.muted))
-                            .child(self.tr(UiText::ShortcutPresetNote)),
+                            .child(self.tr("shortcuts.preset_note")),
                     )
                     .child(div().flex().flex_wrap().gap_2().children(
                         ShortcutPreset::ALL.into_iter().map(|preset| {

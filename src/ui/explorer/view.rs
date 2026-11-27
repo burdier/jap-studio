@@ -1,6 +1,7 @@
 use super::{Explorer, ExplorerEvent, ExplorerStyle};
 use crate::ui::{
     components::tree::{self, ADD as ADD_FOLDER, AUDIO, CLOSE, FILE, FOLDER, TreeRow},
+    i18n::{active_language, tr},
     icons::render_svg_icon,
 };
 use elevate::explorer::EntryKind;
@@ -57,6 +58,7 @@ impl Render for ExplorerSampleDrag {
 impl Render for Explorer {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.init_search_input(window, cx);
+        let lang = active_language();
         let style = self.style;
         let empty = self.tree.roots().is_empty();
         let message = self.save_error.as_ref().or(self.status.as_ref()).cloned();
@@ -68,70 +70,154 @@ impl Render for Explorer {
         tree::panel("library-explorer", style)
             .track_focus(&self.focus)
             .on_key_down(cx.listener(|this, event, window, cx| this.handle_key(event, window, cx)))
-            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| {
-                if !this.focus.is_focused(window) { cx.emit(ExplorerEvent::Focused); }
-                window.focus(&this.focus, cx);
-                cx.stop_propagation();
-            }))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _, window, cx| {
+                    if !this.focus.is_focused(window) {
+                        cx.emit(ExplorerEvent::Focused);
+                    }
+                    window.focus(&this.focus, cx);
+                    cx.stop_propagation();
+                }),
+            )
             .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
             .child(
                 tree::header()
-                    .child(div().flex_1().min_w_0().truncate().text_color(rgb(style.muted)).child("BIBLIOTECAS"))
-                    .child(div().id("close-explorer").p_1().cursor_pointer()
-                        .hover(move |s| s.bg(rgb(style.selected)))
-                        .child(render_svg_icon(CLOSE, 13.0, style.muted))
-                        .on_mouse_down(MouseButton::Left, cx.listener(|_, _, _, cx| {
-                            cx.emit(ExplorerEvent::Close); cx.stop_propagation();
-                        }))),
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .text_color(rgb(style.muted))
+                            .child(tr(lang, "explorer.header")),
+                    )
+                    .child(
+                        div()
+                            .id("close-explorer")
+                            .p_1()
+                            .cursor_pointer()
+                            .hover(move |s| s.bg(rgb(style.selected)))
+                            .child(render_svg_icon(CLOSE, 13.0, style.muted))
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|_, _, _, cx| {
+                                    cx.emit(ExplorerEvent::Close);
+                                    cx.stop_propagation();
+                                }),
+                            ),
+                    ),
             )
             .child(
-                div().flex_shrink_0().flex().items_center().gap_2().px_2().pb_2()
-                    .child(div().id("add-library").flex_1().min_w_0().flex().items_center().gap_1()
-                        .py_1().cursor_pointer().text_color(rgb(if self.ready && !self.picking { style.accent } else { style.muted }))
-                        .child(render_svg_icon(ADD_FOLDER, 16.0, style.accent))
-                        .child(div().truncate().child("Añadir biblioteca"))
-                        .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| this.add_library(cx))))
-                    .child(div().id("refresh-libraries").py_1().cursor_pointer().text_color(rgb(style.muted))
-                        .hover(move |s| s.text_color(rgb(style.text))).child("Recargar")
-                        .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| this.refresh(cx)))),
+                div()
+                    .flex_shrink_0()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .px_2()
+                    .pb_2()
+                    .child(
+                        div()
+                            .id("add-library")
+                            .flex_1()
+                            .min_w_0()
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .py_1()
+                            .cursor_pointer()
+                            .text_color(rgb(if self.ready && !self.picking {
+                                style.accent
+                            } else {
+                                style.muted
+                            }))
+                            .child(render_svg_icon(ADD_FOLDER, 16.0, style.accent))
+                            .child(div().truncate().child(tr(lang, "explorer.add_library")))
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _, _, cx| this.add_library(cx)),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .id("refresh-libraries")
+                            .py_1()
+                            .cursor_pointer()
+                            .text_color(rgb(style.muted))
+                            .hover(move |s| s.text_color(rgb(style.text)))
+                            .child(tr(lang, "explorer.refresh"))
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _, _, cx| this.refresh(cx)),
+                            ),
+                    ),
             )
-            .when(empty, |panel| panel.child(
-                div().flex_1().min_h_0().p_4().flex().flex_col().justify_center().gap_3()
-                    .child(render_svg_icon(ADD_FOLDER, 28.0, style.accent))
-                    .child("Tus sonidos, a mano")
-                    .child(div().text_color(rgb(style.muted))
-                        .child("Añade carpetas de audio o MIDI. Sus accesos quedarán guardados hasta que los quites."))
-                    .child(div().text_color(rgb(style.muted)).child("Quitar una biblioteca no borra sus archivos.")),
-            ))
+            .when(empty, |panel| {
+                panel.child(
+                    div()
+                        .flex_1()
+                        .min_h_0()
+                        .p_4()
+                        .flex()
+                        .flex_col()
+                        .justify_center()
+                        .gap_3()
+                        .child(render_svg_icon(ADD_FOLDER, 28.0, style.accent))
+                        .child(tr(lang, "explorer.empty.title"))
+                        .child(
+                            div()
+                                .text_color(rgb(style.muted))
+                                .child(tr(lang, "explorer.empty.body")),
+                        )
+                        .child(
+                            div()
+                                .text_color(rgb(style.muted))
+                                .child(tr(lang, "explorer.empty.note")),
+                        ),
+                )
+            })
             .when(!empty, |panel| {
                 panel
-                    .when_some(self.search.input.as_ref(), |panel, input| panel.child(
-                        div().px_2().pb_2().flex_shrink_0()
-                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                            .child(Input::new(input).w_full().cleanable(true)),
-                    ))
+                    .when_some(self.search.input.as_ref(), |panel, input| {
+                        panel.child(
+                            div()
+                                .px_2()
+                                .pb_2()
+                                .flex_shrink_0()
+                                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                                .child(Input::new(input).w_full().cleanable(true)),
+                        )
+                    })
                     .child(self.render_preview_controls(cx))
                     .child(self.render_sample_profile())
                     .child(self.render_root_controls(cx))
-                    .when_some(self.search_message(), |panel, text| panel.child(
-                        div().px_2().pb_1().text_color(rgb(style.muted)).child(text),
+                    .when_some(self.search_message(), |panel, text| {
+                        panel.child(div().px_2().pb_1().text_color(rgb(style.muted)).child(text))
+                    })
+                    .child(tree::list(
+                        "library-tree",
+                        self.visible_rows().len(),
+                        &self.scroll,
+                        cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
+                            range.map(|index| this.render_row(index, cx)).collect()
+                        }),
                     ))
-                    .child(tree::list("library-tree", self.visible_rows().len(), &self.scroll, cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
-                        range.map(|index| this.render_row(index, cx)).collect()
-                    })))
             })
             .child(
                 tree::footer(style)
-                    .when_some(message, |footer, text| footer.child(div().text_color(rgb(style.accent)).child(text)))
-                    .when(self.saving, |footer| footer.child("Guardando bibliotecas…"))
+                    .when_some(message, |footer, text| {
+                        footer.child(div().text_color(rgb(style.accent)).child(text))
+                    })
+                    .when(self.saving, |footer| {
+                        footer.child(tr(lang, "explorer.saving"))
+                    })
                     .when_some(selected_status, |footer, status| footer.child(status))
-                    .when_some(self.selected.as_ref(), |footer, path| footer.child(
-                        div().truncate().child(path.to_string_lossy().into_owned()),
-                    ))
-                    .child("Arrastra audio a Drums Latex")
-                    .child("Doble clic / Enter: insertar en pista activa")
-                    .child("→ Preescuchar / repetir · Ctrl+F: buscar")
-                    .child("En el cursor · e / Esc: cerrar"),
+                    .when_some(self.selected.as_ref(), |footer, path| {
+                        footer.child(div().truncate().child(path.to_string_lossy().into_owned()))
+                    })
+                    .child(tr(lang, "explorer.hint_drag"))
+                    .child(tr(lang, "explorer.hint_insert"))
+                    .child(tr(lang, "explorer.hint_preview"))
+                    .child(tr(lang, "explorer.hint_close")),
             )
     }
 }
@@ -163,7 +249,7 @@ impl Explorer {
                     div()
                         .text_xs()
                         .text_color(rgb(style.muted))
-                        .child("Analizando carácter acústico…"),
+                        .child(tr(active_language(), "explorer.analyzing")),
                 )
             } else {
                 div()
@@ -223,7 +309,10 @@ impl Explorer {
             .flex()
             .flex_wrap()
             .gap_1()
-            .child(chip(format!("{} · {:.2}s", p.role_hint, p.duration_seconds), style.text))
+            .child(chip(
+                format!("{} · {:.2}s", p.role_hint, p.duration_seconds),
+                style.text,
+            ))
             .child(chip(
                 format!("Transiente: {} ({:.0}ms)", p.transient_label, p.attack_ms),
                 transient_color,
@@ -248,15 +337,10 @@ impl Explorer {
                     .child(band_bar("Med", p.bands.mid_pct))
                     .child(band_bar("Agd", p.bands.high_pct)),
             )
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(rgb(style.muted))
-                    .child(format!(
-                        "Decay {:.0} ms · Crest {:.1} dB · Pico {:.1} dBFS",
-                        p.decay_ms, p.crest_db, p.peak_dbfs
-                    )),
-            )
+            .child(div().text_xs().text_color(rgb(style.muted)).child(format!(
+                "Decay {:.0} ms · Crest {:.1} dB · Pico {:.1} dBFS",
+                p.decay_ms, p.crest_db, p.peak_dbfs
+            )))
     }
 
     fn render_root_controls(&self, cx: &mut Context<Self>) -> Div {

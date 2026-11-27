@@ -5,7 +5,7 @@ use crate::ui::{
         context_menu::{context_menu, menu_panel},
         modal::ModalClose,
     },
-    i18n::{Language, UiText, tr},
+    i18n::{Language, tr},
     shortcuts::{ShortcutAction, ShortcutPreset},
     toolbar::ToolbarAction,
     workspace_focus::Panel,
@@ -37,7 +37,7 @@ enum MenuAction {
 }
 
 struct Item {
-    label: UiText,
+    label: &'static str,
     icon: &'static [u8],
     action: MenuAction,
     hint: HintKind,
@@ -66,8 +66,8 @@ use MenuAction::{Command, Fx, PianoRoll};
 impl MenuGroup {
     fn label(self, lang: Language) -> &'static str {
         match self {
-            Self::File => tr(lang, UiText::MenuFile),
-            Self::View => tr(lang, UiText::MenuView),
+            Self::File => tr(lang, "menu.file"),
+            Self::View => tr(lang, "menu.view"),
         }
     }
 
@@ -75,78 +75,78 @@ impl MenuGroup {
         match self {
             Self::File => &[
                 item!(
-                    UiText::FileOpen,
+                    "menu.file.open",
                     "folder",
                     Command("project.open"),
                     Shortcut(ShortcutAction::ProjectOpen)
                 ),
                 item!(
-                    UiText::FileImportHydrogen,
+                    "menu.file.import_hydrogen",
                     "folder",
                     Command("hydrogen.import"),
                     NoHint
                 ),
                 item!(
-                    UiText::FileSave,
+                    "menu.file.save",
                     "document-save",
                     Command("project.save"),
                     Shortcut(ShortcutAction::ProjectSave)
                 ),
                 item!(
-                    UiText::FileSaveAs,
+                    "menu.file.save_as",
                     "document-save-as",
                     Command("project.save_as"),
                     Shortcut(ShortcutAction::ProjectSaveAs)
                 ),
                 item!(
-                    UiText::FileRevealFolder,
+                    "menu.file.reveal_folder",
                     "folder-loupe",
                     Command("project.reveal"),
                     NoHint
                 ),
                 item!(
-                    UiText::FileExportAudio,
+                    "menu.file.export_audio",
                     "export",
                     MenuAction::Export,
                     Shortcut(ShortcutAction::ExportAudio)
                 ),
                 item!(
-                    UiText::FileExportMidi,
+                    "menu.file.export_midi",
                     "export",
                     Command("export.midi"),
                     Shortcut(ShortcutAction::ExportMidi)
                 ),
                 #[cfg(feature = "p2p")]
                 item!(
-                    UiText::FileShareSession,
+                    "menu.file.share_session",
                     "share",
                     Command("project.share"),
                     NoHint
                 ),
                 #[cfg(feature = "p2p")]
                 item!(
-                    UiText::FileSyncSession,
+                    "menu.file.sync_session",
                     "arrows-circle",
                     Command("project.sync"),
                     NoHint
                 ),
                 #[cfg(feature = "p2p")]
                 item!(
-                    UiText::FileJoinSession,
+                    "menu.file.join_session",
                     "chain-link",
                     Command("project.join"),
                     Static("Clipboard")
                 ),
                 #[cfg(feature = "p2p")]
                 item!(
-                    UiText::FileLeaveSession,
+                    "menu.file.leave_session",
                     "connector",
                     Command("project.leave"),
                     NoHint
                 ),
                 #[cfg(feature = "p2p")]
                 item!(
-                    UiText::FileIdentityHistory,
+                    "menu.file.identity_history",
                     "addressbook",
                     Command("project.identity"),
                     NoHint
@@ -154,43 +154,43 @@ impl MenuGroup {
             ],
             Self::View => &[
                 item!(
-                    UiText::ViewArrangement,
+                    "menu.view.arrangement",
                     "view-continuous",
                     Command("arrangement"),
                     Shortcut(ShortcutAction::ViewArrangement)
                 ),
                 item!(
-                    UiText::ViewDrums,
+                    "menu.view.drums",
                     "app-grid",
                     Command("pattern"),
                     Shortcut(ShortcutAction::ViewDrums)
                 ),
                 item!(
-                    UiText::ViewMixer,
+                    "menu.view.mixer",
                     "mixer-sliders",
                     Command("mixer"),
                     Shortcut(ShortcutAction::ViewMixer)
                 ),
                 item!(
-                    UiText::ViewExplorer,
+                    "menu.view.explorer",
                     "folder",
                     Command("explorer.toggle"),
                     Shortcut(ShortcutAction::ToggleExplorer)
                 ),
                 item!(
-                    UiText::ViewTrackFx,
+                    "menu.view.track_fx",
                     "sliders",
                     Fx,
                     Shortcut(ShortcutAction::ToggleTrackFx)
                 ),
                 item!(
-                    UiText::ViewPianoRoll,
+                    "menu.view.piano_roll",
                     "piano",
                     PianoRoll,
                     Shortcut(ShortcutAction::TogglePianoRoll)
                 ),
                 item!(
-                    UiText::ViewMaximize,
+                    "menu.view.maximize",
                     "view-fullscreen",
                     Command("view.maximize"),
                     Static("F11")
@@ -327,7 +327,7 @@ impl DawApp {
                             .text_size(px(9.5))
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(rgb(ds.muted))
-                            .child("PROYECTOS RECIENTES"),
+                            .child(self.tr("menu.file.recent_projects")),
                     )
                     .children(recent_items.into_iter().enumerate().map(|(i, path)| {
                         let name = path

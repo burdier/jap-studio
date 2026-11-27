@@ -1,6 +1,6 @@
 //! Presets de atajos de teclado (Jap Studio, Ableton Live, FL Studio) y tabla dinámica de ayuda.
 use super::{
-    i18n::{Language, UiText, tr},
+    i18n::{Language, tr},
     profile,
 };
 
@@ -337,107 +337,152 @@ impl ShortcutPreset {
         use ShortcutAction::*;
         vec![
             (
-                tr(lang, UiText::GroupGeneralViews),
+                tr(lang, "shortcuts.group.general"),
                 vec![
                     (
                         self.hint(OpenCommandPalette),
-                        tr(lang, UiText::DescCommandPalette),
+                        tr(lang, "shortcuts.desc.command_palette"),
                     ),
-                    (self.hint(OpenAddPalette), tr(lang, UiText::DescAddBrowser)),
-                    (self.hint(OpenSettings), tr(lang, UiText::DescOpenSettings)),
-                    (self.hint(ShowShortcuts), tr(lang, UiText::DescShortcutHelp)),
+                    (
+                        self.hint(OpenAddPalette),
+                        tr(lang, "shortcuts.desc.add_browser"),
+                    ),
+                    (
+                        self.hint(OpenSettings),
+                        tr(lang, "shortcuts.desc.open_settings"),
+                    ),
+                    (
+                        self.hint(ShowShortcuts),
+                        tr(lang, "shortcuts.desc.shortcut_help"),
+                    ),
                     (
                         self.hint(ViewArrangement),
-                        tr(lang, UiText::DescViewArrangement),
+                        tr(lang, "shortcuts.desc.view_arrangement"),
                     ),
-                    (self.hint(ViewDrums), tr(lang, UiText::DescViewDrums)),
-                    (self.hint(ViewMixer), tr(lang, UiText::DescViewMixer)),
+                    (self.hint(ViewDrums), tr(lang, "shortcuts.desc.view_drums")),
+                    (self.hint(ViewMixer), tr(lang, "shortcuts.desc.view_mixer")),
                     (
                         self.hint(TogglePianoRoll),
-                        tr(lang, UiText::DescTogglePianoRoll),
+                        tr(lang, "shortcuts.desc.toggle_piano_roll"),
                     ),
                     (
                         self.hint(ToggleExplorer),
-                        tr(lang, UiText::DescToggleExplorer),
+                        tr(lang, "shortcuts.desc.toggle_explorer"),
                     ),
                     (
                         self.hint(ToggleTrackFx),
-                        tr(lang, UiText::DescToggleTrackFx),
+                        tr(lang, "shortcuts.desc.toggle_track_fx"),
                     ),
-                    ("F11", tr(lang, UiText::DescMaximizePanel)),
-                    (self.hint(Undo), tr(lang, UiText::DescUndoRedo)),
-                    (self.hint(ToggleHistory), tr(lang, UiText::DescHistoryPanel)),
+                    ("F11", tr(lang, "shortcuts.desc.maximize_panel")),
+                    (self.hint(Undo), tr(lang, "shortcuts.desc.undo_redo")),
+                    (
+                        self.hint(ToggleHistory),
+                        tr(lang, "shortcuts.desc.history_panel"),
+                    ),
                     (
                         "Ctrl+S / Ctrl+Shift+S / Ctrl+O",
-                        tr(lang, UiText::DescSaveOpen),
+                        tr(lang, "shortcuts.desc.save_open"),
                     ),
-                    (self.hint(ExportAudio), tr(lang, UiText::DescExportAudio)),
-                    (self.hint(ExportMidi), tr(lang, UiText::DescExportMidi)),
+                    (
+                        self.hint(ExportAudio),
+                        tr(lang, "shortcuts.desc.export_audio"),
+                    ),
+                    (
+                        self.hint(ExportMidi),
+                        tr(lang, "shortcuts.desc.export_midi"),
+                    ),
                 ],
             ),
             (
-                tr(lang, UiText::GroupTracksMix),
+                tr(lang, "shortcuts.group.tracks"),
                 vec![
                     (
                         self.hint(NewAudioTrack),
-                        tr(lang, UiText::DescNewAudioTrack),
+                        tr(lang, "shortcuts.desc.new_audio_track"),
                     ),
-                    (self.hint(NewMidiTrack), tr(lang, UiText::DescNewMidiTrack)),
-                    (self.hint(NewReturnBus), tr(lang, UiText::DescNewReturnBus)),
-                    (self.hint(GroupTracks), tr(lang, UiText::DescGroupTracks)),
-                    (self.hint(ToggleTrackMute), tr(lang, UiText::DescMuteTrack)),
-                    (self.hint(ToggleTrackSolo), tr(lang, UiText::DescSoloTrack)),
+                    (
+                        self.hint(NewMidiTrack),
+                        tr(lang, "shortcuts.desc.new_midi_track"),
+                    ),
+                    (
+                        self.hint(NewReturnBus),
+                        tr(lang, "shortcuts.desc.new_return_bus"),
+                    ),
+                    (
+                        self.hint(GroupTracks),
+                        tr(lang, "shortcuts.desc.group_tracks"),
+                    ),
+                    (
+                        self.hint(ToggleTrackMute),
+                        tr(lang, "shortcuts.desc.mute_track"),
+                    ),
+                    (
+                        self.hint(ToggleTrackSolo),
+                        tr(lang, "shortcuts.desc.solo_track"),
+                    ),
                     (
                         self.hint(ToggleTrackFreeze),
-                        tr(lang, UiText::DescFreezeTrack),
+                        tr(lang, "shortcuts.desc.freeze_track"),
                     ),
                 ],
             ),
             (
-                tr(lang, UiText::GroupArrangement),
+                tr(lang, "shortcuts.group.arrangement"),
                 vec![
-                    (self.hint(Duplicate), tr(lang, UiText::DescDuplicate)),
+                    (self.hint(Duplicate), tr(lang, "shortcuts.desc.duplicate")),
                     (
                         self.hint(SplitClipAtCursor),
-                        tr(lang, UiText::DescSplitClip),
+                        tr(lang, "shortcuts.desc.split_clip"),
                     ),
-                    (self.hint(Consolidate), tr(lang, UiText::DescConsolidate)),
-                    (self.hint(BounceMidi), tr(lang, UiText::DescBounceMidi)),
+                    (
+                        self.hint(Consolidate),
+                        tr(lang, "shortcuts.desc.consolidate"),
+                    ),
+                    (
+                        self.hint(BounceMidi),
+                        tr(lang, "shortcuts.desc.bounce_midi"),
+                    ),
                     (
                         self.hint(ToggleAutomation),
-                        tr(lang, UiText::DescToggleAutomation),
+                        tr(lang, "shortcuts.desc.toggle_automation"),
                     ),
-                    ("← / →", tr(lang, UiText::DescMoveCursor)),
-                    ("↑ / ↓", tr(lang, UiText::DescSelectTrack)),
-                    ("Delete / Backspace", tr(lang, UiText::DescDeleteSelected)),
-                    ("+ / -", tr(lang, UiText::DescZoomInOut)),
-                    ("Home", tr(lang, UiText::DescReturnHome)),
+                    ("← / →", tr(lang, "shortcuts.desc.move_cursor")),
+                    ("↑ / ↓", tr(lang, "shortcuts.desc.select_track")),
+                    (
+                        "Delete / Backspace",
+                        tr(lang, "shortcuts.desc.delete_selected"),
+                    ),
+                    ("+ / -", tr(lang, "shortcuts.desc.zoom_in_out")),
+                    ("Home", tr(lang, "shortcuts.desc.return_home")),
                 ],
             ),
             (
-                tr(lang, UiText::GroupTransportRecord),
+                tr(lang, "shortcuts.group.transport"),
                 vec![
-                    ("Space", tr(lang, UiText::DescPlayStop)),
-                    (self.hint(ToggleLoop), tr(lang, UiText::DescToggleLoop)),
+                    ("Space", tr(lang, "shortcuts.desc.play_stop")),
+                    (
+                        self.hint(ToggleLoop),
+                        tr(lang, "shortcuts.desc.toggle_loop"),
+                    ),
                     (
                         self.hint(ToggleMetronome),
-                        tr(lang, UiText::DescToggleMetronome),
+                        tr(lang, "shortcuts.desc.toggle_metronome"),
                     ),
                     (
                         self.hint(ToggleMidiRecord),
-                        tr(lang, UiText::DescMidiRecord),
+                        tr(lang, "shortcuts.desc.midi_record"),
                     ),
                     (
                         self.hint(ToggleAudioRecord),
-                        tr(lang, UiText::DescAudioRecord),
+                        tr(lang, "shortcuts.desc.audio_record"),
                     ),
                     (
                         self.hint(ToggleInputMonitor),
-                        tr(lang, UiText::DescInputMonitor),
+                        tr(lang, "shortcuts.desc.input_monitor"),
                     ),
-                    (self.hint(TapTempo), tr(lang, UiText::DescTapTempo)),
-                    ("M", tr(lang, UiText::DescMidiQwerty)),
-                    ("Esc", tr(lang, UiText::DescEscape)),
+                    (self.hint(TapTempo), tr(lang, "shortcuts.desc.tap_tempo")),
+                    ("M", tr(lang, "shortcuts.desc.midi_qwerty")),
+                    ("Esc", tr(lang, "shortcuts.desc.escape")),
                 ],
             ),
         ]

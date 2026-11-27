@@ -5,7 +5,6 @@ use crate::ui::{
         button::chip_option,
         modal::{ModalClose, modal_backdrop},
     },
-    i18n::UiText,
     settings::SettingsCategory,
 };
 use gpui::{Context, IntoElement, MouseButton, Window, div, prelude::*, px, rgb};
@@ -52,10 +51,10 @@ impl DawApp {
                             div()
                                 .text_lg()
                                 .text_color(rgb(ds.text))
-                                .child(self.tr(UiText::SettingsTitle)),
+                                .child(self.tr("settings.title")),
                         )
                         .child(
-                            chip_option(ds, self.tr(UiText::CloseEsc), false, ds.muted)
+                            chip_option(ds, self.tr("settings.close_esc"), false, ds.muted)
                                 .on_mouse_down(
                                     MouseButton::Left,
                                     cx.listener(|this, _, _, cx| {
@@ -139,7 +138,7 @@ impl DawApp {
                                         .flex_shrink_0()
                                         .text_lg()
                                         .text_color(rgb(ds.text))
-                                        .child(category.label()),
+                                        .child(category.label_in(self.settings.language)),
                                 )
                                 .child(match category {
                                     SettingsCategory::Appearance => {

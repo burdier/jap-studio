@@ -1,9 +1,6 @@
 use crate::ui::{
-    DawApp,
-    components::button::chip_option,
-    cursor_fx::CursorFxMode,
-    design::ThemePreset,
-    i18n::{Language, UiText},
+    DawApp, components::button::chip_option, cursor_fx::CursorFxMode, design::ThemePreset,
+    i18n::Language,
 };
 use gpui::{Context, IntoElement, MouseButton, div, prelude::*, rgb};
 impl DawApp {
@@ -24,7 +21,7 @@ impl DawApp {
                 div()
                     .text_xs()
                     .text_color(rgb(ds.muted))
-                    .child(self.tr(UiText::AppearanceAutoSave)),
+                    .child(self.tr("settings.appearance.autosave")),
             )
             .when_some(self.settings.appearance_save_error(), |panel, error| {
                 panel.child(div().text_xs().text_color(rgb(ds.danger)).child(format!(
@@ -45,7 +42,7 @@ impl DawApp {
                                 div()
                                     .text_xs()
                                     .text_color(rgb(ds.cyan))
-                                    .child(self.tr(UiText::LanguageHeading)),
+                                    .child(self.tr("settings.appearance.language")),
                             )
                             .child(
                                 div()
@@ -78,42 +75,54 @@ impl DawApp {
                         div()
                             .text_xs()
                             .text_color(rgb(ds.text))
-                            .child(self.tr(UiText::SelectionContrastHeading)),
+                            .child(self.tr("settings.appearance.selection_contrast")),
                     )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(rgb(ds.muted))
-                            .child(format!("Intensidad: {:.0}%", ds.selection_contrast * 100.0)),
-                    )
+                    .child(div().text_xs().text_color(rgb(ds.muted)).child(self.tr_fmt(
+                        "settings.appearance.intensity",
+                        &[("pct", &format!("{:.0}", ds.selection_contrast * 100.0))],
+                    )))
                     .child(
                         div().flex().gap_2().children(
-                            [("Suave", 0.12_f32), ("Medio", 0.18), ("Alto", 0.28)]
-                                .into_iter()
-                                .map(|(label, value)| {
-                                    chip_option(
-                                        ds,
-                                        label,
-                                        (ds.selection_contrast - value).abs() < 0.001,
-                                        ds.accent,
-                                    )
-                                    .on_mouse_down(
-                                        MouseButton::Left,
-                                        cx.listener(move |this, _, _, cx| {
-                                            this.set_selection_contrast(value);
-                                            cx.stop_propagation();
-                                            cx.notify();
-                                        }),
-                                    )
-                                }),
+                            [
+                                (self.tr("settings.appearance.contrast_soft"), 0.12_f32),
+                                (self.tr("settings.appearance.contrast_medium"), 0.18),
+                                (self.tr("settings.appearance.contrast_high"), 0.28),
+                            ]
+                            .into_iter()
+                            .map(|(label, value)| {
+                                chip_option(
+                                    ds,
+                                    label,
+                                    (ds.selection_contrast - value).abs() < 0.001,
+                                    ds.accent,
+                                )
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(move |this, _, _, cx| {
+                                        this.set_selection_contrast(value);
+                                        cx.stop_propagation();
+                                        cx.notify();
+                                    }),
+                                )
+                            }),
                         ),
                     )
                     .child(
                         div()
                             .flex()
                             .gap_2()
-                            .child(chip_option(ds, "Sin seleccionar", false, ds.accent))
-                            .child(chip_option(ds, "Seleccionado", true, ds.accent)),
+                            .child(chip_option(
+                                ds,
+                                self.tr("settings.appearance.unselected"),
+                                false,
+                                ds.accent,
+                            ))
+                            .child(chip_option(
+                                ds,
+                                self.tr("settings.appearance.selected"),
+                                true,
+                                ds.accent,
+                            )),
                     ),
             )
             .child(
@@ -130,7 +139,7 @@ impl DawApp {
                                 div()
                                     .text_xs()
                                     .text_color(rgb(ds.pink))
-                                    .child(self.tr(UiText::ColorThemeHeading)),
+                                    .child(self.tr("settings.appearance.color_theme")),
                             )
                             .child(
                                 div()
@@ -173,7 +182,7 @@ impl DawApp {
                                 div()
                                     .text_xs()
                                     .text_color(rgb(ds.orange))
-                                    .child("EFECTO DEL CURSOR"),
+                                    .child(self.tr("settings.appearance.cursor_fx")),
                             )
                             .child(
                                 div()

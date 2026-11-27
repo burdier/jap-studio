@@ -2,7 +2,6 @@
 use super::super::{
     CenterView, DawApp,
     components::button::{MAMEY_LOGO_COLOR, brand_logo, flat_control, recessed_well},
-    i18n::UiText,
 };
 use super::menu_bar::MenuGroup;
 use gpui::{
@@ -35,7 +34,7 @@ impl DawApp {
         } else if let Some(clip) = &self.timeline.clip {
             format!("{} Hz", clip.file.sample_rate)
         } else {
-            self.tr(UiText::NoAudio).into()
+            self.tr("chrome.no_audio").into()
         };
         let engine_label = if self.player.is_some() {
             if self.pattern_loop_beats.is_some() {
@@ -125,7 +124,7 @@ impl DawApp {
                                     .as_ref()
                                     .and_then(|p| p.file_stem())
                                     .map(|n| n.to_string_lossy().into_owned())
-                                    .unwrap_or_else(|| self.tr(UiText::UntitledProject).into()),
+                                    .unwrap_or_else(|| self.tr("chrome.untitled").into()),
                                 if self.project.dirty { " *" } else { "" }
                             )),
                     )
@@ -134,6 +133,10 @@ impl DawApp {
                         let can_redo = self.history.can_redo();
                         let hist_open = self.history.open;
                         let hist_count = self.history.len();
+                        let undo_tip = self.tr("chrome.undo_tooltip");
+                        let redo_tip = self.tr("chrome.redo_tooltip");
+                        let hist_tip = self.tr("chrome.history_tooltip");
+                        let autosave_tip = self.tr("chrome.autosave_tooltip");
                         div()
                             .flex()
                             .items_center()
@@ -150,8 +153,8 @@ impl DawApp {
                                     .text_size(px(11.))
                                     .text_color(rgb(if can_undo { ds.text } else { ds.muted }))
                                     .cursor_pointer()
-                                    .tooltip(|window, cx| {
-                                        Tooltip::new("Deshacer (Ctrl+Z)").build(window, cx)
+                                    .tooltip(move |window, cx| {
+                                        Tooltip::new(undo_tip).build(window, cx)
                                     })
                                     .child("↶")
                                     .on_mouse_down(
@@ -174,8 +177,8 @@ impl DawApp {
                                     .text_size(px(11.))
                                     .text_color(rgb(if can_redo { ds.text } else { ds.muted }))
                                     .cursor_pointer()
-                                    .tooltip(|window, cx| {
-                                        Tooltip::new("Rehacer (Ctrl+Y)").build(window, cx)
+                                    .tooltip(move |window, cx| {
+                                        Tooltip::new(redo_tip).build(window, cx)
                                     })
                                     .child("↷")
                                     .on_mouse_down(
@@ -208,9 +211,8 @@ impl DawApp {
                                     .text_size(px(10.))
                                     .text_color(rgb(if hist_open { ds.cyan } else { ds.text }))
                                     .cursor_pointer()
-                                    .tooltip(|window, cx| {
-                                        Tooltip::new("Ver historial de cambios (Ctrl+H)")
-                                            .build(window, cx)
+                                    .tooltip(move |window, cx| {
+                                        Tooltip::new(hist_tip).build(window, cx)
                                     })
                                     .child(format!("🕒 {hist_count}"))
                                     .on_mouse_down(
@@ -233,9 +235,8 @@ impl DawApp {
                                             .ml(px(4.))
                                             .text_size(px(9.5))
                                             .text_color(rgb(ds.success))
-                                            .tooltip(|window, cx| {
-                                                Tooltip::new("Autoguardado activo cada 25 s")
-                                                    .build(window, cx)
+                                            .tooltip(move |window, cx| {
+                                                Tooltip::new(autosave_tip).build(window, cx)
                                             })
                                             .child(format!("✓ {stamp}")),
                                     )
@@ -252,7 +253,7 @@ impl DawApp {
                                 .rounded(px(ds.radius_sm))
                                 .text_xs()
                                 .text_color(rgb(ds.bg))
-                                .child("COMANDO"),
+                                .child(self.tr("chrome.command_badge")),
                         )
                     }),
             )
@@ -300,7 +301,7 @@ impl DawApp {
                             } else {
                                 ds.muted
                             }))
-                            .child("Afinador")
+                            .child(self.tr("chrome.tuner"))
                             .on_click(cx.listener(|this, _, _, cx| this.toggle_track_tuner(cx))),
                     )
                     .when(!compact, |bar| {
@@ -418,7 +419,7 @@ impl DawApp {
         let show_hints = f32::from(window.viewport_size().width) >= 1120.0;
         let active_panel = self.workspace_focus.active.label(self.center_view);
         let badge_label = if self.command_open {
-            "COMANDO".to_string()
+            self.tr("chrome.command_badge").to_string()
         } else {
             format!("● {active_panel}")
         };
@@ -487,12 +488,12 @@ impl DawApp {
                     .when(show_hints, |row| {
                         row.children(
                             [
-                                "Espacio: Play",
-                                "Flechas: navegar",
-                                "Ctrl+P / :: comandos",
-                                "Ctrl+E: explorador",
-                                "F11: ampliar",
-                                "Delete: borrar",
+                                self.tr("status.hint_play"),
+                                self.tr("status.hint_navigate"),
+                                self.tr("status.hint_commands"),
+                                self.tr("status.hint_explorer"),
+                                self.tr("status.hint_maximize"),
+                                self.tr("status.hint_delete"),
                             ]
                             .into_iter()
                             .map(|label| div().flex_shrink_0().text_color(rgb(ds.muted)).child(label)),

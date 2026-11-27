@@ -3,7 +3,7 @@ use super::{
     DawApp,
     cursor_fx::CursorFxMode,
     design::ThemePreset,
-    i18n::{Language, UiText, tr},
+    i18n::{Language, set_active_language, tr, tr_fmt},
     profile,
     shortcuts::ShortcutPreset,
     views::tracks::{TcpControlStyle, TcpLayoutPreset, TcpWidget},
@@ -30,19 +30,15 @@ impl SettingsCategory {
         Self::MidiMap,
         Self::Shortcuts,
     ];
-    pub fn label(self) -> &'static str {
-        self.label_in(Language::Es)
-    }
-
     pub fn label_in(self, lang: Language) -> &'static str {
         match self {
-            Self::Audio => tr(lang, UiText::CatAudio),
-            Self::Appearance => tr(lang, UiText::CatAppearance),
-            Self::Paths => tr(lang, UiText::CatPaths),
-            Self::Tracks => tr(lang, UiText::CatTracks),
-            Self::Export => tr(lang, UiText::CatExport),
-            Self::MidiMap => tr(lang, UiText::CatMidiMap),
-            Self::Shortcuts => tr(lang, UiText::CatShortcuts),
+            Self::Audio => tr(lang, "settings.cat.audio"),
+            Self::Appearance => tr(lang, "settings.cat.appearance"),
+            Self::Paths => tr(lang, "settings.cat.paths"),
+            Self::Tracks => tr(lang, "settings.cat.tracks"),
+            Self::Export => tr(lang, "settings.cat.export"),
+            Self::MidiMap => tr(lang, "settings.cat.midi_map"),
+            Self::Shortcuts => tr(lang, "settings.cat.shortcuts"),
         }
     }
 }
@@ -65,9 +61,11 @@ pub(super) struct SettingsUi {
 impl SettingsUi {
     pub fn new() -> Self {
         let saved_lang = Language::load_saved();
+        let language = saved_lang.unwrap_or_default();
+        set_active_language(language);
         Self {
             welcome_open: saved_lang.is_none(),
-            language: saved_lang.unwrap_or_default(),
+            language,
             shortcut_preset: ShortcutPreset::load(),
             export: super::export_preferences::ExportPreferences::load(),
             audio: super::audio_preferences::AudioPreferences::load(),
@@ -110,12 +108,17 @@ impl SettingsUi {
 }
 
 impl DawApp {
-    pub(in crate::ui) fn tr(&self, key: UiText) -> &'static str {
+    pub(in crate::ui) fn tr(&self, key: &'static str) -> &'static str {
         tr(self.settings.language, key)
+    }
+
+    pub(in crate::ui) fn tr_fmt(&self, key: &'static str, args: &[(&str, &str)]) -> String {
+        tr_fmt(self.settings.language, key, args)
     }
 
     pub(in crate::ui) fn set_language(&mut self, language: Language) {
         self.settings.language = language;
+        set_active_language(language);
         match language.save() {
             Ok(()) => {
                 self.status_message = format!("Idioma / Language: {} · guardado", language.label());

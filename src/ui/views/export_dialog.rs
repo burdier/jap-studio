@@ -35,9 +35,12 @@ impl DawApp {
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(rgb(ds.success))
                         .child(if report.paths.len() == 1 {
-                            "Archivo exportado".into()
+                            self.tr("export.done_single").into()
                         } else {
-                            format!("{} archivos exportados", report.paths.len())
+                            self.tr_fmt(
+                                "export.done_plural",
+                                &[("count", &report.paths.len().to_string())],
+                            )
                         }),
                 )
                 .when(has_metrics, |body| {
@@ -56,7 +59,7 @@ impl DawApp {
                                     .text_xs()
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .text_color(rgb(ds.muted))
-                                    .child("MEDICIÓN EBU R128"),
+                                    .child(self.tr("export.loudness_heading")),
                             )
                             .child(
                                 div()
@@ -72,7 +75,7 @@ impl DawApp {
                                                     div()
                                                         .text_xs()
                                                         .text_color(rgb(ds.muted))
-                                                        .child("Sonoridad"),
+                                                        .child(self.tr("export.loudness")),
                                                 )
                                                 .child(
                                                     div()
@@ -93,7 +96,7 @@ impl DawApp {
                                                     div()
                                                         .text_xs()
                                                         .text_color(rgb(ds.muted))
-                                                        .child("True Peak"),
+                                                        .child(self.tr("export.true_peak")),
                                                 )
                                                 .child(
                                                     div()
@@ -118,7 +121,7 @@ impl DawApp {
                                                     div()
                                                         .text_xs()
                                                         .text_color(rgb(ds.muted))
-                                                        .child("Dinámica (LRA)"),
+                                                        .child(self.tr("export.dynamics")),
                                                 )
                                                 .child(
                                                     div()
@@ -137,15 +140,21 @@ impl DawApp {
                                 |card| {
                                     let mut notes = Vec::new();
                                     if loudness.applied_gain_db.abs() >= 0.05 {
-                                        notes.push(format!(
-                                            "Normalización {:+.1} dB",
-                                            loudness.applied_gain_db
+                                        notes.push(self.tr_fmt(
+                                            "export.normalization",
+                                            &[(
+                                                "gain",
+                                                &format!("{:+.1}", loudness.applied_gain_db),
+                                            )],
                                         ));
                                     }
                                     if loudness.max_gain_reduction_db >= 0.05 {
-                                        notes.push(format!(
-                                            "Limitador -{:.1} dB máx.",
-                                            loudness.max_gain_reduction_db
+                                        notes.push(self.tr_fmt(
+                                            "export.limiter",
+                                            &[(
+                                                "gr",
+                                                &format!("{:.1}", loudness.max_gain_reduction_db),
+                                            )],
                                         ));
                                     }
                                     card.child(
@@ -171,7 +180,7 @@ impl DawApp {
                         Button::new("show-export-file")
                             .small()
                             .outline()
-                            .label("Mostrar en carpeta")
+                            .label(self.tr("export.reveal"))
                             .on_click(move |_, _, cx| cx.reveal_path(&file)),
                     )
                 })
@@ -180,7 +189,7 @@ impl DawApp {
                         div()
                             .text_sm()
                             .text_color(rgb(ds.warning))
-                            .child("La señal superó 0 dBFS durante la exportación."),
+                            .child(self.tr("export.clipping_warning")),
                     )
                 });
         }

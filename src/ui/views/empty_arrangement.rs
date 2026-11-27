@@ -62,14 +62,14 @@ impl DawApp {
                             .text_center()
                             .text_lg()
                             .text_color(rgb(ds.text))
-                            .child("Añadir una pista"),
+                            .child(self.tr("arrangement.empty.title")),
                     )
                     .child(
                         div()
                             .text_center()
                             .text_sm()
                             .text_color(rgb(ds.muted))
-                            .child("Arrastra audio aquí o pulsa A para añadir una pista"),
+                            .child(self.tr("arrangement.empty.subtitle")),
                     ),
             )
     }

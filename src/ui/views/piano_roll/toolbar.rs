@@ -60,7 +60,13 @@ impl DawApp {
             .child(self.roll_button("◀", false, RollAction::PreviousClip, cx))
             .child(
                 self.roll_button(
-                    format!("Clip: {} (pista {})", clip.name, clip.track + 1),
+                    self.tr_fmt(
+                        "piano_roll.clip_label",
+                        &[
+                            ("name", &clip.name),
+                            ("track", &(clip.track + 1).to_string()),
+                        ],
+                    ),
                     false,
                     RollAction::ChooseClip,
                     cx,
@@ -73,9 +79,9 @@ impl DawApp {
             .child(
                 self.roll_button(
                     if self.piano_roll.follow {
-                        "Follow ✓"
+                        self.tr("piano_roll.follow_active")
                     } else {
-                        "Follow"
+                        self.tr("piano_roll.follow")
                     },
                     false,
                     RollAction::Follow,
@@ -87,21 +93,28 @@ impl DawApp {
                 div()
                     .text_size(px(ds.font_size_xs - 1.0))
                     .text_color(rgb(ds.warning))
-                    .child(if edited { "Edited •" } else { "Sin cambios" }),
+                    .child(if edited {
+                        self.tr("piano_roll.edited")
+                    } else {
+                        self.tr("piano_roll.unchanged")
+                    }),
             )
             .child(separator(ds.border))
             .child(self.render_toolbar_bound_buttons(ToolbarScope::PianoRoll, true, cx))
             .child(self.roll_button("⚙", false, RollAction::OpenSettings, cx));
         let tools = [
-            ("↖ Selección", RollTool::Select),
-            ("Pitch MPE", RollTool::Pitch),
-            ("▧ Región", RollTool::Box),
-            ("✎ Dibujar", RollTool::Draw),
-            ("↔ Longitud", RollTool::Length),
-            ("▧ Borrar región", RollTool::EraseRegion),
-            ("⌫ Borrar", RollTool::Erase),
-            ("▨ Pintar", RollTool::Paint),
-            ("M Silenciar", RollTool::Mute),
+            (self.tr("piano_roll.tool_select"), RollTool::Select),
+            (self.tr("piano_roll.tool_pitch"), RollTool::Pitch),
+            (self.tr("piano_roll.tool_region"), RollTool::Box),
+            (self.tr("piano_roll.tool_draw"), RollTool::Draw),
+            (self.tr("piano_roll.tool_length"), RollTool::Length),
+            (
+                self.tr("piano_roll.tool_erase_region"),
+                RollTool::EraseRegion,
+            ),
+            (self.tr("piano_roll.tool_erase"), RollTool::Erase),
+            (self.tr("piano_roll.tool_paint"), RollTool::Paint),
+            (self.tr("piano_roll.tool_mute"), RollTool::Mute),
         ];
         let second = div()
             .id("roll-tools-toolbar")
@@ -121,35 +134,62 @@ impl DawApp {
                 )
             }))
             .child(separator(ds.border))
-            .child(self.roll_button("✂ Cortar", false, RollAction::Cut, cx))
-            .child(self.roll_button("▣ Copiar", false, RollAction::Copy, cx))
-            .child(self.roll_button("▤ Pegar", false, RollAction::Paste, cx))
-            .child(self.roll_button("⌫ Eliminar", false, RollAction::DeleteSelection, cx))
+            .child(self.roll_button(self.tr("piano_roll.cut"), false, RollAction::Cut, cx))
+            .child(self.roll_button(self.tr("piano_roll.copy"), false, RollAction::Copy, cx))
+            .child(self.roll_button(self.tr("piano_roll.paste"), false, RollAction::Paste, cx))
+            .child(self.roll_button(
+                self.tr("piano_roll.delete"),
+                false,
+                RollAction::DeleteSelection,
+                cx,
+            ))
             .child(separator(ds.border))
             .child(self.roll_button("−", false, RollAction::GridCoarser, cx))
             .child(self.roll_button(
-                format!("Grid 1/{}", self.piano_roll.resolution.denominator()),
+                self.tr_fmt(
+                    "piano_roll.grid",
+                    &[(
+                        "denom",
+                        &self.piano_roll.resolution.denominator().to_string(),
+                    )],
+                ),
                 false,
                 RollAction::Form("midi.grid"),
                 cx,
             ))
             .child(self.roll_button("+", false, RollAction::GridFiner, cx))
             .child(self.roll_button(
-                format!("Nota 1/{} ▾", self.piano_roll.draw_length.denominator()),
+                self.tr_fmt(
+                    "piano_roll.note_len",
+                    &[(
+                        "denom",
+                        &self.piano_roll.draw_length.denominator().to_string(),
+                    )],
+                ),
                 false,
                 RollAction::ChooseDrawLength,
                 cx,
             ))
             .child(separator(ds.border))
-            .child(self.roll_button("Subdividir", false, RollAction::Subdivide, cx))
+            .child(self.roll_button(
+                self.tr("piano_roll.subdivide"),
+                false,
+                RollAction::Subdivide,
+                cx,
+            ))
             .child(self.roll_button(
                 "🎹 Hay Chord",
                 self.piano_roll.inspector_tab == 4,
                 RollAction::InspectorTab(4),
                 cx,
             ))
-            .child(self.roll_button("Velocidad…", false, RollAction::Velocity, cx))
-            .child(self.roll_button("Duración…", false, RollAction::Gate, cx))
+            .child(self.roll_button(
+                self.tr("piano_roll.velocity"),
+                false,
+                RollAction::Velocity,
+                cx,
+            ))
+            .child(self.roll_button(self.tr("piano_roll.gate"), false, RollAction::Gate, cx))
             .child(self.roll_button("Lua…", false, RollAction::Form("midi.script"), cx));
         div()
             .flex_shrink_0()

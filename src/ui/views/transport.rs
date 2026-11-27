@@ -13,6 +13,7 @@ impl DawApp {
     pub(in crate::ui) fn render_transport(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let ds = &self.ds;
         let tap_active = self.tap_tempo_active();
+        let tap_tip = self.tr("transport.tap_tooltip");
         let tap_pad = flat_control(ds, tap_active, ds.accent)
             .id("transport-tap-tempo")
             .w(px(54.0))
@@ -22,12 +23,7 @@ impl DawApp {
             .text_size(px(ds.font_size_xs - 0.5))
             .font_weight(FontWeight::SEMIBOLD)
             .text_color(rgb(if tap_active { ds.text } else { ds.muted }))
-            .tooltip(|window, cx| {
-                Tooltip::new(
-                    "Tap Tempo · haz clic al ritmo para calcular el BPM (clic derecho: reiniciar)",
-                )
-                .build(window, cx)
-            })
+            .tooltip(move |window, cx| Tooltip::new(tap_tip).build(window, cx))
             .when(tap_active, |el| el.child(led_dot(ds.accent, 5.0, true)))
             .child("TAP")
             .on_mouse_down(
@@ -138,15 +134,18 @@ impl DawApp {
             }
         };
         let mon_width = if mon_on { 96.0 } else { 74.0 };
-        let mon_tooltip: SharedString = format!(
-            "Monitoreo en vivo ({:.1} ms @ {} Hz · E/S {:.1} ms + Ring {:.1} ms + FX PDC {:.1} ms) · Clic: In/Off · Clic derecho: Off/In/Auto",
-            mon_ms,
-            mon_lat.sample_rate,
-            mon_lat.io_ms(),
-            mon_lat.ring_ms(),
-            mon_lat.fx_pdc_ms(),
-        )
-        .into();
+        let mon_tooltip: SharedString = self
+            .tr_fmt(
+                "transport.monitor_tooltip",
+                &[
+                    ("total", &format!("{mon_ms:.1}")),
+                    ("rate", &mon_lat.sample_rate.to_string()),
+                    ("io", &format!("{:.1}", mon_lat.io_ms())),
+                    ("ring", &format!("{:.1}", mon_lat.ring_ms())),
+                    ("pdc", &format!("{:.1}", mon_lat.fx_pdc_ms())),
+                ],
+            )
+            .into();
         let btn_h = (ds.transport_btn_size - 2.0).max(22.0);
         let midi_color = if self.midi_capture.has_notes() {
             ds.cyan
@@ -172,9 +171,9 @@ impl DawApp {
             ds.muted
         };
         let count_in_label = match count_in_bars {
-            0 => "Pre: Off",
-            1 => "Pre: 1c",
-            _ => "Pre: 2c",
+            0 => self.tr("transport.pre_off"),
+            1 => self.tr("transport.pre_1bar"),
+            _ => self.tr("transport.pre_2bars"),
         };
 
         transport_group(ds)

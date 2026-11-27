@@ -39,19 +39,33 @@ impl DawApp {
         let dark = ds.is_dark();
 
         // 1. Bancos A / B / C / D
+        let tip_full_level = self.tr("mpc.full_level_tooltip");
+        let tip_16_off = self.tr("mpc.16lvl_off_tooltip");
+        let tip_16_vel = self.tr("mpc.16lvl_vel_tooltip");
+        let tip_16_pitch = self.tr("mpc.16lvl_pitch_tooltip");
+        let tip_overdub = self.tr("mpc.overdub_tooltip");
+        let tip_chop = self.tr("mpc.chop_tooltip");
         let mut bank_cap = mpc_capsule(ds).child(
             div()
                 .px(px(4.0))
                 .text_size(px(9.5))
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(rgb(ds.muted))
-                .child("BANCO"),
+                .child(self.tr("mpc.bank")),
         );
         for bank in 0..MPC_BANK_COUNT {
             let active = mpc.bank == bank;
             let start = bank * MPC_PAD_COUNT;
             let has_pieces = start < pieces.len();
             let label = MpcState::bank_label(bank);
+            let bank_tip = self.tr_fmt(
+                "mpc.bank_tooltip",
+                &[
+                    ("bank", label),
+                    ("start", &(start + 1).to_string()),
+                    ("end", &(start + 16).to_string()),
+                ],
+            );
             bank_cap = bank_cap.child(
                 flat_control(ds, active, ds.accent)
                     .id(("mpc-bank", bank))
@@ -73,10 +87,7 @@ impl DawApp {
                     } else {
                         ds.muted
                     }))
-                    .tooltip(move |window, cx| {
-                        Tooltip::new(format!("Banco {label} (pads {}–{})", start + 1, start + 16))
-                            .build(window, cx)
-                    })
+                    .tooltip(move |window, cx| Tooltip::new(bank_tip.clone()).build(window, cx))
                     .when(has_pieces && !active, |el| {
                         el.child(led_dot(ds.accent, 3.5, false))
                     })
@@ -104,14 +115,11 @@ impl DawApp {
                     .text_size(px(10.0))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(rgb(if mpc.full_level { ds.text } else { ds.muted }))
-                    .tooltip(|window, cx| {
-                        Tooltip::new("Full Level: dispara todos los pads a velocidad máxima (127)")
-                            .build(window, cx)
-                    })
+                    .tooltip(move |window, cx| Tooltip::new(tip_full_level).build(window, cx))
                     .when(mpc.full_level, |el| {
                         el.child(led_dot(ds.warning, 4.5, true))
                     })
-                    .child("FULL LEVEL")
+                    .child(self.tr("mpc.full_level"))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|this, _, _, cx| {
@@ -133,7 +141,7 @@ impl DawApp {
                     .text_size(px(9.5))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(rgb(ds.muted))
-                    .child("16 LVL"),
+                    .child(self.tr("mpc.sixteen_levels")),
             );
         for mode in [
             SixteenLevelsMode::Off,
@@ -145,6 +153,11 @@ impl DawApp {
                 ds.muted
             } else {
                 ds.cyan
+            };
+            let mode_tip = match mode {
+                SixteenLevelsMode::Off => tip_16_off,
+                SixteenLevelsMode::Velocity => tip_16_vel,
+                SixteenLevelsMode::Pitch => tip_16_pitch,
             };
             levels_cap = levels_cap.child(
                 flat_control(ds, active && mode != SixteenLevelsMode::Off, color)
@@ -160,18 +173,7 @@ impl DawApp {
                         FontWeight::MEDIUM
                     })
                     .text_color(rgb(if active { ds.text } else { ds.muted }))
-                    .tooltip(move |window, cx| {
-                        Tooltip::new(match mode {
-                            SixteenLevelsMode::Off => "Modo normal: cada pad dispara su muestra",
-                            SixteenLevelsMode::Velocity => {
-                                "16 Levels (Velocidad): reparte el pad seleccionado de vel 16 a 127"
-                            }
-                            SixteenLevelsMode::Pitch => {
-                                "16 Levels (Pitch): afina el pad seleccionado cromáticamente (−7 a +8 st)"
-                            }
-                        })
-                        .build(window, cx)
-                    })
+                    .tooltip(move |window, cx| Tooltip::new(mode_tip).build(window, cx))
                     .when(active && mode != SixteenLevelsMode::Off, |el| {
                         el.child(led_dot(ds.cyan, 4.5, true))
                     })
@@ -198,11 +200,12 @@ impl DawApp {
                 } else {
                     ds.muted
                 }))
-                .child("REPEAT"),
+                .child(self.tr("mpc.repeat")),
         );
         for rate in NoteRepeatRate::ALL {
             let active = mpc.note_repeat == rate;
             let lit = active && rate != NoteRepeatRate::Off;
+            let rate_tip = self.tr_fmt("mpc.repeat_tooltip", &[("rate", rate.label())]);
             repeat_cap = repeat_cap.child(
                 flat_control(ds, lit, ds.orange)
                     .id(("mpc-repeat", rate as usize))
@@ -218,13 +221,7 @@ impl DawApp {
                         FontWeight::MEDIUM
                     })
                     .text_color(rgb(if active { ds.text } else { ds.muted }))
-                    .tooltip(move |window, cx| {
-                        Tooltip::new(format!(
-                            "Note Repeat {}: mantén pulsado un pad o tecla para repetir al tempo",
-                            rate.label()
-                        ))
-                        .build(window, cx)
-                    })
+                    .tooltip(move |window, cx| Tooltip::new(rate_tip.clone()).build(window, cx))
                     .when(lit, |el| el.child(led_dot(ds.orange, 4.0, true)))
                     .child(rate.label())
                     .on_mouse_down(
@@ -256,18 +253,13 @@ impl DawApp {
                     .text_size(px(10.0))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(rgb(if overdub { ds.danger } else { ds.muted }))
-                    .tooltip(|window, cx| {
-                        Tooltip::new(
-                            "Overdub: mientras suena Play, graba tus golpes en vivo al patrón activo",
-                        )
-                        .build(window, cx)
-                    })
+                    .tooltip(move |window, cx| Tooltip::new(tip_overdub).build(window, cx))
                     .child(led_dot(
                         if overdub { ds.danger } else { ds.muted },
                         5.0,
                         overdub,
                     ))
-                    .child("OVERDUB")
+                    .child(self.tr("mpc.overdub"))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|this, _, _, cx| {
@@ -277,13 +269,11 @@ impl DawApp {
                         }),
                     ),
             )
-            .child(
-                div()
-                    .w(px(1.0))
-                    .h(px(14.0))
-                    .mx(px(2.0))
-                    .bg(rgba(if dark { 0xffffff14 } else { 0x0f172a18 })),
-            )
+            .child(div().w(px(1.0)).h(px(14.0)).mx(px(2.0)).bg(rgba(if dark {
+                0xffffff14
+            } else {
+                0x0f172a18
+            })))
             .child(
                 flat_control(ds, false, ds.cyan)
                     .id("mpc-chop-open")
@@ -293,13 +283,8 @@ impl DawApp {
                     .text_size(px(10.0))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(rgb(ds.cyan))
-                    .tooltip(|window, cx| {
-                        Tooltip::new(
-                            "Abrir un archivo de audio y trocearlo automáticamente a 16 pads MPC",
-                        )
-                        .build(window, cx)
-                    })
-                    .child("✂ Trocear sample…")
+                    .tooltip(move |window, cx| Tooltip::new(tip_chop).build(window, cx))
+                    .child(self.tr("mpc.chop"))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|this, _, _, cx| {
@@ -349,12 +334,13 @@ impl DawApp {
 
         // Pie con guía de teclado rápida y pieza seleccionada
         let selected_lane = mpc.lane_for_pad(mpc.selected_pad);
+        let no_choke = self.tr("mpc.no_choke");
         let selected_label = pieces.get(selected_lane).map_or_else(
-            || "Ningún pad cargado".into(),
+            || self.tr("mpc.no_pad_loaded").into(),
             |p| {
                 let choke = p
                     .choke_group
-                    .map_or_else(|| "Sin choke".into(), |g| format!("Choke G{g}"));
+                    .map_or_else(|| no_choke.into(), |g| format!("Choke G{g}"));
                 format!(
                     "Pad {}{:02}: {} · {} · {choke}",
                     MpcState::bank_label(mpc.bank),
@@ -369,6 +355,7 @@ impl DawApp {
             .px(px(14.0))
             .py(px(6.0))
             .flex()
+            .flex_wrap()
             .items_center()
             .justify_between()
             .gap(px(8.0))
@@ -378,9 +365,11 @@ impl DawApp {
             .font_family("monospace")
             .text_size(px(10.0))
             .child(div().text_color(rgb(ds.text)).child(selected_label))
-            .child(div().text_color(rgb(ds.muted)).child(
-                "Teclado: Z-X-C-V / A-S-D-F / Q-W-E-R / 1-2-3-4 · MIDI: C1–D#2 · Clic der: Ajustes",
-            ));
+            .child(
+                div()
+                    .text_color(rgb(ds.muted))
+                    .child(self.tr("mpc.footer_keys")),
+            );
 
         div()
             .id("drum-mpc-pads")
@@ -457,17 +446,20 @@ impl DawApp {
             ds.border
         };
 
+        let empty_pad_lbl = self.tr("mpc.empty_pad");
+        let no_base_lbl = self.tr("mpc.no_base_pad");
+        let remove_pad_tip = self.tr("mpc.remove_pad_tooltip");
         let title = match mpc.sixteen_levels {
             SixteenLevelsMode::Off => direct_piece
                 .map(|p| p.name.clone())
-                .unwrap_or_else(|| "Vacío · soltar sample".into()),
+                .unwrap_or_else(|| empty_pad_lbl.into()),
             SixteenLevelsMode::Velocity => {
                 let vel = (16 + (pad as u32 * 111) / 15).clamp(1, 127);
-                active_piece.map_or_else(|| "Sin pad base".into(), |_| format!("Vel {vel}"))
+                active_piece.map_or_else(|| no_base_lbl.into(), |_| format!("Vel {vel}"))
             }
             SixteenLevelsMode::Pitch => {
                 let semi = pad as i16 - 7;
-                active_piece.map_or_else(|| "Sin pad base".into(), |_| format!("{semi:+} st"))
+                active_piece.map_or_else(|| no_base_lbl.into(), |_| format!("{semi:+} st"))
             }
         };
 
@@ -583,8 +575,8 @@ impl DawApp {
                                 .hover(move |s| {
                                     s.bg(rgba((danger << 8) | 0x26)).text_color(rgb(danger))
                                 })
-                                .tooltip(|window, cx| {
-                                    Tooltip::new("Eliminar pieza de este pad").build(window, cx)
+                                .tooltip(move |window, cx| {
+                                    Tooltip::new(remove_pad_tip).build(window, cx)
                                 })
                                 .child("×")
                                 .on_mouse_down(

@@ -49,28 +49,37 @@ fn drum_capsule(ds: &DesignSystem) -> Div {
         .shadow(panel_shadow(ds))
 }
 
-fn duration_label(length: i64, bar: i64, beat: i64) -> String {
+fn duration_label(lang: crate::ui::i18n::Language, length: i64, bar: i64, beat: i64) -> String {
+    use crate::ui::i18n::{tr, tr_fmt};
     let bars = length / bar;
     let remainder = length % bar;
     let pulses = remainder / beat;
     let measures = if bars == 1 {
-        "1 compás".into()
+        tr(lang, "drums.toolbar.bar_singular").into()
     } else {
-        format!("{bars} compases")
+        tr_fmt(
+            lang,
+            "drums.toolbar.bar_plural",
+            &[("count", &bars.to_string())],
+        )
     };
     if remainder == 0 {
         measures
     } else if remainder % beat != 0 {
         if bars == 0 {
-            "Parcial".into()
+            tr(lang, "drums.toolbar.partial").into()
         } else {
             format!("{measures}+")
         }
     } else {
         let beats = if pulses == 1 {
-            "1 pulso".into()
+            tr(lang, "drums.toolbar.beat_singular").into()
         } else {
-            format!("{pulses} pulsos")
+            tr_fmt(
+                lang,
+                "drums.toolbar.beat_plural",
+                &[("count", &pulses.to_string())],
+            )
         };
         if bars == 0 {
             beats
@@ -232,16 +241,14 @@ impl DawApp {
                             .text_size(px(14.0))
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(rgb(ds.text))
-                            .child("Empieza tu ritmo"),
+                            .child(self.tr("drums.empty.title")),
                     )
                     .child(
                         div()
                             .text_center()
                             .text_size(px(11.5))
                             .text_color(rgb(ds.muted))
-                            .child(
-                                "Suelta un sample aquí desde el Explorador o desde tu equipo para activar el secuenciador de Drums.",
-                            ),
+                            .child(self.tr("drums.empty.subtitle")),
                     )
                     .child(
                         div()
@@ -261,14 +268,11 @@ impl DawApp {
                                     .text_size(px(11.5))
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .text_color(rgb(ds.text))
-                                    .child("+ Cargar muestra")
+                                    .child(self.tr("drums.empty.add_sample"))
                                     .on_mouse_down(
                                         MouseButton::Left,
                                         cx.listener(|this, _, _, cx| {
-                                            this.choose_drum_sample(
-                                                DrumSampleTarget::NewPiece,
-                                                cx,
-                                            );
+                                            this.choose_drum_sample(DrumSampleTarget::NewPiece, cx);
                                             cx.stop_propagation();
                                             cx.notify();
                                         }),
@@ -283,7 +287,7 @@ impl DawApp {
                                     .text_size(px(11.5))
                                     .font_weight(FontWeight::MEDIUM)
                                     .text_color(rgb(ds.text))
-                                    .child("Cargar kit")
+                                    .child(self.tr("drums.empty.load_kit"))
                                     .on_mouse_down(
                                         MouseButton::Left,
                                         cx.listener(|this, _, _, cx| {
@@ -302,7 +306,7 @@ impl DawApp {
                                     .text_size(px(11.5))
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .text_color(rgb(ds.orange))
-                                    .child("Pads MPC")
+                                    .child(self.tr("drums.empty.mpc_pads"))
                                     .on_mouse_down(
                                         MouseButton::Left,
                                         cx.listener(|this, _, _, cx| {
@@ -322,7 +326,7 @@ impl DawApp {
                                         .text_size(px(11.5))
                                         .font_weight(FontWeight::MEDIUM)
                                         .text_color(rgb(ds.text))
-                                        .child("Abrir explorador")
+                                        .child(self.tr("drums.empty.open_explorer"))
                                         .on_mouse_down(
                                             MouseButton::Left,
                                             cx.listener(|this, _, _, cx| {
@@ -391,6 +395,24 @@ impl DawApp {
         }
         let has_notes = !pattern.notes.notes().is_empty();
         let active_id = session.active;
+        let lang = self.settings.language;
+        let tip_new_pat = self.tr("drums.toolbar.new_pattern_tooltip");
+        let tip_dup_pat = self.tr("drums.toolbar.duplicate_tooltip");
+        let tip_clear_pat = self.tr("drums.toolbar.clear_tooltip");
+        let tip_del_pat = self.tr("drums.toolbar.delete_pattern_tooltip");
+        let tip_rem_bar = self.tr("drums.toolbar.remove_bar_tooltip");
+        let tip_add_bar = self.tr("drums.toolbar.add_bar_tooltip");
+        let tip_swing = self.tr("drums.toolbar.swing_tooltip");
+        let tip_view_1bar = self.tr("drums.toolbar.view_1bar_tooltip");
+        let tip_view_2bars = self.tr("drums.toolbar.view_2bars_tooltip");
+        let tip_follow = self.tr("drums.toolbar.follow_tooltip");
+        let tip_add_sample = self.tr("drums.toolbar.add_sample_tooltip");
+        let tip_commit = self.tr("drums.toolbar.commit_tooltip");
+        let tip_inspector = self.tr("drums.toolbar.inspector_tooltip");
+        let tip_mixer = self.tr("drums.toolbar.mixer_tooltip");
+        let tip_save_kit = self.tr("drums.toolbar.save_kit_tooltip");
+        let tip_load_kit = self.tr("drums.toolbar.load_kit_tooltip");
+        let tip_bus_peak = self.tr("drums.toolbar.bus_peak_tooltip");
         pattern_capsule = pattern_capsule
             .child(
                 flat_control(ds, false, ds.accent)
@@ -401,7 +423,7 @@ impl DawApp {
                     .text_size(px(12.0))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(rgb(ds.text))
-                    .tooltip(|window, cx| Tooltip::new("Nuevo patrón").build(window, cx))
+                    .tooltip(move |window, cx| Tooltip::new(tip_new_pat).build(window, cx))
                     .child("+")
                     .on_mouse_down(
                         MouseButton::Left,
@@ -421,8 +443,8 @@ impl DawApp {
                     .text_size(px(10.5))
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(rgb(ds.muted))
-                    .tooltip(|window, cx| Tooltip::new("Duplicar patrón actual").build(window, cx))
-                    .child("Duplicar")
+                    .tooltip(move |window, cx| Tooltip::new(tip_dup_pat).build(window, cx))
+                    .child(self.tr("drums.toolbar.duplicate"))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|this, _, _, cx| {
@@ -442,10 +464,8 @@ impl DawApp {
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(rgb(ds.muted))
                     .when(!has_notes, |el| el.opacity(0.45))
-                    .tooltip(|window, cx| {
-                        Tooltip::new("Vaciar todos los pasos del patrón actual").build(window, cx)
-                    })
-                    .child("Limpiar")
+                    .tooltip(move |window, cx| Tooltip::new(tip_clear_pat).build(window, cx))
+                    .child(self.tr("drums.toolbar.clear"))
                     .when(has_notes, |el| {
                         el.on_mouse_down(
                             MouseButton::Left,
@@ -467,9 +487,7 @@ impl DawApp {
                         .text_size(px(12.0))
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(rgb(ds.danger))
-                        .tooltip(|window, cx| {
-                            Tooltip::new("Eliminar patrón actual").build(window, cx)
-                        })
+                        .tooltip(move |window, cx| Tooltip::new(tip_del_pat).build(window, cx))
                         .child("×")
                         .on_mouse_down(
                             MouseButton::Left,
@@ -493,7 +511,7 @@ impl DawApp {
                     .text_size(px(11.5))
                     .text_color(rgb(if can_shrink { ds.text } else { ds.muted }))
                     .when(!can_shrink, |el| el.opacity(0.45))
-                    .tooltip(|window, cx| Tooltip::new("Quitar 1 compás").build(window, cx))
+                    .tooltip(move |window, cx| Tooltip::new(tip_rem_bar).build(window, cx))
                     .child("−")
                     .when(can_shrink, |el| {
                         el.on_mouse_down(
@@ -513,7 +531,7 @@ impl DawApp {
                     .text_size(px(10.5))
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(rgb(ds.text))
-                    .child(duration_label(length, bar_ticks, beat_ticks)),
+                    .child(duration_label(lang, length, bar_ticks, beat_ticks)),
             )
             .child(
                 flat_control(ds, false, ds.accent)
@@ -523,7 +541,7 @@ impl DawApp {
                     .rounded(px(ds.radius_sm))
                     .text_size(px(11.5))
                     .text_color(rgb(ds.text))
-                    .tooltip(|window, cx| Tooltip::new("Añadir 1 compás").build(window, cx))
+                    .tooltip(move |window, cx| Tooltip::new(tip_add_bar).build(window, cx))
                     .child("+")
                     .on_mouse_down(
                         MouseButton::Left,
@@ -557,14 +575,14 @@ impl DawApp {
                         ds.muted
                     }))
                     .tooltip({
-                        let name = grid_note_name(pattern.grid.denominator());
-                        let steps = pattern.step_count();
-                        move |window, cx| {
-                            Tooltip::new(format!(
-                                "Rejilla: {name} ({steps} pasos) · clic para cambiar subdivisión"
-                            ))
-                            .build(window, cx)
-                        }
+                        let tip = self.tr_fmt(
+                            "drums.toolbar.grid_tooltip",
+                            &[
+                                ("name", grid_note_name(pattern.grid.denominator())),
+                                ("steps", &pattern.step_count().to_string()),
+                            ],
+                        );
+                        move |window, cx| Tooltip::new(tip.clone()).build(window, cx)
                     })
                     .when(editor.options == Some(PatternOptions::Grid), |el| {
                         el.child(led_dot(ds.cyan, 4.5, true))
@@ -602,12 +620,7 @@ impl DawApp {
                         FontWeight::MEDIUM
                     })
                     .text_color(rgb(if has_swing { ds.text } else { ds.muted }))
-                    .tooltip(|window, cx| {
-                        Tooltip::new(
-                            "Swing del patrón (0–75%) · rueda o clic izq/der: ±5% · doble clic o Alt+clic: 0%",
-                        )
-                        .build(window, cx)
-                    })
+                    .tooltip(move |window, cx| Tooltip::new(tip_swing).build(window, cx))
                     .when(has_swing, |el| el.child(led_dot(ds.warning, 4.5, true)))
                     .child(format!("Swing {swing}%"))
                     .on_mouse_down(
@@ -674,9 +687,9 @@ impl DawApp {
                         .text_color(rgb(if active { ds.text } else { ds.muted }))
                         .tooltip(move |window, cx| {
                             Tooltip::new(if bars == 1 {
-                                "Ver 1 compás por página (pads grandes)"
+                                tip_view_1bar
                             } else {
-                                "Ver 2 compases por página al ancho completo"
+                                tip_view_2bars
                             })
                             .build(window, cx)
                         })
@@ -712,7 +725,7 @@ impl DawApp {
                 let has_notes = editor.page_has_notes(start_tick, end_tick);
                 let is_visible = page == visible_page;
                 let is_playing = playing_page == Some(page);
-                let tip_label = label.clone();
+                let tip_goto = self.tr_fmt("drums.toolbar.goto_bar_tooltip", &[("bar", &label)]);
                 cap = cap.child(
                     flat_control(ds, is_visible, if is_playing { ds.cyan } else { ds.accent })
                         .id(("drum-step-page", page))
@@ -735,9 +748,7 @@ impl DawApp {
                         } else {
                             ds.muted
                         }))
-                        .tooltip(move |window, cx| {
-                            Tooltip::new(format!("Ir a compás {tip_label}")).build(window, cx)
-                        })
+                        .tooltip(move |window, cx| Tooltip::new(tip_goto.clone()).build(window, cx))
                         .when(is_playing, |el| el.child(led_dot(ds.cyan, 4.5, true)))
                         .when(!is_playing && has_notes, |el| {
                             el.child(led_dot(
@@ -775,12 +786,9 @@ impl DawApp {
                         FontWeight::MEDIUM
                     })
                     .text_color(rgb(if follow { ds.text } else { ds.muted }))
-                    .tooltip(|window, cx| {
-                        Tooltip::new("Cambiar de página automáticamente siguiendo el cabezal")
-                            .build(window, cx)
-                    })
+                    .tooltip(move |window, cx| Tooltip::new(tip_follow).build(window, cx))
                     .when(follow, |el| el.child(led_dot(ds.cyan, 4.5, true)))
-                    .child("Seguir")
+                    .child(self.tr("drums.toolbar.follow"))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|this, _, _, cx| {
@@ -798,20 +806,20 @@ impl DawApp {
             [
                 (
                     "drum-mode-pattern",
-                    "Patrón",
-                    "Reproduce el patrón activo en bucle",
+                    self.tr("drums.toolbar.mode_pattern"),
+                    self.tr("drums.toolbar.mode_pattern_tooltip"),
                     DrumPlaybackSource::Pattern,
                 ),
                 (
                     "drum-mode-song",
-                    "Canción",
-                    "Abre y reproduce la secuencia de patrones",
+                    self.tr("drums.toolbar.mode_song"),
+                    self.tr("drums.toolbar.mode_song_tooltip"),
                     DrumPlaybackSource::Song,
                 ),
                 (
                     "drum-mode-timeline",
-                    "Timeline",
-                    "Reproduce sincronizado con el Arrangement",
+                    self.tr("drums.toolbar.mode_timeline"),
+                    self.tr("drums.toolbar.mode_timeline_tooltip"),
                     DrumPlaybackSource::Arrangement,
                 ),
             ]
@@ -856,10 +864,8 @@ impl DawApp {
                     .text_size(px(10.5))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(rgb(ds.cyan))
-                    .tooltip(|window, cx| {
-                        Tooltip::new("Añadir una muestra de audio al kit").build(window, cx)
-                    })
-                    .child("+ Muestra")
+                    .tooltip(move |window, cx| Tooltip::new(tip_add_sample).build(window, cx))
+                    .child(self.tr("drums.toolbar.add_sample"))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|this, _, _, cx| {
@@ -878,11 +884,8 @@ impl DawApp {
                     .text_size(px(10.5))
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(rgb(ds.text))
-                    .tooltip(|window, cx| {
-                        Tooltip::new("Volcar las piezas al cursor del Arrangement")
-                            .build(window, cx)
-                    })
-                    .child("Volcar")
+                    .tooltip(move |window, cx| Tooltip::new(tip_commit).build(window, cx))
+                    .child(self.tr("drums.toolbar.commit"))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|this, _, _, cx| {
@@ -910,14 +913,11 @@ impl DawApp {
                     } else {
                         ds.muted
                     }))
-                    .tooltip(|window, cx| {
-                        Tooltip::new("Ajustes y envolvente de la pieza seleccionada")
-                            .build(window, cx)
-                    })
+                    .tooltip(move |window, cx| Tooltip::new(tip_inspector).build(window, cx))
                     .when(editor.inspector_open, |el| {
                         el.child(led_dot(ds.accent, 4.5, true))
                     })
-                    .child("Ajustes")
+                    .child(self.tr("drums.toolbar.inspector"))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|this, _, _, cx| {
@@ -942,13 +942,11 @@ impl DawApp {
                         FontWeight::MEDIUM
                     })
                     .text_color(rgb(if editor.mixer_open { ds.text } else { ds.muted }))
-                    .tooltip(|window, cx| {
-                        Tooltip::new("Mezclador interno del kit").build(window, cx)
-                    })
+                    .tooltip(move |window, cx| Tooltip::new(tip_mixer).build(window, cx))
                     .when(editor.mixer_open, |el| {
                         el.child(led_dot(ds.cyan, 4.5, true))
                     })
-                    .child("Mixer")
+                    .child(self.tr("drums.toolbar.mixer"))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|this, _, _, cx| {
@@ -968,13 +966,8 @@ impl DawApp {
                     .text_size(px(10.0))
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(rgb(ds.muted))
-                    .tooltip(|window, cx| {
-                        Tooltip::new(
-                            "Guardar kit completo (.haykit) con muestras, filtros y mezcla",
-                        )
-                        .build(window, cx)
-                    })
-                    .child("Guardar kit")
+                    .tooltip(move |window, cx| Tooltip::new(tip_save_kit).build(window, cx))
+                    .child(self.tr("drums.toolbar.save_kit"))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|this, _, _, cx| {
@@ -993,10 +986,8 @@ impl DawApp {
                     .text_size(px(10.0))
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(rgb(ds.muted))
-                    .tooltip(|window, cx| {
-                        Tooltip::new("Cargar un kit guardado (.haykit)").build(window, cx)
-                    })
-                    .child("Cargar kit")
+                    .tooltip(move |window, cx| Tooltip::new(tip_load_kit).build(window, cx))
+                    .child(self.tr("drums.toolbar.load_kit"))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|this, _, _, cx| {
@@ -1013,7 +1004,7 @@ impl DawApp {
                     .h(px(20.0))
                     .w(px(11.0))
                     .flex_shrink_0()
-                    .tooltip(|window, cx| Tooltip::new("Pico del bus Drums").build(window, cx))
+                    .tooltip(move |window, cx| Tooltip::new(tip_bus_peak).build(window, cx))
                     .child(track_peak_meter(ds, peak)),
             );
 
@@ -1022,15 +1013,15 @@ impl DawApp {
             [
                 (
                     "drum-view-steps",
-                    "Pasos",
-                    "Secuenciador por pasos clásico",
+                    self.tr("drums.toolbar.steps"),
+                    self.tr("drums.toolbar.steps_tooltip"),
                     DrumViewMode::Steps,
                     ds.accent,
                 ),
                 (
                     "drum-view-pads",
-                    "Pads MPC",
-                    "Matriz 4×4 MPC con 16 Levels, Note Repeat, Overdub y Chop",
+                    self.tr("drums.toolbar.mpc_pads"),
+                    self.tr("drums.toolbar.mpc_pads_tooltip"),
                     DrumViewMode::Pads,
                     ds.orange,
                 ),
@@ -1107,7 +1098,7 @@ impl DawApp {
                     .text_size(px(10.5))
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(rgb(ds.muted))
-                    .child("Subdivisión de pasos:"),
+                    .child(self.tr("drums.toolbar.step_subdivision")),
             )
             .children([8u16, 16, 32, 64].into_iter().map(|denominator| {
                 let grid = NoteGrid::new(denominator).expect("subdivisión predefinida");

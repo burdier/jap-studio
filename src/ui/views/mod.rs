@@ -49,7 +49,6 @@ use super::{
         button::{flat_control, led_dot},
         splitter::{SplitDrag, vertical_splitter},
     },
-    i18n::UiText,
     shortcuts::ShortcutAction,
     toolbar::ToolbarAction,
 };
@@ -76,27 +75,37 @@ impl DawApp {
             || (self.piano_roll.open && self.timeline.midi_clip.is_some());
         let active_panel = self.workspace_focus.active.label(self.center_view);
         let context_target = if self.fx.master_focus && fx_open {
-            "Bus Master".to_string()
+            self.tr("workspace.master_bus").to_string()
         } else if let Some(track) = self.tracks.get(self.cursor_row) {
-            format!("Pista {}: {}", self.cursor_row + 1, track.name)
+            self.tr_fmt(
+                "workspace.track_target",
+                &[
+                    ("index", &(self.cursor_row + 1).to_string()),
+                    ("name", track.name.as_ref()),
+                ],
+            )
         } else {
-            "Sin pistas".to_string()
+            self.tr("workspace.no_tracks").to_string()
         };
+        let lang = self.settings.language;
         let view_tab = |id: &'static str,
                         label: &'static str,
                         shortcut: &'static str,
                         view: CenterView,
                         cx: &mut Context<Self>| {
             let active = self.center_view == view;
+            let switch_tip = super::i18n::tr_fmt(
+                lang,
+                "workspace.switch_to_tooltip",
+                &[("label", label), ("shortcut", shortcut)],
+            );
             flat_control(ds, active, ds.accent)
                 .id(id)
                 .h(px(24.0))
                 .px(px(10.0))
                 .gap(px(5.0))
                 .rounded(px(ds.radius_md))
-                .tooltip(move |window, cx| {
-                    Tooltip::new(format!("Cambiar a {label} ({shortcut})")).build(window, cx)
-                })
+                .tooltip(move |window, cx| Tooltip::new(switch_tip.clone()).build(window, cx))
                 .when(active, |el| el.child(led_dot(ds.accent, 5.0, true)))
                 .child(
                     div()
@@ -181,21 +190,21 @@ impl DawApp {
                             .gap(px(6.0))
                             .child(view_tab(
                                 "view-tab-arrangement",
-                                self.tr(UiText::ViewArrangement),
+                                self.tr("menu.view.arrangement"),
                                 preset.hint(ShortcutAction::ViewArrangement),
                                 CenterView::Arrangement,
                                 cx,
                             ))
                             .child(view_tab(
                                 "view-tab-drums",
-                                self.tr(UiText::ViewDrums),
+                                self.tr("menu.view.drums"),
                                 preset.hint(ShortcutAction::ViewDrums),
                                 CenterView::Session,
                                 cx,
                             ))
                             .child(view_tab(
                                 "view-tab-mixer",
-                                self.tr(UiText::ViewMixer),
+                                self.tr("menu.view.mixer"),
                                 preset.hint(ShortcutAction::ViewMixer),
                                 CenterView::Mixer,
                                 cx,
@@ -236,8 +245,8 @@ impl DawApp {
                             .child(
                                 panel_toggle(
                                     "panel-toggle-explorer",
-                                    self.tr(UiText::ViewExplorer),
-                                    "Mostrar / ocultar explorador de bibliotecas",
+                                    self.tr("menu.view.explorer"),
+                                    self.tr("workspace.toggle_explorer_tooltip"),
                                     explorer_open,
                                     ds.cyan,
                                 )
@@ -253,8 +262,8 @@ impl DawApp {
                             .child(
                                 panel_toggle(
                                     "panel-toggle-fx",
-                                    "Track FX",
-                                    "Mostrar / ocultar cadena de efectos de la pista",
+                                    self.tr("menu.view.track_fx"),
+                                    self.tr("workspace.toggle_fx_tooltip"),
                                     fx_open,
                                     ds.cyan,
                                 )
@@ -274,8 +283,8 @@ impl DawApp {
                             .child(
                                 panel_toggle(
                                     "panel-toggle-piano-roll",
-                                    "Piano Roll",
-                                    "Abrir / cerrar editor Piano Roll",
+                                    self.tr("menu.view.piano_roll"),
+                                    self.tr("workspace.toggle_piano_roll_tooltip"),
                                     roll_open,
                                     ds.accent,
                                 )
@@ -306,7 +315,7 @@ impl DawApp {
                                 panel_toggle(
                                     "panel-open-command",
                                     ": Cmd",
-                                    "Abrir paleta de comandos (Ctrl+P o :)",
+                                    self.tr("workspace.toggle_command_tooltip"),
                                     self.command_open,
                                     ds.pink,
                                 )

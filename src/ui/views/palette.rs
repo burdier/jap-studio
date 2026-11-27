@@ -79,12 +79,12 @@ impl DawApp {
         let target_track = self.palette.target_track().unwrap_or(self.cursor_row);
         let track_color = ds.track_color(target_track);
         let mut target_label = if self.fx.master_focus && self.palette.fx_target.is_some() {
-            "Bus Master".to_string()
+            self.tr("workspace.master_bus").to_string()
         } else {
             self.tracks
                 .get(target_track)
                 .map(|t| t.name.to_string())
-                .unwrap_or_else(|| "Proyecto".into())
+                .unwrap_or_else(|| self.tr("palette.project").into())
         };
         if let Some(target) = self.palette.fx_target
             && let Some(node) = self.fx_node(target)
@@ -129,13 +129,13 @@ impl DawApp {
                         .text_sm()
                         .font_weight(FontWeight::MEDIUM)
                         .text_color(rgb(ds.text))
-                        .child("Sin coincidencias"),
+                        .child(self.tr("palette.no_matches")),
                 )
                 .child(
                     div()
                         .text_xs()
                         .text_color(rgb(ds.muted))
-                        .child("Prueba con otro término o cambia el filtro con Tab"),
+                        .child(self.tr("palette.no_matches_hint")),
                 )
                 .into_any_element()
         } else {
@@ -229,7 +229,7 @@ impl DawApp {
                                                     ds.muted
                                                 }))
                                                 .child(if unavailable {
-                                                    "PRONTO"
+                                                    self.tr("palette.soon")
                                                 } else {
                                                     short_tag
                                                 }),
@@ -256,15 +256,15 @@ impl DawApp {
                 entry.id.starts_with("action.fx.") || entry.id.starts_with("action.utility.");
             let (_, kind_color, _) = entry_visuals(ds, &entry, is_fx_action);
             let label = if unavailable {
-                "No disponible"
+                self.tr("palette.unavailable")
             } else if entry.kind == EntryKind::Instrument {
-                "↵ Cargar instrumento"
+                self.tr("palette.action_load_instrument")
             } else if entry.kind == EntryKind::Component || is_fx_action {
-                "↵ Insertar FX"
+                self.tr("palette.action_insert_fx")
             } else if entry.has_parameters {
-                "↵ Configurar"
+                self.tr("palette.action_configure")
             } else {
-                "↵ Ejecutar"
+                self.tr("palette.action_run")
             };
             (entry, unavailable, kind_color, label)
         });
@@ -306,7 +306,7 @@ impl DawApp {
                                                 .text_size(px(11.0))
                                                 .font_weight(FontWeight::SEMIBOLD)
                                                 .text_color(rgb(ds.muted))
-                                                .child("NAVEGADOR DE DISPOSITIVOS"),
+                                                .child(self.tr("palette.title")),
                                         )
                                         .child(div().text_color(rgb(ds.muted)).child("·"))
                                         .child(
@@ -380,7 +380,7 @@ impl DawApp {
                                                     },
                                                 ))
                                                 .child(if self.palette.query().is_empty() {
-                                                    "Buscar instrumento, VST3, efecto FX o acción…"
+                                                    self.tr("palette.search_placeholder")
                                                         .to_string()
                                                 } else {
                                                     format!("{}▌", self.palette.query())
@@ -427,7 +427,7 @@ impl DawApp {
                                         .pt(px(8.0))
                                         .text_size(px(10.0))
                                         .text_color(rgb(ds.muted))
-                                        .child("Tab · cambiar filtro"),
+                                        .child(self.tr("palette.tab_hint")),
                                 ),
                         )
                         .child(
@@ -470,7 +470,7 @@ impl DawApp {
                                                 .as_ref()
                                                 .map(|e| e.id.clone())
                                                 .unwrap_or_else(|| {
-                                                    "↑↓ navegar · Esc cerrar".into()
+                                                    self.tr("palette.nav_hint").into()
                                                 }),
                                         ),
                                 ),
@@ -516,12 +516,14 @@ impl DawApp {
         let is_active = cat == active_category;
         let cat_color = category_color(ds, cat);
         let (label, icon) = match cat {
-            PaletteCategory::All => ("Todo", None),
-            PaletteCategory::Hey => ("Hey", Some(ICON_EFFECT)),
-            PaletteCategory::Instrument => ("Instrumentos", Some(ICON_INSTRUMENT)),
-            PaletteCategory::Component => ("Efectos FX", Some(ICON_EFFECT)),
-            PaletteCategory::Primitive => ("Primitivos", Some(ICON_PRIMITIVE)),
-            PaletteCategory::Action => ("Acciones", Some(ICON_ACTION)),
+            PaletteCategory::All => (self.tr("palette.cat_all"), None),
+            PaletteCategory::Hey => (self.tr("palette.cat_hey"), Some(ICON_EFFECT)),
+            PaletteCategory::Instrument => {
+                (self.tr("palette.cat_instruments"), Some(ICON_INSTRUMENT))
+            }
+            PaletteCategory::Component => (self.tr("palette.cat_effects"), Some(ICON_EFFECT)),
+            PaletteCategory::Primitive => (self.tr("palette.cat_primitives"), Some(ICON_PRIMITIVE)),
+            PaletteCategory::Action => (self.tr("palette.cat_actions"), Some(ICON_ACTION)),
         };
         let bg = if is_active { ds.panel } else { ds.bg };
         let hover = ds.panel_hover;

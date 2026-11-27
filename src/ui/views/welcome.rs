@@ -5,7 +5,7 @@ use crate::ui::{
         button::{brand_logo, chip_option},
         modal::{ModalClose, modal_backdrop},
     },
-    i18n::{Language, UiText},
+    i18n::Language,
     shortcuts::ShortcutPreset,
 };
 use gpui::{Context, FontWeight, IntoElement, MouseButton, Window, div, prelude::*, px, rgb};
@@ -57,13 +57,13 @@ impl DawApp {
                                         .text_lg()
                                         .font_weight(FontWeight::BOLD)
                                         .text_color(rgb(ds.text))
-                                        .child(self.tr(UiText::WelcomeTitle)),
+                                        .child(self.tr("welcome.title")),
                                 )
                                 .child(
                                     div()
                                         .text_xs()
                                         .text_color(rgb(ds.muted))
-                                        .child(self.tr(UiText::WelcomeSubtitle)),
+                                        .child(self.tr("welcome.subtitle")),
                                 ),
                         ),
                 )
@@ -76,7 +76,7 @@ impl DawApp {
                             div()
                                 .text_xs()
                                 .text_color(rgb(ds.cyan))
-                                .child(self.tr(UiText::LanguageHeading)),
+                                .child(self.tr("settings.appearance.language")),
                         )
                         .child(div().flex().flex_wrap().gap_2().children(
                             Language::ALL.into_iter().map(|lang| {
@@ -86,6 +86,7 @@ impl DawApp {
                                         MouseButton::Left,
                                         cx.listener(move |this, _, _, cx| {
                                             this.settings.language = lang;
+                                            crate::ui::i18n::set_active_language(lang);
                                             cx.stop_propagation();
                                             cx.notify();
                                         }),
@@ -102,7 +103,7 @@ impl DawApp {
                             div()
                                 .text_xs()
                                 .text_color(rgb(ds.accent))
-                                .child(self.tr(UiText::ShortcutPresetHeading)),
+                                .child(self.tr("shortcuts.preset_heading")),
                         )
                         .child(div().flex().flex_wrap().gap_2().children(
                             ShortcutPreset::ALL.into_iter().map(|preset| {
@@ -135,7 +136,7 @@ impl DawApp {
                                 .flex_1()
                                 .text_xs()
                                 .text_color(rgb(ds.muted))
-                                .child(self.tr(UiText::WelcomeChangeLater)),
+                                .child(self.tr("welcome.change_later")),
                         )
                         .child(
                             div()
@@ -148,7 +149,7 @@ impl DawApp {
                                 .font_weight(FontWeight::BOLD)
                                 .text_color(rgb(ds.bg))
                                 .cursor_pointer()
-                                .child(self.tr(UiText::WelcomeStart))
+                                .child(self.tr("welcome.start"))
                                 .on_mouse_down(
                                     MouseButton::Left,
                                     cx.listener(|this, _, _, cx| {
