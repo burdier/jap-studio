@@ -55,7 +55,10 @@ cpal = { version = "0.18.2", optional = true, features = ["pipewire"] }
 [profile.windows-cross]
 inherits = "release"
 opt-level = 3
-# gpui-pre-windows compila shaders HLSL al arrancar vía D3DCompile cuando debug-assertions = true,
-# lo que permite cross-compilar Windows x64 MSVC desde Linux sin necesitar fxc.exe.
+# Embebe y compila shaders HLSL desde memoria vía D3DCompile (patches/gpui-pre-windows)
+# sin requerir fxc.exe ni rutas absolutas del host Linux.
 debug-assertions = true
 strip = "symbols"
+
+[patch.crates-io]
+gpui-pre-windows = { path = "patches/gpui-pre-windows" }

@@ -16,3 +16,7 @@
 
 # Bibliotecas nativas locales construidas desde versiones fijadas
 /.local/
+
+# Caches de Python y video renderizado localmente en landing/
+__pycache__/
+/landing/*.mp4

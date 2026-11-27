@@ -8,7 +8,7 @@ on:
       - "feat/**"
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -54,3 +54,14 @@ jobs:
           name: JapStudio-Windows-x64
           path: JapStudio-Windows-x64.zip
           retention-days: 30
+
+      - name: Attach Windows bundle to v0.8.0 release (if present)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if (gh release view v0.8.0 2>$null) {
+            gh release upload v0.8.0 JapStudio-Windows-x64.zip --clobber
+          } else {
+            Write-Host "Release v0.8.0 no existe aún; se conserva como artifact."
+          }
