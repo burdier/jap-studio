@@ -427,21 +427,35 @@ impl DawApp {
                     )
                     .child(
                         div()
-                            .text_color(rgb(if self.controller.enabled() {
+                            .text_color(rgb(if self.midi_hw.has_ports() || self.controller.enabled() {
                                 ds.success
                             } else {
                                 ds.muted
                             }))
-                            .child(if self.controller.enabled() {
-                                format!(
-                                    "MIDI ON → {} · octava {} ({}) · vel {} · z/x:octava · m:off",
-                                    self.midi_target_label(),
-                                    self.controller.octave(),
-                                    self.controller.base_label(),
-                                    self.controller.velocity()
-                                )
-                            } else {
-                                "MIDI off · m:on".to_string()
+                            .child({
+                                let hw_ports = self.midi_hw.port_names();
+                                let pitch_tag = self
+                                    .midi_live_pitch_badge()
+                                    .map(|b| format!(" · 🎹 {b}"))
+                                    .unwrap_or_default();
+                                if !hw_ports.is_empty() {
+                                    let dev = hw_ports[0];
+                                    let short_dev: String = dev.chars().take(22).collect();
+                                    format!(
+                                        "MIDI HW: {short_dev} → {}{pitch_tag}",
+                                        self.midi_target_label(),
+                                    )
+                                } else if self.controller.enabled() {
+                                    format!(
+                                        "MIDI ON → {} · octava {} ({}) · vel {}{pitch_tag} · z/x:octava · m:off",
+                                        self.midi_target_label(),
+                                        self.controller.octave(),
+                                        self.controller.base_label(),
+                                        self.controller.velocity(),
+                                    )
+                                } else {
+                                    format!("MIDI off · m:on{pitch_tag}")
+                                }
                             }),
                     )
                     .children(

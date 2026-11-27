@@ -99,6 +99,21 @@ impl DawApp {
                 .collect(),
         );
         let (mcp_host, mcp_task) = Self::start_mcp_bridge(cx);
+        let midi_hotplug_task = cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(1250))
+                    .await;
+                let keep_going = this.update(cx, |this, cx| {
+                    if this.poll_midi_hotplug() {
+                        cx.notify();
+                    }
+                });
+                if keep_going.is_err() {
+                    break;
+                }
+            }
+        });
         Self {
             timeline: Timeline::new(ds.timeline_pixels_per_beat),
             pattern_editor: PatternEditor::new(),
@@ -141,6 +156,10 @@ impl DawApp {
             midi_armed_tracks: Default::default(),
             midi_mapper: MidiMapper::new(),
             midi_hw: MidiHardwareIn::connect_all(),
+            midi_last_note: None,
+            midi_last_vel: 0,
+            midi_pitch_bend: 0,
+            _midi_hotplug_task: midi_hotplug_task,
             midi_capture: MidiCapture::new(),
             session_epoch: Instant::now(),
             instrument_window: None,

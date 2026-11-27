@@ -278,7 +278,40 @@ impl DawApp {
             Err(error) => self.status_message = error,
         }
     }
+    pub(super) fn poll_midi_hotplug(&mut self) -> bool {
+        let Some((added, removed)) = self.midi_hw.poll_hotplug() else {
+            return false;
+        };
+        if !added.is_empty() {
+            self.sync_midi_focus();
+            self.status_message = format!("🎹 MIDI conectado: {}", added.join(", "));
+        } else if !removed.is_empty() {
+            self.status_message = format!("MIDI desconectado: {}", removed.join(", "));
+        }
+        true
+    }
+
+    pub(super) fn midi_live_pitch_badge(&self) -> Option<String> {
+        let note = self.midi_last_note;
+        let bend = self.midi_pitch_bend;
+        if note.is_none() && bend.abs() < 32 {
+            return None;
+        }
+        let mut parts = Vec::new();
+        if let Some(n) = note {
+            let name = elevate::musical::pitch::note_name(n);
+            let oct = i16::from(n / 12) - 1;
+            parts.push(format!("{name} (C{oct})"));
+        }
+        if bend.abs() >= 32 {
+            let semis = (f32::from(bend) / 8192.0) * 2.0;
+            parts.push(format!("PB {semis:+.1}st"));
+        }
+        Some(parts.join(" · "))
+    }
+
     pub(super) fn poll_live_midi(&mut self) {
+        self.poll_midi_hotplug();
         let messages = self.midi_hw.drain();
         if !messages.is_empty() {
             self.apply_midi_inputs(messages);
@@ -308,6 +341,29 @@ impl DawApp {
         let chord_midi_active = self.piano_roll.chord_pad.midi_chord_mode
             && self.midi_server.active_target() != Some(MidiTarget::Sequencer);
         for input in inputs {
+            match input.message {
+                MidiMessage::NoteOn { note, velocity } if velocity > 0 => {
+                    self.midi_last_note = Some(note);
+                    self.midi_last_vel = velocity;
+                }
+                MidiMessage::PitchBend { bend } => {
+                    self.midi_pitch_bend = bend;
+                    let semis = (f32::from(bend) / 8192.0) * 2.0;
+                    if let Some(last) = self.midi_last_note {
+                        let shifted = (i32::from(last) + semis.round() as i32).clamp(0, 127) as u8;
+                        let oct = i16::from(shifted / 12) - 1;
+                        let note_lbl = elevate::musical::pitch::note_name(shifted);
+                        self.status_message = if bend.abs() < 32 {
+                            format!("🎹 MIDI · {note_lbl} (C{oct}) · Pitch centro")
+                        } else {
+                            format!("🎹 MIDI · {note_lbl} (C{oct}) · Pitch {semis:+.1} st")
+                        };
+                    } else if bend.abs() >= 32 {
+                        self.status_message = format!("🎹 MIDI · Pitch {semis:+.1} st");
+                    }
+                }
+                _ => {}
+            }
             let effects = self.midi_mapper.process(input.message);
             let mut learned = false;
             for effect in effects {

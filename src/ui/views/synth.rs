@@ -848,8 +848,18 @@ impl DawApp {
                             .child(
                                 div()
                                     .font_family("monospace")
-                                    .text_color(rgb(ds.muted))
-                                    .child(if active_notes > 0 {
+                                    .text_color(rgb(if active_notes > 0 || self.midi_last_note.is_some() {
+                                        ds.cyan
+                                    } else {
+                                        ds.muted
+                                    }))
+                                    .child(if let Some(badge) = self.midi_live_pitch_badge() {
+                                        if active_notes > 0 {
+                                            format!("{badge} · {active_notes}v")
+                                        } else {
+                                            badge
+                                        }
+                                    } else if active_notes > 0 {
                                         format!("{active_notes} voz")
                                     } else {
                                         "listo".into()
