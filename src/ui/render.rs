@@ -214,7 +214,8 @@ impl Render for DawApp {
         }
         if self.synth.failed() {
             self.synth.stop();
-            self.status_message = "La salida de Hay Synth falló; vuelve a tocar para reiniciar".into();
+            self.status_message =
+                "La salida de Hay Synth falló; vuelve a tocar para reiniciar".into();
         }
         if self.instrument.failed() {
             self.status_message = format!(
@@ -282,6 +283,10 @@ impl Render for DawApp {
             .settings
             .is_visible()
             .then(|| self.render_settings_overlay(window, cx).into_any_element());
+        let welcome_overlay = self
+            .settings
+            .welcome_open
+            .then(|| self.render_welcome_overlay(window, cx).into_any_element());
         let icon_picker_overlay = self
             .toolbar_icons
             .picker_open
@@ -811,6 +816,7 @@ impl Render for DawApp {
             .when_some(bar_menu, |root, menu| root.child(menu))
             .when_some(palette, |root, palette| root.child(palette))
             .when_some(settings_overlay, |root, overlay| root.child(overlay))
+            .when_some(welcome_overlay, |root, overlay| root.child(overlay))
             .when_some(icon_picker_overlay, |root, overlay| root.child(overlay))
             .when_some(action_form, |root, overlay| root.child(overlay))
             .when_some(

@@ -39,6 +39,7 @@ mod track_menu;
 pub(super) mod tracks;
 mod transport;
 mod utility;
+mod welcome;
 mod workspace;
 mod workspace_focus;
 

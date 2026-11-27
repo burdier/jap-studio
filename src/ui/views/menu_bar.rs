@@ -5,6 +5,8 @@ use crate::ui::{
         context_menu::{context_menu, menu_panel},
         modal::ModalClose,
     },
+    i18n::{Language, UiText, tr},
+    shortcuts::{ShortcutAction, ShortcutPreset},
     toolbar::ToolbarAction,
     workspace_focus::Panel,
 };
@@ -35,14 +37,21 @@ enum MenuAction {
 }
 
 struct Item {
-    label: &'static str,
+    label: UiText,
     icon: &'static [u8],
     action: MenuAction,
-    hint: &'static str,
+    hint: HintKind,
+}
+
+#[derive(Clone, Copy)]
+enum HintKind {
+    None,
+    Static(&'static str),
+    Shortcut(ShortcutAction),
 }
 
 macro_rules! item {
-    ($label:literal, $icon:literal, $action:expr, $hint:literal) => {
+    ($label:expr, $icon:literal, $action:expr, $hint:expr) => {
         Item {
             label: $label,
             icon: include_bytes!(concat!("../../../assets/icons/toolbar/", $icon, ".svg")),
@@ -51,13 +60,14 @@ macro_rules! item {
         }
     };
 }
+use HintKind::{None as NoHint, Shortcut, Static};
 use MenuAction::{Command, Fx, PianoRoll};
 
 impl MenuGroup {
-    fn label(self) -> &'static str {
+    fn label(self, lang: Language) -> &'static str {
         match self {
-            Self::File => "Archivo",
-            Self::View => "Vista",
+            Self::File => tr(lang, UiText::MenuFile),
+            Self::View => tr(lang, UiText::MenuView),
         }
     }
 
@@ -65,93 +75,136 @@ impl MenuGroup {
         match self {
             Self::File => &[
                 item!(
-                    "Abrir proyecto…",
+                    UiText::FileOpen,
                     "folder",
                     Command("project.open"),
-                    "Ctrl+O"
+                    Shortcut(ShortcutAction::ProjectOpen)
                 ),
                 item!(
-                    "Importar Hydrogen…",
+                    UiText::FileImportHydrogen,
                     "folder",
                     Command("hydrogen.import"),
-                    ""
+                    NoHint
                 ),
                 item!(
-                    "Guardar proyecto",
+                    UiText::FileSave,
                     "document-save",
                     Command("project.save"),
-                    "Ctrl+S"
+                    Shortcut(ShortcutAction::ProjectSave)
                 ),
                 item!(
-                    "Guardar como…",
+                    UiText::FileSaveAs,
                     "document-save-as",
                     Command("project.save_as"),
-                    "Ctrl+Shift+S"
+                    Shortcut(ShortcutAction::ProjectSaveAs)
                 ),
                 item!(
-                    "Mostrar carpeta del proyecto",
+                    UiText::FileRevealFolder,
                     "folder-loupe",
                     Command("project.reveal"),
-                    ""
+                    NoHint
                 ),
-                item!("Exportar audio…", "export", MenuAction::Export, ""),
                 item!(
-                    "Exportar MIDI (.mid)…",
+                    UiText::FileExportAudio,
+                    "export",
+                    MenuAction::Export,
+                    Shortcut(ShortcutAction::ExportAudio)
+                ),
+                item!(
+                    UiText::FileExportMidi,
                     "export",
                     Command("export.midi"),
-                    ""
+                    Shortcut(ShortcutAction::ExportMidi)
                 ),
                 #[cfg(feature = "p2p")]
-                item!("Compartir sesión", "share", Command("project.share"), ""),
+                item!(
+                    UiText::FileShareSession,
+                    "share",
+                    Command("project.share"),
+                    NoHint
+                ),
                 #[cfg(feature = "p2p")]
                 item!(
-                    "Sincronizar sesión (Sync)",
+                    UiText::FileSyncSession,
                     "arrows-circle",
                     Command("project.sync"),
-                    ""
+                    NoHint
                 ),
                 #[cfg(feature = "p2p")]
                 item!(
-                    "Unirse",
+                    UiText::FileJoinSession,
                     "chain-link",
                     Command("project.join"),
-                    "Portapapeles"
+                    Static("Clipboard")
                 ),
                 #[cfg(feature = "p2p")]
                 item!(
-                    "Salir de la sesión",
+                    UiText::FileLeaveSession,
                     "connector",
                     Command("project.leave"),
-                    ""
+                    NoHint
                 ),
                 #[cfg(feature = "p2p")]
                 item!(
-                    "Nombre e historial de edición…",
+                    UiText::FileIdentityHistory,
                     "addressbook",
                     Command("project.identity"),
-                    ""
+                    NoHint
                 ),
             ],
             Self::View => &[
                 item!(
-                    "Arrangement",
+                    UiText::ViewArrangement,
                     "view-continuous",
                     Command("arrangement"),
-                    "F1"
+                    Shortcut(ShortcutAction::ViewArrangement)
                 ),
-                item!("Drums", "app-grid", Command("pattern"), "F2"),
-                item!("Mixer", "mixer-sliders", Command("mixer"), "F3"),
-                item!("Explorador", "folder", Command("explorer.toggle"), "Ctrl+E"),
-                item!("Track FX", "sliders", Fx, ""),
-                item!("Piano Roll", "piano", PianoRoll, ""),
                 item!(
-                    "Ampliar / restaurar panel activo",
+                    UiText::ViewDrums,
+                    "app-grid",
+                    Command("pattern"),
+                    Shortcut(ShortcutAction::ViewDrums)
+                ),
+                item!(
+                    UiText::ViewMixer,
+                    "mixer-sliders",
+                    Command("mixer"),
+                    Shortcut(ShortcutAction::ViewMixer)
+                ),
+                item!(
+                    UiText::ViewExplorer,
+                    "folder",
+                    Command("explorer.toggle"),
+                    Shortcut(ShortcutAction::ToggleExplorer)
+                ),
+                item!(
+                    UiText::ViewTrackFx,
+                    "sliders",
+                    Fx,
+                    Shortcut(ShortcutAction::ToggleTrackFx)
+                ),
+                item!(
+                    UiText::ViewPianoRoll,
+                    "piano",
+                    PianoRoll,
+                    Shortcut(ShortcutAction::TogglePianoRoll)
+                ),
+                item!(
+                    UiText::ViewMaximize,
                     "view-fullscreen",
                     Command("view.maximize"),
-                    "F11"
+                    Static("F11")
                 ),
             ],
         }
+    }
+}
+
+fn resolve_hint(preset: ShortcutPreset, hint: HintKind) -> &'static str {
+    match hint {
+        HintKind::None => "",
+        HintKind::Static(text) => text,
+        HintKind::Shortcut(action) => preset.hint(action),
     }
 }
 
@@ -194,7 +247,7 @@ impl DawApp {
                     cx.notify();
                 }),
             )
-            .child(group.label())
+            .child(group.label(self.settings.language))
     }
 
     pub(in crate::ui) fn render_bar_menu(&self, window: &Window, cx: &mut Context<Self>) -> Div {
@@ -221,6 +274,7 @@ impl DawApp {
                 let action = item.action;
                 let checked = self.bar_action_checked(action);
                 let active = menu.selected == Some(index);
+                let hint_text = resolve_hint(self.settings.shortcut_preset, item.hint);
                 super::palette::palette_card(ds, ds.accent, active)
                     .flex_shrink_0()
                     .rounded(px(ds.radius_sm))
@@ -250,13 +304,13 @@ impl DawApp {
                             .truncate()
                             .text_xs()
                             .font_weight(FontWeight::BOLD)
-                            .child(item.label),
+                            .child(self.tr(item.label)),
                     )
                     .when(checked, |row| {
                         row.child(div().text_xs().text_color(rgb(ds.accent)).child("✓"))
                     })
-                    .when(!item.hint.is_empty(), |row| {
-                        row.child(div().text_xs().text_color(rgb(ds.muted)).child(item.hint))
+                    .when(!hint_text.is_empty(), |row| {
+                        row.child(div().text_xs().text_color(rgb(ds.muted)).child(hint_text))
                     })
             }))
             .when(

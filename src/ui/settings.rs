@@ -3,7 +3,9 @@ use super::{
     DawApp,
     cursor_fx::CursorFxMode,
     design::ThemePreset,
+    i18n::{Language, UiText, tr},
     profile,
+    shortcuts::ShortcutPreset,
     views::tracks::{TcpControlStyle, TcpLayoutPreset, TcpWidget},
 };
 
@@ -29,14 +31,18 @@ impl SettingsCategory {
         Self::Shortcuts,
     ];
     pub fn label(self) -> &'static str {
+        self.label_in(Language::Es)
+    }
+
+    pub fn label_in(self, lang: Language) -> &'static str {
         match self {
-            Self::Audio => "Audio",
-            Self::Appearance => "Apariencia",
-            Self::Paths => "Rutas",
-            Self::Tracks => "Pistas",
-            Self::Export => "Exportación",
-            Self::MidiMap => "MIDI Learn",
-            Self::Shortcuts => "Atajos",
+            Self::Audio => tr(lang, UiText::CatAudio),
+            Self::Appearance => tr(lang, UiText::CatAppearance),
+            Self::Paths => tr(lang, UiText::CatPaths),
+            Self::Tracks => tr(lang, UiText::CatTracks),
+            Self::Export => tr(lang, UiText::CatExport),
+            Self::MidiMap => tr(lang, UiText::CatMidiMap),
+            Self::Shortcuts => tr(lang, UiText::CatShortcuts),
         }
     }
 }
@@ -44,7 +50,10 @@ impl SettingsCategory {
 #[derive(Default)]
 pub(super) struct SettingsUi {
     settings_open: bool,
+    pub welcome_open: bool,
     pub category: SettingsCategory,
+    pub language: Language,
+    pub shortcut_preset: ShortcutPreset,
     pub audio: super::audio_preferences::AudioPreferences,
     pub export: super::export_preferences::ExportPreferences,
     pub paths: elevate::paths::AppPaths,
@@ -55,7 +64,11 @@ pub(super) struct SettingsUi {
 
 impl SettingsUi {
     pub fn new() -> Self {
+        let saved_lang = Language::load_saved();
         Self {
+            welcome_open: saved_lang.is_none(),
+            language: saved_lang.unwrap_or_default(),
+            shortcut_preset: ShortcutPreset::load(),
             export: super::export_preferences::ExportPreferences::load(),
             audio: super::audio_preferences::AudioPreferences::load(),
             paths: elevate::paths::AppPaths::load(),
@@ -97,6 +110,47 @@ impl SettingsUi {
 }
 
 impl DawApp {
+    pub(in crate::ui) fn tr(&self, key: UiText) -> &'static str {
+        tr(self.settings.language, key)
+    }
+
+    pub(in crate::ui) fn set_language(&mut self, language: Language) {
+        self.settings.language = language;
+        match language.save() {
+            Ok(()) => {
+                self.status_message = format!("Idioma / Language: {} · guardado", language.label());
+            }
+            Err(error) => {
+                self.status_message =
+                    format!("Idioma: {} · solo esta sesión ({error})", language.label());
+            }
+        }
+    }
+
+    pub(in crate::ui) fn set_shortcut_preset(&mut self, preset: ShortcutPreset) {
+        self.settings.shortcut_preset = preset;
+        match preset.save() {
+            Ok(()) => {
+                self.status_message = format!("Atajos / Keymap: {} · guardado", preset.label());
+            }
+            Err(error) => {
+                self.status_message =
+                    format!("Atajos: {} · solo esta sesión ({error})", preset.label());
+            }
+        }
+    }
+
+    pub(in crate::ui) fn complete_welcome(&mut self) {
+        let _ = self.settings.language.save();
+        let _ = self.settings.shortcut_preset.save();
+        self.settings.welcome_open = false;
+        self.status_message = format!(
+            "{} · {}",
+            self.settings.language.label(),
+            self.settings.shortcut_preset.label()
+        );
+    }
+
     pub(super) fn open_settings(&mut self) {
         self.settings.open();
     }
@@ -245,7 +299,8 @@ impl DawApp {
             Ok(()) => {
                 self.settings.paths_save_error = None;
                 if group == elevate::paths::PathGroup::SynthPresets {
-                    self.synth_ui.vital_library = elevate::devices::vital_import::discover_vital_presets();
+                    self.synth_ui.vital_library =
+                        elevate::devices::vital_import::discover_vital_presets();
                     self.synth_ui.vital_library_loaded = true;
                 }
                 self.status_message = format!("Rutas · {} guardado", group.label());

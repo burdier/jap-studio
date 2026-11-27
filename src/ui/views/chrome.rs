@@ -2,6 +2,7 @@
 use super::super::{
     CenterView, DawApp,
     components::button::{MAMEY_LOGO_COLOR, brand_logo, flat_control, recessed_well},
+    i18n::UiText,
 };
 use super::menu_bar::MenuGroup;
 use gpui::{
@@ -16,6 +17,9 @@ impl DawApp {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let ds = &self.ds;
+        let viewport_w = f32::from(window.viewport_size().width);
+        let narrow = viewport_w < 1080.0;
+        let compact = viewport_w < 860.0;
         let client = matches!(window.window_decorations(), Decorations::Client { .. });
         let view_label = match self.center_view {
             CenterView::Arrangement => "Arrangement",
@@ -31,7 +35,7 @@ impl DawApp {
         } else if let Some(clip) = &self.timeline.clip {
             format!("{} Hz", clip.file.sample_rate)
         } else {
-            "Sin audio".into()
+            self.tr(UiText::NoAudio).into()
         };
         let engine_label = if self.player.is_some() {
             if self.pattern_loop_beats.is_some() {
@@ -68,9 +72,12 @@ impl DawApp {
             })
             .child(
                 div()
+                    .min_w_0()
+                    .flex_1()
+                    .overflow_hidden()
                     .flex()
                     .items_center()
-                    .gap_3()
+                    .gap(px(if compact { 6.0 } else { 12.0 }))
                     .child(
                         div()
                             .flex()
@@ -105,16 +112,23 @@ impl DawApp {
                             .child(self.render_bar_button(MenuGroup::View, cx)),
                     )
                     .child(div().text_color(rgb(ds.muted)).child("/"))
-                    .child(div().text_color(rgb(ds.text)).child(format!(
-                            "{}{}",
-                            self.project
-                                .path
-                                .as_ref()
-                                .and_then(|p| p.file_stem())
-                                .map(|n| n.to_string_lossy().into_owned())
-                                .unwrap_or_else(|| "Sin título".into()),
-                            if self.project.dirty { " *" } else { "" }
-                        )))
+                    .child(
+                        div()
+                            .min_w_0()
+                            .when(narrow, |el| el.max_w(px(150.0)))
+                            .truncate()
+                            .text_color(rgb(ds.text))
+                            .child(format!(
+                                "{}{}",
+                                self.project
+                                    .path
+                                    .as_ref()
+                                    .and_then(|p| p.file_stem())
+                                    .map(|n| n.to_string_lossy().into_owned())
+                                    .unwrap_or_else(|| self.tr(UiText::UntitledProject).into()),
+                                if self.project.dirty { " *" } else { "" }
+                            )),
+                    )
                     .child({
                         let can_undo = self.history.can_undo();
                         let can_redo = self.history.can_redo();
@@ -208,20 +222,25 @@ impl DawApp {
                                         }),
                                     ),
                             )
-                            .when_some(self.project.autosave_label.clone(), |row, stamp| {
-                                row.child(
-                                    div()
-                                        .id("title-autosave")
-                                        .ml(px(4.))
-                                        .text_size(px(9.5))
-                                        .text_color(rgb(ds.success))
-                                        .tooltip(|window, cx| {
-                                            Tooltip::new("Autoguardado activo cada 25 s")
-                                                .build(window, cx)
-                                        })
-                                        .child(format!("✓ {stamp}")),
-                                )
-                            })
+                            .when_some(
+                                (!narrow)
+                                    .then(|| self.project.autosave_label.clone())
+                                    .flatten(),
+                                |row, stamp| {
+                                    row.child(
+                                        div()
+                                            .id("title-autosave")
+                                            .ml(px(4.))
+                                            .text_size(px(9.5))
+                                            .text_color(rgb(ds.success))
+                                            .tooltip(|window, cx| {
+                                                Tooltip::new("Autoguardado activo cada 25 s")
+                                                    .build(window, cx)
+                                            })
+                                            .child(format!("✓ {stamp}")),
+                                    )
+                                },
+                            )
                     })
                     .when(self.command_open, |row| {
                         row.child(
@@ -239,9 +258,10 @@ impl DawApp {
             )
             .child(
                 div()
+                    .flex_shrink_0()
                     .flex()
                     .items_center()
-                    .gap_3()
+                    .gap(px(if compact { 6.0 } else { 10.0 }))
                     .children({
                         #[cfg(feature = "p2p")]
                         let shared = self.shared_project_label();
@@ -283,8 +303,10 @@ impl DawApp {
                             .child("Afinador")
                             .on_click(cx.listener(|this, _, _, cx| this.toggle_track_tuner(cx))),
                     )
-                    .child(div().text_xs().text_color(rgb(ds.muted)).child(view_label))
-                    .child(div().text_xs().text_color(rgb(ds.muted)).child(audio_label))
+                    .when(!compact, |bar| {
+                        bar.child(div().text_xs().text_color(rgb(ds.muted)).child(view_label))
+                            .child(div().text_xs().text_color(rgb(ds.muted)).child(audio_label))
+                    })
                     .child(
                         div()
                             .text_xs()
@@ -415,6 +437,9 @@ impl DawApp {
             .rounded(px(ds.radius_lg))
             .child(
                 div()
+                    .min_w_0()
+                    .flex_1()
+                    .overflow_hidden()
                     .flex()
                     .items_center()
                     .gap_3()
@@ -473,6 +498,7 @@ impl DawApp {
             )
             .child(
                 div()
+                    .flex_shrink_0()
                     .flex()
                     .items_center()
                     .gap_3()

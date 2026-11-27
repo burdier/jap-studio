@@ -1,5 +1,9 @@
 use crate::ui::{
-    DawApp, components::button::chip_option, cursor_fx::CursorFxMode, design::ThemePreset,
+    DawApp,
+    components::button::chip_option,
+    cursor_fx::CursorFxMode,
+    design::ThemePreset,
+    i18n::{Language, UiText},
 };
 use gpui::{Context, IntoElement, MouseButton, div, prelude::*, rgb};
 impl DawApp {
@@ -7,6 +11,7 @@ impl DawApp {
         let ds = &self.ds;
         let active_theme = ds.theme;
         let active_cursor = self.cursor_fx.mode();
+        let active_lang = self.settings.language;
         div()
             .id("settings-panel-scroll")
             .p_4()
@@ -19,7 +24,7 @@ impl DawApp {
                 div()
                     .text_xs()
                     .text_color(rgb(ds.muted))
-                    .child("La apariencia se guarda automáticamente."),
+                    .child(self.tr(UiText::AppearanceAutoSave)),
             )
             .when_some(self.settings.appearance_save_error(), |panel, error| {
                 panel.child(div().text_xs().text_color(rgb(ds.danger)).child(format!(
@@ -33,9 +38,47 @@ impl DawApp {
                     .gap_2()
                     .child(
                         div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(rgb(ds.cyan))
+                                    .child(self.tr(UiText::LanguageHeading)),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(rgb(ds.muted))
+                                    .child(active_lang.label()),
+                            ),
+                    )
+                    .child(div().flex().flex_wrap().gap_2().children(
+                        Language::ALL.into_iter().map(|lang| {
+                            chip_option(ds, lang.label(), lang == active_lang, ds.cyan)
+                                .py_1()
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(move |this, _, _, cx| {
+                                        this.set_language(lang);
+                                        cx.stop_propagation();
+                                        cx.notify();
+                                    }),
+                                )
+                        }),
+                    )),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(
+                        div()
                             .text_xs()
                             .text_color(rgb(ds.text))
-                            .child("CONTRASTE DE SELECCIÓN"),
+                            .child(self.tr(UiText::SelectionContrastHeading)),
                     )
                     .child(
                         div()
@@ -87,7 +130,7 @@ impl DawApp {
                                 div()
                                     .text_xs()
                                     .text_color(rgb(ds.pink))
-                                    .child("TEMA DE COLOR"),
+                                    .child(self.tr(UiText::ColorThemeHeading)),
                             )
                             .child(
                                 div()

@@ -33,6 +33,7 @@ impl DawApp {
                 workspace.child(
                     div()
                         .w(px(self.explorer.width))
+                        .max_w(relative(0.32))
                         .h_full()
                         .flex_shrink_0()
                         .flex()
@@ -80,6 +81,7 @@ impl DawApp {
                 workspace.child(
                     div()
                         .w(px(self.fx.width))
+                        .max_w(relative(0.34))
                         .h_full()
                         .flex_shrink_0()
                         .child(self.render_fx_column(cx)),

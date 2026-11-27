@@ -5,6 +5,7 @@ use crate::ui::{
         button::chip_option,
         modal::{ModalClose, modal_backdrop},
     },
+    i18n::UiText,
     settings::SettingsCategory,
 };
 use gpui::{Context, IntoElement, MouseButton, Window, div, prelude::*, px, rgb};
@@ -51,17 +52,18 @@ impl DawApp {
                             div()
                                 .text_lg()
                                 .text_color(rgb(ds.text))
-                                .child("Configuración"),
+                                .child(self.tr(UiText::SettingsTitle)),
                         )
                         .child(
-                            chip_option(ds, "Cerrar · Esc", false, ds.muted).on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(|this, _, _, cx| {
-                                    this.close_settings_overlay();
-                                    cx.stop_propagation();
-                                    cx.notify();
-                                }),
-                            ),
+                            chip_option(ds, self.tr(UiText::CloseEsc), false, ds.muted)
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(|this, _, _, cx| {
+                                        this.close_settings_overlay();
+                                        cx.stop_propagation();
+                                        cx.notify();
+                                    }),
+                                ),
                         ),
                 )
                 .child(
@@ -71,8 +73,14 @@ impl DawApp {
                         .flex()
                         .child(
                             div()
-                                .w(px(172.0))
+                                .id("settings-sidebar")
+                                .w(if viewport.width < px(720.0) {
+                                    px(124.0)
+                                } else {
+                                    px(172.0)
+                                })
                                 .flex_shrink_0()
+                                .overflow_y_scroll()
                                 .p_3()
                                 .flex()
                                 .flex_col()
@@ -97,7 +105,7 @@ impl DawApp {
                                         } else {
                                             ds.muted
                                         }))
-                                        .child(item.label())
+                                        .child(item.label_in(self.settings.language))
                                         .on_mouse_down(
                                             MouseButton::Left,
                                             cx.listener(move |this, _, window, cx| {

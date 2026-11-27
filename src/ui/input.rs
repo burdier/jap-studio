@@ -3,7 +3,11 @@ use super::{
     CenterView, DawApp,
     cursor_fx::CursorFxMode,
     design::ThemePreset,
+    i18n::Language,
+    shortcuts::{KeyInput, ShortcutAction, ShortcutPreset},
+    toolbar::ToolbarAction,
     views::tracks::{TcpControlStyle, TcpLayoutPreset},
+    workspace_focus::Panel,
 };
 use gpui::{Context, KeyDownEvent, KeyUpEvent, Window};
 
@@ -35,64 +39,45 @@ impl DawApp {
             // Los controles Kit consumen edición/IME; ninguna tecla del formulario toca el DAW.
             return;
         }
-        if event.keystroke.modifiers.control
-            && !event.is_held
-            && (key.eq_ignore_ascii_case("s") || key.eq_ignore_ascii_case("o"))
-        {
-            let command = if key.eq_ignore_ascii_case("o") {
-                "project.open"
-            } else if event.keystroke.modifiers.shift {
-                "project.save_as"
-            } else {
-                "project.save"
-            };
-            self.project_command(command, window, cx);
-            cx.stop_propagation();
+        if self.settings.welcome_open {
+            if matches!(event.keystroke.key.as_str(), "enter" | "escape") {
+                self.complete_welcome();
+                cx.stop_propagation();
+            }
             return;
         }
-        if (event.keystroke.modifiers.control || event.keystroke.modifiers.platform)
-            && !event.keystroke.modifiers.alt
-            && !event.is_held
+        if !event.is_held
             && !self.command_open
             && !self.palette.is_open()
             && !self.settings.is_visible()
+            && self.fx.menu.is_none()
+            && self.track_menu.is_none()
+            && self.clip_menu.is_none()
+            && !self.toolbar_icons.picker_open
         {
-            if key.eq_ignore_ascii_case("p") && !event.keystroke.modifiers.shift {
-                self.open_command_bar();
-                cx.stop_propagation();
-                return;
-            }
-            if key.eq_ignore_ascii_case("e") && !event.keystroke.modifiers.shift {
-                self.toggle_explorer();
-                cx.stop_propagation();
-                return;
-            }
-            if key.eq_ignore_ascii_case("z") {
-                if event.keystroke.modifiers.shift {
-                    self.redo_project();
+            let mods = event.keystroke.modifiers;
+            let arrangement_focused = self.arrangement_visible()
+                && !self.drums_panel_active()
+                && matches!(
+                    self.workspace_focus.active,
+                    Panel::Arrangement | Panel::Center
+                );
+            let input = KeyInput {
+                key: if mods.control || mods.platform || mods.alt {
+                    &event.keystroke.key
                 } else {
-                    self.undo_project();
-                }
-                cx.stop_propagation();
-                return;
-            }
-            if key.eq_ignore_ascii_case("y") && !event.keystroke.modifiers.shift {
-                self.redo_project();
-                cx.stop_propagation();
-                return;
-            }
-            if key.eq_ignore_ascii_case("h") && !event.keystroke.modifiers.shift {
-                self.history.open = !self.history.open;
-                cx.stop_propagation();
-                return;
-            }
-            if key.eq_ignore_ascii_case("k") && !event.keystroke.modifiers.shift {
-                self.toggle_metronome();
-                cx.stop_propagation();
-                return;
-            }
-            if key.eq_ignore_ascii_case("a") && event.keystroke.modifiers.shift {
-                self.toggle_automation_mode();
+                    key
+                },
+                ctrl: mods.control || mods.platform,
+                shift: mods.shift,
+                alt: mods.alt,
+            };
+            if let Some(action) = self.settings.shortcut_preset.resolve(
+                input,
+                self.controller.enabled(),
+                arrangement_focused,
+            ) {
+                self.execute_shortcut_action(action, window, cx);
                 cx.stop_propagation();
                 return;
             }
@@ -166,6 +151,110 @@ impl DawApp {
         }
         if let Some(message) = self.controller.key_up(key) {
             self.apply_midi([message]);
+        }
+    }
+    fn execute_shortcut_action(
+        &mut self,
+        action: ShortcutAction,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        use elevate::musical::track::TrackEdit;
+        match action {
+            ShortcutAction::ProjectSave => {
+                let _ = self.project_command("project.save", window, cx);
+            }
+            ShortcutAction::ProjectSaveAs => {
+                let _ = self.project_command("project.save_as", window, cx);
+            }
+            ShortcutAction::ProjectOpen => {
+                let _ = self.project_command("project.open", window, cx);
+            }
+            ShortcutAction::Undo => self.undo_project(),
+            ShortcutAction::Redo => self.redo_project(),
+            ShortcutAction::ToggleHistory => self.history.open = !self.history.open,
+            ShortcutAction::OpenCommandPalette => self.open_command_bar(),
+            ShortcutAction::OpenAddPalette => self.open_palette(),
+            ShortcutAction::OpenSettings => self.open_settings(),
+            ShortcutAction::ShowShortcuts => self.show_shortcuts(),
+            ShortcutAction::ViewArrangement => self.set_center_view(CenterView::Arrangement),
+            ShortcutAction::ViewDrums => self.set_center_view(CenterView::Session),
+            ShortcutAction::ViewMixer => self.set_center_view(CenterView::Mixer),
+            ShortcutAction::ToggleArrangementMixer => {
+                let next = if self.center_view == CenterView::Mixer {
+                    CenterView::Arrangement
+                } else {
+                    CenterView::Mixer
+                };
+                self.set_center_view(next);
+            }
+            ShortcutAction::TogglePianoRoll => {
+                if self.piano_roll_window.is_some() || self.piano_roll.open {
+                    self.execute_toolbar_action(ToolbarAction::RollClose, window, cx);
+                } else {
+                    self.set_center_view(CenterView::Arrangement);
+                    self.workspace_focus.expanded = None;
+                    self.execute_toolbar_action(ToolbarAction::OpenPianoRoll, window, cx);
+                }
+                self.sync_windows(cx);
+            }
+            ShortcutAction::ToggleExplorer => self.toggle_explorer(),
+            ShortcutAction::ToggleTrackFx => {
+                if self.fx.width > 0.0 && self.center_view == CenterView::Arrangement {
+                    self.resize_fx(0.0);
+                } else {
+                    self.show_fx();
+                }
+            }
+            ShortcutAction::ExportAudio => self.submit_command_line("export", window, cx),
+            ShortcutAction::ExportMidi => self.export_arrangement_midi_dialog(cx),
+            ShortcutAction::NewAudioTrack => self.edit_track_structure(TrackEdit::Insert),
+            ShortcutAction::NewMidiTrack => {
+                self.edit_track_structure(TrackEdit::Insert);
+                if self.track_accepts_clips(self.cursor_row) {
+                    self.add_synth(self.cursor_row);
+                }
+            }
+            ShortcutAction::NewReturnBus => self.insert_return_track(),
+            ShortcutAction::GroupTracks => self.edit_track_structure(TrackEdit::Group),
+            ShortcutAction::ToggleTrackMute => self.toggle_track_mute(self.cursor_row),
+            ShortcutAction::ToggleTrackSolo => self.toggle_track_solo(self.cursor_row),
+            ShortcutAction::ToggleTrackFreeze => self.toggle_freeze_track(self.cursor_row),
+            ShortcutAction::Duplicate => {
+                if self.arrangement_visible() && !self.timeline.selected_midi.is_empty() {
+                    let ids = self.timeline.selected_midi.clone();
+                    self.duplicate_arrangement_midi(&ids);
+                } else if self.arrangement_visible()
+                    && self.timeline.clip.as_ref().is_some_and(|c| {
+                        Some(c.id) == self.timeline.focused_audio && self.cursor_row == c.track
+                    })
+                {
+                    self.duplicate_active_clip(super::timeline::DragKind::Audio);
+                } else {
+                    self.edit_track_structure(TrackEdit::Duplicate);
+                }
+            }
+            ShortcutAction::SplitClipAtCursor => {
+                let beat = self.timeline.edit_beat();
+                if self.timeline.midi_clip.is_some() && !self.timeline.selected_midi.is_empty() {
+                    self.split_arrangement_clip(super::timeline::DragKind::Midi, beat);
+                } else if self.timeline.clip.is_some() {
+                    self.split_arrangement_clip(super::timeline::DragKind::Audio, beat);
+                } else if self.timeline.midi_clip.is_some() {
+                    self.split_arrangement_clip(super::timeline::DragKind::Midi, beat);
+                } else {
+                    self.status_message = "Selecciona un clip para dividir en el cursor".into();
+                }
+            }
+            ShortcutAction::Consolidate => self.consolidate_selection(cx),
+            ShortcutAction::BounceMidi => self.bounce_midi_to_audio(),
+            ShortcutAction::ToggleAutomation => self.toggle_automation_mode(),
+            ShortcutAction::ToggleLoop => self.toggle_loop_from_selection(),
+            ShortcutAction::ToggleMetronome => self.toggle_metronome(),
+            ShortcutAction::ToggleMidiRecord => self.toggle_midi_record(),
+            ShortcutAction::ToggleAudioRecord => self.toggle_audio_record(None),
+            ShortcutAction::ToggleInputMonitor => self.toggle_input_monitor(),
+            ShortcutAction::TapTempo => self.tap_tempo(),
         }
     }
     fn handle_workspace_key(&mut self, key: &str) {
@@ -528,6 +617,26 @@ impl DawApp {
             "lfo.remove" | "lfo.clear" => self.run_lfo_remove(""),
             cmd if cmd.starts_with("lfo.remove ") => {
                 self.run_lfo_remove(cmd.trim_start_matches("lfo.remove ").trim());
+            }
+            "keymap" | "shortcuts" => self.show_shortcuts(),
+            cmd if cmd.starts_with("keymap ") => {
+                let raw = cmd.trim_start_matches("keymap ").trim();
+                if let Some(preset) = ShortcutPreset::parse(raw) {
+                    self.set_shortcut_preset(preset);
+                } else {
+                    self.status_message = "Uso: :keymap <jap | ableton | fl>".into();
+                }
+            }
+            cmd if cmd.starts_with("lang ") || cmd.starts_with("language ") => {
+                let raw = cmd
+                    .trim_start_matches("language ")
+                    .trim_start_matches("lang ")
+                    .trim();
+                if let Some(lang) = Language::parse(raw) {
+                    self.set_language(lang);
+                } else {
+                    self.status_message = "Uso: :lang <es | en | pt | fr | ja>".into();
+                }
             }
             cmd if cmd.starts_with("drum.swing ") => {
                 if let Ok(val) = cmd.trim_start_matches("drum.swing ").trim().parse::<i16>() {

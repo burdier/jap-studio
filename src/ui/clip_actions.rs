@@ -812,7 +812,7 @@ impl DawApp {
         }
     }
 
-    fn duplicate_arrangement_midi(&mut self, ids: &[elevate::musical::clip::ClipId]) {
+    pub(super) fn duplicate_arrangement_midi(&mut self, ids: &[elevate::musical::clip::ClipId]) {
         self.stop_audio();
         let count = self.timeline.duplicate_midi_selection(ids);
         if count > 0 {
