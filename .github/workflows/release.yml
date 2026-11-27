@@ -1,0 +1,153 @@
+name: Release (Linux + Windows)
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag de release (ej. v0.9.0)"
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_RELEASE_DEBUG: "0"
+
+jobs:
+  build-linux:
+    name: Linux x86_64 Release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install native audio and graphics build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config clang libclang-dev cmake ninja-build \
+            libasound2-dev libpipewire-0.3-dev libspa-0.2-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev \
+            libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libwayland-dev libvulkan-dev libfontconfig1-dev \
+            libssl-dev libsqlite3-dev
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: "true"
+
+      - name: Build release binary (ui + p2p)
+        run: cargo build --release --features ui,p2p --bin daw-gpui
+
+      - name: Package portable Linux tarball
+        run: |
+          STAGE="dist/JapStudio-Linux-x86_64"
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE/assets"
+          cp target/release/daw-gpui "$STAGE/jap-studio"
+          strip --strip-unneeded "$STAGE/jap-studio" || true
+          cp -a assets/icons assets/scripts assets/textures assets/themes "$STAGE/assets/"
+          mkdir -p "$STAGE/assets/soundfonts"
+          cp -a assets/soundfonts/UprightPianoKW-20220221.sf2 assets/soundfonts/cc0.txt assets/soundfonts/readme.txt "$STAGE/assets/soundfonts/"
+          cp README.md LICENSE "$STAGE/"
+          tar -C dist -cJf JapStudio-Linux-x86_64.tar.xz JapStudio-Linux-x86_64
+          ls -lh JapStudio-Linux-x86_64.tar.xz
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: JapStudio-Linux-x86_64
+          path: JapStudio-Linux-x86_64.tar.xz
+          retention-days: 14
+
+  build-windows:
+    name: Windows x64 Release
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: "true"
+
+      - name: Build release binary (ui + p2p)
+        run: cargo build --release --features ui,p2p
+
+      - name: Package portable Windows bundle
+        shell: pwsh
+        run: |
+          $stage = "dist\JapStudio-Windows-x64"
+          if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item "target\release\daw-gpui.exe" "$stage\jap-studio.exe"
+          if (Test-Path "assets") {
+            Copy-Item -Recurse "assets" "$stage\assets"
+            Remove-Item -Recurse -Force "$stage\assets\soundfonts\freepats" -ErrorAction SilentlyContinue
+            Remove-Item -Recurse -Force "$stage\assets\video-sfx" -ErrorAction SilentlyContinue
+          }
+          foreach ($f in @("README.md", "LICENSE")) {
+            if (Test-Path $f) { Copy-Item $f "$stage\$f" }
+          }
+          Compress-Archive -Path "$stage" -DestinationPath "JapStudio-Windows-x64.zip" -Force
+          Get-Item "JapStudio-Windows-x64.zip" | Select-Object Name, Length
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: JapStudio-Windows-x64
+          path: JapStudio-Windows-x64.zip
+          retention-days: 14
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS.txt
+        run: |
+          cd release-assets
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release upload "$TAG_NAME" release-assets/* --clobber
+          else
+            gh release create "$TAG_NAME" release-assets/* \
+              --title "Jap Studio $TAG_NAME" \
+              --generate-notes
+          fi
