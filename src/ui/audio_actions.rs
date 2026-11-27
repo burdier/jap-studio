@@ -720,11 +720,7 @@ impl DawApp {
                             .iter()
                             .position(|t| t.instrument == Some(id))
                             .map(|t| {
-                                (
-                                    self.track_gain(t),
-                                    self.track_pan(t),
-                                    self.track_fx_gain(t),
-                                )
+                                (self.track_gain(t), self.track_pan(t), self.track_fx_gain(t))
                             });
                         let utility = self.utility.clone();
                         let player_has = self
@@ -750,9 +746,7 @@ impl DawApp {
                                         }
                                     } else if let Some((gain, pan, fx)) = mix {
                                         if matches!(
-                                            synth.note_on(
-                                                note, velocity, gain, utility, pan, fx
-                                            ),
+                                            synth.note_on(note, velocity, gain, utility, pan, fx),
                                             Ok(true)
                                         ) {
                                             self.midi_capture.record(message, now_ns, bpm);
@@ -1432,16 +1426,13 @@ impl DawApp {
     }
     pub(in crate::ui) fn publish_track_automation(&self, id: elevate::musical::track::TrackId) {
         if let Some(player) = &self.player {
-            player.set_track_automation(id, self.timeline.automation.track_or_default(id));
+            player.set_track_automation(id, self.compiled_track_automation(id));
         }
     }
     pub(in crate::ui) fn publish_all_automation(&self) {
         if let Some(player) = &self.player {
             for track in &self.tracks {
-                player.set_track_automation(
-                    track.id,
-                    self.timeline.automation.track_or_default(track.id),
-                );
+                player.set_track_automation(track.id, self.compiled_track_automation(track.id));
             }
         }
     }

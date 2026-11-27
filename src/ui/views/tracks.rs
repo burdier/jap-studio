@@ -682,6 +682,36 @@ impl DawApp {
                             ),
                     )
                 })
+                .when(self.track_lfo_count(track.id) > 0, |el| {
+                    let count = self.track_lfo_count(track.id);
+                    let label = if count == 1 {
+                        "〜 LFO".to_string()
+                    } else {
+                        format!("〜 LFO×{count}")
+                    };
+                    el.child(
+                        div()
+                            .px(px(4.0))
+                            .py(px(1.0))
+                            .rounded(px(ds.radius_sm))
+                            .bg(gpui::rgba((ds.accent << 8) | 0x24))
+                            .border_1()
+                            .border_color(gpui::rgba((ds.accent << 8) | 0x66))
+                            .cursor_pointer()
+                            .text_size(px(9.0))
+                            .text_color(rgb(ds.accent))
+                            .child(label)
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |this, _, _, cx| {
+                                    this.select_track(i, false, false);
+                                    this.run_lfo_list();
+                                    cx.stop_propagation();
+                                    cx.notify();
+                                }),
+                            ),
+                    )
+                })
                 .when(self.is_track_frozen(track.id), |el| {
                     let track_id = track.id;
                     el.child(

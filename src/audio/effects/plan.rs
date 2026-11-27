@@ -185,8 +185,9 @@ impl Plan {
                     return;
                 }
                 let mut params = [(0u32, 0.0f64); 32];
+                let bpm = time.map_or(120.0, |t| t.bpm);
                 let count = automation.map_or(0, |(auto, beat)| {
-                    auto.collect_fx_params(*fx_id, beat, &mut params)
+                    auto.collect_fx_params_modulated(*fx_id, beat, bpm, &mut params)
                 });
                 let sc_frames = sc_src.and_then(|src| sidechain.and_then(|s| s.resolve(src)));
                 if time.is_some() || count > 0 || sc_frames.is_some() {

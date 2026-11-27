@@ -12,6 +12,10 @@ impl StereoPan {
             .store(position.clamp(-1.0, 1.0).to_bits(), Ordering::Relaxed);
     }
 
+    pub fn position(&self) -> f32 {
+        f32::from_bits(self.0.load(Ordering::Relaxed)).clamp(-1.0, 1.0)
+    }
+
     pub fn apply(&self, frames: &mut [[f32; 2]]) {
         let position = f32::from_bits(self.0.load(Ordering::Relaxed)).clamp(-1.0, 1.0);
         Self::apply_position(frames, position);

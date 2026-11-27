@@ -292,6 +292,8 @@ pub struct TrackAutomation {
     pub pan: AutomationLane,
     /// Carriles adicionales de automatización (envíos Return, parámetros FX y VST3).
     pub extra: BTreeMap<AutomationParam, AutomationLane>,
+    /// Rutas LFO compiladas para esta pista (evaluadas de forma determinista y sin reservas en RT).
+    pub modulation: super::modulation::TrackModulation,
 }
 
 impl TrackAutomation {
@@ -349,26 +351,83 @@ impl TrackAutomation {
     }
 
     pub fn evaluate_gain(&self, beat: f64, fallback_gain: f32, audible: bool) -> f32 {
+        self.evaluate_gain_modulated(beat, 120.0, fallback_gain, audible)
+    }
+
+    pub fn evaluate_gain_modulated(
+        &self,
+        beat: f64,
+        bpm: f64,
+        fallback_gain: f32,
+        audible: bool,
+    ) -> f32 {
         if !audible {
             return 0.0;
         }
-        self.volume
-            .evaluate(beat)
-            .map_or(fallback_gain, AutomationParam::volume_to_gain)
+        let has_mod = self.modulation.has_param(AutomationParam::Volume);
+        match (self.volume.evaluate(beat), has_mod) {
+            (Some(v), false) => AutomationParam::volume_to_gain(v),
+            (None, false) => fallback_gain,
+            (base_lane, true) => {
+                let base_norm = base_lane.unwrap_or_else(|| {
+                    (fallback_gain * UNITY_LEVEL as f32 / 100.0).clamp(0.0, 1.0)
+                });
+                let modulated = self.modulation.modulate_normalized(
+                    AutomationParam::Volume,
+                    base_norm,
+                    beat,
+                    bpm,
+                );
+                AutomationParam::volume_to_gain(modulated)
+            }
+        }
     }
 
     pub fn evaluate_pan(&self, beat: f64, fallback_pan: f32) -> f32 {
-        self.pan
-            .evaluate(beat)
-            .map_or(fallback_pan, AutomationParam::pan_to_position)
+        self.evaluate_pan_modulated(beat, 120.0, fallback_pan)
+            .unwrap_or(fallback_pan)
+    }
+
+    pub fn evaluate_pan_modulated(&self, beat: f64, bpm: f64, fallback_pan: f32) -> Option<f32> {
+        let has_mod = self.modulation.has_param(AutomationParam::Pan);
+        match (self.pan.evaluate(beat), has_mod) {
+            (Some(v), false) => Some(AutomationParam::pan_to_position(v)),
+            (None, false) => None,
+            (base_lane, true) => {
+                let base_norm =
+                    base_lane.unwrap_or_else(|| (fallback_pan * 0.5 + 0.5).clamp(0.0, 1.0));
+                let modulated =
+                    self.modulation
+                        .modulate_normalized(AutomationParam::Pan, base_norm, beat, bpm);
+                Some(AutomationParam::pan_to_position(modulated))
+            }
+        }
     }
 
     /// Evalúa el nivel del envío post-fader hacia `target` (`0.0..=1.0`), sin asignaciones RT.
     pub fn evaluate_send(&self, target: TrackId, beat: f64, fallback_gain: f32) -> f32 {
-        self.extra
-            .get(&AutomationParam::Send(target))
+        self.evaluate_send_modulated(target, beat, 120.0, fallback_gain)
+    }
+
+    pub fn evaluate_send_modulated(
+        &self,
+        target: TrackId,
+        beat: f64,
+        bpm: f64,
+        fallback_gain: f32,
+    ) -> f32 {
+        let key = AutomationParam::Send(target);
+        let base = self
+            .extra
+            .get(&key)
             .and_then(|lane| lane.evaluate(beat))
-            .map_or(fallback_gain, |v| v.clamp(0.0, 1.0))
+            .unwrap_or(fallback_gain)
+            .clamp(0.0, 1.0);
+        if self.modulation.has_param(key) {
+            self.modulation.modulate_normalized(key, base, beat, bpm)
+        } else {
+            base
+        }
     }
 
     /// Evalúa un parámetro de efecto concreto (`0.0..=1.0`) si tiene curva activa.
@@ -378,8 +437,41 @@ impl TrackAutomation {
             .and_then(|lane| lane.evaluate(beat))
     }
 
-    /// Recolecta en un buffer de stack todos los parámetros automatizados de un nodo FX VST3.
+    /// Evalúa un parámetro FX considerando tanto automatización como rutas LFO sobre `base_norm`.
+    pub fn evaluate_fx_param_modulated(
+        &self,
+        fx: FxId,
+        param: u32,
+        beat: f64,
+        bpm: f64,
+        base_norm: f32,
+    ) -> Option<f32> {
+        let key = AutomationParam::FxParam { fx, param };
+        let auto_val = self.extra.get(&key).and_then(|lane| lane.evaluate(beat));
+        let has_mod = self.modulation.has_param(key);
+        if auto_val.is_none() && !has_mod {
+            return None;
+        }
+        let base = auto_val.unwrap_or(base_norm).clamp(0.0, 1.0);
+        if has_mod {
+            Some(self.modulation.modulate_normalized(key, base, beat, bpm))
+        } else {
+            Some(base)
+        }
+    }
+
+    /// Recolecta en un buffer de stack todos los parámetros automatizados o modulados de un FX VST3.
     pub fn collect_fx_params(&self, fx: FxId, beat: f64, out: &mut [(u32, f64)]) -> usize {
+        self.collect_fx_params_modulated(fx, beat, 120.0, out)
+    }
+
+    pub fn collect_fx_params_modulated(
+        &self,
+        fx: FxId,
+        beat: f64,
+        bpm: f64,
+        out: &mut [(u32, f64)],
+    ) -> usize {
         let mut count = 0;
         for (&param, lane) in &self.extra {
             if count >= out.len() {
@@ -392,15 +484,47 @@ impl TrackAutomation {
                 && target_fx == fx
                 && let Some(val) = lane.evaluate(beat)
             {
-                out[count] = (param_id, f64::from(val.clamp(0.0, 1.0)));
+                let effective = if self.modulation.has_param(param) {
+                    self.modulation.modulate_normalized(param, val, beat, bpm)
+                } else {
+                    val.clamp(0.0, 1.0)
+                };
+                out[count] = (param_id, f64::from(effective));
+                count += 1;
+            }
+        }
+        for route in &self.modulation.routes {
+            if count >= out.len() {
+                break;
+            }
+            if let AutomationParam::FxParam {
+                fx: target_fx,
+                param: param_id,
+            } = route.param
+                && target_fx == fx
+                && !out[..count].iter().any(|&(id, _)| id == param_id)
+            {
+                let effective = self
+                    .modulation
+                    .modulate_normalized(route.param, 0.5, beat, bpm);
+                out[count] = (param_id, f64::from(effective));
                 count += 1;
             }
         }
         count
     }
 
-    /// Recolecta en un buffer de stack todos los parámetros automatizados del instrumento VST3.
+    /// Recolecta en un buffer de stack todos los parámetros automatizados o modulados del instrumento VST3.
     pub fn collect_instrument_params(&self, beat: f64, out: &mut [(u32, f64)]) -> usize {
+        self.collect_instrument_params_modulated(beat, 120.0, out)
+    }
+
+    pub fn collect_instrument_params_modulated(
+        &self,
+        beat: f64,
+        bpm: f64,
+        out: &mut [(u32, f64)],
+    ) -> usize {
         let mut count = 0;
         for (&param, lane) in &self.extra {
             if count >= out.len() {
@@ -409,7 +533,26 @@ impl TrackAutomation {
             if let AutomationParam::InstrumentParam(param_id) = param
                 && let Some(val) = lane.evaluate(beat)
             {
-                out[count] = (param_id, f64::from(val.clamp(0.0, 1.0)));
+                let effective = if self.modulation.has_param(param) {
+                    self.modulation.modulate_normalized(param, val, beat, bpm)
+                } else {
+                    val.clamp(0.0, 1.0)
+                };
+                out[count] = (param_id, f64::from(effective));
+                count += 1;
+            }
+        }
+        for route in &self.modulation.routes {
+            if count >= out.len() {
+                break;
+            }
+            if let AutomationParam::InstrumentParam(param_id) = route.param
+                && !out[..count].iter().any(|&(id, _)| id == param_id)
+            {
+                let effective = self
+                    .modulation
+                    .modulate_normalized(route.param, 0.5, beat, bpm);
+                out[count] = (param_id, f64::from(effective));
                 count += 1;
             }
         }

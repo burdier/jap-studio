@@ -93,6 +93,7 @@ struct GroupDrag {
 pub(crate) struct Timeline {
     pub(in crate::ui) navigation: elevate::project::ArrangementNavigation,
     pub(in crate::ui) automation: elevate::musical::track_automation::ArrangementAutomation,
+    pub(in crate::ui) modulation: elevate::musical::modulation::ModulationMatrix,
     pub(in crate::ui) automation_mode: bool,
     pub(in crate::ui) automation_param: elevate::musical::track_automation::AutomationParam,
     automation_drag: Option<automation::AutomationDrag>,
@@ -151,6 +152,7 @@ impl Timeline {
         Self {
             navigation: Default::default(),
             automation: Default::default(),
+            modulation: Default::default(),
             automation_mode: false,
             automation_param: elevate::musical::track_automation::AutomationParam::Volume,
             automation_drag: None,

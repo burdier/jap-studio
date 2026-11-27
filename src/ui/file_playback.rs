@@ -192,7 +192,7 @@ impl DawApp {
                     fx_gain: 1.0,
                     rack: None,
                     midi: None,
-                    automation: self.timeline.automation.track_or_default(track.id),
+                    automation: self.compiled_track_automation(track.id),
                 });
                 continue;
             }
@@ -323,7 +323,7 @@ impl DawApp {
                     None
                 },
                 midi,
-                automation: self.timeline.automation.track_or_default(track.id),
+                automation: self.compiled_track_automation(track.id),
             });
         }
         Ok(inputs)

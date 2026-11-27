@@ -1174,3 +1174,57 @@ fn sidechain_compressor_ducks_target_track_from_source_track() {
         "bajo debía recuperarse sin key (> 0.04), obtenido {recovered}"
     );
 }
+
+#[test]
+fn lfo_modulation_drives_pan_and_filter_cutoff_deterministically_in_mix() {
+    use elevate::musical::{
+        modulation::{LfoDivision, LfoRate, LfoShape, ModulationMatrix},
+        track_automation::{AutomationParam, TrackAutomation},
+    };
+
+    let mut matrix = ModulationMatrix::default();
+    let lfo = matrix
+        .add_lfo(
+            Some("AutoPan".into()),
+            LfoShape::Square,
+            LfoRate::Sync(LfoDivision::Quarter),
+        )
+        .unwrap();
+    // Square LFO a 1/4: primera mitad del beat = +1.0 (pan derecha), segunda mitad = -1.0 (izquierda).
+    matrix
+        .add_route(lfo, TrackId(1), AutomationParam::Pan, 0.5)
+        .unwrap();
+
+    let mut auto = TrackAutomation::default();
+    auto.modulation = matrix.compile_for_track(TrackId(1));
+
+    let mut source = track(1, vec![clip([0.5, 0.5], 0.0, 24_000)]);
+    source.automation = auto;
+
+    let mut mix = Mix::prepare(
+        vec![source],
+        None,
+        48_000,
+        120.0, // 1 beat = 24,000 frames; medio beat = 12,000 frames
+        elevate::musical::time::Meter::default(),
+    )
+    .unwrap();
+
+    // En frame 0 (beat 0.0 -> LFO = +1.0 -> pan = +1.0 derecha): canal izquierdo atenuado, derecho intacto.
+    let mut first_half = [[0.0_f32; 2]; 256];
+    mix.render_block(0, &mut first_half, None, None, false, None);
+    assert!(
+        first_half[255][1] > first_half[255][0] + 0.3,
+        "primera mitad del beat debía panear a la derecha, obt {:?}",
+        first_half[255]
+    );
+
+    // En frame 14_000 (beat ~0.58 -> LFO = -1.0 -> pan = -1.0 izquierda): canal izquierdo intacto, derecho atenuado.
+    let mut second_half = [[0.0_f32; 2]; 256];
+    mix.render_block(14_000, &mut second_half, None, None, false, None);
+    assert!(
+        second_half[255][0] > second_half[255][1] + 0.3,
+        "segunda mitad del beat debía panear a la izquierda, obt {:?}",
+        second_half[255]
+    );
+}

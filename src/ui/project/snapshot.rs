@@ -35,6 +35,7 @@ pub(super) struct Snapshot {
     pub master_chain: elevate::musical::fx::FxChain,
     pub navigation: elevate::project::ArrangementNavigation,
     pub automation: elevate::musical::track_automation::ArrangementAutomation,
+    pub modulation: elevate::musical::modulation::ModulationMatrix,
     pub midi_bindings: Vec<elevate::musical::midi_map::MidiBinding>,
     pub levels: Vec<i32>,
     pub pans: Vec<i32>,
@@ -53,15 +54,14 @@ impl Snapshot {
     }
 
     fn resolve_piano_source(piano: &mut ProjectPiano) -> Result<(), String> {
-        let resolved = crate::audio::piano::resolve_soundfont_path(&piano.source).ok_or_else(
-            || {
+        let resolved =
+            crate::audio::piano::resolve_soundfont_path(&piano.source).ok_or_else(|| {
                 if piano.source.is_empty() {
                     "No hay SoundFont para guardar el piano".to_owned()
                 } else {
                     format!("Falta SoundFont: {}", piano.source)
                 }
-            },
-        )?;
+            })?;
         piano.source = std::fs::canonicalize(&resolved)
             .unwrap_or(resolved)
             .to_str()
@@ -111,6 +111,7 @@ impl Snapshot {
         doc.set_master_chain(&self.master_chain)?;
         doc.set_arrangement_navigation(&self.navigation)?;
         doc.set_track_automation(&self.automation)?;
+        doc.set_modulation(&self.modulation)?;
         doc.set_midi_bindings(&self.midi_bindings)?;
         for entry in tracks.entries {
             doc.set_track_mix(entry.track.id, entry.mix)?;
@@ -176,6 +177,7 @@ impl Snapshot {
             master_chain: doc.master_chain()?,
             navigation: doc.arrangement_navigation()?,
             automation: doc.track_automation()?,
+            modulation: doc.modulation()?,
             midi_bindings: doc.midi_bindings()?.unwrap_or_else(|| {
                 elevate::musical::midi_map::MidiMapper::new()
                     .bindings()
@@ -233,8 +235,9 @@ impl Snapshot {
                         crate::instruments::Piano::restore_project(piano)?;
                     }
                     Err(err) if tolerant_soundfont => {
-                        if let Some(default_bank) =
-                            crate::audio::piano::discover_soundfonts().into_iter().next()
+                        if let Some(default_bank) = crate::audio::piano::discover_soundfonts()
+                            .into_iter()
+                            .next()
                         {
                             let missing_name = Path::new(&piano.source)
                                 .file_name()
@@ -257,10 +260,7 @@ impl Snapshot {
         }
         for sampler in &mut self.samplers {
             let resolved = resolve_audio_source(&sampler.source, root, shared_assets);
-            sampler.source = resolved
-                .to_str()
-                .ok_or("Ruta de sample no UTF-8")?
-                .into();
+            sampler.source = resolved.to_str().ok_or("Ruta de sample no UTF-8")?.into();
         }
         for piece in &mut self.drums.kit.pieces {
             for layer in &mut piece.layers {
@@ -411,6 +411,7 @@ impl Snapshot {
             || competing(&self.tempo, &local.tempo, &remote.tempo)
             || competing(&self.meter, &local.meter, &remote.meter)
             || competing(&self.automation, &local.automation, &remote.automation)
+            || competing(&self.modulation, &local.modulation, &remote.modulation)
             || competing_by_id(&self.midi, &local.midi, &remote.midi, |clip| clip.id)
             || competing_audio(&self.audio, &local.audio, &remote.audio)
             || competing_by_id(&self.pianos, &local.pianos, &remote.pianos, |piano| {

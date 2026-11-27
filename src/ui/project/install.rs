@@ -135,6 +135,7 @@ impl DawApp {
         self.timeline.meter = snapshot.meter;
         self.timeline.navigation = snapshot.navigation;
         self.timeline.automation = snapshot.automation;
+        self.timeline.modulation = snapshot.modulation;
         for clip in snapshot.midi {
             self.timeline.insert_midi_clip(clip);
         }

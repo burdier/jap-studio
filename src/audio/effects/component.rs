@@ -161,13 +161,19 @@ impl ComponentEffect {
             let processor = unsafe { &mut *prepared.processor.get() };
             processor.set_tempo_bpm(effective_bpm);
             for (id, value) in &self.controls {
+                let base_raw = f32::from_bits(value.load(Ordering::Acquire));
                 let effective = if let Some((auto, fx_id, beat)) = automated
-                    && let Some(norm) = auto.evaluate_fx_param(fx_id, id.0, beat)
                     && let Some(spec) = self.descriptor.controls.iter().find(|c| c.id == id.0)
-                {
+                    && let Some(norm) = auto.evaluate_fx_param_modulated(
+                        fx_id,
+                        id.0,
+                        beat,
+                        effective_bpm,
+                        spec.fraction(base_raw),
+                    ) {
                     spec.from_fraction(norm)
                 } else {
-                    f32::from_bits(value.load(Ordering::Acquire))
+                    base_raw
                 };
                 let _ = processor.set_parameter(*id, effective);
             }

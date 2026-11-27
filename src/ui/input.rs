@@ -508,6 +508,27 @@ impl DawApp {
             "auto.next" => self.cycle_automation_param(),
             "auto.vst" => self.automate_last_touched_vst(),
             "auto.clear" => self.clear_selected_track_automation(),
+            "lfo.list" | "lfo" => self.run_lfo_list(),
+            "lfo.add" => self.run_lfo_add(""),
+            cmd if cmd.starts_with("lfo.add ") => {
+                self.run_lfo_add(cmd.trim_start_matches("lfo.add ").trim());
+            }
+            cmd if cmd.starts_with("lfo.rate ") => {
+                self.run_lfo_rate(cmd.trim_start_matches("lfo.rate ").trim());
+            }
+            cmd if cmd.starts_with("lfo.shape ") => {
+                self.run_lfo_shape(cmd.trim_start_matches("lfo.shape ").trim());
+            }
+            cmd if cmd.starts_with("lfo.depth ") => {
+                self.run_lfo_depth(cmd.trim_start_matches("lfo.depth ").trim());
+            }
+            cmd if cmd.starts_with("lfo.polarity ") => {
+                self.run_lfo_polarity(cmd.trim_start_matches("lfo.polarity ").trim());
+            }
+            "lfo.remove" | "lfo.clear" => self.run_lfo_remove(""),
+            cmd if cmd.starts_with("lfo.remove ") => {
+                self.run_lfo_remove(cmd.trim_start_matches("lfo.remove ").trim());
+            }
             cmd if cmd.starts_with("drum.swing ") => {
                 if let Ok(val) = cmd.trim_start_matches("drum.swing ").trim().parse::<i16>() {
                     let current = i16::from(self.pattern_editor.session.active_pattern().swing);

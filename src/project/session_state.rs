@@ -322,6 +322,172 @@ impl ProjectDoc {
         Ok(())
     }
 
+    pub fn modulation(&self) -> Result<crate::musical::modulation::ModulationMatrix, String> {
+        use crate::musical::modulation::{
+            LfoDivision, LfoPolarity, LfoRate, LfoShape, LfoSpec, ModRoute, ModSourceId,
+            ModulationMatrix,
+        };
+        use loro::{LoroValue, ValueOrContainer::Value};
+
+        let mut matrix = ModulationMatrix::default();
+        let lfo_map = self.doc.get_map("modulation_lfos");
+        let mut lfo_keys: Vec<String> = lfo_map.keys().map(|k| k.to_string()).collect();
+        lfo_keys.sort();
+        for key in lfo_keys {
+            let Some(Value(LoroValue::List(items))) = lfo_map.get(&key) else {
+                continue;
+            };
+            if items.len() < 8 {
+                continue;
+            }
+            let (
+                LoroValue::I64(raw_id),
+                LoroValue::String(name),
+                LoroValue::String(shape_key),
+                LoroValue::String(rate_kind),
+                LoroValue::Double(rate_hz),
+                LoroValue::String(rate_div),
+                LoroValue::Double(phase),
+                LoroValue::String(pol_key),
+            ) = (
+                &items[0], &items[1], &items[2], &items[3], &items[4], &items[5], &items[6],
+                &items[7],
+            )
+            else {
+                continue;
+            };
+            let enabled = match items.get(8) {
+                Some(LoroValue::Bool(b)) => *b,
+                _ => true,
+            };
+            let Ok(id) = u32::try_from(*raw_id) else {
+                continue;
+            };
+            let shape = LfoShape::parse(shape_key.as_str()).unwrap_or_default();
+            let rate = if rate_kind.as_str() == "hz" {
+                LfoRate::hz(*rate_hz as f32)
+            } else {
+                LfoRate::Sync(LfoDivision::parse(rate_div.as_str()).unwrap_or_default())
+            };
+            let polarity = LfoPolarity::parse(pol_key.as_str()).unwrap_or_default();
+            matrix.lfos.push(LfoSpec {
+                id: ModSourceId(id),
+                name: name.to_string(),
+                shape,
+                rate,
+                phase: (*phase as f32).rem_euclid(1.0),
+                polarity,
+                enabled,
+            });
+        }
+
+        let route_map = self.doc.get_map("modulation_routes");
+        let mut route_keys: Vec<String> = route_map.keys().map(|k| k.to_string()).collect();
+        route_keys.sort();
+        for key in route_keys {
+            let Some(Value(LoroValue::List(items))) = route_map.get(&key) else {
+                continue;
+            };
+            if items.len() < 6 {
+                continue;
+            }
+            let (
+                LoroValue::I64(raw_id),
+                LoroValue::I64(raw_source),
+                LoroValue::I64(raw_track),
+                LoroValue::String(param_suffix),
+                LoroValue::Double(depth),
+                LoroValue::Bool(enabled),
+            ) = (
+                &items[0], &items[1], &items[2], &items[3], &items[4], &items[5],
+            )
+            else {
+                continue;
+            };
+            let (Ok(id), Ok(source), Ok(track), Some(param)) = (
+                u32::try_from(*raw_id),
+                u32::try_from(*raw_source),
+                u32::try_from(*raw_track),
+                AutomationParam::from_suffix(param_suffix.as_str()),
+            ) else {
+                continue;
+            };
+            matrix.routes.push(ModRoute {
+                id,
+                source: ModSourceId(source),
+                track: TrackId(track),
+                param,
+                depth: (*depth as f32).clamp(-1.0, 1.0),
+                enabled: *enabled,
+            });
+        }
+        Ok(matrix)
+    }
+
+    pub fn set_modulation(
+        &self,
+        matrix: &crate::musical::modulation::ModulationMatrix,
+    ) -> Result<(), String> {
+        use crate::musical::modulation::LfoRate;
+        use loro::LoroValue;
+
+        let lfo_map = self.doc.get_map("modulation_lfos");
+        let existing_lfos: Vec<String> = lfo_map.keys().map(|k| k.to_string()).collect();
+        let mut desired_lfos = std::collections::BTreeSet::new();
+        for lfo in &matrix.lfos {
+            let key = format!("lfo:{:04}", lfo.id.0);
+            desired_lfos.insert(key.clone());
+            let (rate_kind, rate_hz, rate_div) = match lfo.rate {
+                LfoRate::Hz(hz) => ("hz", f64::from(hz), ""),
+                LfoRate::Sync(div) => ("sync", 0.0, div.key()),
+            };
+            let entry = vec![
+                LoroValue::I64(i64::from(lfo.id.0)),
+                LoroValue::String(lfo.name.clone().into()),
+                LoroValue::String(lfo.shape.key().into()),
+                LoroValue::String(rate_kind.into()),
+                LoroValue::Double(rate_hz),
+                LoroValue::String(rate_div.into()),
+                LoroValue::Double(f64::from(lfo.phase)),
+                LoroValue::String(lfo.polarity.key().into()),
+                LoroValue::Bool(lfo.enabled),
+            ];
+            lfo_map
+                .insert(&key, LoroValue::List(entry.into()))
+                .map_err(|e| e.to_string())?;
+        }
+        for key in existing_lfos {
+            if !desired_lfos.contains(&key) {
+                lfo_map.delete(&key).map_err(|e| e.to_string())?;
+            }
+        }
+
+        let route_map = self.doc.get_map("modulation_routes");
+        let existing_routes: Vec<String> = route_map.keys().map(|k| k.to_string()).collect();
+        let mut desired_routes = std::collections::BTreeSet::new();
+        for route in &matrix.routes {
+            let key = format!("route:{:04}", route.id);
+            desired_routes.insert(key.clone());
+            let entry = vec![
+                LoroValue::I64(i64::from(route.id)),
+                LoroValue::I64(i64::from(route.source.0)),
+                LoroValue::I64(i64::from(route.track.0)),
+                LoroValue::String(route.param.key_suffix().into()),
+                LoroValue::Double(f64::from(route.depth)),
+                LoroValue::Bool(route.enabled),
+            ];
+            route_map
+                .insert(&key, LoroValue::List(entry.into()))
+                .map_err(|e| e.to_string())?;
+        }
+        for key in existing_routes {
+            if !desired_routes.contains(&key) {
+                route_map.delete(&key).map_err(|e| e.to_string())?;
+            }
+        }
+        Ok(())
+    }
+
     pub fn midi_bindings(&self) -> Result<Option<Vec<MidiBinding>>, String> {
         use loro::{LoroValue, ValueOrContainer::Value};
         let meta = self.doc.get_map("project");

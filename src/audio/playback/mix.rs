@@ -154,10 +154,9 @@ impl PreparedTrack {
         let beat = p.time.frame as f64 / f64::from(p.rate) * (p.bpm / 60.0);
         if let Some(voice) = &mut self.midi {
             let mut inst_params = [(0u32, 0.0f64); 32];
-            let param_count = self
-                .control
-                .automation
-                .read(|auto| auto.collect_instrument_params(beat, &mut inst_params));
+            let param_count = self.control.automation.read(|auto| {
+                auto.collect_instrument_params_modulated(beat, p.bpm, &mut inst_params)
+            });
             let active_params = &inst_params[..param_count];
             if p.tail || remaining.is_some() {
                 voice.render_tail_timed_params(&mut scratch[..frames], Some(p.time), active_params);
@@ -189,13 +188,11 @@ impl PreparedTrack {
             }
         }
         let base_gain = f32::from_bits(self.control.gain.load(Ordering::Relaxed));
+        let base_pan = self.control.pan.position();
         let audible = self.control.audible.load(Ordering::Relaxed);
         let (gain, auto_pan) = self.control.automation.read(|auto| {
-            let g = auto.evaluate_gain(beat, base_gain, audible);
-            let pan = auto
-                .pan
-                .evaluate(beat)
-                .map(elevate::musical::track_automation::AutomationParam::pan_to_position);
+            let g = auto.evaluate_gain_modulated(beat, p.bpm, base_gain, audible);
+            let pan = auto.evaluate_pan_modulated(beat, p.bpm, base_pan);
             self.fx.process_timed_automated_sidechain(
                 &self.control.fx,
                 bus,
@@ -278,6 +275,7 @@ fn accumulate_sends(
     tracks: &[PreparedTrack],
     return_audio: &mut [Option<Box<[StereoFrame; 256]>>],
     beat: f64,
+    bpm: f64,
 ) {
     if return_order.is_empty() {
         return;
@@ -290,7 +288,7 @@ fn accumulate_sends(
                     .iter()
                     .find(|&&(idx, _)| idx == dest)
                     .map_or(0.0, |&(_, g)| g);
-                let send_gain = auto.evaluate_send(dest_id, beat, static_gain);
+                let send_gain = auto.evaluate_send_modulated(dest_id, beat, bpm, static_gain);
                 if send_gain <= 0.0 {
                     continue;
                 }
@@ -980,7 +978,15 @@ impl Mix {
                         sum[0] += frame[0];
                         sum[1] += frame[1];
                     }
-                    accumulate_sends(track, bus, return_order, tracks, return_audio, block_beat);
+                    accumulate_sends(
+                        track,
+                        bus,
+                        return_order,
+                        tracks,
+                        return_audio,
+                        block_beat,
+                        params.bpm,
+                    );
                 }
                 if let Some(stem) = taps
                     .as_deref_mut()
@@ -1049,7 +1055,15 @@ impl Mix {
                         sum[0] += frame[0];
                         sum[1] += frame[1];
                     }
-                    accumulate_sends(track, bus, return_order, tracks, return_audio, block_beat);
+                    accumulate_sends(
+                        track,
+                        bus,
+                        return_order,
+                        tracks,
+                        return_audio,
+                        block_beat,
+                        params.bpm,
+                    );
                 }
                 if let Some(stem) = taps
                     .as_deref_mut()

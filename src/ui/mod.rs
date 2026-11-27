@@ -29,6 +29,7 @@ mod lua_components;
 mod lua_tools;
 mod mcp;
 mod mixer;
+mod modulation;
 mod navigation;
 mod palette;
 mod pattern_editor;

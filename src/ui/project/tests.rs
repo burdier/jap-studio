@@ -60,6 +60,7 @@ fn snapshot() -> Snapshot {
         master_chain: Default::default(),
         navigation: Default::default(),
         automation: Default::default(),
+        modulation: Default::default(),
         midi_bindings: elevate::musical::midi_map::MidiMapper::new()
             .bindings()
             .to_vec(),
@@ -284,10 +285,33 @@ fn track_automation_round_trips_through_loro() {
         .automation
         .lane_mut(id, AutomationParam::InstrumentParam(11))
         .upsert(0.5, 0.9);
+    let lfo = state
+        .modulation
+        .add_lfo(
+            Some("Wobble".into()),
+            elevate::musical::modulation::LfoShape::Triangle,
+            elevate::musical::modulation::LfoRate::Sync(
+                elevate::musical::modulation::LfoDivision::Eighth,
+            ),
+        )
+        .unwrap();
+    state
+        .modulation
+        .add_route(
+            lfo,
+            id,
+            AutomationParam::FxParam {
+                fx: FxId(55),
+                param: 0,
+            },
+            0.45,
+        )
+        .unwrap();
     let path = fixture.0.join("auto_session.loro");
     state.document("Auto").unwrap().save(&path).unwrap();
     let (loaded, _, _) = Snapshot::load(&path).unwrap();
     assert_eq!(loaded.automation, state.automation);
+    assert_eq!(loaded.modulation, state.modulation);
 }
 
 #[test]
@@ -405,7 +429,9 @@ fn synth_roundtrips_in_project_doc() {
     let mut state = snapshot();
     let synth_id = InstrumentId(4);
     state.tracks[1].instrument = Some(synth_id);
-    let params = elevate::devices::synth::vital_factory_presets()[1].2.clone(); // Reese Growl (Voice + Matrix)
+    let params = elevate::devices::synth::vital_factory_presets()[1]
+        .2
+        .clone(); // Reese Growl (Voice + Matrix)
     state.synths.push(elevate::project::ProjectSynth {
         id: synth_id,
         params: params.clone(),

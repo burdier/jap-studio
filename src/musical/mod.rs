@@ -15,6 +15,7 @@ pub mod midi;
 pub mod midi_export;
 pub mod midi_map;
 pub mod model;
+pub mod modulation;
 pub mod note_expression;
 pub mod pitch;
 pub mod pitch_curve;

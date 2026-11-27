@@ -33,6 +33,31 @@ const KNOWN: &[(&str, &str)] = &[
         "auto.vst",
         "Automatizar el último parámetro tocado en un VST3",
     ),
+    (
+        "lfo.add",
+        "Crear LFO y mapearlo a la pista (ej: lfo.add pan 1/4 0.6 sine)",
+    ),
+    (
+        "lfo.rate",
+        "Cambiar velocidad de LFO (ej: lfo.rate 1/8 o lfo.rate 2hz)",
+    ),
+    (
+        "lfo.shape",
+        "Cambiar forma de onda LFO (sine/tri/saw/saw_down/square/sh)",
+    ),
+    (
+        "lfo.depth",
+        "Cambiar profundidad de ruta LFO (-100..100 o -1.0..1.0)",
+    ),
+    (
+        "lfo.polarity",
+        "Cambiar polaridad de LFO (bipolar / unipolar)",
+    ),
+    (
+        "lfo.remove",
+        "Quitar LFO por ID o limpiar rutas de la pista",
+    ),
+    ("lfo.list", "Ver rutas LFO activas en el proyecto"),
     ("browse", "Abrir buscador"),
     ("capture", "Capturar MIDI tocado"),
     ("click", "Activar/desactivar metrónomo (Ctrl+K)"),

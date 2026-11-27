@@ -188,6 +188,8 @@ impl DawApp {
         let mut automation = self.timeline.automation.clone();
         let valid_ids: Vec<_> = tracks.iter().map(|t| t.id).collect();
         automation.retain_tracks(&valid_ids);
+        let mut modulation = self.timeline.modulation.clone();
+        modulation.routes.retain(|r| valid_ids.contains(&r.track));
         Ok(Snapshot {
             tracks,
             midi,
@@ -203,6 +205,7 @@ impl DawApp {
             master_chain,
             navigation: self.timeline.navigation.clone(),
             automation,
+            modulation,
             midi_bindings: self.midi_mapper.bindings().to_vec(),
             levels: self.track_levels.clone(),
             pans: self.track_pans.clone(),
