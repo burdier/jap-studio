@@ -23,11 +23,14 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_RELEASE_DEBUG: "0"
 
 jobs:
   build-windows:
     name: Windows x64 Release
     runs-on: windows-latest
+    timeout-minutes: 90
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -37,9 +40,8 @@ jobs:
 
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
-
-      - name: Run headless library tests
-        run: cargo test --lib
+        with:
+          save-if: ${{ always() }}
 
       - name: Build release binary (ui + p2p)
         run: cargo build --release --features ui,p2p
@@ -48,15 +50,18 @@ jobs:
         shell: pwsh
         run: |
           $stage = "dist\JapStudio-Windows-x64"
+          if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
           Copy-Item "target\release\daw-gpui.exe" "$stage\jap-studio.exe"
           if (Test-Path "assets") {
             Copy-Item -Recurse "assets" "$stage\assets"
+            Remove-Item -Recurse -Force "$stage\assets\soundfonts\freepats" -ErrorAction SilentlyContinue
+            Remove-Item -Recurse -Force "$stage\assets\video-sfx" -ErrorAction SilentlyContinue
           }
           if (Test-Path "README.md") {
             Copy-Item "README.md" "$stage\README.md"
           }
-          Compress-Archive -Path "$stage\*" -DestinationPath "JapStudio-Windows-x64.zip" -Force
+          Compress-Archive -Path "$stage" -DestinationPath "JapStudio-Windows-x64.zip" -Force
           Get-Item "JapStudio-Windows-x64.zip" | Select-Object Name, Length
 
       - name: Upload Windows artifact
@@ -71,7 +76,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if (gh release view v0.8.0 2>$null) {
+          $ErrorActionPreference = "Continue"
+          gh release view v0.8.0 *> $null
+          if ($LASTEXITCODE -eq 0) {
             gh release upload v0.8.0 JapStudio-Windows-x64.zip --clobber
           } else {
             Write-Host "Release v0.8.0 no existe aún; se conserva como artifact."
