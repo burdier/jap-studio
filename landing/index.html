@@ -5,30 +5,96 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Jap Studio (Hay / Elevate) — un DAW sin cambiar de pantalla</title>
 <link rel="icon" type="image/svg+xml" href="logo.svg">
+<script>
+  (function () {
+    try {
+      var saved = localStorage.getItem("jap-landing-theme");
+      var dark = saved ? saved === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+      document.documentElement.dataset.theme = dark ? "dark" : "light";
+    } catch (e) {}
+  })();
+</script>
 <style>
   :root{
-    --paper:#f1e8d4; --graphite:#3a3835; --faint:#3a383544;
+    color-scheme:light;
+    --paper:#f1e8d4; --paper-glow:#fff6; --rule-line:#6a8fb722; --margin-line:#b8321f55;
+    --graphite:#3a3835; --faint:#3a383544; --muted:#3a3835aa; --footer:#3a3835bb;
     --red:#b8321f; --blue:#2f4f7a; --carrot:#e8641f;
+    --carrot-fill:#ff6b35aa; --hero-carrot-fill:#ff6b3566; --carrot-face:#3a3835;
+    --surface:#fbf4de; --surface-soft:#fbf4de99; --surface-card:#fbf4de88; --surface-install:#fbf4debb;
+    --surface-canvas:#fff5; --tape:#cdb98a99; --note-border:#0002;
+    --note-shadow:0 1px 0 #0001,0 14px 24px -12px #0005;
+    --code-bg:#3a383514; --hover-bg:#3a383512; --dash:#3a383555;
+    --hit-hover:#e8641f18;
+    --fill-o:#ff6b3566; --fill-b:#2f4f7a33; --fill-g:#3a383518; --fill-y:#f2c94c99; --fill-r:#b8321f33;
+    --grain-opacity:.35; --grain-blend:multiply;
     --hand:"Segoe Print","Bradley Hand","Chalkboard SE","Comic Neue","Comic Sans MS",cursive;
     --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  }
+  :root[data-theme="dark"]{
+    color-scheme:dark;
+    --paper:#1b1a18; --paper-glow:#ffffff0a; --rule-line:#7ca7db1c; --margin-line:#ee6b5748;
+    --graphite:#e8e0d2; --faint:#e8e0d242; --muted:#e8e0d2a8; --footer:#e8e0d2a8;
+    --red:#ee6b57; --blue:#7ca7db; --carrot:#ff8243;
+    --carrot-fill:#ff8243cc; --hero-carrot-fill:#ff824388; --carrot-face:#1b1a18;
+    --surface:#252320; --surface-soft:#252320cc; --surface-card:#252320b8; --surface-install:#252320e0;
+    --surface-canvas:#15141299; --tape:#7a6a4d88; --note-border:#ffffff1f;
+    --note-shadow:0 1px 0 #0005,0 16px 28px -12px #000b;
+    --code-bg:#e8e0d218; --hover-bg:#e8e0d216; --dash:#e8e0d244;
+    --hit-hover:#ff824324;
+    --fill-o:#ff824355; --fill-b:#7ca7db38; --fill-g:#e8e0d21c; --fill-y:#e6bf5548; --fill-r:#ee6b5738;
+    --grain-opacity:.14; --grain-blend:screen;
+  }
+  @media(prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      color-scheme:dark;
+      --paper:#1b1a18; --paper-glow:#ffffff0a; --rule-line:#7ca7db1c; --margin-line:#ee6b5748;
+      --graphite:#e8e0d2; --faint:#e8e0d242; --muted:#e8e0d2a8; --footer:#e8e0d2a8;
+      --red:#ee6b57; --blue:#7ca7db; --carrot:#ff8243;
+      --carrot-fill:#ff8243cc; --hero-carrot-fill:#ff824388; --carrot-face:#1b1a18;
+      --surface:#252320; --surface-soft:#252320cc; --surface-card:#252320b8; --surface-install:#252320e0;
+      --surface-canvas:#15141299; --tape:#7a6a4d88; --note-border:#ffffff1f;
+      --note-shadow:0 1px 0 #0005,0 16px 28px -12px #000b;
+      --code-bg:#e8e0d218; --hover-bg:#e8e0d216; --dash:#e8e0d244;
+      --hit-hover:#ff824324;
+      --fill-o:#ff824355; --fill-b:#7ca7db38; --fill-g:#e8e0d21c; --fill-y:#e6bf5548; --fill-r:#ee6b5738;
+      --grain-opacity:.14; --grain-blend:screen;
+    }
   }
   *{box-sizing:border-box}
   html{scroll-behavior:smooth}
   body{
     margin:0;color:var(--graphite);font-family:var(--serif);line-height:1.55;
-    background:radial-gradient(ellipse at 20% 0%,#fff6 0,#0000 60%),
-      repeating-linear-gradient(0deg,#0000 0 31px,#6a8fb722 31px 32px),var(--paper);
+    background:radial-gradient(ellipse at 20% 0%,var(--paper-glow) 0,#0000 60%),
+      repeating-linear-gradient(0deg,#0000 0 31px,var(--rule-line) 31px 32px),var(--paper);
+    transition:background-color .25s ease,color .25s ease;
   }
   body::before{
-    content:"";position:fixed;inset:0;pointer-events:none;z-index:50;opacity:.35;mix-blend-mode:multiply;
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:50;opacity:var(--grain-opacity);mix-blend-mode:var(--grain-blend);
     background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/><feColorMatrix values='0 0 0 0 .4  0 0 0 0 .33  0 0 0 0 .2  0 0 0 .5 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
   }
-  body::after{content:"";position:fixed;top:0;bottom:0;left:56px;width:2px;background:#b8321f55;pointer-events:none}
+  body::after{content:"";position:fixed;top:0;bottom:0;left:56px;width:2px;background:var(--margin-line);pointer-events:none}
+  .theme-toggle{
+    position:fixed;top:16px;right:20px;z-index:95;
+    display:inline-flex;align-items:center;gap:7px;
+    background:var(--surface);box-shadow:var(--note-shadow);
+    padding:.3rem .8rem;font-size:.95rem;
+    transition:background-color .25s ease,color .25s ease,border-color .25s ease,transform .2s ease;
+  }
+  .theme-toggle:hover{background:var(--surface);transform:rotate(-1.5deg) scale(1.03)}
+  .theme-toggle:focus-visible{outline:2px solid var(--carrot);outline-offset:3px}
+  .theme-icon{flex:none;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  .theme-icon .sun{display:none}
+  .theme-icon .moon{display:block}
+  :root[data-theme="dark"] .theme-icon .sun{display:block}
+  :root[data-theme="dark"] .theme-icon .moon{display:none}
   header,main,footer{max-width:1260px;margin:0 auto;padding:0 28px 0 84px}
   header{padding-top:44px;display:grid;grid-template-columns:1fr 230px;gap:20px;align-items:center}
   @media(max-width:800px){header{grid-template-columns:1fr}.hero-carrot{display:none}}
+  @media(max-width:640px){header{padding-top:64px}.theme-toggle{top:12px;right:12px;padding:.25rem .65rem;font-size:.88rem}}
   .brand{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
   .brand .logo{width:190px;height:auto;flex:none;transform:rotate(-3deg);transition:transform .4s cubic-bezier(.3,1.6,.5,1)}
+  .brand .logo path{fill:var(--graphite);transition:fill .25s ease}
   .brand .logo:hover{transform:rotate(3deg) scale(1.08)}
   .kicker{font-family:var(--hand);color:var(--red);transform:rotate(-1.5deg);display:inline-block;font-size:1.05rem}
   h1{font-family:var(--hand);font-weight:400;font-size:clamp(2.2rem,5.2vw,4rem);line-height:1.08;margin:.2em 0 .3em}
@@ -48,10 +114,10 @@
   .shape.light{stroke:var(--faint);stroke-width:1.1}
   .shape.fill{fill:var(--graphite);stroke:none;opacity:.14}
   .txt{font-family:var(--hand);fill:var(--graphite);font-size:15px}
-  .txt.small{font-size:12px;fill:#3a3835aa}
+  .txt.small{font-size:12px;fill:var(--muted)}
   .comp{cursor:pointer;outline:none}
   .comp .hit{fill:#e8641f00;stroke:none;transition:fill .2s}
-  .comp:hover .hit,.comp:focus-visible .hit{fill:#e8641f18}
+  .comp:hover .hit,.comp:focus-visible .hit{fill:var(--hit-hover)}
   .comp .ink{opacity:0;stroke:var(--red);stroke-width:2.4;fill:none;stroke-linecap:round;stroke-linejoin:round}
   .comp.seen .ink{opacity:.9}
   .comp.active .ink{opacity:1;stroke-width:3.2}
@@ -69,28 +135,29 @@
   @keyframes hop{0%{transform:translateY(0) scale(1,1)}25%{transform:translateY(0) scale(1.15,.8)}60%{transform:translateY(-34px) scale(.9,1.15)}100%{transform:translateY(0) scale(1,1)}}
   #bubble{transition:opacity .3s;pointer-events:none}
   #bubble text{font-family:var(--hand);font-size:15px;fill:var(--graphite)}
-  #bubble .bb{fill:#fbf4de;stroke:var(--graphite);stroke-width:1.6}
+  #bubble .bb{fill:var(--surface);stroke:var(--graphite);stroke-width:1.6}
   .note-pop{font-family:var(--hand);fill:var(--carrot);font-size:26px;pointer-events:none;animation:floaty 1.5s ease-out forwards}
   @keyframes floaty{from{opacity:1;transform:translate(0,0) rotate(0)}to{opacity:0;transform:translate(var(--dx),-110px) rotate(var(--r))}}
 
   .note{
-    position:sticky;top:20px;background:#fbf4de;padding:20px 22px 24px;
-    box-shadow:0 1px 0 #0001,0 14px 24px -12px #0005;transform:rotate(1deg);border:1px solid #0002;min-height:300px;
+    position:sticky;top:20px;background:var(--surface);padding:20px 22px 24px;
+    box-shadow:var(--note-shadow);transform:rotate(1deg);border:1px solid var(--note-border);min-height:300px;
+    transition:background-color .25s ease,border-color .25s ease,box-shadow .25s ease;
   }
-  .note::before{content:"";position:absolute;top:-14px;left:50%;width:90px;height:26px;margin-left:-45px;background:#cdb98a99;transform:rotate(-3deg)}
+  .note::before{content:"";position:absolute;top:-14px;left:50%;width:90px;height:26px;margin-left:-45px;background:var(--tape);transform:rotate(-3deg)}
   .note h2{font-family:var(--hand);font-weight:400;color:var(--red);font-size:1.6rem;margin:.2rem 0 .1rem;line-height:1.15}
   .note .sub{font-family:var(--hand);color:var(--blue);margin:0 0 .6rem}
   .note p{margin:.5rem 0}
   .note ul{padding-left:1.1rem;margin:.6rem 0}
   .note li{margin:.25rem 0}
-  .note code,.card code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.85em;background:#3a383514;padding:.05em .35em;border-radius:3px}
-  .note .progress{font-family:var(--hand);font-size:.9rem;color:#3a3835aa;margin-top:1rem;border-top:1px dashed #3a383555;padding-top:.6rem}
+  .note code,.card code,.compare code,.install-box p code,section>p code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.85em;background:var(--code-bg);padding:.05em .35em;border-radius:3px}
+  .note .progress{font-family:var(--hand);font-size:.9rem;color:var(--muted);margin-top:1rem;border-top:1px dashed var(--dash);padding-top:.6rem}
   .note.flip{animation:flip .45s ease}
   @keyframes flip{from{opacity:0;transform:rotate(-1deg) translateY(8px)}to{opacity:1;transform:rotate(1deg)}}
   .nav{display:flex;gap:10px;margin-top:1rem;flex-wrap:wrap}
   .nav button,.btn{font-family:var(--hand);font-size:1rem;background:none;border:1.5px solid var(--graphite);padding:.25rem .8rem;cursor:pointer;color:var(--graphite);
     border-radius:255px 15px 225px 15px/15px 225px 15px 255px}
-  .nav button:hover,.btn:hover{background:#3a383512}
+  .nav button:hover,.btn:hover{background:var(--hover-bg)}
 
   /* ===== dibujos grandes ===== */
   .big{width:100%;height:auto;display:block;overflow:visible}
@@ -100,27 +167,27 @@
   .big path.o{stroke:var(--carrot)} .big path.b{stroke:var(--blue)} .big path.r{stroke:var(--red)} .big path.l{stroke:var(--faint);stroke-width:1.4}
   .big path.f{stroke:none;stroke-dasharray:none;opacity:0;transition:opacity .7s 1s}
   .big.drawn path.f{opacity:1}
-  .big path.fo{fill:#ff6b3566}.big path.fb{fill:#2f4f7a33}.big path.fg{fill:#3a383518}.big path.fy{fill:#f2c94c99}.big path.fr{fill:#b8321f33}
+  .big path.fo{fill:var(--fill-o)}.big path.fb{fill:var(--fill-b)}.big path.fg{fill:var(--fill-g)}.big path.fy{fill:var(--fill-y)}.big path.fr{fill:var(--fill-r)}
   .big text{font-family:var(--hand);fill:var(--graphite);font-size:16px;opacity:0;transition:opacity .5s 1.1s}
   .big.drawn text{opacity:1}
-  .big text.b{fill:var(--blue)} .big text.r{fill:var(--red)} .big text.s{font-size:12px;fill:#3a3835aa} .big text.o{fill:var(--carrot)}
+  .big text.b{fill:var(--blue)} .big text.r{fill:var(--red)} .big text.s{font-size:12px;fill:var(--muted)} .big text.o{fill:var(--carrot)}
   .big .blink{animation:blink 1s steps(2) infinite}
   @keyframes blink{50%{opacity:0}}
-  .note .big{margin:.3rem 0 .6rem;background:#fff5;border:1.5px dashed #3a383555}
+  .note .big{margin:.3rem 0 .6rem;background:var(--surface-canvas);border:1.5px dashed var(--dash)}
 
   section{padding:70px 0 10px}
   h2.sec{font-family:var(--hand);font-weight:400;font-size:clamp(1.7rem,3.5vw,2.6rem);margin:0 0 .4rem}
   h2.sec::after{content:"";display:block;width:180px;height:6px;margin-top:6px;background:var(--red);opacity:.7;
     clip-path:polygon(0 50%,25% 0,55% 70%,80% 20%,100% 60%,100% 100%,0 100%)}
   .gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:34px 28px;margin-top:30px}
-  .gcard{background:#fbf4de99;padding:16px 18px 18px;border:1.5px solid var(--graphite);
-    border-radius:255px 15px 225px 15px/15px 225px 15px 255px}
+  .gcard{background:var(--surface-soft);padding:16px 18px 18px;border:1.5px solid var(--graphite);
+    border-radius:255px 15px 225px 15px/15px 225px 15px 255px;transition:background-color .25s ease,border-color .25s ease}
   .gcard:nth-child(even){transform:rotate(.7deg)}.gcard:nth-child(odd){transform:rotate(-.6deg)}
   .gcard h3{font-family:var(--hand);font-weight:400;color:var(--blue);font-size:1.35rem;margin:.4rem 0 .1rem}
   .gcard h3 b{color:var(--red);font-weight:400}
   .gcard p{margin:.2rem 0 .6rem;font-size:.98rem}
   .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:22px;margin-top:26px}
-  .card{background:#fbf4de88;padding:18px 20px;border:1.5px solid var(--graphite);border-radius:255px 15px 225px 15px/15px 225px 15px 255px}
+  .card{background:var(--surface-card);padding:18px 20px;border:1.5px solid var(--graphite);border-radius:255px 15px 225px 15px/15px 225px 15px 255px;transition:background-color .25s ease,border-color .25s ease}
   .card:nth-child(even){transform:rotate(.6deg)}.card:nth-child(odd){transform:rotate(-.5deg)}
   .card h3{font-family:var(--hand);font-weight:400;margin:0 0 .3rem;color:var(--blue);font-size:1.25rem}
   .card p{margin:0;font-size:.98rem}
@@ -131,17 +198,100 @@
   .compare .bad h3{color:var(--red)}.compare .good h3{color:var(--blue)}
   .compare .bad li{text-decoration:line-through;text-decoration-color:var(--red);text-decoration-thickness:2px}
   .install-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:24px;margin-top:24px}
-  .install-box{background:#fbf4debb;padding:20px 22px;border:1.5px solid var(--graphite);border-radius:255px 15px 225px 15px/15px 225px 15px 255px;position:relative}
+  .install-box{background:var(--surface-install);padding:20px 22px;border:1.5px solid var(--graphite);border-radius:255px 15px 225px 15px/15px 225px 15px 255px;position:relative;transition:background-color .25s ease,border-color .25s ease}
   .install-box h3{font-family:var(--hand);font-weight:400;margin:0 0 .35rem;color:var(--red);font-size:1.3rem}
-  .install-box pre{margin:.6rem 0;padding:10px 12px;background:#3a383512;border:1px dashed #3a383555;border-radius:6px;overflow-x:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.83rem;line-height:1.45}
+  .install-box pre{margin:.6rem 0;padding:10px 12px;background:var(--code-bg);border:1px dashed var(--dash);border-radius:6px;overflow-x:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.83rem;line-height:1.45}
   .cta-row{display:flex;gap:12px;flex-wrap:wrap;margin-top:1rem;align-items:center}
   .cta-link{text-decoration:none;display:inline-block}
+  .pill-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:.85rem}
+  .pill{font-family:var(--hand);font-size:.9rem;color:var(--blue);background:var(--surface-soft);border:1px dashed var(--dash);padding:.12rem .6rem;border-radius:999px}
   .badge{display:inline-block;font-family:var(--hand);font-size:.88rem;color:var(--red);border:1px solid var(--red);padding:.05rem .45rem;border-radius:999px;transform:rotate(-2deg);margin-left:6px}
-  footer{padding:70px 28px 80px 84px;font-family:var(--hand);color:#3a3835bb}
+  footer{padding:70px 28px 80px 84px;font-family:var(--hand);color:var(--footer)}
+
+  /* ===== pantalla de presentación (video inicial) ===== */
+  body.intro-open{overflow:hidden}
+  #introStage{
+    position:fixed;inset:0;z-index:80;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:28px 24px 24px;
+    background:radial-gradient(ellipse at 20% 0%,var(--paper-glow) 0,#0000 60%),
+      repeating-linear-gradient(0deg,#0000 0 31px,var(--rule-line) 31px 32px),var(--paper);
+    transition:opacity .5s ease,transform .5s ease,visibility .5s ease;
+  }
+  #introStage::after{content:"";position:fixed;top:0;bottom:0;left:56px;width:2px;background:var(--margin-line);pointer-events:none}
+  #introStage.hidden{opacity:0;transform:translateY(-18px);visibility:hidden;pointer-events:none}
+  .intro-inner{width:min(1100px,100%);display:flex;flex-direction:column;gap:14px;position:relative;z-index:2}
+  .intro-top{display:flex;align-items:baseline;justify-content:space-between;gap:14px;flex-wrap:wrap;padding-right:150px}
+  .intro-title{font-family:var(--hand);font-size:clamp(1.3rem,2.6vw,2rem);margin:0;color:var(--graphite)}
+  .intro-title b{color:var(--red);font-weight:400}
+  .intro-sub{font-family:var(--hand);font-size:1rem;color:var(--blue);margin:0}
+  .intro-frame{
+    position:relative;background:var(--surface);padding:10px;border:2px solid var(--graphite);
+    border-radius:14px;box-shadow:var(--note-shadow);
+  }
+  .intro-frame::before,.intro-frame::after{
+    content:"";position:absolute;top:-15px;width:96px;height:26px;background:var(--tape);pointer-events:none;z-index:3;
+  }
+  .intro-frame::before{left:48px;transform:rotate(-5deg)}
+  .intro-frame::after{right:48px;transform:rotate(4deg)}
+  .intro-frame video{
+    display:block;width:100%;max-height:min(68vh,620px);aspect-ratio:16/9;
+    object-fit:contain;background:#161513;border-radius:8px;
+  }
+  .intro-sound{
+    position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:4;
+    font-family:var(--hand);font-size:clamp(1.05rem,2vw,1.35rem);
+    color:#fff;background:#1b1a18dd;border:2px solid var(--carrot);
+    padding:.55rem 1.25rem;cursor:pointer;box-shadow:0 12px 28px #0008;
+    border-radius:255px 15px 225px 15px/15px 225px 15px 255px;
+    transition:transform .2s ease,opacity .25s ease,background-color .2s ease;
+  }
+  .intro-sound:hover{transform:translate(-50%,-50%) scale(1.05) rotate(-1deg);background:#252320f0}
+  .intro-sound.off{opacity:0;pointer-events:none}
+  .intro-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  .intro-bar .hint-inline{font-family:var(--hand);color:var(--muted);font-size:.98rem;margin:0}
+  .intro-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .btn-accent{border-color:var(--carrot);background:var(--fill-o);color:var(--graphite)}
+  .btn-accent:hover{background:var(--carrot);color:#fff}
+  @media(max-width:640px){
+    #introStage{padding:64px 14px 16px}
+    .intro-top{padding-right:0}
+    .intro-frame{padding:6px}
+  }
   @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.big path{stroke-dashoffset:0}.big text,.big path.f{opacity:1}}
 </style>
 </head>
 <body>
+
+<button type="button" class="btn theme-toggle" id="themeToggle" aria-label="Cambiar a modo oscuro" aria-pressed="false" title="Cambiar entre modo claro y oscuro">
+  <svg class="theme-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+    <path class="moon" d="M20.5 14.5A8.5 8.5 0 1 1 9.5 3.5a6.8 6.8 0 0 0 11 11z"/>
+    <g class="sun">
+      <circle cx="12" cy="12" r="4"/>
+      <path d="M12 2.5v2.2M12 19.3v2.2M4.7 4.7l1.6 1.6M17.7 17.7l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.7 19.3l1.6-1.6M17.7 6.3l1.6-1.6"/>
+    </g>
+  </svg>
+  <span class="theme-label">Modo oscuro</span>
+</button>
+
+<section id="introStage" aria-label="Video de presentación de Jap Studio">
+  <div class="intro-inner">
+    <div class="intro-top">
+      <p class="intro-title"><b>Jap Studio</b> · presentación interactiva</p>
+      <p class="intro-sub">Todos los efectos de sonido de este video se editaron dentro del propio DAW</p>
+    </div>
+    <div class="intro-frame">
+      <video id="introVideo" src="jap-studio-release.mp4" autoplay muted playsinline controls preload="auto"></video>
+      <button type="button" class="intro-sound" id="introUnmute">🔊 Activar sonido · SFX hechos en Jap Studio</button>
+    </div>
+    <div class="intro-bar">
+      <p class="hint-inline">Al terminar pasarás directo al cuaderno interactivo (o pulsa <b>Esc</b> en cualquier momento).</p>
+      <div class="intro-actions">
+        <button type="button" class="btn" id="introSoundBtn">🔊 Activar sonido</button>
+        <button type="button" class="btn btn-accent" id="introSkip">Explorar el cuaderno →</button>
+      </div>
+    </div>
+  </div>
+</section>
 
 <header>
   <div>
@@ -150,27 +300,37 @@
 </svg><span class="kicker">cuaderno de bocetos · Jap Studio (Hay / Elevate)</span></div>
     <h1>Un DAW donde no tienes que <span class="strike">saltar de pantalla</span></h1>
     <p class="lede">
-      Arrangement, Piano roll, <b>Pads MPC 4×4</b> con corte por transientes, motor de Drums PCM sin clics,
-      sampler, efectos nativos con sidechain, VST3, <b>Explorer con analizador acústico</b>,
-      colaboración <b>P2P en vivo</b> e integración nativa con IA mediante <b>MCP</b>. Todo en <b>un solo lienzo</b>.
+      Arrangement con <b>Warp</b> y <b>Audio → MIDI</b>, Piano roll con <b>Hay Chord</b>, sintetizador wavetable
+      <b>Hay Synth</b> (importa <code>.vital</code> y <code>.fxp</code>), <b>Pads MPC 4×4</b> sin clics,
+      efectos nativos con <b>sidechain</b>, VST3, <b>Explorer acústico</b>, colaboración <b>P2P en vivo</b>
+      con envío de samples e integración nativa con IA mediante <b>MCP</b>. Todo en <b>un solo lienzo</b>,
+      en <b>Linux y Windows</b>.
     </p>
     <div class="cta-row">
-      <a class="btn cta-link" href="#probar">↓ Instalar en Linux (Flatpak)</a>
-      <a class="btn cta-link" href="#componentes">Ver los 11 componentes</a>
+      <button type="button" class="btn btn-accent" id="replayIntro">▶ Ver video de presentación</button>
+      <a class="btn cta-link" href="#probar">↓ Instalar (Linux y Windows)</a>
+      <a class="btn cta-link" href="#componentes">Ver los 12 componentes</a>
+    </div>
+    <div class="pill-row" aria-label="Resumen técnico">
+      <span class="pill">Rust + GPUI</span>
+      <span class="pill">Linux Flatpak · Windows x64</span>
+      <span class="pill">Hay Synth (.vital / .fxp)</span>
+      <span class="pill">P2P Loro + Iroh</span>
+      <span class="pill">MCP · 22 herramientas IA</span>
     </div>
     <p class="hint">↓ Haz clic en el dibujo. La zanahoria te guía de componente en componente y una línea azul marca tu recorrido.</p>
   </div>
   <svg class="hero-carrot" viewBox="-4 -4 24 24" aria-hidden="true">
-    <path d="M 14 5 C 14.55 5, 15 5.45, 15 6 M 11 2 C 11 1.45, 10.55 1, 10 1 M 13 3 L 15 1 M 0.99 15 L 10.45 9.69 C 11.28 9.22, 11.85 8.39, 11.98 7.44 C 12.1 6.49, 11.79 5.54, 11.11 4.87 C 10.44 4.2, 9.48 3.88, 8.54 4.02 C 7.6 4.15, 6.78 4.72, 6.31 5.55 Z" fill="#ff6b3566" stroke="#e8641f" stroke-width=".45" stroke-linecap="round" stroke-linejoin="round"/>
-    <circle cx="8.3" cy="7.6" r=".42" fill="#3a3835"/><circle cx="10" cy="9.1" r=".42" fill="#3a3835"/>
-    <path d="M8.6 9.4 Q9.5 10.3 10.3 9.7" fill="none" stroke="#3a3835" stroke-width=".3" stroke-linecap="round"/>
-    <path d="M3.5 12.5 l-2 -.6 M4.5 13.5 l-1.4 1.6" stroke="#3a3835" stroke-width=".25" stroke-linecap="round"/>
+    <path d="M 14 5 C 14.55 5, 15 5.45, 15 6 M 11 2 C 11 1.45, 10.55 1, 10 1 M 13 3 L 15 1 M 0.99 15 L 10.45 9.69 C 11.28 9.22, 11.85 8.39, 11.98 7.44 C 12.1 6.49, 11.79 5.54, 11.11 4.87 C 10.44 4.2, 9.48 3.88, 8.54 4.02 C 7.6 4.15, 6.78 4.72, 6.31 5.55 Z" fill="var(--hero-carrot-fill)" stroke="var(--carrot)" stroke-width=".45" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="8.3" cy="7.6" r=".42" fill="var(--carrot-face)"/><circle cx="10" cy="9.1" r=".42" fill="var(--carrot-face)"/>
+    <path d="M8.6 9.4 Q9.5 10.3 10.3 9.7" fill="none" stroke="var(--carrot-face)" stroke-width=".3" stroke-linecap="round"/>
+    <path d="M3.5 12.5 l-2 -.6 M4.5 13.5 l-1.4 1.6" stroke="var(--graphite)" stroke-width=".25" stroke-linecap="round"/>
   </svg>
 </header>
 
 <main>
   <div class="sheet">
-    <svg id="daw" viewBox="0 -50 1200 960" role="group" aria-label="Boceto interactivo del DAW">
+    <svg id="daw" viewBox="0 -50 1200 970" role="group" aria-label="Boceto interactivo del DAW">
       <defs>
         <filter id="pencil" x="-5%" y="-5%" width="110%" height="110%">
           <feTurbulence type="fractalNoise" baseFrequency=".035" numOctaves="2" seed="4" result="t"/>
@@ -184,9 +344,9 @@
       <g id="carrotG" style="transform:translate(1110px,-6px)" tabindex="0" role="button" aria-label="Zanahoria guía">
         <g class="hop">
           <g transform="translate(-27 -27) scale(3.4)">
-            <path d="M 14 5 C 14.55 5, 15 5.45, 15 6 M 11 2 C 11 1.45, 10.55 1, 10 1 M 13 3 L 15 1 M 0.99 15 L 10.45 9.69 C 11.28 9.22, 11.85 8.39, 11.98 7.44 C 12.1 6.49, 11.79 5.54, 11.11 4.87 C 10.44 4.2, 9.48 3.88, 8.54 4.02 C 7.6 4.15, 6.78 4.72, 6.31 5.55 Z" fill="#ff6b35aa" stroke="#e8641f" stroke-width=".7" stroke-linecap="round" stroke-linejoin="round"/>
-            <circle cx="8.3" cy="7.6" r=".5" fill="#3a3835"/><circle cx="10" cy="9.1" r=".5" fill="#3a3835"/>
-            <path id="smile" d="M8.6 9.5 Q9.5 10.4 10.3 9.8" fill="none" stroke="#3a3835" stroke-width=".35" stroke-linecap="round"/>
+            <path d="M 14 5 C 14.55 5, 15 5.45, 15 6 M 11 2 C 11 1.45, 10.55 1, 10 1 M 13 3 L 15 1 M 0.99 15 L 10.45 9.69 C 11.28 9.22, 11.85 8.39, 11.98 7.44 C 12.1 6.49, 11.79 5.54, 11.11 4.87 C 10.44 4.2, 9.48 3.88, 8.54 4.02 C 7.6 4.15, 6.78 4.72, 6.31 5.55 Z" fill="var(--carrot-fill)" stroke="var(--carrot)" stroke-width=".7" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="8.3" cy="7.6" r=".5" fill="var(--carrot-face)"/><circle cx="10" cy="9.1" r=".5" fill="var(--carrot-face)"/>
+            <path id="smile" d="M8.6 9.5 Q9.5 10.4 10.3 9.8" fill="none" stroke="var(--carrot-face)" stroke-width=".35" stroke-linecap="round"/>
           </g>
         </g>
       </g>
@@ -197,7 +357,7 @@
 
 <main>
   <section id="componentes">
-    <h2 class="sec">Los 11 componentes, dibujados grandes</h2>
+    <h2 class="sec">Los 12 componentes, dibujados grandes</h2>
     <p>Cada uno tiene su personalidad. Haz clic en uno y la zanahoria salta a su sitio en el boceto.</p>
     <div class="gallery" id="gallery"></div>
   </section>
@@ -206,56 +366,76 @@
     <h2 class="sec">La idea: un solo flujo</h2>
     <div class="compare">
       <div class="bad"><h3>Lo de siempre</h3><ul>
-        <li>Abrir el plugin en otra ventana</li>
-        <li>Exportar para ver el espectro</li>
+        <li>Comprar un sinte wavetable aparte para abrir presets <code>.vital</code> o <code>.fxp</code></li>
+        <li>Exportar para ver el espectro o transcribir audio a MIDI en otra web</li>
         <li>Elegir samples a ciegas por el nombre del archivo</li>
         <li>Copiar y pegar MIDI a mano desde una IA externa</li>
-        <li>Enviar el proyecto por correo para colaborar</li>
-        <li>Instalar 20 dependencias para probar un DAW en Linux</li></ul></div>
+        <li>Mandar un ZIP gigante con WAVs para colaborar con alguien</li>
+        <li>Instalar 20 dependencias para probar un DAW nativo</li></ul></div>
       <div class="good"><h3>En Jap Studio (Hay)</h3><ul>
-        <li>El plugin se inserta en la pista, con su editor original</li>
-        <li>El espectro, el compresor con sidechain y los FX nativos viven en la cadena</li>
+        <li><b>Hay Synth</b> nativo importa <code>.vital</code>, <code>.vitalbank</code> y <code>.fxp</code> (Serum) con wavetables reales</li>
+        <li>Spectrum, Comp con sidechain, Warp y <b>Audio → MIDI</b> viven dentro del DAW</li>
         <li>El Explorer analiza transiente, brillo, bandas y tono al instante</li>
-        <li>Servidor MCP nativo: la IA analiza tus samples, compone y mezcla en vivo</li>
-        <li>Dos ventanas comparten la sesión editable en vivo por P2P (Loro + Iroh)</li>
-        <li>Un solo archivo <code>.flatpak</code> con 23 bancos SoundFont listos</li></ul></div>
+        <li>Servidor <b>MCP</b> nativo: la IA analiza tus samples, compone y mezcla en vivo</li>
+        <li>Dos ventanas comparten sesión por <b>P2P</b> transfiriendo samples automáticamente</li>
+        <li>Un solo <code>.flatpak</code> en Linux o un <code>.zip</code> portable en Windows x64</li></ul></div>
     </div>
   </section>
 
   <section>
     <h2 class="sec">Flexible por diseño</h2>
     <div class="cards">
-      <div class="card"><h3>Motor RT sin clics</h3><p>El sampler PCM nativo de Drums reproduce bit-exacto con anti-click choke fade, buffers reutilizados y colas <code>rtrb</code> sin bloqueos ni timers de UI.</p></div>
-      <div class="card"><h3>Todo es una acción</h3><p>Toda operación ejecutable es una acción al estilo REAPER. Teclado, ratón, barra de comandos y servidor MCP llaman exactamente al mismo controlador.</p></div>
+      <div class="card"><h3>Motor RT sin clics</h3><p>Mezcla multipista con PDC, <b>Hay Synth</b> band-limited (0 aliasing), sampler PCM bit-exacto para Drums, cambio de BPM en vivo sin pausar y colas <code>rtrb</code> sin bloqueos ni timers de UI.</p></div>
+      <div class="card"><h3>Todo es una acción</h3><p>Toda operación ejecutable es una acción al estilo REAPER. Teclado, ratón, barra <code>:</code>, scripts Lua y servidor MCP llaman exactamente al mismo controlador.</p></div>
       <div class="card"><h3>Ojos acústicos</h3><p>Un analizador DSP offline (0% impacto en audio RT) mide transiente, ataque, decay, brillo, bandas Sub/Grv/Med/Agd y tono tanto en la UI como para agentes de IA.</p></div>
-      <div class="card"><h3>23 SoundFonts + VST3</h3><p>Incluye pianos acústicos y FM, bajos, órganos, arpa, percusión GM y soporta tus propios <code>.sf2</code>, además de VST3 y Pianoteq sobre PipeWire o ALSA.</p></div>
-      <div class="card"><h3>Tu estilo</h3><p>Hay 17 temas de color, claros y oscuros. La navegación Vim es opcional y se activa con una acción.</p></div>
-      <div class="card"><h3>Colaboración P2P real</h3><p>El formato <code>.loro</code> guarda Arrangement, clips, Drums, FX y automatización, y sincroniza dos sesiones en tiempo real sin servidor central.</p></div>
+      <div class="card"><h3>Linux, Windows y Export Pro</h3><p>PipeWire/ALSA en Linux, WASAPI en Windows y CoreAudio en macOS. Exportación con medición <b>EBU R128</b> (LUFS-I, True Peak 4×), stems alineados y WAV nativo sin dependencias externas.</p></div>
+      <div class="card"><h3>Tu estilo y tus rutas</h3><p>4 temas curados —<b>Cyberpunk Studio</b>, <b>Daylight Studio</b> y <b>Cuaderno Claro/Oscuro</b> (nacidos de esta misma libreta)—, Vim opcional y pestaña <b>Rutas</b> centralizada para VST3/VST2/CLAP, SoundFonts, presets y kits.</p></div>
+      <div class="card"><h3>Colaboración P2P real</h3><p>El formato <code>.loro</code> guarda Arrangement, Drums, FX, wavetables y automatización. En vivo, <b>Loro + Iroh</b> une sesiones solo con un token, transfiere tus WAVs y hace bypass elegante si falta un VST3.</p></div>
     </div>
   </section>
 
   <section id="probar">
-    <h2 class="sec">Pruébalo en Linux en 1 minuto</h2>
-    <p>Todo va empaquetado en un único archivo <code>.flatpak</code> (267 MB) con el motor release, <code>libsfizz</code>, <b>23 bancos SoundFont</b>, modo P2P activado y servidor MCP.</p>
+    <h2 class="sec">Descárgalo en Linux o Windows en 1 minuto</h2>
+    <p>Sin compilar ni configurar dependencias: elige el paquete único para tu sistema en <a href="https://github.com/burdier/jap-studio/releases/tag/v0.8.0" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases (v0.8.0)</a>, con colaboración <b>P2P</b> y servidor <b>MCP</b> integrados de serie.</p>
+    <div class="cta-row" style="margin:.9rem 0 .4rem">
+      <a class="btn btn-accent cta-link" href="https://github.com/burdier/jap-studio/releases/download/v0.8.0/jap-studio-0.8.0-x86_64.flatpak">↓ Descargar Linux (.flatpak · 267 MB)</a>
+      <a class="btn btn-accent cta-link" href="https://github.com/burdier/jap-studio/releases/download/v0.8.0/JapStudio-Windows-x64.zip">↓ Descargar Windows x64 (.zip · 77 MB)</a>
+      <a class="btn cta-link" href="https://github.com/burdier/jap-studio/releases/tag/v0.8.0" target="_blank" rel="noopener">Ver release v0.8.0 en GitHub ↗</a>
+    </div>
     <div class="install-grid">
       <div class="install-box">
-        <h3>1 · Instalar el Flatpak</h3>
-        <p>Haz doble clic en <code>jap-studio-0.8.0-x86_64.flatpak</code> o instala desde terminal:</p>
+        <h3>1 · Linux (Flatpak único)</h3>
+        <p>Un solo archivo <code>.flatpak</code> (267 MB) con motor release, <code>libsfizz</code> y <b>23 bancos SoundFont</b> listos:</p>
+        <div class="cta-row" style="margin:.6rem 0">
+          <a class="btn btn-accent cta-link" href="https://github.com/burdier/jap-studio/releases/download/v0.8.0/jap-studio-0.8.0-x86_64.flatpak">↓ Descargar .flatpak</a>
+        </div>
         <pre><code>flatpak install --user jap-studio-0.8.0-x86_64.flatpak
 flatpak run io.github.burdier.JapStudio</code></pre>
         <button type="button" class="btn copy-btn" data-copy="flatpak install --user jap-studio-0.8.0-x86_64.flatpak&#10;flatpak run io.github.burdier.JapStudio">Copiar comandos</button>
       </div>
       <div class="install-box">
-        <h3>2 · Tocar juntos en vivo (P2P)</h3>
-        <p>Abre <b>Archivo → Compartir sesión</b> para copiar el enlace <code>hay-live:...</code> y pásaselo a tu amigo para que use <b>Archivo → Unirse</b>.</p>
-        <p style="margin-top:.5rem">Si quieres añadir más SoundFonts <code>.sf2</code> propios, solo cópialos en:</p>
-        <pre><code>~/.local/share/jap-studio/soundfonts/</code></pre>
+        <h3>2 · Windows x64 (Portable)</h3>
+        <p>Descarga <code>JapStudio-Windows-x64.zip</code> (~77 MB), descomprime y abre <code>jap-studio.exe</code>. Incluye audio <b>WASAPI</b>, exportación WAV nativa y MCP por TCP local.</p>
+        <div class="cta-row" style="margin:.6rem 0">
+          <a class="btn btn-accent cta-link" href="https://github.com/burdier/jap-studio/releases/download/v0.8.0/JapStudio-Windows-x64.zip">↓ Descargar Windows x64 (.zip)</a>
+        </div>
+        <p style="margin-top:.5rem">Para compilar el paquete Windows desde Linux:</p>
+        <pre><code>bash scripts/build-windows.sh</code></pre>
+        <button type="button" class="btn copy-btn" data-copy="bash scripts/build-windows.sh">Copiar comando build</button>
       </div>
       <div class="install-box">
-        <h3>3 · Conectar con IA (MCP)</h3>
-        <p>Con Jap Studio abierto, cualquier cliente MCP (Gemini CLI, Claude, etc.) puede analizar tus samples y producir en vivo con <b>22 herramientas</b>:</p>
-        <pre><code>flatpak run io.github.burdier.JapStudio --mcp</code></pre>
-        <button type="button" class="btn copy-btn" data-copy="flatpak run io.github.burdier.JapStudio --mcp">Copiar comando MCP</button>
+        <h3>3 · Tocar juntos en vivo (P2P)</h3>
+        <p>Usa <b>Archivo → Compartir sesión</b> para copiar el token <code>hay-live:...</code> y compártelo para conectar por <b>Archivo → Unirse</b>. Tus WAVs y wavetables se transfieren solos.</p>
+        <p style="margin-top:.5rem">Añade carpetas de SoundFonts, VST3 o presets <code>.vital</code>/<code>.fxp</code> desde <b>Configuración → Rutas</b>.</p>
+      </div>
+      <div class="install-box">
+        <h3>4 · Conectar con IA (MCP)</h3>
+        <p>Con Jap Studio abierto, Gemini CLI o Claude pueden analizar tus samples y producir en vivo con <b>22 herramientas</b>:</p>
+        <pre><code># Linux (Flatpak)
+flatpak run io.github.burdier.JapStudio --mcp
+# Windows
+jap-studio.exe --mcp</code></pre>
+        <button type="button" class="btn copy-btn" data-copy="flatpak run io.github.burdier.JapStudio --mcp">Copiar MCP Linux</button>
       </div>
     </div>
   </section>
@@ -319,14 +499,13 @@ const COMPONENTS = [
     id: "cmd", n: 1, title: "Transporte y línea de comandos", sub: "teclado, ratón y texto: la misma operación",
     box: [20, 15, 760, 62], tag: "todo se puede escribir",
     quip: "¡Escribe o haz clic, da igual!",
-    html: `<p>La barra superior reúne el transporte y una línea de comandos. Todo lo que haces con un clic existe también como <b>acción</b> con nombre.</p>
+    html: `<p>La barra superior reúne el transporte, visor MIDI en vivo (<code>C1..C9</code> + pitch bend con hot-plug USB) y la línea de comandos. Todo lo que haces con un clic existe también como <b>acción</b> con nombre.</p>
       <ul>
-        <li><code>:project.save_as</code> guarda con otro nombre.</li>
-        <li><code>:use device 2</code> cambia la salida de audio.</li>
-        <li><code>:fx.spectrum</code> inserta un analizador.</li>
+        <li>Cambia el <b>BPM en tiempo real</b> sin pausar, usa <b>Tap Tempo</b> (<code>:tap</code>) y activa <b>Monitoreo en vivo</b> (<code>MON: Off | IN | AUTO</code>).</li>
+        <li><code>:project.save_as</code>, <code>:use device 2</code>, <code>:fx.spectrum</code> o <code>:export -lufs -14</code>.</li>
         <li><b>Espacio</b> inicia y detiene. <b>Mayús+Espacio</b> retoma la última parada.</li>
       </ul>
-      <p>Las vistas llaman a los mismos controladores, así que el ratón y el teclado nunca divergen.</p>`,
+      <p>Las vistas llaman a los mismos controladores, así que ratón, teclado, Lua y MCP nunca divergen.</p>`,
     draw(g, w, h) {
       path(g, roughRect(10, 9, w - 20, h - 18), "shape");
       path(g, "M32 18 L32 44 L54 31 Z", "shape");
@@ -357,9 +536,9 @@ const COMPONENTS = [
     quip: "Abracadabra: aquí aparece todo.",
     html: `<p><code>[+]</code> es el catálogo. Allí encuentras instrumentos, efectos nativos y comandos, sin menús que recorrer.</p>
       <ul>
-        <li>Instrumentos: <b>Hay Piano</b> (con 23 bancos SoundFont incluidos), <b>Hay Sampler</b>, <b>Drums / MPC</b> y Pianoteq.</li>
-        <li>Efectos nativos Hey (EQ, Comp con sidechain, Limiter, Echo, Reverb, Filter) y VST3.</li>
-        <li>Acciones: abrir, guardar, exportar, activar Vim o cambiar de vista.</li>
+        <li>Instrumentos: <b>Hay Synth</b> (<code>.vital</code> / <code>.fxp</code>), <b>Hay Piano</b> (23 bancos SoundFont), <b>Hay Sampler</b>, <b>Drums / MPC</b> y VST3.</li>
+        <li>Efectos nativos Hey (EQ, Comp con sidechain, Limiter, Echo/Reverb con Sync, Filter, Spectrum) y VST3.</li>
+        <li>Acciones, temas (incluido <b>Cuaderno Claro/Oscuro</b>), pestaña <b>Rutas</b> y scripts Lua.</li>
       </ul>`,
     draw(g, w, h) {
       path(g, roughRect(10, 9, w - 20, h - 18), "shape");
@@ -423,12 +602,11 @@ const COMPONENTS = [
     id: "arr", n: 4, title: "Arrangement", sub: "pistas, clips y tiempo",
     box: [285, 95, 895, 250], tag: "la línea de tiempo",
     quip: "Yo corro por la línea de tiempo.",
-    html: `<p>El corazón del proyecto. Las pistas y los grupos (<b>Hilos</b>) llevan clips MIDI y clips de audio con recortes.</p>
+    html: `<p>El corazón del proyecto. Las pistas, grupos (<b>Hilos</b>) y buses <b>Send / Return</b> llevan clips MIDI y de audio con mezcla multipista real.</p>
       <ul>
-        <li>Mute, solo, niveles y panorama por pista.</li>
-        <li>Los clips solapados se reparten en filas Z que se pliegan.</li>
-        <li>Con <b>Crear cruce</b> unes dos clips de audio con un crossfade.</li>
-        <li>Al pasar sobre una onda ves la nota y los cents de su fundamental.</li>
+        <li><b>Warp por clip</b> estilo Ableton (<code>Off | Re-Pitch | Beats | Complex</code>) con BPM Auto y seguimiento de tempo.</li>
+        <li><b>Audio → MIDI polifónico</b> (Basic Pitch), <b>Freeze/Unfreeze</b> a WAV 32-bit y filas <b>Z</b> plegables con crossfades.</li>
+        <li>Al pasar sobre una onda ves la nota y los cents de su fundamental; <code>Ctrl+Mayús+arrastrar</code> ajusta su ganancia en vivo.</li>
       </ul>`,
     draw(g, w, h) {
       path(g, roughRect(8, 8, w - 16, h - 16), "shape");
@@ -463,15 +641,14 @@ const COMPONENTS = [
     }
   },
   {
-    id: "roll", n: 5, title: "Piano roll", sub: "notas, MPE y afinación",
-    box: [20, 385, 280, 270], tag: "las notas",
+    id: "roll", n: 5, title: "Piano roll y Hay Chord", sub: "notas, acordes por pad, MPE y afinación",
+    box: [20, 385, 280, 270], tag: "notas + Hay Chord",
     quip: "Cada nota, con sus caprichos.",
-    html: `<p>Pulsa un clip del Arrangement y su editor se abre <b>a la izquierda</b>, sin cambiar de pantalla.</p>
+    html: `<p>Pulsa un clip del Arrangement y su editor se abre sin cambiar de pantalla.</p>
       <ul>
-        <li>Edición MIDI con ratón o teclado.</li>
-        <li><b>Pitch MPE</b>: curvas por nota que viajan como pitch bend por canal.</li>
-        <li>Afinación por clip de ±24 semitonos y ±100 cents, conservando la duración.</li>
-        <li>Un clip WAV tiene su EQ de campana y sus operaciones de rango.</li>
+        <li><b>Hay Chord:</b> pads configurables uno a uno (color, voicing, bajo, inversión), audición en vivo y recuperación del MIDI tocado directo al clip.</li>
+        <li><b>Pitch MPE</b> y expresión por nota (release velocity, probabilidad, pan) más carriles CC/bend/presión.</li>
+        <li>Afinación por clip de ±24 semitonos y ±100 cents, y editor WAV con EQ de campana y Warp.</li>
       </ul>`,
     draw(g, w, h) {
       path(g, roughRect(8, 8, w - 16, h - 16), "shape");
@@ -530,11 +707,11 @@ const COMPONENTS = [
     id: "fx", n: 7, title: "FX nativos, Sidechain y VST3", sub: "procesamiento propio + plugins externos",
     box: [610, 385, 290, 270], tag: "FX + sidechain",
     quip: "¡Todos a bordo del tren FX!",
-    html: `<p>Cada pista y el Master tienen su cadena <b>Track FX</b> con efectos nativos en DSP/Lua y plugins VST3.</p>
+    html: `<p>Cada pista, grupo y Return tiene su cadena <b>Track FX</b> en serie o paralelo con <b>PDC</b> (compensación de latencia).</p>
       <ul>
-        <li><b>FX nativos:</b> Hay Comp (con <b>sidechain real</b> desde Drums o cualquier pista), Hay Limiter, Hay Echo (drive/wobble), Hay Reverb, Hay Filter y Hay EQ.</li>
-        <li>Pianoteq mediante Wine/yabridge y efectos VST3 con su editor original en Wayland/X11.</li>
-        <li><b>Tejer EQ</b> divide el bus en bandas, cada una con sus propios FX.</li>
+        <li><b>FX nativos:</b> Hay Comp (con <b>sidechain real</b> desde Drums o cualquier pista), Hay Limiter, Hay Echo y Hay Reverb (modo <b>Time | Sync</b> al BPM), Hay Filter y Hay Utility.</li>
+        <li>VST3 en Linux (nativos o vía Wine/yabridge) y Windows con su editor original, <code>last_touched</code> MIDI Learn y persistencia en <code>.loro</code>.</li>
+        <li><b>Tejer EQ</b> divide el bus en bandas Z, cada una con sus propios FX.</li>
       </ul>`,
     draw(g, w, h) {
       path(g, roughRect(8, 8, w - 16, h - 16), "shape");
@@ -596,11 +773,11 @@ const COMPONENTS = [
     id: "loro", n: 9, title: "Sesión compartida (P2P)", sub: "colaboración en vivo activada por defecto",
     box: [915, 550, 265, 105], tag: "dos ventanas, una sesión",
     quip: "Lo que tocas, tu amigo lo oye.",
-    html: `<p>Activado por defecto: <b>Archivo → Compartir sesión</b> copia un enlace <code>hay-live:...</code> y <b>Unirse</b> conecta dos ventanas en vivo mediante <b>Loro CRDT + Iroh QUIC</b>.</p>
+    html: `<p>Activado por defecto: <b>Archivo → Compartir sesión</b> copia un token <code>hay-live:...</code> y <b>Unirse</b> conecta dos ventanas en vivo mediante <b>Loro CRDT + Iroh QUIC</b>.</p>
       <ul>
-        <li>Sincroniza pistas, clips MIDI, Drums, FX y automatización al instante.</li>
-        <li>Sin servidor central ni cuentas: conexión directa peer-to-peer.</li>
-        <li>El proyecto se guarda como <code>.loro</code> y mantiene compatibilidad hacia atrás.</li>
+        <li><b>Transferencia automática de assets:</b> envía tus WAVs, samples y wavetables custom por P2P (content-addressed) y resuelve SoundFonts de forma portable.</li>
+        <li><b>ForceSync</b> desde el host y <b>bypass elegante de VST3</b> si tu colega no tiene un plugin instalado.</li>
+        <li>Sin servidor central ni cuentas; todo se guarda en un único archivo <code>.loro</code>.</li>
       </ul>`,
     draw(g, w, h) {
       path(g, roughRect(10, 10, 90, 85), "shape"); path(g, roughRect(165, 10, 90, 85), "shape");
@@ -627,40 +804,103 @@ const COMPONENTS = [
     }
   },
   {
-    id: "mpc", n: 10, title: "Drums PCM y Pads MPC 4×4", sub: "sampler nativo sin clics, 16 Levels y Note Repeat RT",
-    box: [20, 690, 575, 195], tag: "MPC 4×4 + timing offset",
+    id: "synth", n: 10, title: "Hay Synth (Voice Lab)", sub: "wavetable Hi-Fi, Mod Matrix e importador .vital / .fxp",
+    box: [20, 690, 376, 205], tag: "Hay Synth · .vital / .fxp",
+    quip: "¡Tus presets de Vital y Serum, nativos!",
+    html: `<p>Sintetizador nativo <b>Hi-Fi band-limited</b> (0 aliasing en RT, legato real y micro-fade anti-click) con controles de <b>Espacio, Cuerpo e Intención</b> y motor <b>Voice Lab</b>.</p>
+      <ul>
+        <li><b>Importador real:</b> carga presets y bancos <code>.vital</code> / <code>.vitalbank</code> y <code>.fxp</code> (Serum) con sus wavetables reales persistidas en <code>.loro</code> y P2P.</li>
+        <li><b>Mod Matrix de 12 slots</b>, barra clara de flujo de señal y navegador de presets/FX separado por origen.</li>
+        <li><b>Visor vivo integrado:</b> osciloscopio, transiente y envolvente ADSR en tiempo real sin lag.</li>
+      </ul>`,
+    draw(g, w, h) {
+      path(g, roughRect(8, 8, w - 16, h - 16), "shape");
+      text(g, 22, 32, "Hay Synth · .vital / .fxp", "txt");
+      // Osciloscopio wavetable
+      path(g, roughRect(20, 44, 186, 86, 1.5), "shape");
+      path(g, "M30 88 C52 52,72 52,92 88 S132 124,152 88 S180 56,196 86", "shape");
+      path(g, "M30 98 C56 66,80 66,104 98 S144 122,168 92 S184 70,196 94", "shape light");
+      text(g, 28, 122, "osc · transiente · ADSR", "txt small");
+      // Mod Matrix 12 slots a la derecha
+      path(g, roughRect(218, 44, 138, 86, 1.5), "shape");
+      text(g, 228, 64, "Mod Matrix · 12", "txt small");
+      for (let i = 0; i < 3; i++) {
+        const y = 76 + i * 16;
+        path(g, roughLine(228, y, 272, y), "shape light");
+        path(g, arrow(274, y, 298, y), "shape");
+        path(g, roughRect(302, y - 5, 42, 10, 1), i === 0 ? "shape fill" : "shape");
+      }
+      // Macros inferiores: Espacio, Cuerpo, Intención
+      ["Espacio", "Cuerpo", "Intención"].forEach((lbl, i) => {
+        const cx = 64 + i * 124;
+        path(g, circ(cx, 158, 14), "shape");
+        path(g, `M${cx} 158 l${6 - i * 4} -9`, "shape");
+        text(g, cx - 24, 188, lbl, "txt small");
+      });
+    },
+    big(g) {
+      // Marco osciloscopio 3D wavetable
+      P(g, roughRect(20, 22, 232, 136, 2), ""); P(g, roughRect(20, 22, 232, 136, 2), "f fb");
+      T(g, 32, 44, "Voice Lab · Band-limited", "b");
+      P(g, "M34 106 C62 56,88 56,114 106 S166 146,194 98 S224 64,238 104", "o");
+      P(g, "M34 118 C64 78,94 78,120 118 S170 144,200 108 S226 82,238 112", "l");
+      P(g, "M34 94 C60 66,86 66,110 94 S162 130,190 88 S220 56,238 92", "r");
+      // Badges .vital y .fxp entrando
+      P(g, roughRect(272, 24, 128, 36, 1.5), "o"); P(g, roughRect(272, 24, 128, 36, 1.5), "f fo");
+      T(g, 290, 48, ".vital / .bank", "");
+      P(g, roughRect(272, 72, 128, 36, 1.5), "r"); P(g, roughRect(272, 72, 128, 36, 1.5), "f fy");
+      T(g, 292, 96, ".fxp (Serum)", "r");
+      P(g, arrow(270, 42, 254, 62), "o"); P(g, arrow(270, 90, 254, 92), "r");
+      // Mod Matrix
+      P(g, roughRect(272, 122, 128, 70, 1.5), "");
+      T(g, 282, 144, "Mod Matrix", "b");
+      T(g, 282, 164, "LFO1 → WT", "s");
+      T(g, 282, 182, "ENV2 → Cutoff", "s");
+      // Tres macros abajo
+      [["Espacio", 64], ["Cuerpo", 150], ["Intención", 236]].forEach(([lbl, cx], i) => {
+        P(g, circ(cx, 206, 20), ""); P(g, circ(cx, 206, 20), "f fg");
+        P(g, `M${cx} 206 l${10 - i * 8} -14`, "r");
+        T(g, cx - 26, 244, lbl, "s");
+      });
+      T(g, 276, 232, "0 aliasing · RT", "o");
+    }
+  },
+  {
+    id: "mpc", n: 11, title: "Drums PCM y Pads MPC 4×4", sub: "sampler nativo sin clics, 16 Levels y Note Repeat RT",
+    box: [412, 690, 376, 205], tag: "MPC 4×4 + timing offset",
     quip: "¡A darle a los pads sin un solo clic!",
     html: `<p>Un secuenciador de percusión con <b>motor PCM nativo sin clics</b> (reproducción bit-exacta, fade anti-click en choke y filtro TPT SVF) y dos vistas hermanas: <b>Pasos</b> y <b>Pads MPC 4×4</b>.</p>
       <ul>
         <li><b>Pads MPC 4×4:</b> Bancos A–D, teclado QWERTY 4×4 (<code>ZXCV/ASDF/QWER/1234</code>), MIDI 36–51, <b>Full Level</b>, <b>16 Levels</b> (Vel/Pitch) y <b>Overdub</b>.</li>
         <li><b>Note Repeat RT:</b> 1/8, 1/16, 1/32 y 1/16T disparado con precisión de frame dentro del motor de audio.</li>
-        <li><b>Timing offset visual:</b> cada paso se oscurece proporcionalmente a su micro-desfase y swing (Fixed, EachNote o Random).</li>
+        <li><b>Timing offset visual:</b> cada paso se oscurece proporcionalmente a su micro-desfase y swing (<code>0–75%</code>), más kits <code>.haykit</code> e importación Hydrogen.</li>
         <li><b>Audición inmediata</b> incluso con el transporte detenido y borrado rápido de pasos, piezas y patrones.</li>
       </ul>`,
     draw(g, w, h) {
       path(g, roughRect(8, 8, w - 16, h - 16), "shape");
-      text(g, 22, 32, "Drums · Pasos | Pads MPC 4×4", "txt");
+      text(g, 20, 32, "Drums · Pasos | MPC 4×4", "txt");
       // 4x4 MPC pads a la izquierda
       for (let r = 0; r < 4; r++) {
         for (let c = 0; c < 4; c++) {
-          const px = 22 + c * 38, py = 46 + r * 32;
-          path(g, roughRect(px, py, 32, 26, 1.4), "shape");
-          if ((r + c) % 3 === 0) path(g, roughRect(px + 3, py + 3, 26, 20, 1), "shape fill");
+          const px = 20 + c * 34, py = 46 + r * 34;
+          path(g, roughRect(px, py, 28, 28, 1.3), "shape");
+          if ((r + c) % 3 === 0) path(g, roughRect(px + 3, py + 3, 22, 22, 1), "shape fill");
         }
       }
       // Secuenciador de pasos con cortina de offset a la derecha
-      text(g, 196, 56, "16 Levels · Note Repeat · Overdub", "txt small");
+      text(g, 166, 58, "16 Levels · Note Repeat", "txt small");
       for (let r = 0; r < 3; r++) {
-        const y = 74 + r * 34;
-        text(g, 196, y + 16, ["Kick", "Snare", "Hat"][r], "txt small");
-        for (let s = 0; s < 8; s++) {
-          const sx = 248 + s * 38;
-          path(g, roughRect(sx, y, 30, 22, 1.2), "shape");
-          if ((r === 0 && (s === 0 || s === 3 || s === 6)) || (r === 1 && s === 4) || (r === 2 && s % 2 === 0)) {
-            path(g, roughRect(sx + 6, y + 3, 21, 16, 1), "shape fill");
+        const y = 74 + r * 36;
+        text(g, 166, y + 16, ["Kick", "Snr", "Hat"][r], "txt small");
+        for (let s = 0; s < 5; s++) {
+          const sx = 206 + s * 30;
+          path(g, roughRect(sx, y, 24, 22, 1.1), "shape");
+          if ((r === 0 && (s === 0 || s === 3)) || (r === 1 && s === 2) || (r === 2 && s % 2 === 0)) {
+            path(g, roughRect(sx + 5, y + 3, 16, 16, 1), "shape fill");
           }
         }
       }
+      text(g, 166, 190, "PCM bit-exacto · .haykit", "txt small");
     },
     big(g) {
       // Caja MPC 4x4
@@ -689,35 +929,37 @@ const COMPONENTS = [
     }
   },
   {
-    id: "mcp", n: 11, title: "IA nativa (MCP) y Explorer acústico", sub: "ojos acústicos para ti y 22 herramientas en vivo",
-    box: [610, 690, 570, 195], tag: "MCP + analizador DSP",
+    id: "mcp", n: 12, title: "IA nativa (MCP) y Explorer acústico", sub: "ojos acústicos para ti y 22 herramientas en vivo",
+    box: [804, 690, 376, 205], tag: "MCP + analizador DSP",
     quip: "¡Ahora la IA sí sabe cómo suenan tus samples!",
     html: `<p>Jap Studio incluye un <b>servidor MCP integrado</b> (<code>--mcp</code>, 22 herramientas) y un <b>analizador acústico offline</b> compartido entre el Explorer de la UI y la IA.</p>
       <ul>
         <li><b>Explorer acústico (UI + MCP):</b> mide fuera del hilo RT la fuerza de <b>transiente</b> (débil/suave vs punchy), ataque, decay, brillo espectral, 4 bandas (<b>Sub / Grv / Med / Agd</b>) y tono fundamental.</li>
         <li><b>Producción en vivo con IA:</b> Gemini CLI o Claude navegan tus bibliotecas reales (<code>browse_explorer</code>, <code>analyze_sample</code>), arman kits, escriben MIDI/Drums, ajustan perillas de FX, conectan sidechain y exportan audio.</li>
-        <li><b>Cero lag:</b> el análisis corre en segundo plano con caché por archivo y 0% CPU cuando no se usa.</li>
+        <li><b>Multiplataforma y cero lag:</b> socket Unix en Linux, TCP local en Windows, caché por archivo y 0% CPU en reposo.</li>
       </ul>`,
     draw(g, w, h) {
       path(g, roughRect(8, 8, w - 16, h - 16), "shape");
-      text(g, 22, 32, "Explorer acústico  ⇄  Servidor MCP (22 tools)", "txt");
+      text(g, 20, 32, "Explorer acústico ⇄ MCP (22)", "txt");
       // Ficha de 4 bandas a la izquierda
-      path(g, roughRect(22, 48, 240, 122, 1.6), "shape");
-      text(g, 34, 70, "808(Amazon).wav · C1", "txt small");
-      text(g, 34, 90, "transiente suave · oscuro", "txt small");
-      [["Sub", 96], ["Grv", 30], ["Med", 12], ["Agd", 8]].forEach(([lbl, v], i) => {
-        const y = 104 + i * 15;
-        text(g, 34, y + 8, lbl, "txt small");
-        path(g, roughRect(70, y, 160 * (v / 100), 8, 1), "shape fill");
+      path(g, roughRect(18, 46, 168, 128, 1.5), "shape");
+      text(g, 26, 66, "808.wav · C1", "txt small");
+      text(g, 26, 84, "suave · oscuro", "txt small");
+      [["Sub", 96], ["Grv", 34], ["Med", 14], ["Agd", 8]].forEach(([lbl, v], i) => {
+        const y = 98 + i * 17;
+        text(g, 26, y + 8, lbl, "txt small");
+        path(g, roughRect(58, y, 114 * (v / 100), 9, 1), "shape fill");
       });
       // Flecha hacia agente MCP
-      path(g, arrow(274, 108, 328, 108), "shape");
+      path(g, arrow(192, 110, 222, 110), "shape");
       // Caja agente IA
-      path(g, roughRect(340, 52, 206, 114, 1.6), "shape");
-      text(g, 356, 80, "Agente IA (--mcp)", "txt");
-      text(g, 356, 106, "analyze_sample · write_midi", "txt small");
-      text(g, 356, 128, "set_fx_param · export_audio", "txt small");
-      text(g, 356, 150, "socket Unix · 0% CPU", "txt small");
+      path(g, roughRect(228, 50, 130, 120, 1.5), "shape");
+      text(g, 238, 76, "IA (--mcp)", "txt");
+      text(g, 238, 100, "analyze_sample", "txt small");
+      text(g, 238, 120, "write_midi_clip", "txt small");
+      text(g, 238, 140, "export_audio", "txt small");
+      text(g, 238, 160, "Unix / TCP · 0%", "txt small");
+      text(g, 20, 190, "ojos acústicos + control en vivo", "txt small");
     },
     big(g) {
       // Cabeza robot simpático con auriculares
@@ -769,14 +1011,14 @@ function scribble(x, y, s, rot = 0) { const t = text(doodles, x, y, s, "scribble
 scribble(790, 112, "← aquí vive tu música", -3);
 scribble(60, -22, "↓ ¡haz clic en cualquier cosa!", -2);
 scribble(640, 372, "teclado o ratón: da igual", 1);
-scribble(500, 678, "↓ nuevo: MPC 4×4, Explorer acústico e IA", -1);
-const stars = el("path", { d: "M1120 360 l6 -14 l6 14 l14 6 l-14 6 l-6 14 l-6 -14 l-14 -6 Z M20 -34 l0 0", fill: "none", stroke: "#b8321f", "stroke-width": 2, "stroke-linejoin": "round", class: "pulse" }, doodles);
+scribble(430, 678, "↓ nuevo: Hay Synth (.vital/.fxp), MPC 4×4 e IA", -1);
+const stars = el("path", { d: "M1120 360 l6 -14 l6 14 l14 6 l-14 6 l-6 14 l-6 -14 l-14 -6 Z M20 -34 l0 0", fill: "none", stroke: "var(--red)", "stroke-width": 2, "stroke-linejoin": "round", class: "pulse" }, doodles);
 
 /* ---------- carrot guía ---------- */
 const carrotG = document.getElementById("carrotG");
 const bubble = document.getElementById("bubble");
 const thread = document.getElementById("thread");
-const quips = ["¡Auch, no me aprietes!", "Soy 100% grafito y vitaminas.", "¿Ya probaste Tejer?", "Cuidado: ¡soy naranja!", "Zanahoria con latencia cero."];
+const quips = ["¡Auch, no me aprietes!", "Soy 100% grafito y vitaminas.", "¿Ya probaste Hay Synth con .vital?", "¿Ya probaste Tejer?", "Zanahoria con latencia cero."];
 let quipI = 0;
 function placeCarrot(c) {
   const [x, y, w, h] = c.box;
@@ -859,9 +1101,17 @@ note$.innerHTML = `
   <h2>Elige un componente</h2>
   <p class="sub">todo está en esta hoja</p>
   <p>Cada recuadro del dibujo es una parte real del DAW. Haz clic en uno y lo marco en rojo; la zanahoria salta hasta él.</p>
-  <p>Con el teclado, usa <b>Tab</b> y <b>Enter</b>.</p>
+  <p>Con el teclado, usa <b>Tab</b>, <b>Enter</b> o las flechas <b>← / →</b>.</p>
   <div class="nav"><button type="button" id="start">empezar por el principio →</button></div>`;
 document.getElementById("start").addEventListener("click", () => select(COMPONENTS[0].id));
+document.addEventListener("keydown", e => {
+  if (!current || e.target.closest("input,textarea,button,a")) return;
+  if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+    const idx = COMPONENTS.findIndex(k => k.id === current);
+    const delta = e.key === "ArrowRight" ? 1 : -1;
+    select(COMPONENTS[(idx + delta + COMPONENTS.length) % COMPONENTS.length].id);
+  }
+});
 
 /* ---------- galería de dibujos grandes ---------- */
 const gal = document.getElementById("gallery");
@@ -888,6 +1138,103 @@ document.querySelectorAll(".copy-btn").forEach(btn => {
     setTimeout(() => { btn.textContent = orig; }, 1600);
   });
 });
+
+/* ---------- tema claro / oscuro ---------- */
+const themeToggle = document.getElementById("themeToggle");
+const themeLabel = themeToggle.querySelector(".theme-label");
+const themeMedia = window.matchMedia("(prefers-color-scheme: dark)");
+const THEME_KEY = "jap-landing-theme";
+
+function applyTheme(theme, persist = false) {
+  const isDark = theme === "dark";
+  document.documentElement.dataset.theme = isDark ? "dark" : "light";
+  themeToggle.setAttribute("aria-pressed", String(isDark));
+  themeToggle.setAttribute("aria-label", isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro");
+  themeLabel.textContent = isDark ? "Modo claro" : "Modo oscuro";
+  if (persist) {
+    try { localStorage.setItem(THEME_KEY, isDark ? "dark" : "light"); } catch (e) {}
+  }
+}
+
+applyTheme(document.documentElement.dataset.theme || (themeMedia.matches ? "dark" : "light"));
+
+themeToggle.addEventListener("click", () => {
+  const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  applyTheme(next, true);
+});
+
+themeMedia.addEventListener("change", e => {
+  try {
+    if (!localStorage.getItem(THEME_KEY)) applyTheme(e.matches ? "dark" : "light");
+  } catch (err) {
+    applyTheme(e.matches ? "dark" : "light");
+  }
+});
+
+/* ---------- presentación inicial en video ---------- */
+const introStage = document.getElementById("introStage");
+const introVideo = document.getElementById("introVideo");
+const introUnmute = document.getElementById("introUnmute");
+const introSoundBtn = document.getElementById("introSoundBtn");
+const introSkip = document.getElementById("introSkip");
+const replayIntro = document.getElementById("replayIntro");
+
+function syncSoundUi() {
+  const muted = introVideo.muted || introVideo.volume === 0;
+  introUnmute.classList.toggle("off", !muted);
+  introSoundBtn.textContent = muted ? "🔊 Activar sonido" : "🔇 Silenciar";
+}
+
+function openIntro(withSound = false) {
+  introStage.classList.remove("hidden");
+  document.body.classList.add("intro-open");
+  introVideo.currentTime = 0;
+  introVideo.muted = !withSound;
+  introVideo.volume = 1;
+  syncSoundUi();
+  introVideo.play().catch(() => {
+    introVideo.muted = true;
+    syncSoundUi();
+    introVideo.play().catch(() => {});
+  });
+}
+
+function closeIntro() {
+  if (introStage.classList.contains("hidden")) return;
+  introVideo.pause();
+  introStage.classList.add("hidden");
+  document.body.classList.remove("intro-open");
+}
+
+function enableSound(restartIfEarly = true) {
+  if (restartIfEarly && introVideo.currentTime < 4) introVideo.currentTime = 0;
+  introVideo.muted = false;
+  introVideo.volume = 1;
+  introVideo.play().catch(() => {});
+  syncSoundUi();
+}
+
+introUnmute.addEventListener("click", () => enableSound(true));
+introSoundBtn.addEventListener("click", () => {
+  if (introVideo.muted || introVideo.volume === 0) enableSound(true);
+  else { introVideo.muted = true; syncSoundUi(); }
+});
+introVideo.addEventListener("volumechange", syncSoundUi);
+introVideo.addEventListener("ended", closeIntro);
+introSkip.addEventListener("click", closeIntro);
+replayIntro.addEventListener("click", () => openIntro(true));
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && !introStage.classList.contains("hidden")) closeIntro();
+});
+
+const urlParams = new URLSearchParams(location.search);
+if (urlParams.get("skip") === "1" || location.hash) {
+  introStage.classList.add("hidden");
+  introVideo.pause();
+} else {
+  document.body.classList.add("intro-open");
+  syncSoundUi();
+}
 </script>
 </body>
 </html>

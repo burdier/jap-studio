@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Jap Studio — video de release</title>
+<!--
+  Video de release (1920×1080) hecho con los elementos de index.html.
+  Estilos, logo, zanahoria y dibujos se leen de index.html al cargar, así que el
+  video sigue al landing. Todo se anima con render(t): el mismo t da el mismo
+  fotograma. Vista previa: abre esta página servida por HTTP. Render a MP4:
+  python3 scripts/render_video.py   (?t=12.5 congela un instante, ?theme=dark)
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&display=block" rel="stylesheet">
+<style id="landing-css"></style>
+<style>
+  :root{--hand:"Caveat","Segoe Print","Bradley Hand","Comic Neue",cursive}
+  html,body{margin:0;width:1920px;height:1080px;overflow:hidden}
+  body::after{left:96px}
+  *{animation:none!important;transition:none!important}
+  #stage{position:relative;width:1920px;height:1080px;overflow:hidden}
+  .scene{position:absolute;inset:0;opacity:0;visibility:hidden}
+  .abs{position:absolute}
+  .logo{height:auto}
+  .logo path{fill:var(--graphite)}
+
+  /* 1 · portada */
+  #s1 .logo{left:150px;top:110px;width:360px;transform-origin:30% 60%}
+  #s1 .kicker{position:absolute;left:540px;top:250px;font-size:44px}
+  #s1 h1{position:absolute;left:150px;top:380px;width:1320px;font-size:132px;margin:0;line-height:1.02}
+  #s1 h1 .w{display:inline-block;margin-right:.24em}
+  #s1 h1 .strike{display:inline-block}
+  #s1 h1 .strike::after{transform:scaleX(var(--k,0));transform-origin:left center}
+  #s1 .lede1{left:155px;top:730px;width:1600px;font-size:38px;margin:0}
+  .pills{display:flex;gap:16px}
+  .pills .pill{font-size:32px;padding:.15rem 1.1rem}
+  #s1 .pills{left:155px;top:850px}
+  #s1 .carrot{left:1440px;top:300px;width:380px;transform-origin:50% 90%}
+  #s1 .carrot svg{width:100%;height:auto;overflow:visible}
+
+  /* 2 · boceto completo */
+  .side h2.sec{font-size:84px;line-height:1;margin:0 0 .3em}
+  .side p{font-family:var(--hand);color:var(--blue);font-size:44px;line-height:1.1;margin:0}
+  #s2 .side{left:150px;top:300px;width:430px}
+  #s2 svg{position:absolute;left:610px;top:40px;width:1240px;height:1002px;overflow:visible}
+  #s2 .vtag{font-family:var(--hand);font-size:24px;fill:var(--red)}
+
+  /* 3 · los 12 componentes */
+  #s3 .head{left:150px;top:60px}
+  #s3 .head h2.sec{font-size:72px;margin:0}
+  .canvas{left:150px;top:200px;width:1000px;height:680px;background:var(--surface-canvas);border:2px dashed var(--dash)}
+  .canvas svg{position:absolute;left:20px;top:20px;width:960px;height:640px}
+  .vnote{left:1230px;top:220px;width:560px;min-height:560px;padding:44px 46px;background:var(--surface);
+    border:1px solid var(--note-border);box-shadow:var(--note-shadow);transform:rotate(1deg)}
+  .vnote::before{content:"";position:absolute;top:-18px;left:50%;width:130px;height:36px;margin-left:-65px;background:var(--tape);transform:rotate(-3deg)}
+  .vnote .num{font-family:var(--hand);font-size:44px;color:var(--muted)}
+  .vnote h2{font-family:var(--hand);font-weight:400;color:var(--red);font-size:78px;line-height:.98;margin:.12em 0 .25em}
+  .vnote .sub{font-family:var(--hand);color:var(--blue);font-size:42px;line-height:1.08;margin:0}
+  .vnote .quip{display:inline-block;margin-top:44px;font-family:var(--hand);font-size:40px;line-height:1.1;padding:.3em .7em;
+    background:var(--surface);border:2px solid var(--graphite);border-radius:255px 15px 225px 15px/15px 225px 15px 255px}
+  #s3 .carrot{left:1660px;top:800px;width:150px;transform-origin:50% 100%}
+  #s3 .carrot svg{width:100%;height:auto;overflow:visible}
+  .dots{left:150px;top:920px;display:flex;gap:20px}
+  .dot{width:58px;height:58px;display:grid;place-items:center;font-family:var(--hand);font-size:32px;color:var(--muted);
+    border:2px solid var(--faint);border-radius:255px 15px 225px 15px/15px 225px 15px 255px}
+  .dot.seen{border-color:var(--red);color:var(--red)}
+  .dot.on{background:var(--fill-o);border-color:var(--carrot);color:var(--graphite);transform:scale(1.18) rotate(-4deg)}
+
+  /* 4 · un solo flujo */
+  #s4 .head{left:150px;top:70px}
+  #s4 .head h2.sec{font-size:80px;margin:0}
+  .cmpcol{top:250px;width:790px;height:740px;padding:36px 44px;border:2px dashed var(--graphite)}
+  .cmpcol.bad{left:150px}.cmpcol.good{left:990px}
+  .cmpcol h3{font-family:var(--hand);font-weight:400;font-size:66px;line-height:1;margin:0 0 26px}
+  .cmpcol.bad h3{color:var(--red)}.cmpcol.good h3{color:var(--blue)}
+  .cmpcol ul{list-style:none;padding:0;margin:0}
+  .cmpcol li{position:relative;font-size:30px;line-height:1.28;margin:0 0 20px;padding-left:50px}
+  .cmpcol li::before{position:absolute;left:0;top:-4px;font-family:var(--hand);font-size:46px;line-height:1}
+  .cmpcol.bad li::before{content:"✗";color:var(--red)}
+  .cmpcol.good li::before{content:"✓";color:var(--blue)}
+  .cmpcol.bad li .tx{background:linear-gradient(var(--red),var(--red)) no-repeat 0 58%/var(--s,0%) 3px;
+    -webkit-box-decoration-break:clone;box-decoration-break:clone}
+  .cmpcol code,.term code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.85em;background:var(--code-bg);padding:.05em .35em;border-radius:3px}
+
+  /* 5 · detrás del sonido (grabación real de Jap Studio) */
+  #sDaw .head{left:150px;top:46px;right:150px;display:flex;align-items:flex-end;justify-content:space-between;gap:24px}
+  #sDaw .head h2.sec{font-size:70px;margin:0;line-height:1}
+  #sDaw .head .sub{font-family:var(--hand);color:var(--blue);font-size:38px;margin:6px 0 0;line-height:1.05}
+  #sDaw .rec-pill{font-family:var(--hand);font-size:30px;color:var(--red);background:var(--surface);
+    border:2px solid var(--red);padding:.16em .68em;border-radius:999px;transform:rotate(-2deg);white-space:nowrap}
+  #sDaw .daw-frame{left:220px;top:215px;width:1480px;height:775px;background:var(--surface);
+    border:3px solid var(--graphite);border-radius:14px;box-shadow:var(--note-shadow);overflow:visible}
+  #sDaw .tape{position:absolute;top:-22px;width:146px;height:38px;background:var(--tape);pointer-events:none}
+  #sDaw .tape.l{left:72px;transform:rotate(-6deg)}
+  #sDaw .tape.r{right:72px;transform:rotate(5deg)}
+  #sDaw .daw-screen{position:absolute;inset:0;border-radius:11px;overflow:hidden;background:#1b1a18}
+  #sDaw .daw-screen video{width:100%;height:100%;object-fit:contain;display:block;background:#161513}
+  #sDaw .daw-ui{position:absolute;inset:0;display:flex;flex-direction:column;background:#1b1a18;color:#e8e0d2;font-family:ui-sans-serif,system-ui,-apple-system,sans-serif}
+  #sDaw .daw-top{height:58px;padding:0 20px;display:flex;align-items:center;justify-content:space-between;background:#211f1c;border-bottom:1px solid #3d3832}
+  #sDaw .daw-brand{display:flex;align-items:center;gap:12px;font-weight:700;font-size:18px;letter-spacing:.02em}
+  #sDaw .daw-dot{width:11px;height:11px;border-radius:999px;background:#ff8243;box-shadow:0 0 10px #ff8243}
+  #sDaw .daw-lcd{display:flex;align-items:center;gap:18px;padding:7px 18px;border-radius:8px;background:#141311;border:1px solid #3d3832;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:16px}
+  #sDaw .daw-lcd .play-on{color:#6fbe82;font-weight:700}
+  #sDaw .daw-lcd .pos{color:#ff8243;font-weight:700;min-width:96px}
+  #sDaw .daw-lcd .bpm{color:#7ca7db}
+  #sDaw .daw-badge{font-size:13px;padding:5px 12px;border-radius:999px;background:#2c2925;border:1px solid #3d3832;color:#a39b8e}
+  #sDaw .daw-body{flex:1;display:grid;grid-template-columns:280px 1fr;min-height:0;position:relative}
+  #sDaw .daw-headers{background:#211f1c;border-right:1px solid #3d3832;display:flex;flex-direction:column}
+  #sDaw .daw-ruler-pad{height:34px;border-bottom:1px solid #3d3832;padding:0 16px;display:flex;align-items:center;font-size:12px;color:#a39b8e;letter-spacing:.06em;text-transform:uppercase}
+  #sDaw .daw-th{flex:1;padding:12px 16px;border-bottom:1px solid #302c27;display:flex;flex-direction:column;justify-content:center;gap:8px;position:relative}
+  #sDaw .daw-th::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:4px;border-radius:0 4px 4px 0;background:var(--tc)}
+  #sDaw .daw-th-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  #sDaw .daw-th-name{font-size:15px;font-weight:600;color:#e8e0d2}
+  #sDaw .daw-th-tag{font-size:11px;font-family:ui-monospace,Menlo,Consolas,monospace;padding:2px 7px;border-radius:5px;background:#141311;color:var(--tc);border:1px solid #3d3832}
+  #sDaw .daw-th-row{display:flex;align-items:center;gap:8px}
+  #sDaw .daw-mini-btn{font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;background:#141311;color:#a39b8e;border:1px solid #3d3832}
+  #sDaw .daw-meter{flex:1;height:8px;border-radius:4px;background:#141311;overflow:hidden;border:1px solid #302c27}
+  #sDaw .daw-meter-fill{height:100%;width:20%;background:linear-gradient(90deg,#6fbe82 0,#e6bf55 75%,#ee6b57 100%);border-radius:3px}
+  #sDaw .daw-timeline{position:relative;display:flex;flex-direction:column;background:#181715;overflow:hidden}
+  #sDaw .daw-ruler{height:34px;background:#211f1c;border-bottom:1px solid #3d3832;position:relative;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#a39b8e}
+  #sDaw .daw-lanes{flex:1;display:flex;flex-direction:column;position:relative}
+  #sDaw .daw-lane{flex:1;position:relative;border-bottom:1px solid #302c27}
+  #sDaw .daw-lane:nth-child(even){background:#1e1c1a}
+  #sDaw .daw-grid-line{position:absolute;top:0;bottom:0;width:1px;background:#302c27}
+  #sDaw .daw-grid-line.bar{background:#3d3832}
+  #sDaw .daw-clip{position:absolute;top:10px;bottom:10px;border-radius:8px;background:var(--cbg);border:1.5px solid var(--tc);overflow:hidden;box-shadow:0 2px 8px #0005}
+  #sDaw .daw-clip.hot{box-shadow:0 0 18px var(--tc);filter:brightness(1.22)}
+  #sDaw .daw-clip-lbl{position:absolute;left:8px;top:4px;font-size:12px;font-weight:600;color:#e8e0d2;text-shadow:0 1px 2px #000a;white-space:nowrap}
+  #sDaw .daw-clip svg{position:absolute;inset:0;width:100%;height:100%}
+  #sDaw .daw-playhead{position:absolute;top:0;bottom:0;width:2px;background:#ff8243;box-shadow:0 0 12px #ff8243;z-index:10}
+  #sDaw .daw-playhead::before{content:"";position:absolute;top:0;left:-7px;border-left:8px solid transparent;border-right:8px solid transparent;border-top:11px solid #ff8243}
+  #sDaw .daw-foot{height:118px;padding:12px 20px;background:#211f1c;border-top:1px solid #3d3832;display:grid;grid-template-columns:1fr 440px;gap:20px;align-items:center}
+  #sDaw .daw-fx-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  #sDaw .daw-fx-chip{padding:9px 14px;border-radius:8px;background:#141311;border:1px solid #3d3832;font-size:13px;display:flex;align-items:center;gap:8px;color:#e8e0d2}
+  #sDaw .daw-fx-chip i{width:8px;height:8px;border-radius:99px;background:#6fbe82;display:inline-block;box-shadow:0 0 6px #6fbe82}
+  #sDaw .daw-fx-chip small{color:#a39b8e;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px}
+  #sDaw .daw-spec{height:86px;border-radius:8px;background:#141311;border:1px solid #3d3832;padding:8px 10px;display:flex;align-items:flex-end;gap:4px;position:relative}
+  #sDaw .daw-spec-bar{flex:1;background:linear-gradient(180deg,#ff8243 0,#7ca7db 65%,#3d3832 100%);border-radius:2px 2px 0 0;min-height:4px}
+  #sDaw .daw-spec-lbl{position:absolute;top:5px;right:10px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:#a39b8e}
+  #sDaw .daw-caption{left:220px;top:1004px;width:1480px;display:flex;justify-content:space-between;align-items:center;
+    font-family:var(--hand);font-size:32px;color:var(--muted)}
+
+  /* 6 · pruébalo */
+  #s5 .logo{left:810px;top:80px;width:300px}
+  #s5 .name{left:0;top:320px;width:100%;text-align:center;font-family:var(--hand);font-size:160px;line-height:1}
+  #s5 .ver{left:0;top:495px;width:100%;text-align:center;font-family:var(--hand);color:var(--red);font-size:48px}
+  #s5 .term{left:410px;top:600px;width:1100px;min-height:150px;padding:26px 34px;background:var(--code-bg);border:2px dashed var(--dash);
+    border-radius:10px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:30px;line-height:1.5;white-space:pre}
+  #s5 .pills{left:0;top:810px;width:100%;justify-content:center}
+  #s5 .foot{left:0;top:925px;width:100%;text-align:center;font-family:var(--hand);font-size:40px;color:var(--footer)}
+  #err{position:absolute;left:150px;top:150px;font:24px monospace;color:#b8321f;white-space:pre-wrap}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script type="module">
+const W = 1920, H = 1080;
+const params = new URLSearchParams(location.search);
+document.documentElement.dataset.theme = params.get("theme") === "dark" ? "dark" : "light";
+
+/* ---------- tiempo ---------- */
+const clamp = x => Math.max(0, Math.min(1, x));
+const win = (t, a, b) => clamp((t - a) / (b - a));
+const easeOut = x => 1 - Math.pow(1 - x, 3);
+const easeInOut = x => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const back = x => { const c = 1.70158; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); };
+const lerp = (a, b, k) => a + (b - a) * k;
+
+const BPM = 120;
+const COMP_STEP = 2.5;
+const DUR = { hero: 7, sketch: 6, comps: 12 * COMP_STEP, compare: 7, daw: 9, cta: 7.5 };
+const SCENES = {};
+let acc = 0;
+for (const [k, d] of Object.entries(DUR)) { SCENES[k] = [acc, acc + d]; acc += d; }
+const TOTAL = acc;
+const DAW_RECT = { x: 220, y: 215, w: 1480, h: 775 };
+window.VIDEO_META = { bpm: BPM, total: TOTAL, scenes: SCENES, dawRect: DAW_RECT };
+
+/* ---------- DOM ---------- */
+const stage = document.getElementById("stage");
+function node(tag, cls, parent, content) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (content != null) e.innerHTML = content;
+  if (parent) parent.appendChild(e);
+  return e;
+}
+const fadeUp = (e, k, dy = 30) => { e.style.opacity = k; e.style.transform = `translateY(${(1 - k) * dy}px)`; };
+
+/* Trazo progresivo de un dibujo hecho con los helpers del landing. */
+function prepDraw(root) {
+  const paths = [...root.querySelectorAll("path")];
+  const isFill = p => p.classList.contains("f") || p.classList.contains("fill");
+  const strokes = paths.filter(p => !isFill(p));
+  strokes.forEach(p => { p.setAttribute("pathLength", 1); p.style.strokeDasharray = "1"; p.style.strokeDashoffset = "1"; });
+  return { strokes, fills: paths.filter(isFill), texts: [...root.querySelectorAll("text")] };
+}
+function drawAt(d, u, { start = 0, stagger = .035, dur = .7, fillAt = 1, textAt = 1.1 } = {}) {
+  d.strokes.forEach((p, i) => {
+    const s = start + Math.min(i * stagger, 1);
+    p.style.strokeDashoffset = 1 - easeOut(win(u, s, s + dur));
+  });
+  const fo = easeOut(win(u, start + fillAt, start + fillAt + .5));
+  d.fills.forEach(p => { p.style.opacity = p.classList.contains("fill") ? fo * .14 : fo; });
+  const to = easeOut(win(u, start + textAt, start + textAt + .4));
+  d.texts.forEach(x => { x.style.opacity = to; });
+}
+function showScene(el, t, [a, b], f = .45) {
+  const o = Math.min(win(t, a, a + f), 1 - win(t, b - f, b));
+  el.style.opacity = o;
+  el.style.visibility = o > 0 ? "visible" : "hidden";
+  return t - a;
+}
+const wiggle = t => -4 + 9 * (.5 - .5 * Math.cos(2 * Math.PI * t / 3));
+
+/* ---------- construcción a partir de index.html ---------- */
+async function build() {
+  const src = await (await fetch("index.html")).text();
+  const doc = new DOMParser().parseFromString(src, "text/html");
+  document.getElementById("landing-css").textContent = doc.querySelector("style").textContent;
+
+  const code = [...doc.scripts].map(s => s.textContent).find(s => s.includes("const COMPONENTS"));
+  const from = code?.indexOf("/* ---------- utilidades"), to = code?.indexOf("const scene = document");
+  if (!code || from < 0 || to < 0) throw new Error("index.html cambió: no encuentro utilidades/COMPONENTS");
+  const { COMPONENTS, el } = new Function(code.slice(from, to) + "\nreturn { COMPONENTS, el };")();
+
+  const pick = sel => doc.querySelector(sel);
+  const clone = sel => document.importNode(pick(sel), true);
+  const pills = [...doc.querySelectorAll(".pill-row .pill")].map(p => p.textContent);
+  const pillRow = parent => { const r = node("div", "abs pills", parent); pills.forEach(p => node("span", "pill", r, p)); return [...r.children]; };
+  const install = pick(".install-box pre code").textContent.trim();
+  const version = (install.match(/\d+\.\d+\.\d+/) || [""])[0];
+  const parts = [];
+
+  /* 1 · portada */
+  {
+    const s = node("section", "scene", stage); s.id = "s1";
+    const logo = clone(".brand .logo"); logo.classList.add("abs"); s.appendChild(logo);
+    const kicker = node("span", "kicker", s, pick(".kicker").innerHTML);
+    const h1 = node("h1", "", s);
+    const words = pick("h1").childNodes[0].textContent.trim().split(/\s+/).map(w => node("span", "w", h1, w));
+    const strike = node("span", "strike", h1, pick("h1 .strike").textContent);
+    const lede = node("p", "abs lede1", s, "Arrangement · Piano roll · <b>Hay Synth</b> · Pads MPC · FX · P2P · IA (MCP) — <b>en un solo lienzo</b>.");
+    const pl = pillRow(s);
+    const carrot = node("div", "abs carrot", s); carrot.appendChild(clone(".hero-carrot"));
+    parts.push(t => {
+      const u = showScene(s, t, SCENES.hero);
+      const lk = easeOut(win(u, .15, 1.2));
+      logo.style.clipPath = `inset(0 ${100 - 100 * lk}% 0 0)`;
+      logo.style.transform = `rotate(${lerp(-8, -3, lk)}deg) scale(${.85 + .15 * back(win(u, .15, 1))})`;
+      kicker.style.opacity = easeOut(win(u, .9, 1.4));
+      kicker.style.transform = `rotate(-1.5deg) translateX(${(1 - easeOut(win(u, .9, 1.4))) * -30}px)`;
+      [...words, strike].forEach((w, i) => fadeUp(w, easeOut(win(u, 1.2 + i * .13, 1.65 + i * .13)), 40));
+      strike.style.setProperty("--k", easeOut(win(u, 2.5, 3.0)));
+      fadeUp(lede, easeOut(win(u, 3.1, 3.7)));
+      pl.forEach((p, i) => { const k = win(u, 3.8 + i * .15, 4.3 + i * .15); p.style.opacity = clamp(k * 2); p.style.transform = `scale(${back(k)})`; });
+      carrot.style.opacity = easeOut(win(u, .5, 1));
+      carrot.style.transform = `translateY(${(1 - back(win(u, .5, 1.3))) * 80}px) rotate(${wiggle(t)}deg)`;
+    });
+  }
+
+  /* 2 · boceto completo del DAW */
+  {
+    const s = node("section", "scene", stage); s.id = "s2";
+    const side = node("div", "abs side", s, `<h2 class="sec">Todo en un solo lienzo</h2><p>12 componentes, una sola pantalla. Sin saltar de ventana.</p>`);
+    const svg = el("svg", { viewBox: "0 -50 1200 970" }, s);
+    svg.innerHTML = pick("#daw defs").outerHTML;
+    const sceneG = el("g", { filter: "url(#pencil)" }, svg);
+    const items = COMPONENTS.map(c => {
+      const [x, y, w, h] = c.box;
+      const g = el("g", { transform: `translate(${x} ${y})` }, sceneG);
+      c.draw(g, w, h);
+      const tag = el("text", { class: "vtag", x: x + 10, y: c.id === "cmd" || c.id === "plus" ? y - 8 : y + h + 26 }, sceneG);
+      tag.textContent = c.tag;
+      return { d: prepDraw(g), tag, at: [x + w - 44, y + 6] };
+    });
+    const carrot = document.importNode(pick("#carrotG"), true);
+    carrot.removeAttribute("id"); carrot.removeAttribute("style"); svg.appendChild(carrot);
+    const START = .6, GAP = .3;
+    parts.push(t => {
+      const u = showScene(s, t, SCENES.sketch);
+      side.children[0].style.opacity = easeOut(win(u, .15, .6));
+      fadeUp(side.children[1], easeOut(win(u, .5, 1.0)));
+      items.forEach((it, i) => {
+        const a = START + i * GAP;
+        drawAt(it.d, u, { start: a, stagger: .02, dur: .55, fillAt: .45, textAt: .4 });
+        it.tag.style.opacity = easeOut(win(u, a + .5, a + .8));
+      });
+      const f = Math.max(0, (u - START) / GAP), i = Math.min(Math.floor(f), items.length - 1);
+      const n = Math.min(i + 1, items.length - 1), k = i === n ? 1 : easeInOut(clamp(f - i));
+      const [x0, y0] = items[i].at, [x1, y1] = items[n].at;
+      carrot.setAttribute("transform", `translate(${lerp(x0, x1, k)} ${lerp(y0, y1, k) - 30 * Math.sin(Math.PI * k)})`);
+      carrot.style.opacity = easeOut(win(u, .3, .7));
+    });
+  }
+
+  /* 3 · los 12 componentes, de uno en uno */
+  {
+    const s = node("section", "scene", stage); s.id = "s3";
+    node("div", "abs head", s, `<h2 class="sec">Los 12 componentes</h2>`);
+    const canvas = node("div", "abs canvas", s);
+    const draws = COMPONENTS.map(c => {
+      const svg = el("svg", { viewBox: "0 -6 420 270", class: "big drawn" }, canvas);
+      c.big(svg);
+      return { svg, d: prepDraw(svg) };
+    });
+    const note = node("div", "abs vnote", s);
+    const num = node("div", "num", note), title = node("h2", "", note), sub = node("p", "sub", note), quip = node("div", "quip", note);
+    const carrot = node("div", "abs carrot", s); carrot.appendChild(clone(".hero-carrot"));
+    const dots = node("div", "abs dots", s);
+    const dotEls = COMPONENTS.map(c => node("span", "dot", dots, c.n));
+    let shown = -1;
+    parts.push(t => {
+      const u = showScene(s, t, SCENES.comps, .35);
+      const k = Math.min(COMPONENTS.length - 1, Math.max(0, Math.floor(u / COMP_STEP)));
+      const lu = u - k * COMP_STEP;
+      if (k !== shown) {
+        const c = COMPONENTS[k];
+        num.textContent = `${String(c.n).padStart(2, "0")} / 12`;
+        title.textContent = c.title; sub.textContent = c.sub; quip.textContent = c.quip;
+        dotEls.forEach((d, i) => { d.classList.toggle("on", i === k); d.classList.toggle("seen", i < k); });
+        shown = k;
+      }
+      draws.forEach((it, i) => {
+        const o = i === k ? (k === 0 ? 1 : easeOut(win(lu, 0, .25))) : i === k - 1 ? 1 - win(lu, 0, .25) : 0;
+        it.svg.style.opacity = o;
+        it.svg.style.visibility = o > 0 ? "visible" : "hidden";
+        if (i === k) drawAt(it.d, lu, { start: .05, stagger: .028, dur: .6, fillAt: .85, textAt: .8 });
+        else if (o > 0) drawAt(it.d, 99);
+      });
+      const nk = easeOut(win(lu, 0, .35));
+      [num, title, sub].forEach((e, i) => fadeUp(e, easeOut(win(lu, i * .08, .35 + i * .08)), 18));
+      const qk = win(lu, .7, 1.1);
+      quip.style.opacity = clamp(qk * 2);
+      quip.style.transform = `scale(${back(qk)}) rotate(-1.5deg)`;
+      note.style.transform = `rotate(${lerp(-1.5, 1, nk)}deg)`;
+      const hop = win(lu, 0, .55);
+      carrot.style.transform = `translateY(${-70 * Math.sin(Math.PI * hop)}px) rotate(${wiggle(t) * .6}deg) scale(${1 + .12 * Math.sin(Math.PI * hop)}, ${1 - .08 * Math.sin(2 * Math.PI * hop)})`;
+    });
+  }
+
+  /* 4 · la idea: un solo flujo */
+  {
+    const s = node("section", "scene", stage); s.id = "s4";
+    const head = node("div", "abs head", s, `<h2 class="sec">${pick(".compare").previousElementSibling.textContent}</h2>`);
+    const col = (cls) => {
+      const box = node("div", `abs cmpcol ${cls}`, s);
+      node("h3", "", box, pick(`.compare .${cls} h3`).innerHTML);
+      const ul = node("ul", "", box);
+      const lis = [...doc.querySelectorAll(`.compare .${cls} li`)].map(li => node("li", "", ul, `<span class="tx">${li.innerHTML}</span>`));
+      return { box, lis };
+    };
+    const bad = col("bad"), good = col("good");
+    parts.push(t => {
+      const u = showScene(s, t, SCENES.compare);
+      head.style.opacity = easeOut(win(u, .1, .5));
+      fadeUp(bad.box, easeOut(win(u, .2, .7)), 20);
+      bad.lis.forEach((li, i) => {
+        fadeUp(li, easeOut(win(u, .45 + i * .22, .8 + i * .22)), 14);
+        li.querySelector(".tx").style.setProperty("--s", `${100 * easeOut(win(u, 2.1 + i * .2, 2.45 + i * .2))}%`);
+      });
+      fadeUp(good.box, easeOut(win(u, 3.0, 3.5)), 20);
+      good.lis.forEach((li, i) => fadeUp(li, easeOut(win(u, 3.25 + i * .28, 3.6 + i * .28)), 14));
+    });
+  }
+
+  /* 5 · detrás del sonido (grabación real de Jap Studio) */
+  {
+    const s = node("section", "scene", stage); s.id = "sDaw";
+    const head = node("div", "abs head", s,
+      `<div><h2 class="sec">¿Escuchaste los efectos de este video?</h2><p class="sub">Todos se diseñaron, editaron y mezclaron dentro de Jap Studio.</p></div>`
+      + `<span class="rec-pill">● Sesión real de SFX · 120 BPM</span>`);
+    const frame = node("div", "abs daw-frame", s);
+    node("div", "tape l", frame);
+    node("div", "tape r", frame);
+    const screen = node("div", "daw-screen", frame);
+    const dawClip = params.get("daw");
+    const dawOverlay = params.has("dawOverlay");
+    let dawVid = null, dawAnim = null;
+    if (dawClip && !dawOverlay) {
+      dawVid = document.createElement("video");
+      dawVid.src = dawClip;
+      dawVid.muted = true;
+      dawVid.playsInline = true;
+      dawVid.preload = "auto";
+      screen.appendChild(dawVid);
+    } else if (!dawOverlay) {
+      /* Réplica viva y sincronizada de la sesión real armada en Jap Studio (beats 100..118 · Cuaderno Oscuro) */
+      const ui = node("div", "daw-ui", screen);
+      const top = node("div", "daw-top", ui,
+        `<div class="daw-brand"><span class="daw-dot"></span><span>Jap Studio</span><span class="daw-badge">video-sfx · Tema Cuaderno Oscuro</span></div>`
+        + `<div class="daw-lcd"><span class="play-on">▶ PLAY</span><span class="pos" id="dawPos">26.1.00</span><span class="bpm">120.0 BPM · 4/4</span><span>-14.0 LUFS</span></div>`
+        + `<div class="daw-badge">48 kHz · 24-bit · Exportación directa</div>`);
+      const body = node("div", "daw-body", ui);
+      const headers = node("div", "daw-headers", body);
+      node("div", "daw-ruler-pad", headers, "Arrangement · 4 pistas");
+      const timeline = node("div", "daw-timeline", body);
+      const ruler = node("div", "daw-ruler", timeline);
+      const lanes = node("div", "daw-lanes", timeline);
+      const playhead = node("div", "daw-playhead", lanes);
+
+      const B_SPAN = 18;
+      for (let b = 0; b <= B_SPAN; b++) {
+        const pct = (b / B_SPAN) * 100;
+        const isBar = b % 4 === 0;
+        const gl = node("div", "daw-grid-line" + (isBar ? " bar" : ""), lanes);
+        gl.style.left = pct + "%";
+        if (isBar) {
+          const lbl = node("span", "", ruler, `Bar ${26 + b / 4}`);
+          lbl.style.cssText = `position:absolute;left:calc(${pct}% + 6px);top:9px`;
+        }
+      }
+
+      const synthNotes = [
+        [0,.4,72],[.5,.4,76],[1,.6,79],[2,.4,81],[2.5,.8,79],[4,.4,74],[4.5,.4,76],[5,.6,79],[6,.5,83],[6.5,.9,81],
+        [8,.4,76],[8.5,.4,79],[9,.6,84],[10,.4,83],[10.5,.8,79],[12,.4,72],[12.5,.4,76],[13,.4,79],[13.5,.6,84],[14.5,1.8,86]
+      ];
+      const pianoChords = [
+        [0,3.6,[53,60,64,69]],[4,3.6,[55,59,64,67]],[8,3.6,[52,59,62,67]],[12,3.0,[57,60,64]],[15,2.5,[55,59,64]]
+      ];
+      const tracks = [
+        { name: "01 · Lápiz y Papel", tag: "FOLEY WAV", col: "#e8a454", cbg: "#e8a45428",
+          clips: [[0,.72,"page-flip.wav"],[2,1.5,"pencil-stroke.wav"],[6,.84,"red-strike.wav"],[10,.72,"page-flip.wav"],[13.5,1.5,"pencil-stroke.wav"]] },
+        { name: "02 · Pops y Zanahoria", tag: "FOLEY WAV", col: "#ff8243", cbg: "#ff824328",
+          clips: [[4,.44,"carrot-hop.wav"],[8,.32,"bubble-pop.wav"],[12,.44,"carrot-hop.wav"]] },
+        { name: "03 · Hay Synth", tag: "HAY SYNTH", col: "#7ca7db", cbg: "#7ca7db26", midi: synthNotes, lbl: "Demo DAW en vivo (Synth)" },
+        { name: "04 · Hay Piano", tag: "HAY PIANO", col: "#6fbe82", cbg: "#6fbe8226", chords: pianoChords, lbl: "Demo DAW (Piano)" },
+      ];
+
+      const meterFills = [], clipRefs = [], noteRefs = [];
+      tracks.forEach((tr, ti) => {
+        const th = node("div", "daw-th", headers);
+        th.style.setProperty("--tc", tr.col);
+        th.innerHTML = `<div class="daw-th-top"><span class="daw-th-name">${tr.name}</span><span class="daw-th-tag">${tr.tag}</span></div>`
+          + `<div class="daw-th-row"><span class="daw-mini-btn">M</span><span class="daw-mini-btn">S</span><div class="daw-meter"><div class="daw-meter-fill"></div></div></div>`;
+        meterFills.push(th.querySelector(".daw-meter-fill"));
+
+        const lane = node("div", "daw-lane", lanes);
+        if (tr.clips) {
+          tr.clips.forEach(([sb, db, name]) => {
+            const cl = node("div", "daw-clip", lane);
+            cl.style.setProperty("--tc", tr.col);
+            cl.style.setProperty("--cbg", tr.cbg);
+            cl.style.left = (sb / B_SPAN * 100) + "%";
+            cl.style.width = Math.max(4.5, db / B_SPAN * 100) + "%";
+            const wsvg = el("svg", { viewBox: "0 0 120 60", preserveAspectRatio: "none" }, cl);
+            let d = "M0 34";
+            for (let x = 2; x <= 120; x += 3) {
+              const env = Math.sin(Math.PI * x / 120);
+              const amp = 20 * env * (0.45 + 0.55 * Math.abs(Math.sin(x * .65 + sb * 3)));
+              d += ` L${x} ${(34 + (x % 6 === 0 ? -amp : amp)).toFixed(1)}`;
+            }
+            el("path", { d, fill: "none", stroke: tr.col, "stroke-width": 1.6, opacity: .85 }, wsvg);
+            node("span", "daw-clip-lbl", cl, name);
+            clipRefs.push({ el: cl, ti, a: sb, b: sb + db });
+          });
+        } else {
+          const cl = node("div", "daw-clip", lane);
+          cl.style.setProperty("--tc", tr.col);
+          cl.style.setProperty("--cbg", tr.cbg);
+          cl.style.left = "0%";
+          cl.style.width = "100%";
+          const msvg = el("svg", { viewBox: "0 0 1000 100", preserveAspectRatio: "none" }, cl);
+          const list = tr.midi ? tr.midi.map(([s, d, p]) => [s, d, p]) : tr.chords.flatMap(([s, d, ps]) => ps.map(p => [s, d, p]));
+          const pMin = Math.min(...list.map(x => x[2])) - 2, pMax = Math.max(...list.map(x => x[2])) + 2;
+          list.forEach(([s, d, p]) => {
+            const rx = (s / B_SPAN) * 1000, rw = Math.max(8, (d / B_SPAN) * 1000);
+            const ry = 88 - ((p - pMin) / (pMax - pMin)) * 66;
+            const r = el("rect", { x: rx, y: ry, width: rw, height: 7, rx: 3, fill: tr.col, opacity: .72 }, msvg);
+            noteRefs.push({ el: r, ti, a: s, b: s + d });
+          });
+          node("span", "daw-clip-lbl", cl, tr.lbl);
+        }
+      });
+
+      const foot = node("div", "daw-foot", ui);
+      node("div", "daw-fx-row", foot,
+        `<div class="daw-fx-chip"><i></i><b>Hay Reverb</b><small>Foley + Piano</small></div>`
+        + `<div class="daw-fx-chip"><i></i><b>Hay Echo</b><small>250 / 375 ms</small></div>`
+        + `<div class="daw-fx-chip"><i></i><b>Hay Comp</b><small>Master -14 dB</small></div>`
+        + `<div class="daw-fx-chip"><i></i><b>Hay Limiter</b><small>-0.5 dB ceiling</small></div>`);
+      const spec = node("div", "daw-spec", foot, `<span class="daw-spec-lbl">Spectrum · Master</span>`);
+      const specBars = Array.from({ length: 32 }, () => node("div", "daw-spec-bar", spec));
+      const posEl = top.querySelector("#dawPos");
+
+      dawAnim = u => {
+        const beat = clamp(u / DUR.daw) * B_SPAN;
+        const bar = 26 + Math.floor(beat / 4);
+        const sub = 1 + Math.floor(beat % 4);
+        const frac = Math.floor((beat % 1) * 100);
+        posEl.textContent = `${bar}.${sub}.${String(frac).padStart(2, "0")}`;
+        playhead.style.left = (beat / B_SPAN * 100) + "%";
+        const lv = [0.08, 0.08, 0.14, 0.18];
+        clipRefs.forEach(c => {
+          const hit = beat >= c.a && beat <= c.b + 0.25;
+          c.el.classList.toggle("hot", hit);
+          if (hit) lv[c.ti] = Math.max(lv[c.ti], 0.88 - 0.35 * clamp((beat - c.a) / Math.max(.2, c.b - c.a)));
+        });
+        noteRefs.forEach(n => {
+          const hit = beat >= n.a && beat <= n.b;
+          n.el.setAttribute("opacity", hit ? "1" : "0.52");
+          n.el.setAttribute("fill", hit ? "#fbf4de" : tracks[n.ti].col);
+          if (hit) lv[n.ti] = Math.max(lv[n.ti], 0.78 - 0.3 * clamp((beat - n.a) / Math.max(.2, n.b - n.a)));
+        });
+        meterFills.forEach((m, i) => { m.style.width = Math.round(lv[i] * 100) + "%"; });
+        const energy = (lv[0] + lv[1] + lv[2] + lv[3]) * 0.35;
+        specBars.forEach((b, i) => {
+          const shape = Math.exp(-Math.pow((i - 9) / 11, 2)) + 0.55 * Math.exp(-Math.pow((i - 21) / 8, 2));
+          const wave = 0.55 + 0.45 * Math.sin(u * (8 + (i % 5) * 2.3) + i * 0.7);
+          b.style.height = Math.max(6, Math.min(96, Math.round((14 + 86 * energy * shape * wave)))) + "%";
+        });
+      };
+    }
+    const cap = node("div", "abs daw-caption", s,
+      `<span>Pistas Foley + Hay Synth + Hay Piano + FX nativos (Reverb · Echo · Comp · Limiter · Spectrum)</span><span>Tema: Cuaderno Oscuro</span>`);
+    parts.push(t => {
+      const u = showScene(s, t, SCENES.daw, .45);
+      fadeUp(head, easeOut(win(u, .08, .55)), 24);
+      const fk = easeOut(win(u, .2, .75));
+      frame.style.opacity = fk;
+      frame.style.transform = `translateY(${(1 - fk) * 28}px) scale(${.96 + .04 * fk})`;
+      cap.style.opacity = easeOut(win(u, .6, 1.1));
+      if (dawAnim) dawAnim(u);
+      if (dawVid && dawVid.readyState >= 1) {
+        const target = clamp(u / DUR.daw) * Math.min(DUR.daw, dawVid.duration || DUR.daw);
+        if (Math.abs(dawVid.currentTime - target) > 0.08) dawVid.currentTime = target;
+      }
+    });
+  }
+
+  /* 6 · pruébalo */
+  {
+    const s = node("section", "scene", stage); s.id = "s5";
+    const logo = clone(".brand .logo"); logo.classList.add("abs"); s.appendChild(logo);
+    const name = node("div", "abs name", s, "Jap Studio");
+    const ver = node("div", "abs ver", s, `Hay / Elevate${version ? " · v" + version : ""} · open source`);
+    const term = node("div", "abs term", s);
+    const lines = install.split("\n").map(l => "$ " + l.trim()).join("\n");
+    const pl = pillRow(s);
+    const foot = node("div", "abs foot", s, "Hecho con grafito, DSP sin bloqueos y zanahorias. ✎");
+    parts.push(t => {
+      const u = showScene(s, t, SCENES.cta, .6);
+      const lk = win(u, .15, .9);
+      logo.style.opacity = clamp(lk * 2);
+      logo.style.transform = `rotate(${lerp(8, -3, easeOut(lk))}deg) scale(${back(lk)})`;
+      fadeUp(name, easeOut(win(u, .6, 1.1)));
+      fadeUp(ver, easeOut(win(u, 1.0, 1.4)), 20);
+      fadeUp(term, easeOut(win(u, 1.4, 1.8)), 20);
+      const n = Math.round(lines.length * win(u, 1.8, 4.2));
+      term.textContent = lines.slice(0, n) + (Math.floor(t * 2) % 2 ? "▍" : " ");
+      pl.forEach((p, i) => { const k = win(u, 4.3 + i * .12, 4.8 + i * .12); p.style.opacity = clamp(k * 2); p.style.transform = `scale(${back(k)})`; });
+      fadeUp(foot, easeOut(win(u, 5.0, 5.5)), 16);
+    });
+  }
+
+  window.render = t => parts.forEach(p => p(Math.max(0, Math.min(TOTAL - 1e-6, t))));
+  await document.fonts.load("48px Caveat");
+  await document.fonts.ready;
+  window.render(0);
+  return TOTAL;
+}
+
+window.TOTAL = TOTAL;
+window.__ready = build().catch(e => {
+  window.__error = String(e?.stack || e);
+  node("pre", "", document.body).id = "err";
+  document.getElementById("err").textContent = window.__error;
+  throw e;
+});
+
+if (!params.has("capture")) {
+  window.__ready.then(() => {
+    const fixed = params.get("t"), t0 = performance.now();
+    const loop = now => { window.render(fixed != null ? Number(fixed) : ((now - t0) / 1000) % TOTAL); requestAnimationFrame(loop); };
+    requestAnimationFrame(loop);
+  });
+}
+</script>
+</body>
+</html>
