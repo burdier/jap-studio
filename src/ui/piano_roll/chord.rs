@@ -17,6 +17,25 @@ const MAJOR_MOODS: [&str; 7] = [
     "Reposo", "Suave", "Cálido", "Viaje", "Impulso", "Calma", "Tensión",
 ];
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(in crate::ui) struct ChordDegreeConfig {
+    pub color: u8,
+    pub voicing: u8,
+    pub bass_octave: bool,
+    pub inversion: i8,
+}
+
+impl Default for ChordDegreeConfig {
+    fn default() -> Self {
+        Self {
+            color: 1, // 7ª (Cálido) por defecto
+            voicing: 0,
+            bass_octave: true,
+            inversion: 0,
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(in crate::ui) struct ChordPadState {
     pub degree: u8,
@@ -24,6 +43,8 @@ pub(in crate::ui) struct ChordPadState {
     pub voicing: u8,
     pub bass_octave: bool,
     pub inversion: i8,
+    /// Configuración individual (color, voicing, bajo, inversión) por cada uno de los 7 grados.
+    pub pads: [ChordDegreeConfig; 7],
     pub strum_ticks: i16,
     /// Cuando está activo, las notas MIDI entrantes disparan acordes diatónicos de la escala activa.
     pub midi_chord_mode: bool,
@@ -31,12 +52,14 @@ pub(in crate::ui) struct ChordPadState {
 
 impl Default for ChordPadState {
     fn default() -> Self {
+        let base = ChordDegreeConfig::default();
         Self {
             degree: 0,
-            color: 1, // 7ª (Cálido) por defecto
-            voicing: 0,
-            bass_octave: true,
-            inversion: 0,
+            color: base.color,
+            voicing: base.voicing,
+            bass_octave: base.bass_octave,
+            inversion: base.inversion,
+            pads: [base; 7],
             strum_ticks: 15,
             midi_chord_mode: false,
         }
@@ -44,6 +67,50 @@ impl Default for ChordPadState {
 }
 
 impl ChordPadState {
+    pub fn select_degree(&mut self, deg: u8) {
+        let d = deg.min(6);
+        self.degree = d;
+        let cfg = self.pads[usize::from(d)];
+        self.color = cfg.color;
+        self.voicing = cfg.voicing;
+        self.bass_octave = cfg.bass_octave;
+        self.inversion = cfg.inversion;
+    }
+
+    pub fn set_color(&mut self, color: u8) {
+        let c = color.min(4);
+        self.color = c;
+        self.pads[usize::from(self.degree.min(6))].color = c;
+    }
+
+    pub fn apply_color_to_all(&mut self) {
+        let c = self.color;
+        for cfg in &mut self.pads {
+            cfg.color = c;
+        }
+    }
+
+    pub fn set_voicing(&mut self, voicing: u8) {
+        let v = voicing.min(2);
+        self.voicing = v;
+        self.pads[usize::from(self.degree.min(6))].voicing = v;
+    }
+
+    pub fn toggle_bass(&mut self) {
+        self.bass_octave = !self.bass_octave;
+        self.pads[usize::from(self.degree.min(6))].bass_octave = self.bass_octave;
+    }
+
+    pub fn set_inversion(&mut self, inv: i8) {
+        let v = inv.clamp(-2, 3);
+        self.inversion = v;
+        self.pads[usize::from(self.degree.min(6))].inversion = v;
+    }
+
+    pub fn color_for(&self, deg: u8) -> u8 {
+        self.pads[usize::from(deg.min(6))].color
+    }
+
     pub fn quality_arg(&self) -> &'static str {
         match self.color {
             0 => "scale",
@@ -191,7 +258,8 @@ impl ChordPadState {
     ) -> (u8, Vec<u8>) {
         let (degree, octave_shift) =
             elevate::musical::chord::scale_degree_for_note(trigger_note, scale_root, scale_minor);
-        let pad = Self { degree, ..*self };
+        let mut pad = *self;
+        pad.select_degree(degree);
         let (_, raw_voices) = pad.preview_voices(scale_root, scale_minor);
         let semitone_shift = i16::from(octave_shift) * 12;
         let mut shifted: Vec<u8> = raw_voices

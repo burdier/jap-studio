@@ -131,12 +131,26 @@ impl DawApp {
                             ),
                     ),
             )
-            .child(self.render_chord_choice_row(
-                "Color",
-                COLOR_CHOICES.into_iter().map(|(label, idx)| {
-                    self.chord_choice_pill(label, pad.color == idx, RollAction::ChordColor(idx), cx)
-                }),
-            ))
+            .child({
+                let mut color_pills: Vec<Stateful<Div>> = COLOR_CHOICES
+                    .into_iter()
+                    .map(|(label, idx)| {
+                        self.chord_choice_pill(
+                            label,
+                            pad.color == idx,
+                            RollAction::ChordColor(idx),
+                            cx,
+                        )
+                    })
+                    .collect();
+                color_pills.push(self.chord_choice_pill(
+                    "=Todos",
+                    false,
+                    RollAction::ChordColorAll,
+                    cx,
+                ));
+                self.render_chord_choice_row("Color", color_pills)
+            })
             .child({
                 let mut voicing_pills: Vec<Stateful<Div>> = VOICING_CHOICES
                     .into_iter()
@@ -335,8 +349,12 @@ impl DawApp {
         let degree_pads = (0..7u8).map(|deg| {
             let selected = pad.degree == deg;
             let roman = ChordPadState::degree_roman(scale_minor, deg);
-            let chord_name =
-                ChordPadState::degree_chord_name(scale_root, scale_minor, deg, pad.color);
+            let chord_name = ChordPadState::degree_chord_name(
+                scale_root,
+                scale_minor,
+                deg,
+                pad.color_for(deg),
+            );
             let mood = ChordPadState::degree_mood(scale_minor, deg);
             div()
                 .id(("hay-chord-degree", usize::from(deg)))

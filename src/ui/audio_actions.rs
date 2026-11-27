@@ -385,7 +385,7 @@ impl DawApp {
                             scale_root,
                             scale_minor,
                         );
-                        self.piano_roll.chord_pad.degree = degree;
+                        self.piano_roll.chord_pad.select_degree(degree);
                         let roman = super::piano_roll::chord::ChordPadState::degree_roman(
                             scale_minor,
                             degree,

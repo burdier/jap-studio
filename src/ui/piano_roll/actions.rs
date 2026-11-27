@@ -224,7 +224,7 @@ impl DawApp {
             RollAction::OpenSettings => self.open_settings(),
             RollAction::InspectorTab(tab) => self.piano_roll.inspector_tab = tab.min(4),
             RollAction::ChordDegree(deg) => {
-                self.piano_roll.chord_pad.degree = deg.min(6);
+                self.piano_roll.chord_pad.select_degree(deg);
                 let name = super::chord::ChordPadState::degree_chord_name(
                     self.piano_roll.scale_root,
                     self.piano_roll.scale_minor,
@@ -236,13 +236,17 @@ impl DawApp {
                 );
             }
             RollAction::ChordColor(color) => {
-                self.piano_roll.chord_pad.color = color.min(4);
+                self.piano_roll.chord_pad.set_color(color);
+            }
+            RollAction::ChordColorAll => {
+                self.piano_roll.chord_pad.apply_color_to_all();
+                self.piano_roll.hint = "Hay Chord · Color aplicado a los 7 acordes".into();
             }
             RollAction::ChordVoicing(voicing) => {
-                self.piano_roll.chord_pad.voicing = voicing.min(2);
+                self.piano_roll.chord_pad.set_voicing(voicing);
             }
             RollAction::ChordToggleBass => {
-                self.piano_roll.chord_pad.bass_octave = !self.piano_roll.chord_pad.bass_octave;
+                self.piano_roll.chord_pad.toggle_bass();
             }
             RollAction::ChordToggleMidiMode => {
                 let next = !self.piano_roll.chord_pad.midi_chord_mode;
@@ -258,7 +262,7 @@ impl DawApp {
                 self.status_message = self.piano_roll.hint.clone();
             }
             RollAction::ChordInversion(inv) => {
-                self.piano_roll.chord_pad.inversion = inv.clamp(-2, 3);
+                self.piano_roll.chord_pad.set_inversion(inv);
             }
             RollAction::ChordStrum(strum) => {
                 self.piano_roll.chord_pad.strum_ticks = strum.clamp(0, 120);
