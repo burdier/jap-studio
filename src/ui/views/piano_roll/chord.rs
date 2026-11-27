@@ -349,12 +349,8 @@ impl DawApp {
         let degree_pads = (0..7u8).map(|deg| {
             let selected = pad.degree == deg;
             let roman = ChordPadState::degree_roman(scale_minor, deg);
-            let chord_name = ChordPadState::degree_chord_name(
-                scale_root,
-                scale_minor,
-                deg,
-                pad.color_for(deg),
-            );
+            let chord_name =
+                ChordPadState::degree_chord_name(scale_root, scale_minor, deg, pad.color_for(deg));
             let mood = ChordPadState::degree_mood(scale_minor, deg);
             div()
                 .id(("hay-chord-degree", usize::from(deg)))
@@ -546,14 +542,27 @@ impl DawApp {
                 } else {
                     "↶ Recuperar MIDI".into()
                 };
+                let tip = self.tr("transport.midi_capture_tooltip");
                 self.roll_button(
                     recover_label,
                     has_captured,
                     RollAction::ChordRecoverMidi,
                     cx,
                 )
+                .id("chord-recover-midi-btn")
                 .w_full()
                 .justify_center()
+                .tooltip(move |window, cx| {
+                    gpui::component::tooltip::Tooltip::new(tip).build(window, cx)
+                })
+                .on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(|this, _, _, cx| {
+                        this.clear_midi_capture_buffer();
+                        cx.stop_propagation();
+                        cx.notify();
+                    }),
+                )
             })
     }
 }

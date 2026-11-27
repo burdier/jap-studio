@@ -1091,6 +1091,16 @@ impl DawApp {
             self.tracks[target_track].name
         );
     }
+
+    pub(in crate::ui) fn clear_midi_capture_buffer(&mut self) {
+        let count = self.midi_capture.note_count();
+        self.midi_capture.clear();
+        self.status_message = if count > 0 {
+            format!("Búfer de recuperación MIDI vaciado ({count} notas)")
+        } else {
+            "El búfer de recuperación MIDI ya estaba vacío".into()
+        };
+    }
     pub(in crate::ui) fn toggle_metronome(&mut self) {
         let on = self.metronome.toggle();
         let pct = (self.metronome.gain() * 100.0).round() as u32;

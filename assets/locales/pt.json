@@ -53,6 +53,7 @@
   "transport.pre_1bar": "Pre: 1c",
   "transport.pre_2bars": "Pre: 2c",
   "transport.no_fx": "SEM FX",
+  "transport.midi_capture_tooltip": "Recuperar MIDI tocado · Clique esq: inserir na faixa · Clique dir: limpar buffer",
 
   "arrangement.empty.title": "Adicionar uma faixa",
   "arrangement.empty.subtitle": "Arraste áudio aqui ou pressione A para adicionar uma faixa",

@@ -53,6 +53,7 @@
   "transport.pre_1bar": "Pre: 1c",
   "transport.pre_2bars": "Pre: 2c",
   "transport.no_fx": "SIN FX",
+  "transport.midi_capture_tooltip": "Recuperar MIDI tocado · Clic izq: insertar en pista · Clic der: limpiar búfer",
 
   "arrangement.empty.title": "Añadir una pista",
   "arrangement.empty.subtitle": "Arrastra audio aquí o pulsa A para añadir una pista",

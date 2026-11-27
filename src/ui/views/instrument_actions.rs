@@ -81,8 +81,9 @@ impl DawApp {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let count = self.midi_capture.note_count();
-        self.piano_action(
-            "midi-capture-insert",
+        let tip = self.tr("transport.midi_capture_tooltip");
+        pill_button(
+            &self.ds,
             format!("↶ Recuperar MIDI ({count})"),
             false,
             if count > 0 {
@@ -90,8 +91,24 @@ impl DawApp {
             } else {
                 self.ds.muted
             },
-            cx,
-            |this| this.capture_midi_to_track(),
+        )
+        .id("midi-capture-insert")
+        .tooltip(move |window, cx| gpui::component::tooltip::Tooltip::new(tip).build(window, cx))
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(|this, _, _, cx| {
+                this.capture_midi_to_track();
+                cx.stop_propagation();
+                cx.notify();
+            }),
+        )
+        .on_mouse_down(
+            MouseButton::Right,
+            cx.listener(|this, _, _, cx| {
+                this.clear_midi_capture_buffer();
+                cx.stop_propagation();
+                cx.notify();
+            }),
         )
     }
 

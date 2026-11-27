@@ -53,6 +53,7 @@
   "transport.pre_1bar": "Pre: 1b",
   "transport.pre_2bars": "Pre: 2b",
   "transport.no_fx": "NO FX",
+  "transport.midi_capture_tooltip": "MIDI Capture · Left-click: insert on track · Right-click: clear buffer",
 
   "arrangement.empty.title": "Add a track",
   "arrangement.empty.subtitle": "Drag audio here or press A to add a track",

@@ -53,6 +53,7 @@
   "transport.pre_1bar": "プリ: 1小節",
   "transport.pre_2bars": "プリ: 2小節",
   "transport.no_fx": "FXなし",
+  "transport.midi_capture_tooltip": "MIDI キャプチャ · 左クリック: トラックに挿入 · 右クリック: バッファを消去",
 
   "arrangement.empty.title": "トラックを追加",
   "arrangement.empty.subtitle": "ここにオーディオをドラッグするか、A キーでトラックを追加",

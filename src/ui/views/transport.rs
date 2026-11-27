@@ -366,15 +366,28 @@ impl DawApp {
                     }),
                 ),
             )
-            .child(
-                capsule_toggle(ds, midi_label, false, midi_color, btn_h).on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(|this, _, _, cx| {
-                        this.capture_midi_to_track();
-                        cx.notify();
-                    }),
-                ),
-            )
+            .child({
+                let midi_tip = self.tr("transport.midi_capture_tooltip");
+                capsule_toggle(ds, midi_label, false, midi_color, btn_h)
+                    .id("transport-midi-capture")
+                    .tooltip(move |window, cx| Tooltip::new(midi_tip).build(window, cx))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, cx| {
+                            this.capture_midi_to_track();
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    )
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(|this, _, _, cx| {
+                            this.clear_midi_capture_buffer();
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    )
+            })
     }
 
     fn render_timing_lcd(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {

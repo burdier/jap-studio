@@ -53,6 +53,7 @@
   "transport.pre_1bar": "Pré : 1m",
   "transport.pre_2bars": "Pré : 2m",
   "transport.no_fx": "SANS FX",
+  "transport.midi_capture_tooltip": "Capture MIDI · Clic gauche : insérer sur la piste · Clic droit : vider le tampon",
 
   "arrangement.empty.title": "Ajouter une piste",
   "arrangement.empty.subtitle": "Glissez un fichier audio ici ou appuyez sur A pour ajouter une piste",
