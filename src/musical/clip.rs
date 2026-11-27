@@ -411,6 +411,23 @@ impl MidiCapture {
         )
     }
 
+    /// Devuelve las notas capturadas con tiempos normalizados desde `Tick(0)`,
+    /// preservando el ritmo relativo, duraciones y velocidades de acordes o melodías.
+    pub fn normalized_notes(&mut self, now_ns: u64, bpm: f64) -> Vec<CapturedNote> {
+        self.flush_active(now_ns, self.capture_bpm.unwrap_or(bpm));
+        if self.notes.is_empty() {
+            return Vec::new();
+        }
+        let min_start = self.notes.iter().map(|n| n.start.0).min().unwrap_or(0);
+        let mut sorted = self.notes.clone();
+        sorted.sort_by_key(|n| (n.start.0, n.pitch));
+        for note in &mut sorted {
+            note.start = Tick((note.start.0 - min_start).max(0));
+            note.duration = Tick(note.duration.0.max(1));
+        }
+        sorted
+    }
+
     /// Normaliza el inicio a la primera nota y redondea la longitud al compás vigente.
     pub fn to_clip_with_meter(
         &mut self,
@@ -464,6 +481,49 @@ fn ns_to_tick(elapsed_ns: u64, bpm: f64) -> Tick {
 mod tests {
     use super::*;
     use crate::musical::time::DEFAULT_BPM;
+
+    #[test]
+    fn normalized_notes_preserves_chords_and_relative_timing() {
+        let mut capture = MidiCapture::new();
+        let bpm = DEFAULT_BPM;
+        let beat_ns = 500_000_000_u64; // 120 BPM => 0.5s por negra
+        // Acorde 1: C4-E4-G4 en t = 1s..1.5s
+        for p in [60, 64, 67] {
+            capture.record(
+                MidiMessage::NoteOn {
+                    note: p,
+                    velocity: 96,
+                },
+                2 * beat_ns,
+                bpm,
+            );
+        }
+        for p in [60, 64, 67] {
+            capture.record(MidiMessage::NoteOff { note: p }, 3 * beat_ns, bpm);
+        }
+        // Acorde 2: F4-A4-C5 en t = 2s..2.5s (1 negra después del fin del primero)
+        for p in [65, 69, 72] {
+            capture.record(
+                MidiMessage::NoteOn {
+                    note: p,
+                    velocity: 104,
+                },
+                4 * beat_ns,
+                bpm,
+            );
+        }
+        for p in [65, 69, 72] {
+            capture.record(MidiMessage::NoteOff { note: p }, 5 * beat_ns, bpm);
+        }
+        let notes = capture.normalized_notes(6 * beat_ns, bpm);
+        assert_eq!(notes.len(), 6);
+        assert_eq!(notes[0].start, Tick(0));
+        assert_eq!(notes[0].pitch, 60);
+        assert_eq!(notes[0].duration, Tick(PPQ));
+        assert_eq!(notes[3].start, Tick(2 * PPQ));
+        assert_eq!(notes[3].pitch, 65);
+        assert_eq!(notes[3].velocity, 104);
+    }
 
     #[test]
     fn captured_notes_build_normalized_midi_clip_with_bar_aligned_length() {

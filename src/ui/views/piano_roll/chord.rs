@@ -520,5 +520,22 @@ impl DawApp {
                             .justify_center(),
                     ),
             )
+            .child({
+                let captured_count = self.midi_capture.note_count();
+                let has_captured = captured_count > 0;
+                let recover_label = if has_captured {
+                    format!("↶ Recuperar MIDI ({captured_count})")
+                } else {
+                    "↶ Recuperar MIDI".into()
+                };
+                self.roll_button(
+                    recover_label,
+                    has_captured,
+                    RollAction::ChordRecoverMidi,
+                    cx,
+                )
+                .w_full()
+                .justify_center()
+            })
     }
 }

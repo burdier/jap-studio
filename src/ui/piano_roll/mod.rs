@@ -162,6 +162,7 @@ pub(super) enum RollAction {
     ChordStrum(i16),
     ChordInsertAtCursor,
     ChordApplySelection,
+    ChordRecoverMidi,
     ChordSequenceUnit(chord_sequence::ChordUnit),
     ChordSequenceSlot(usize),
     ChordSequenceReplace(usize),

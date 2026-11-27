@@ -189,4 +189,104 @@ impl DawApp {
         self.piano_roll.hint = self.status_message.clone();
         cx.notify();
     }
+
+    /// Recupera en el clip MIDI abierto (o crea un clip nuevo en la pista) las notas y acordes
+    /// tocados recientemente en Hay Chord (con pads del ratón o con teclado MIDI).
+    pub(super) fn recover_chord_midi_into_roll(&mut self, cx: &mut Context<Self>) {
+        self.release_chord_audition();
+        self.release_midi_chord_expander();
+        let now_ns = self.session_epoch.elapsed().as_nanos() as u64;
+        let bpm = self.timeline.tempo.bpm();
+        if self.timeline.midi_clip.is_none() {
+            self.capture_midi_to_track();
+            self.midi_capture.clear();
+            self.piano_roll.hint = self.status_message.clone();
+            cx.notify();
+            return;
+        }
+        if self
+            .timeline
+            .midi_clip
+            .as_ref()
+            .is_some_and(|c| c.props.locked)
+        {
+            self.status_message = "Clip MIDI bloqueado".into();
+            self.piano_roll.hint = self.status_message.clone();
+            cx.notify();
+            return;
+        }
+        let captured = self.midi_capture.normalized_notes(now_ns, bpm);
+        if captured.is_empty() {
+            self.status_message =
+                "No hay acordes MIDI capturados · toca los pads o activa el teclado MIDI primero"
+                    .into();
+            self.piano_roll.hint = self.status_message.clone();
+            cx.notify();
+            return;
+        }
+        let clip_track = self.timeline.midi_clip.as_ref().unwrap().track;
+        let id = self
+            .tracks
+            .get(clip_track)
+            .and_then(|track| track.instrument)
+            .unwrap_or(self.instrument.id());
+        let origin = Tick(self.piano_roll.cursor.0.max(0));
+        let max_end = captured
+            .iter()
+            .map(|n| origin.0.saturating_add(n.start.0).saturating_add(n.duration.0))
+            .max()
+            .unwrap_or(origin.0 + elevate::musical::time::PPQ);
+        let mut pattern = self.timeline.midi_clip.as_ref().unwrap().pattern.clone();
+        if max_end > pattern.length().0 {
+            let bar = self.timeline.meter.ticks_per_bar().max(1);
+            let extended = ((max_end + bar - 1) / bar).max(1) * bar;
+            if let Err(error) = pattern.resize(Tick(extended)) {
+                self.status_message = error.to_string();
+                self.piano_roll.hint = self.status_message.clone();
+                cx.notify();
+                return;
+            }
+        }
+        let mut selected = Vec::with_capacity(captured.len());
+        let mut last_end = origin.0;
+        for note in captured {
+            let start = Tick(origin.0.saturating_add(note.start.0));
+            let remaining = (pattern.length().0 - start.0).max(1);
+            let duration = Tick(note.duration.0.min(remaining).max(1));
+            if let Ok(note_id) = pattern.add_note(id, start, duration, note.pitch, note.velocity) {
+                let _ = pattern.set_note_property(
+                    note_id,
+                    elevate::musical::note_expression::NoteProperty::ReleaseVelocity,
+                    i16::from(note.release_velocity),
+                );
+                last_end = last_end.max(start.0 + duration.0);
+                selected.push(note_id);
+            }
+        }
+        if selected.is_empty() {
+            self.status_message = "No se pudieron insertar las notas capturadas".into();
+            self.piano_roll.hint = self.status_message.clone();
+            cx.notify();
+            return;
+        }
+        if let Some(clip) = self.timeline.midi_clip.as_mut() {
+            clip.replace_pattern(pattern);
+        }
+        self.midi_capture.clear();
+        self.piano_roll.selected = selected.first().copied();
+        self.piano_roll.selected_notes = selected;
+        let clip_len = self
+            .timeline
+            .midi_clip
+            .as_ref()
+            .map_or(last_end, |c| c.pattern.length().0);
+        self.piano_roll.cursor = Tick(last_end.min(clip_len.saturating_sub(1)));
+        self.publish_clip_edit();
+        self.status_message = format!(
+            "↶ MIDI recuperado en el clip: {} notas",
+            self.piano_roll.selected_notes.len()
+        );
+        self.piano_roll.hint = self.status_message.clone();
+        cx.notify();
+    }
 }

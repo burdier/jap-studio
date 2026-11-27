@@ -612,7 +612,25 @@ impl DawApp {
                     if id == self.active_sampler_id {
                         self.sampler_midi(message);
                     } else if let Some(sampler) = self.sampler_instances.get_mut(&id) {
+                        let now_ns = self.session_epoch.elapsed().as_nanos() as u64;
+                        let bpm = self.timeline.tempo.bpm();
                         match message {
+                            MidiMessage::NoteOn { note, velocity } => {
+                                if let Some(player) = &self.player
+                                    && player.has_instrument(id)
+                                {
+                                    if sampler.note_on_shared(note) {
+                                        if player.send_live_midi(id, message) {
+                                            self.midi_capture.record(message, now_ns, bpm);
+                                        } else {
+                                            sampler.note_off_shared(note);
+                                        }
+                                    }
+                                } else {
+                                    sampler.note_on(note, velocity);
+                                    self.midi_capture.record(message, now_ns, bpm);
+                                }
+                            }
                             MidiMessage::NoteOff { note } => {
                                 if let Some(player) = &self.player
                                     && player.has_instrument(id)
@@ -622,6 +640,7 @@ impl DawApp {
                                 } else {
                                     sampler.note_off(note);
                                 }
+                                self.midi_capture.record(message, now_ns, bpm);
                             }
                             MidiMessage::AllNotesOff => {
                                 if let Some(player) = &self.player
@@ -630,6 +649,7 @@ impl DawApp {
                                     player.send_live_midi(id, message);
                                 }
                                 sampler.all_off();
+                                self.midi_capture.record(message, now_ns, bpm);
                             }
                             _ => {}
                         }
@@ -655,22 +675,32 @@ impl DawApp {
                             .player
                             .as_ref()
                             .is_some_and(|player| player.has_instrument(id));
+                        let now_ns = self.session_epoch.elapsed().as_nanos() as u64;
+                        let bpm = self.timeline.tempo.bpm();
                         if let Some(synth) = self.synth_instances.get_mut(&id) {
                             match message {
                                 MidiMessage::NoteOn { note, velocity } => {
                                     if player_has {
-                                        if synth.note_on_shared(note, velocity)
-                                            && !self
+                                        if synth.note_on_shared(note, velocity) {
+                                            if self
                                                 .player
                                                 .as_ref()
                                                 .is_some_and(|p| p.send_live_midi(id, message))
-                                        {
-                                            synth.note_off_shared(note);
+                                            {
+                                                self.midi_capture.record(message, now_ns, bpm);
+                                            } else {
+                                                synth.note_off_shared(note);
+                                            }
                                         }
                                     } else if let Some((gain, pan, fx)) = mix {
-                                        let _ = synth.note_on(
-                                            note, velocity, gain, utility, pan, fx,
-                                        );
+                                        if matches!(
+                                            synth.note_on(
+                                                note, velocity, gain, utility, pan, fx
+                                            ),
+                                            Ok(true)
+                                        ) {
+                                            self.midi_capture.record(message, now_ns, bpm);
+                                        }
                                     }
                                 }
                                 MidiMessage::NoteOff { note } => {
@@ -682,12 +712,14 @@ impl DawApp {
                                     } else {
                                         synth.note_off(note);
                                     }
+                                    self.midi_capture.record(message, now_ns, bpm);
                                 }
                                 MidiMessage::AllNotesOff => {
                                     if player_has && let Some(player) = &self.player {
                                         player.send_live_midi(id, message);
                                     }
                                     synth.all_notes_off();
+                                    self.midi_capture.record(message, now_ns, bpm);
                                 }
                                 _ => {}
                             }

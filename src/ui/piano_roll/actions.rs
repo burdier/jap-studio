@@ -269,6 +269,9 @@ impl DawApp {
             RollAction::ChordApplySelection => {
                 self.apply_chord_to_selection(cx);
             }
+            RollAction::ChordRecoverMidi => {
+                self.recover_chord_midi_into_roll(cx);
+            }
             RollAction::ChordSequenceUnit(unit) => {
                 self.piano_roll.chord_sequence.unit = unit;
             }
