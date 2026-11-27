@@ -48,23 +48,28 @@ pub(super) fn load(path: &Path, override_dir: Option<&Path>) -> Result<Imported,
     let mut session = DrumSession::default();
     let mut missing = Vec::new();
     let mut ids = HashMap::new();
-    let mut base_paths = vec![
-        PathBuf::from("/usr/share/hydrogen/data/drumkits"),
-        PathBuf::from("/usr/local/share/hydrogen/data/drumkits"),
-    ];
-    let flatpak =
-        "app/org.hydrogenmusic.Hydrogen/current/active/files/share/hydrogen/data/drumkits";
-    base_paths.push(Path::new("/var/lib/flatpak").join(flatpak));
-    if let Some(home) = dirs::home_dir() {
+    let mut base_paths =
+        elevate::paths::AppPaths::effective_paths(elevate::paths::PathGroup::DrumKits);
+    #[cfg(target_os = "linux")]
+    {
         base_paths.extend([
-            home.join(".hydrogen/data/drumkits"),
-            home.join(".var/app/org.hydrogenmusic.Hydrogen/data/hydrogen/data/drumkits"),
-            home.join(".local/share/hydrogen/data/drumkits"),
-            home.join(".local/share/flatpak").join(flatpak),
+            PathBuf::from("/usr/share/hydrogen/data/drumkits"),
+            PathBuf::from("/usr/local/share/hydrogen/data/drumkits"),
         ]);
+        let flatpak =
+            "app/org.hydrogenmusic.Hydrogen/current/active/files/share/hydrogen/data/drumkits";
+        base_paths.push(Path::new("/var/lib/flatpak").join(flatpak));
+        if let Some(home) = dirs::home_dir() {
+            base_paths.extend([
+                home.join(".hydrogen/data/drumkits"),
+                home.join(".var/app/org.hydrogenmusic.Hydrogen/data/hydrogen/data/drumkits"),
+                home.join(".local/share/hydrogen/data/drumkits"),
+                home.join(".local/share/flatpak").join(flatpak),
+            ]);
+        }
     }
     if let Some(data) = dirs::data_dir() {
-        base_paths.push(data.join("hydrogen/data/drumkits"));
+        base_paths.push(data.join("hydrogen").join("data").join("drumkits"));
     }
     for node in instruments
         .children

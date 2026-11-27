@@ -5,6 +5,7 @@ pub mod devices;
 pub mod explorer;
 pub mod export;
 pub mod musical;
+pub mod paths;
 pub mod primitives;
 pub mod project;
 pub mod scripting;

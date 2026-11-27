@@ -36,18 +36,7 @@ impl InstalledInstrument {
 /// Enumera bundles candidatos sin ejecutar código. El adaptador de audio consulta
 /// la fábrica en un proceso separado antes de ofrecer sus clases en el catálogo.
 pub fn discover_instruments() -> Vec<InstalledInstrument> {
-    let mut roots = Vec::new();
-    if let Some(home) = std::env::var_os("HOME") {
-        roots.push(PathBuf::from(home).join(".vst3"));
-    }
-    roots.extend([
-        PathBuf::from("/usr/lib/vst3"),
-        PathBuf::from("/usr/lib64/vst3"),
-        PathBuf::from("/usr/local/lib/vst3"),
-    ]);
-    if let Some(paths) = std::env::var_os("VST3_PATH") {
-        roots.extend(std::env::split_paths(&paths));
-    }
+    let roots = crate::paths::AppPaths::effective_paths(crate::paths::PathGroup::Vst3);
     let mut seen = HashSet::new();
     let mut instruments = Vec::new();
     let mut budget = 8192;
@@ -56,6 +45,42 @@ pub fn discover_instruments() -> Vec<InstalledInstrument> {
     }
     instruments.sort_by(|a, b| a.name.cmp(&b.name).then(a.bundle.cmp(&b.bundle)));
     instruments
+}
+
+fn vst3_binary_exists(bundle: &Path, name: &str) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        bundle
+            .join("Contents")
+            .join(format!("{}-linux", std::env::consts::ARCH))
+            .join(format!("{name}.so"))
+            .is_file()
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if bundle.is_file() {
+            return true;
+        }
+        let arch = match std::env::consts::ARCH {
+            "x86_64" => "x86_64-win",
+            "aarch64" => "arm64-win",
+            other => other,
+        };
+        bundle
+            .join("Contents")
+            .join(arch)
+            .join(format!("{name}.vst3"))
+            .is_file()
+    }
+    #[cfg(target_os = "macos")]
+    {
+        bundle.join("Contents").join("MacOS").join(name).is_file()
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+    {
+        let _ = (bundle, name);
+        false
+    }
 }
 
 fn visit(
@@ -77,14 +102,10 @@ fn visit(
     }
     if path
         .extension()
-        .is_some_and(|extension| extension == "vst3")
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("vst3"))
     {
         let name = path.file_stem().unwrap_or_default().to_string_lossy();
-        let module = path
-            .join("Contents")
-            .join(format!("{}-linux", std::env::consts::ARCH))
-            .join(format!("{name}.so"));
-        if module.is_file() {
+        if vst3_binary_exists(path, &name) {
             let bridged = path
                 .components()
                 .chain(canonical.components())

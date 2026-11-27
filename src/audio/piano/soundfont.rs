@@ -123,22 +123,23 @@ pub(crate) fn resolve_path(raw: &str) -> Option<PathBuf> {
 }
 
 fn candidate_roots() -> Vec<PathBuf> {
-    let mut roots = vec![
+    let mut roots = elevate::paths::AppPaths::effective_paths(elevate::paths::PathGroup::SoundFonts);
+    let extras = [
         Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/soundfonts"),
         PathBuf::from("assets/soundfonts"),
     ];
+    for p in extras {
+        if !roots.contains(&p) {
+            roots.push(p);
+        }
+    }
     if let Ok(executable) = std::env::current_exe()
         && let Some(directory) = executable.parent()
     {
-        roots.push(directory.join("assets/soundfonts"));
-    }
-    if let Some(data_home) = std::env::var_os("XDG_DATA_HOME") {
-        roots.push(PathBuf::from(data_home).join("jap-studio/soundfonts"));
-    }
-    if let Some(home) = std::env::var_os("HOME") {
-        let home = PathBuf::from(home);
-        roots.push(home.join(".local/share/jap-studio/soundfonts"));
-        roots.push(home.join("Soundfonts"));
+        let beside = directory.join("assets/soundfonts");
+        if !roots.contains(&beside) {
+            roots.push(beside);
+        }
     }
     roots
 }

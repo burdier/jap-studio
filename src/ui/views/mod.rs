@@ -28,6 +28,7 @@ mod settings_appearance;
 mod settings_audio;
 mod settings_export;
 mod settings_midi;
+mod settings_paths;
 mod settings_shortcuts;
 mod settings_tracks;
 mod synth;

@@ -140,6 +140,7 @@ impl DawApp {
                                     SettingsCategory::Audio => {
                                         self.render_audio_settings(window, cx)
                                     }
+                                    SettingsCategory::Paths => self.render_paths_settings(cx),
                                     SettingsCategory::Tracks => self.render_track_settings(cx),
                                     SettingsCategory::Export => self.render_export_settings(cx),
                                     SettingsCategory::MidiMap => self.render_midi_settings(cx),

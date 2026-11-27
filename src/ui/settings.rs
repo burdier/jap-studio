@@ -12,15 +12,17 @@ pub(super) enum SettingsCategory {
     #[default]
     Appearance,
     Audio,
+    Paths,
     Tracks,
     Export,
     MidiMap,
     Shortcuts,
 }
 impl SettingsCategory {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Appearance,
         Self::Audio,
+        Self::Paths,
         Self::Tracks,
         Self::Export,
         Self::MidiMap,
@@ -30,6 +32,7 @@ impl SettingsCategory {
         match self {
             Self::Audio => "Audio",
             Self::Appearance => "Apariencia",
+            Self::Paths => "Rutas",
             Self::Tracks => "Pistas",
             Self::Export => "Exportación",
             Self::MidiMap => "MIDI Learn",
@@ -44,6 +47,9 @@ pub(super) struct SettingsUi {
     pub category: SettingsCategory,
     pub audio: super::audio_preferences::AudioPreferences,
     pub export: super::export_preferences::ExportPreferences,
+    pub paths: elevate::paths::AppPaths,
+    pub paths_picker: Option<gpui::Task<()>>,
+    pub paths_save_error: Option<String>,
     appearance_save_error: Option<String>,
 }
 
@@ -52,6 +58,7 @@ impl SettingsUi {
         Self {
             export: super::export_preferences::ExportPreferences::load(),
             audio: super::audio_preferences::AudioPreferences::load(),
+            paths: elevate::paths::AppPaths::load(),
             ..Self::default()
         }
     }
@@ -178,6 +185,76 @@ impl DawApp {
             "oculto"
         };
         self.status_message = format!("TCP {}: {state}", widget.label());
+    }
+
+    pub(in crate::ui) fn choose_config_path_folder(
+        &mut self,
+        group: elevate::paths::PathGroup,
+        cx: &mut gpui::Context<Self>,
+    ) {
+        if self.settings.paths_picker.is_some() {
+            return;
+        }
+        let prompt = cx.prompt_for_paths(gpui::PathPromptOptions {
+            files: false,
+            directories: true,
+            multiple: false,
+            prompt: Some(format!("Añadir carpeta para {}", group.label()).into()),
+        });
+        self.settings.paths_picker = Some(cx.spawn(async move |this, cx| {
+            let result = prompt.await;
+            let _ = this.update(cx, |this, cx| {
+                this.settings.paths_picker = None;
+                if let Ok(Ok(Some(paths))) = result
+                    && let Some(dir) = paths.into_iter().next()
+                {
+                    if this.settings.paths.add_path(group, dir) {
+                        this.persist_config_paths(group);
+                    } else {
+                        this.status_message = "Esa carpeta ya está configurada".into();
+                    }
+                }
+                cx.notify();
+            });
+        }));
+    }
+
+    pub(in crate::ui) fn remove_config_path(
+        &mut self,
+        group: elevate::paths::PathGroup,
+        index: usize,
+    ) {
+        if self.settings.paths.remove_path(group, index) {
+            self.persist_config_paths(group);
+        }
+    }
+
+    pub(in crate::ui) fn reset_config_path_group(&mut self, group: elevate::paths::PathGroup) {
+        self.settings.paths.reset_group(group);
+        self.persist_config_paths(group);
+    }
+
+    pub(in crate::ui) fn reset_all_config_paths(&mut self) {
+        self.settings.paths.reset_all();
+        self.persist_config_paths(elevate::paths::PathGroup::Vst3);
+        self.synth_ui.vital_library_loaded = false;
+    }
+
+    fn persist_config_paths(&mut self, group: elevate::paths::PathGroup) {
+        match self.settings.paths.save() {
+            Ok(()) => {
+                self.settings.paths_save_error = None;
+                if group == elevate::paths::PathGroup::SynthPresets {
+                    self.synth_ui.vital_library = elevate::devices::vital_import::discover_vital_presets();
+                    self.synth_ui.vital_library_loaded = true;
+                }
+                self.status_message = format!("Rutas · {} guardado", group.label());
+            }
+            Err(err) => {
+                self.settings.paths_save_error = Some(err.clone());
+                self.status_message = format!("No se pudo guardar paths.profile: {err}");
+            }
+        }
     }
 }
 

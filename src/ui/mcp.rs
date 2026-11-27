@@ -1677,6 +1677,12 @@ fn discover_library_roots(extra: Option<&Path>) -> Vec<PathBuf> {
     if let Some(dir) = extra {
         push_unique(dir.to_path_buf());
     }
+    for p in elevate::paths::AppPaths::effective_paths(elevate::paths::PathGroup::Samples) {
+        push_unique(p);
+    }
+    for p in elevate::paths::AppPaths::effective_paths(elevate::paths::PathGroup::DrumKits) {
+        push_unique(p);
+    }
     if let Some(cfg) = dirs::config_dir() {
         let libs = cfg.join("hay-daw/libraries");
         // Cargar con el mismo formato hex UTF-8 del Explorer visual.

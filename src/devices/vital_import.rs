@@ -721,7 +721,7 @@ fn map_vital_target(dst: &str) -> Option<ModTarget> {
     }
 }
 
-/// Extrae un `.vitalbank` (archivo ZIP estándar) a `~/.local/share/jap-studio/presets/vital/<banco>/`.
+/// Extrae un `.vitalbank` (archivo ZIP estándar) a `<data_local>/jap-studio/presets/vital/<banco>/`.
 pub fn extract_vitalbank(bank_path: &Path) -> Result<Vec<VitalPresetEntry>, String> {
     let base = dirs::data_local_dir()
         .ok_or("No se encontró directorio local de datos")?
@@ -735,6 +735,7 @@ pub fn extract_vitalbank(bank_path: &Path) -> Result<Vec<VitalPresetEntry>, Stri
         .into_owned();
     let dest = base.join(&bank_name);
     std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
     let status = std::process::Command::new("unzip")
         .arg("-oq")
         .arg(bank_path)
@@ -742,6 +743,16 @@ pub fn extract_vitalbank(bank_path: &Path) -> Result<Vec<VitalPresetEntry>, Stri
         .arg(&dest)
         .status()
         .map_err(|e| format!("No se pudo ejecutar unzip para .vitalbank: {e}"))?;
+    #[cfg(windows)]
+    let status = {
+        let src = bank_path.to_string_lossy().replace('\'', "''");
+        let dst = dest.to_string_lossy().replace('\'', "''");
+        let script = format!("Expand-Archive -LiteralPath '{src}' -DestinationPath '{dst}' -Force");
+        std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .status()
+            .map_err(|e| format!("No se pudo ejecutar PowerShell para .vitalbank: {e}"))?
+    };
     if !status.success() {
         return Err("No se pudo descomprimir el archivo .vitalbank".into());
     }
@@ -751,29 +762,9 @@ pub fn extract_vitalbank(bank_path: &Path) -> Result<Vec<VitalPresetEntry>, Stri
     Ok(found)
 }
 
-/// Descubre automáticamente presets `.vital` en las librerías locales del sistema.
+/// Descubre automáticamente presets `.vital` y `.fxp` desde las rutas configuradas en `AppPaths`.
 pub fn discover_vital_presets() -> Vec<VitalPresetEntry> {
-    let mut roots = Vec::new();
-    if let Some(data) = dirs::data_local_dir() {
-        roots.push(data.join("jap-studio").join("presets").join("vital"));
-        roots.push(data.join("vital"));
-    }
-    if let Some(home) = dirs::home_dir() {
-        roots.push(home.join("library"));
-        roots.push(home.join("Music"));
-    }
-    if let Ok(media) = std::fs::read_dir("/run/media") {
-        for user_dir in media.flatten() {
-            if let Ok(mounts) = std::fs::read_dir(user_dir.path()) {
-                for mount in mounts.flatten() {
-                    let lib = mount.path().join("library");
-                    if lib.is_dir() {
-                        roots.push(lib);
-                    }
-                }
-            }
-        }
-    }
+    let roots = crate::paths::AppPaths::effective_paths(crate::paths::PathGroup::SynthPresets);
     let mut found = Vec::new();
     let mut seen_names = std::collections::HashSet::new();
     for root in roots {
