@@ -1,10 +1,222 @@
-//! Motor DSP polifónico en tiempo real de Hay Synth (Espacio + Cuerpo + Intención).
+//! Motor DSP polifónico en tiempo real de Hay Synth (Stage + Voice Lab estilo Vital + Mod Matrix).
 //! 0 asignaciones en render, 0 bloqueos, 0 dependencias externas.
-use elevate::devices::synth::{EnvelopeMode, RoomKind, SynthEngineKind, SynthParams, cc};
+use elevate::devices::synth::{
+    DistMode, EnvelopeMode, FilterKind, LfoShape, ModSource, ModTarget, RoomKind, SynthEngineKind,
+    SynthParams, WarpMode, WavetableKind, cc,
+};
 use std::f32::consts::{PI, TAU};
 
 const MAX_VOICES: usize = 12;
+const MAX_UNISON: usize = 7;
 const PLUCK_BUF: usize = 2048;
+const WT_TABLES: usize = 8;
+const WT_FRAMES: usize = 8;
+const WT_SIZE: usize = 256;
+const CHORUS_BUF: usize = 2048;
+
+/// Banco de 8 wavetables × 8 frames × 256 muestras precomputado fuera del callback RT (~64 KB).
+struct WavetableBank {
+    data: Box<[[[f32; WT_SIZE]; WT_FRAMES]; WT_TABLES]>,
+}
+
+impl WavetableBank {
+    fn new() -> Self {
+        let mut data = Box::new([[[0.0_f32; WT_SIZE]; WT_FRAMES]; WT_TABLES]);
+
+        let build_additive = |dst: &mut [f32; WT_SIZE], amps: &[(usize, f32, f32)]| {
+            let mut max_abs = 1e-5_f32;
+            for i in 0..WT_SIZE {
+                let p = (i as f32 / WT_SIZE as f32) * TAU;
+                let mut s = 0.0_f32;
+                for &(h, a, ph) in amps {
+                    s += a * (p * h as f32 + ph).sin();
+                }
+                dst[i] = s;
+                max_abs = max_abs.max(s.abs());
+            }
+            let inv = 0.95 / max_abs;
+            for x in dst.iter_mut() {
+                *x *= inv;
+            }
+        };
+
+        // 0: BasicShapes (Sine -> Tri -> Saw -> Square -> Pulse)
+        for f in 0..WT_FRAMES {
+            let pos = f as f32 / (WT_FRAMES - 1) as f32;
+            let mut amps = Vec::new();
+            for h in 1..=24usize {
+                let hf = h as f32;
+                let sine_a = if h == 1 { 1.0 } else { 0.0 };
+                let tri_a = if h % 2 == 1 {
+                    let sign = if (h / 2) % 2 == 0 { 1.0 } else { -1.0 };
+                    sign / (hf * hf)
+                } else {
+                    0.0
+                };
+                let saw_a = (if h % 2 == 1 { 1.0 } else { -1.0 }) / hf;
+                let sq_a = if h % 2 == 1 { 1.0 / hf } else { 0.0 };
+                let pulse_a = (PI * hf * 0.22).sin() / hf;
+                let a = if pos < 0.25 {
+                    let t = pos * 4.0;
+                    sine_a * (1.0 - t) + tri_a * t
+                } else if pos < 0.50 {
+                    let t = (pos - 0.25) * 4.0;
+                    tri_a * (1.0 - t) + saw_a * t
+                } else if pos < 0.75 {
+                    let t = (pos - 0.50) * 4.0;
+                    saw_a * (1.0 - t) + sq_a * t
+                } else {
+                    let t = (pos - 0.75) * 4.0;
+                    sq_a * (1.0 - t) + pulse_a * t
+                };
+                if a.abs() > 1e-4 {
+                    amps.push((h, a, 0.0));
+                }
+            }
+            build_additive(&mut data[0][f], &amps);
+        }
+
+        // 1: AnalogWarm (armónicos tipo Moog/Juno con rolloff cálido)
+        for f in 0..WT_FRAMES {
+            let pos = f as f32 / (WT_FRAMES - 1) as f32;
+            let mut amps = Vec::new();
+            for h in 1..=20usize {
+                let hf = h as f32;
+                let tilt = 1.0 / hf.powf(1.35 - pos * 0.55);
+                let even_boost = if h % 2 == 0 { 0.35 + pos * 0.65 } else { 1.0 };
+                amps.push((h, tilt * even_boost, (h as f32) * 0.17 * pos));
+            }
+            build_additive(&mut data[1][f], &amps);
+        }
+
+        // 2: DigitalGlass (parciales cristalinos y brillantes)
+        for f in 0..WT_FRAMES {
+            let pos = f as f32 / (WT_FRAMES - 1) as f32;
+            let mut amps = Vec::new();
+            let harmonics = [1, 2, 3, 5, 7, 9, 11, 13, 17, 19, 23];
+            for (k, &h) in harmonics.iter().enumerate() {
+                let weight = ((k as f32 / harmonics.len() as f32) - pos).abs();
+                let a = (-weight * 3.8).exp() / (h as f32).powf(0.45);
+                amps.push((h, a, (k as f32) * 0.6));
+            }
+            build_additive(&mut data[2][f], &amps);
+        }
+
+        // 3: VocalFormant (espectro aditivo de formantes A -> E -> I -> O -> U)
+        for f in 0..WT_FRAMES {
+            let pos = f as f32 / (WT_FRAMES - 1) as f32;
+            let (f1, f2, f3) = vowel_formants(pos);
+            let mut amps = Vec::new();
+            let fund = 140.0_f32;
+            for h in 1..=28usize {
+                let freq = fund * h as f32;
+                let g1 = (-((freq - f1) / 210.0).powi(2)).exp();
+                let g2 = (-((freq - f2) / 340.0).powi(2)).exp() * 0.85;
+                let g3 = (-((freq - f3) / 480.0).powi(2)).exp() * 0.45;
+                let a = (0.08 / h as f32) + g1 + g2 + g3;
+                amps.push((h, a, 0.0));
+            }
+            build_additive(&mut data[3][f], &amps);
+        }
+
+        // 4: GrowlBass (Reese / Dubstep formantes agresivos + muescas)
+        for f in 0..WT_FRAMES {
+            let pos = f as f32 / (WT_FRAMES - 1) as f32;
+            let mut amps = Vec::new();
+            let center = 3.0 + pos * 14.0;
+            for h in 1..=28usize {
+                let hf = h as f32;
+                let base = 0.65 / hf.powf(0.7);
+                let peak = (-((hf - center) / 2.2).powi(2)).exp() * 1.1;
+                let notch = 1.0 - 0.75 * (-((hf - (center + 4.0)) / 1.4).powi(2)).exp();
+                amps.push((h, (base + peak) * notch, (hf * 0.35 * pos)));
+            }
+            build_additive(&mut data[4][f], &amps);
+        }
+
+        // 5: OrganBell (drawbars -> campana aditiva)
+        for f in 0..WT_FRAMES {
+            let pos = f as f32 / (WT_FRAMES - 1) as f32;
+            let mut amps = Vec::new();
+            let drawbars = [
+                (1, 1.0),
+                (2, 0.75),
+                (3, 0.60),
+                (4, 0.50),
+                (6, 0.35 + pos * 0.3),
+                (8, 0.20 + pos * 0.45),
+                (10, pos * 0.38),
+                (12, pos * 0.32),
+                (15, pos * 0.25),
+            ];
+            for &(h, a) in &drawbars {
+                amps.push((h, a, 0.0));
+            }
+            build_additive(&mut data[5][f], &amps);
+        }
+
+        // 6: PluckString (cuerda tensa con armónicos nítidos)
+        for f in 0..WT_FRAMES {
+            let pos = f as f32 / (WT_FRAMES - 1) as f32;
+            let pick = 0.14 + pos * 0.34;
+            let mut amps = Vec::new();
+            for h in 1..=24usize {
+                let hf = h as f32;
+                let comb = (PI * hf * pick).sin().abs();
+                let a = comb / hf.powf(0.95);
+                if a > 1e-4 {
+                    amps.push((h, a, 0.0));
+                }
+            }
+            build_additive(&mut data[6][f], &amps);
+        }
+
+        // 7: HarshFold (wavefolder pre-horneado por frames)
+        for f in 0..WT_FRAMES {
+            let pos = f as f32 / (WT_FRAMES - 1) as f32;
+            let fold = 1.2 + pos * 4.5;
+            let mut max_abs = 1e-5_f32;
+            for i in 0..WT_SIZE {
+                let p = (i as f32 / WT_SIZE as f32) * TAU;
+                let s = (p.sin() * fold + (p * 2.0).sin() * 0.35 * pos).sin();
+                data[7][f][i] = s;
+                max_abs = max_abs.max(s.abs());
+            }
+            let inv = 0.95 / max_abs;
+            for x in data[7][f].iter_mut() {
+                *x *= inv;
+            }
+        }
+
+        Self { data }
+    }
+
+    #[inline]
+    fn sample(&self, kind: WavetableKind, frame_pos: f32, phase: f32) -> f32 {
+        let t = (kind as usize).min(WT_TABLES - 1);
+        let fp = frame_pos.clamp(0.0, 1.0) * (WT_FRAMES - 1) as f32;
+        let f0 = (fp.floor() as usize).min(WT_FRAMES - 2);
+        let f1 = f0 + 1;
+        let ff = fp - f0 as f32;
+
+        let p = phase.fract();
+        let p = if p < 0.0 { p + 1.0 } else { p };
+        let idx_f = p * WT_SIZE as f32;
+        let i0 = (idx_f as usize) & (WT_SIZE - 1);
+        let i1 = (i0 + 1) & (WT_SIZE - 1);
+        let pf = idx_f - idx_f.floor();
+
+        let a0 = self.data[t][f0][i0];
+        let a1 = self.data[t][f0][i1];
+        let s0 = a0 + (a1 - a0) * pf;
+
+        let b0 = self.data[t][f1][i0];
+        let b1 = self.data[t][f1][i1];
+        let s1 = b0 + (b1 - b0) * pf;
+
+        s0 + (s1 - s0) * ff
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum EnvStage {
@@ -15,7 +227,7 @@ enum EnvStage {
     Release,
 }
 
-/// Filtro TPT SVF mono (pasa-bajos + pasa-banda) estable a cualquier frecuencia.
+/// Filtro TPT SVF mono (pasa-bajos, pasa-banda, pasa-altos, notch) estable a cualquier frecuencia.
 #[derive(Clone, Copy, Default)]
 struct Svf {
     ic1eq: f32,
@@ -29,10 +241,10 @@ impl Svf {
     }
 
     #[inline]
-    fn process(&mut self, v0: f32, cutoff_hz: f32, q: f32, sr: f32) -> (f32, f32) {
-        let fc = cutoff_hz.clamp(25.0, sr * 0.44);
+    fn process_all(&mut self, v0: f32, cutoff_hz: f32, q: f32, sr: f32) -> (f32, f32, f32, f32) {
+        let fc = cutoff_hz.clamp(22.0, sr * 0.44);
         let g = (PI * fc / sr).tan();
-        let k = 1.0 / q.clamp(0.5, 10.0);
+        let k = 1.0 / q.clamp(0.5, 11.0);
         let a1 = 1.0 / (1.0 + g * (g + k));
         let a2 = g * a1;
         let a3 = g * a2;
@@ -41,8 +253,102 @@ impl Svf {
         let v2 = self.ic2eq + a2 * self.ic1eq + a3 * v3;
         self.ic1eq = 2.0 * v1 - self.ic1eq;
         self.ic2eq = 2.0 * v2 - self.ic2eq;
-        (v2, v1) // (lp, bp)
+        let hp = v0 - k * v1 - v2;
+        let notch = v0 - k * v1;
+        (v2, v1, hp, notch) // (lp, bp, hp, notch)
     }
+
+    #[inline]
+    fn process(&mut self, v0: f32, cutoff_hz: f32, q: f32, sr: f32) -> (f32, f32) {
+        let (lp, bp, _, _) = self.process_all(v0, cutoff_hz, q, sr);
+        (lp, bp)
+    }
+}
+
+/// Chorus estéreo preasignado (0 allocs en RT).
+struct ChorusUnit {
+    buf_l: Box<[f32; CHORUS_BUF]>,
+    buf_r: Box<[f32; CHORUS_BUF]>,
+    write_idx: usize,
+    phase: f32,
+}
+
+impl ChorusUnit {
+    fn new() -> Self {
+        Self {
+            buf_l: Box::new([0.0; CHORUS_BUF]),
+            buf_r: Box::new([0.0; CHORUS_BUF]),
+            write_idx: 0,
+            phase: 0.0,
+        }
+    }
+
+    fn reset(&mut self) {
+        self.buf_l.fill(0.0);
+        self.buf_r.fill(0.0);
+        self.write_idx = 0;
+        self.phase = 0.0;
+    }
+
+    #[inline]
+    fn read_delay(buf: &[f32; CHORUS_BUF], write_idx: usize, delay_samples: f32) -> f32 {
+        let len = CHORUS_BUF as f32;
+        let mut r = write_idx as f32 - delay_samples;
+        while r < 0.0 {
+            r += len;
+        }
+        let i0 = (r as usize) & (CHORUS_BUF - 1);
+        let i1 = (i0 + 1) & (CHORUS_BUF - 1);
+        let frac = r - r.floor();
+        buf[i0] + (buf[i1] - buf[i0]) * frac
+    }
+
+    #[inline]
+    fn process(&mut self, in_l: f32, in_r: f32, mix: f32, rate: f32, sr: f32) -> (f32, f32) {
+        self.buf_l[self.write_idx] = in_l;
+        self.buf_r[self.write_idx] = in_r;
+        let hz = 0.15 + rate * rate * 4.2;
+        self.phase = (self.phase + hz / sr).fract();
+        if mix <= 0.001 {
+            self.write_idx = (self.write_idx + 1) & (CHORUS_BUF - 1);
+            return (in_l, in_r);
+        }
+        let lfo_l = (self.phase * TAU).sin();
+        let lfo_r = ((self.phase + 0.25) * TAU).sin();
+        let base_ms = 0.011 * sr; // ~11 ms
+        let depth = 0.0045 * sr; // ±4.5 ms
+        let dl = (base_ms + lfo_l * depth).clamp(4.0, (CHORUS_BUF - 4) as f32);
+        let dr = (base_ms + lfo_r * depth).clamp(4.0, (CHORUS_BUF - 4) as f32);
+        let wet_l = Self::read_delay(&self.buf_l, self.write_idx, dl);
+        let wet_r = Self::read_delay(&self.buf_r, self.write_idx, dr);
+        self.write_idx = (self.write_idx + 1) & (CHORUS_BUF - 1);
+        let dry = 1.0 - mix * 0.35;
+        (in_l * dry + wet_l * mix * 0.72, in_r * dry + wet_r * mix * 0.72)
+    }
+}
+
+#[derive(Default)]
+struct ModAccum {
+    osc_a_pos: f32,
+    osc_a_warp: f32,
+    osc_a_pitch: f32,
+    osc_a_detune: f32,
+    osc_a_level: f32,
+    osc_b_pos: f32,
+    osc_b_pitch: f32,
+    osc_b_level: f32,
+    sub_level: f32,
+    noise_level: f32,
+    filter_cutoff: f32,
+    filter_res: f32,
+    filter_drive: f32,
+    chorus_mix: f32,
+    dist_drive: f32,
+    distance: f32,
+    lfo1_rate: f32,
+    lfo2_rate: f32,
+    pan: f32,
+    out_gain: f32,
 }
 
 struct Voice {
@@ -51,18 +357,31 @@ struct Voice {
     age: u64,
     velocity: f32,
     pan: f32,
+    voice_rand: f32,
     freq: f32,
     target_freq: f32,
     phase: [f32; 3],
+    osc_a_uni: [f32; MAX_UNISON],
+    osc_b_uni: [f32; MAX_UNISON],
     sub_phase: f32,
     mod_phase: f32,
     lfo_phase: f32,
+    lfo1_phase: f32,
+    lfo2_phase: f32,
+    lfo1_sh: f32,
+    lfo2_sh: f32,
     pitch_env: f32,
     timbre_env: f32,
     env: f32,
     stage: EnvStage,
+    env2: f32,
+    env2_stage: EnvStage,
+    env3: f32,
+    noise_lp: f32,
     svf_l: Svf,
     svf_r: Svf,
+    svf2_l: Svf,
+    svf2_r: Svf,
     formants: [Svf; 3],
     pluck_buf: Box<[f32; PLUCK_BUF]>,
     pluck_idx: usize,
@@ -79,18 +398,31 @@ impl Voice {
             age: 0,
             velocity: 0.0,
             pan: 0.0,
+            voice_rand: 0.0,
             freq: 261.63,
             target_freq: 261.63,
             phase: [0.0; 3],
+            osc_a_uni: [0.0, 0.13, 0.37, 0.59, 0.71, 0.83, 0.91],
+            osc_b_uni: [0.05, 0.19, 0.41, 0.63, 0.77, 0.89, 0.97],
             sub_phase: 0.0,
             mod_phase: 0.0,
             lfo_phase: (seed as f32 * 0.137).fract(),
+            lfo1_phase: (seed as f32 * 0.193).fract(),
+            lfo2_phase: (seed as f32 * 0.311).fract(),
+            lfo1_sh: 0.0,
+            lfo2_sh: 0.0,
             pitch_env: 0.0,
             timbre_env: 0.0,
             env: 0.0,
             stage: EnvStage::Off,
+            env2: 0.0,
+            env2_stage: EnvStage::Off,
+            env3: 0.0,
+            noise_lp: 0.0,
             svf_l: Svf::default(),
             svf_r: Svf::default(),
+            svf2_l: Svf::default(),
+            svf2_r: Svf::default(),
             formants: [Svf::default(); 3],
             pluck_buf: Box::new([0.0; PLUCK_BUF]),
             pluck_idx: 0,
@@ -126,6 +458,7 @@ impl Voice {
         self.age = age;
         self.velocity = (velocity.max(1) as f32 / 127.0).clamp(0.02, 1.0);
         self.pan = pan.clamp(-1.0, 1.0);
+        self.voice_rand = self.next_noise() * 0.5 + 0.5;
         self.target_freq = target;
         self.freq = if params.glide > 0.02 && start_freq > 15.0 {
             start_freq
@@ -135,13 +468,27 @@ impl Voice {
         self.pitch_env = 1.0;
         self.timbre_env = 1.0;
         self.stage = EnvStage::Attack;
-        // Conservar continuidad si ya había un remanente suave en env.
+        self.env2_stage = EnvStage::Attack;
+        self.env3 = 1.0;
+        if params.voice.lfo1_retrigger {
+            self.lfo1_phase = 0.0;
+            self.lfo1_sh = self.next_noise();
+        }
+        if params.voice.lfo2_retrigger {
+            self.lfo2_phase = 0.0;
+            self.lfo2_sh = self.next_noise();
+        }
         if self.env < 0.001 {
             self.phase = [0.0, 0.21, 0.57];
+            self.osc_a_uni = [0.0, 0.13, 0.37, 0.59, 0.71, 0.83, 0.91];
+            self.osc_b_uni = [0.05, 0.19, 0.41, 0.63, 0.77, 0.89, 0.97];
             self.sub_phase = 0.0;
             self.mod_phase = 0.0;
+            self.env2 = 0.0;
             self.svf_l.reset();
             self.svf_r.reset();
+            self.svf2_l.reset();
+            self.svf2_r.reset();
             for f in &mut self.formants {
                 f.reset();
             }
@@ -165,11 +512,9 @@ impl Voice {
             lp += (n - lp) * vel_bright;
             self.pluck_buf[i] = lp;
         }
-        // Filtro comb por posición de pulsación en la cuerda (como guitarra/arpa real).
         for i in (comb_offset..len).rev() {
             self.pluck_buf[i] -= 0.55 * self.pluck_buf[i - comb_offset];
         }
-        // Quitar DC.
         let mean = self.pluck_buf[..len].iter().sum::<f32>() / len as f32;
         for s in &mut self.pluck_buf[..len] {
             *s = (*s - mean).clamp(-1.0, 1.0);
@@ -276,7 +621,6 @@ impl SpaceUnit {
             self.ap_idx[i] = self.ap_idx[i].wrapping_add(1);
         }
 
-        // Absorción de aire con la distancia: alejar la entidad atenúa suavemente agudos.
         let air_hz = (18_000.0 * (1.0 - distance * 0.72).powi(2)).max(1100.0);
         let air_coeff = (TAU * air_hz / sr).clamp(0.02, 0.99);
         self.air_l += (in_l - self.air_l) * air_coeff;
@@ -294,13 +638,16 @@ impl SpaceUnit {
 pub(crate) struct NativeSynthEngine {
     params: SynthParams,
     sample_rate: u32,
+    wt: WavetableBank,
     voices: Vec<Voice>,
+    chorus: ChorusUnit,
     space: SpaceUnit,
     age_counter: u64,
     last_freq: f32,
     sustain_pedal: bool,
     sustained_notes: [bool; 128],
     pitch_bend_ratio: f32,
+    mod_wheel: f32,
     master_volume: f32,
     bpm: f32,
 }
@@ -308,27 +655,26 @@ pub(crate) struct NativeSynthEngine {
 impl NativeSynthEngine {
     pub fn new(mut params: SynthParams, sample_rate: u32) -> Self {
         params.clamp_all();
+        let sr = sample_rate.max(8_000);
         let voices = (0..MAX_VOICES)
             .map(|i| Voice::new((i as u32 + 1) * 19937))
             .collect();
         Self {
             params,
-            sample_rate: sample_rate.max(8_000),
+            sample_rate: sr,
+            wt: WavetableBank::new(),
             voices,
-            space: SpaceUnit::new(sample_rate.max(8_000)),
+            chorus: ChorusUnit::new(),
+            space: SpaceUnit::new(sr),
             age_counter: 0,
             last_freq: 0.0,
             sustain_pedal: false,
             sustained_notes: [false; 128],
             pitch_bend_ratio: 1.0,
+            mod_wheel: 0.0,
             master_volume: 1.0,
             bpm: 120.0,
         }
-    }
-
-    pub fn set_params(&mut self, mut params: SynthParams) {
-        params.clamp_all();
-        self.params = params;
     }
 
     pub fn control(&mut self, control_id: u8, value: f32) {
@@ -350,6 +696,10 @@ impl NativeSynthEngine {
         }
     }
 
+    pub fn control_param(&mut self, id: u16, value: f32) {
+        self.params.set_param(id, value);
+    }
+
     pub fn set_master_volume(&mut self, volume: f32) {
         self.master_volume = volume.clamp(0.0, 2.0);
     }
@@ -367,7 +717,11 @@ impl NativeSynthEngine {
         }
         self.age_counter = self.age_counter.wrapping_add(1);
         let mono_mode = self.params.engine == SynthEngineKind::Sub808
-            || (self.params.glide >= 0.45 && self.params.engine == SynthEngineKind::FoldAcid);
+            || (self.params.glide >= 0.45
+                && matches!(
+                    self.params.engine,
+                    SynthEngineKind::FoldAcid | SynthEngineKind::Wavetable
+                ));
 
         let slot = if mono_mode {
             0
@@ -417,9 +771,14 @@ impl NativeSynthEngine {
             return;
         }
         for v in &mut self.voices {
-            if v.active && v.note == note && v.stage != EnvStage::Release {
-                if self.params.mode != EnvelopeMode::Hit {
+            if v.active && v.note == note {
+                if v.stage != EnvStage::Release
+                    && (self.params.voice.env1_override || self.params.mode != EnvelopeMode::Hit)
+                {
                     v.stage = EnvStage::Release;
+                }
+                if v.env2_stage != EnvStage::Release {
+                    v.env2_stage = EnvStage::Release;
                 }
             }
         }
@@ -431,6 +790,7 @@ impl NativeSynthEngine {
         for v in &mut self.voices {
             if v.active {
                 v.stage = EnvStage::Release;
+                v.env2_stage = EnvStage::Release;
             }
         }
     }
@@ -442,7 +802,10 @@ impl NativeSynthEngine {
             v.active = false;
             v.stage = EnvStage::Off;
             v.env = 0.0;
+            v.env2 = 0.0;
+            v.env2_stage = EnvStage::Off;
         }
+        self.chorus.reset();
         self.space.reset();
     }
 
@@ -451,6 +814,7 @@ impl NativeSynthEngine {
             0x90 if data2 > 0 => self.note_on(data1, data2, 0.0),
             0x80 | 0x90 => self.note_off(data1),
             0xb0 => match data1 {
+                1 => self.mod_wheel = f32::from(data2) / 127.0,
                 64 => {
                     let down = data2 >= 64;
                     self.sustain_pedal = down;
@@ -464,8 +828,8 @@ impl NativeSynthEngine {
                     }
                 }
                 120 | 123 => self.all_off(),
-                // CC 102..=113: control en vivo durante Play del Arrangement (0..=127).
-                102 => self.control(cc::ENGINE, f32::from(data2.min(6))),
+                // CC 102..=113: control Stage en vivo durante Play del Arrangement.
+                102 => self.control(cc::ENGINE, f32::from(data2.min(7))),
                 103 => self.control(cc::ROOM, f32::from(data2.min(3))),
                 104 => self.control(cc::DISTANCE, f32::from(data2) / 127.0),
                 105 => self.control(cc::SHAPE, f32::from(data2) / 127.0),
@@ -493,24 +857,42 @@ impl NativeSynthEngine {
         let sr = self.sample_rate as f32;
         let inv_sr = 1.0 / sr;
         let params = &self.params;
+        let vp = &params.voice;
 
-        // Tiempos de envolvente según el gesto (Hit / Hold / Swell) y `time`.
+        // Tiempos de ENV 1 (o Mode+Time si env1_override == false).
         let time = params.time;
-        let (base_attack_s, decay_s, sustain_lvl, release_s) = match params.mode {
-            EnvelopeMode::Hit => (0.002, 0.08 + time * time * 2.2, 0.0, 0.04 + time * 0.45),
-            EnvelopeMode::Hold => (
-                0.004 + time * 0.035,
-                0.14 + time * 0.9,
-                0.76,
-                0.08 + time * 1.1,
-            ),
-            EnvelopeMode::Swell => (
-                0.12 + time * time * 1.6,
-                0.35 + time * 1.0,
-                0.86,
-                0.28 + time * 2.2,
-            ),
+        let (base_attack_s, decay_s, sustain_lvl, release_s, is_hit) = if vp.env1_override {
+            (
+                0.0015 + vp.env1_attack * vp.env1_attack * 2.4,
+                0.02 + vp.env1_decay * vp.env1_decay * 3.5,
+                vp.env1_sustain,
+                0.02 + vp.env1_release * vp.env1_release * 4.0,
+                false,
+            )
+        } else {
+            match params.mode {
+                EnvelopeMode::Hit => (0.002, 0.08 + time * time * 2.2, 0.0, 0.04 + time * 0.45, true),
+                EnvelopeMode::Hold => (
+                    0.004 + time * 0.035,
+                    0.14 + time * 0.9,
+                    0.76,
+                    0.08 + time * 1.1,
+                    false,
+                ),
+                EnvelopeMode::Swell => (
+                    0.12 + time * time * 1.6,
+                    0.30 + time * 1.2,
+                    0.85,
+                    0.28 + time * time * 2.6,
+                    false,
+                ),
+            }
         };
+
+        let env2_atk_inc = inv_sr / (0.0015 + vp.env2_attack * vp.env2_attack * 2.2);
+        let env2_dec_mul = (-inv_sr / (0.02 + vp.env2_decay * vp.env2_decay * 3.0)).exp();
+        let env2_rel_mul = (-inv_sr / (0.02 + vp.env2_release * vp.env2_release * 3.0)).exp();
+        let env3_dec_mul = (-inv_sr / (0.012 + vp.env3_decay * vp.env3_decay * 0.9)).exp();
 
         let glide_coeff = if params.glide <= 0.02 {
             1.0
@@ -519,21 +901,25 @@ impl NativeSynthEngine {
             1.0 - (-inv_sr / glide_s).exp()
         };
 
-        // Frecuencia de respiración ligada al tempo del proyecto.
         let lfo_hz = (self.bpm / 60.0) * (0.25 + params.motion * 1.75);
         let lfo_inc = lfo_hz * inv_sr;
-        let out_gain = params.gain * self.master_volume * 0.42;
+        let base_out_gain = params.gain * self.master_volume * 0.42;
 
         for i in 0..frames {
             let mut sum_l = 0.0_f32;
             let mut sum_r = 0.0_f32;
+            let mut bus_chorus_mod = 0.0_f32;
+            let mut bus_dist_mod = 0.0_f32;
+            let mut bus_dist_space_mod = 0.0_f32;
+            let mut bus_out_mod = 0.0_f32;
+            let mut bus_mod_voices = 0_u32;
 
             for v in &mut self.voices {
                 if !v.active {
                     continue;
                 }
 
-                // Intención acoplada a la fuerza del toque (`velocity * touch`).
+                // ── ENV 1 (Amp) ──
                 let vel_eff = 1.0 - params.touch + params.touch * v.velocity;
                 let atk_s = (base_attack_s * (1.25 - 0.65 * vel_eff)).max(0.0015);
                 let atk_inc = inv_sr / atk_s;
@@ -554,14 +940,12 @@ impl NativeSynthEngine {
                     }
                     EnvStage::Decay => {
                         v.env = sustain_lvl + (v.env - sustain_lvl) * dec_mul;
-                        if params.mode == EnvelopeMode::Hit && v.env < 0.0008 {
+                        if is_hit && v.env < 0.0008 {
                             v.env = 0.0;
                             v.stage = EnvStage::Off;
                             v.active = false;
                             continue;
-                        } else if params.mode != EnvelopeMode::Hit
-                            && (v.env - sustain_lvl).abs() < 0.001
-                        {
+                        } else if !is_hit && (v.env - sustain_lvl).abs() < 0.001 {
                             v.env = sustain_lvl;
                             v.stage = EnvStage::Sustain;
                         }
@@ -578,30 +962,178 @@ impl NativeSynthEngine {
                     }
                 }
 
+                // ── ENV 2 (Mod) ──
+                match v.env2_stage {
+                    EnvStage::Off => {}
+                    EnvStage::Attack => {
+                        v.env2 += env2_atk_inc;
+                        if v.env2 >= 1.0 {
+                            v.env2 = 1.0;
+                            v.env2_stage = EnvStage::Decay;
+                        }
+                    }
+                    EnvStage::Decay => {
+                        v.env2 = vp.env2_sustain + (v.env2 - vp.env2_sustain) * env2_dec_mul;
+                        if (v.env2 - vp.env2_sustain).abs() < 0.001 {
+                            v.env2 = vp.env2_sustain;
+                            v.env2_stage = EnvStage::Sustain;
+                        }
+                    }
+                    EnvStage::Sustain => {}
+                    EnvStage::Release => {
+                        v.env2 *= env2_rel_mul;
+                        if v.env2 < 0.0005 {
+                            v.env2 = 0.0;
+                            v.env2_stage = EnvStage::Off;
+                        }
+                    }
+                }
+
+                // ── ENV 3 (Pitch / Punch) y envolventes rápidas ──
+                v.env3 *= env3_dec_mul;
                 v.pitch_env *= (-inv_sr / 0.042).exp();
                 v.timbre_env *= (-inv_sr / (0.10 + time * 0.85)).exp();
                 v.freq += (v.target_freq - v.freq) * glide_coeff;
+
+                // ── LFOs (organic motion + LFO 1 + LFO 2) ──
                 v.lfo_phase = (v.lfo_phase + lfo_inc).fract();
                 let lfo = (v.lfo_phase * TAU).sin();
 
-                // Micro-vibrato orgánico escalado por `motion`.
-                let drift = 1.0 + lfo * params.motion * 0.0055;
-                let hz = (v.freq * self.pitch_bend_ratio * drift).clamp(20.0, sr * 0.42);
+                let lfo1_val = eval_lfo(vp.lfo1_shape, v.lfo1_phase, v.lfo1_sh);
+                let lfo2_val = eval_lfo(vp.lfo2_shape, v.lfo2_phase, v.lfo2_sh);
 
+                // ── Evaluación de la Mod Matrix (12 ranuras) ──
+                let key_norm = ((f32::from(v.note) - 60.0) / 36.0).clamp(-1.0, 1.0);
+                let mut m = ModAccum::default();
+                for slot in &vp.matrix {
+                    if slot.source == ModSource::None
+                        || slot.target == ModTarget::None
+                        || slot.amount.abs() < 1e-4
+                    {
+                        continue;
+                    }
+                    let src = match slot.source {
+                        ModSource::None => 0.0,
+                        ModSource::Env1 => v.env,
+                        ModSource::Env2 => v.env2,
+                        ModSource::Env3 => v.env3,
+                        ModSource::Lfo1 => lfo1_val,
+                        ModSource::Lfo2 => lfo2_val,
+                        ModSource::Velocity => v.velocity,
+                        ModSource::Keytrack => key_norm,
+                        ModSource::ModWheel => self.mod_wheel,
+                        ModSource::Random => v.voice_rand,
+                        ModSource::Distance => params.distance,
+                        ModSource::Tone => params.tone,
+                        ModSource::Shape => params.shape,
+                        ModSource::Body => params.body,
+                        ModSource::Motion => params.motion,
+                    };
+                    let delta = src * slot.amount;
+                    match slot.target {
+                        ModTarget::None => {}
+                        ModTarget::OscAPos => m.osc_a_pos += delta,
+                        ModTarget::OscAWarp => m.osc_a_warp += delta,
+                        ModTarget::OscAPitch => m.osc_a_pitch += delta,
+                        ModTarget::OscADetune => m.osc_a_detune += delta,
+                        ModTarget::OscALevel => m.osc_a_level += delta,
+                        ModTarget::OscBPos => m.osc_b_pos += delta,
+                        ModTarget::OscBPitch => m.osc_b_pitch += delta,
+                        ModTarget::OscBLevel => m.osc_b_level += delta,
+                        ModTarget::SubLevel => m.sub_level += delta,
+                        ModTarget::NoiseLevel => m.noise_level += delta,
+                        ModTarget::FilterCutoff => m.filter_cutoff += delta,
+                        ModTarget::FilterRes => m.filter_res += delta,
+                        ModTarget::FilterDrive => m.filter_drive += delta,
+                        ModTarget::ChorusMix => m.chorus_mix += delta,
+                        ModTarget::DistDrive => m.dist_drive += delta,
+                        ModTarget::Distance => m.distance += delta,
+                        ModTarget::Lfo1Rate => m.lfo1_rate += delta,
+                        ModTarget::Lfo2Rate => m.lfo2_rate += delta,
+                        ModTarget::Pan => m.pan += delta,
+                        ModTarget::OutGain => m.out_gain += delta,
+                    }
+                }
+
+                // Avanzar LFO 1 y LFO 2 (con modulación de rate posible desde la Matrix).
+                let lfo1_hz = lfo_rate_hz((vp.lfo1_rate + m.lfo1_rate).clamp(0.0, 1.0), vp.lfo1_sync, self.bpm);
+                let next_p1 = v.lfo1_phase + lfo1_hz * inv_sr;
+                if next_p1 >= 1.0 {
+                    v.lfo1_sh = v.next_noise();
+                }
+                v.lfo1_phase = next_p1.fract();
+
+                let lfo2_hz = lfo_rate_hz((vp.lfo2_rate + m.lfo2_rate).clamp(0.0, 1.0), vp.lfo2_sync, self.bpm);
+                let next_p2 = v.lfo2_phase + lfo2_hz * inv_sr;
+                if next_p2 >= 1.0 {
+                    v.lfo2_sh = v.next_noise();
+                }
+                v.lfo2_phase = next_p2.fract();
+
+                bus_chorus_mod += m.chorus_mix;
+                bus_dist_mod += m.dist_drive;
+                bus_dist_space_mod += m.distance;
+                bus_out_mod += m.out_gain;
+                bus_mod_voices += 1;
+
+                // Frecuencias efectivas con pitch bend + drift + semitonos + Matrix pitch (±24 st).
+                let drift = 1.0 + lfo * params.motion * 0.0055;
+                let base_hz = (v.freq * self.pitch_bend_ratio * drift).clamp(20.0, sr * 0.42);
+                let osc_a_semi = f32::from(vp.osc_a_semi) + m.osc_a_pitch * 24.0;
+                let hz = (base_hz * 2.0_f32.powf(osc_a_semi / 12.0)).clamp(20.0, sr * 0.42);
+
+                let shape_eff = (params.shape + m.osc_a_pos).clamp(0.0, 1.0);
+                let osc_a_lvl = (vp.osc_a_level + m.osc_a_level).clamp(0.0, 1.5);
+                let osc_b_lvl = (vp.osc_b_level + m.osc_b_level).clamp(0.0, 1.5);
+                let need_osc_b = osc_b_lvl > 0.001
+                    || (params.engine == SynthEngineKind::Wavetable
+                        && matches!(vp.osc_a_warp_mode, WarpMode::FmFromB | WarpMode::RingMod));
+
+                // ── OSC B (Wavetable independiente + fuente FM/RM para OSC A) ──
+                let (mut ob_l, mut ob_r, mut ob_mono) = (0.0_f32, 0.0_f32, 0.0_f32);
+                if need_osc_b {
+                    let b_semi =
+                        f32::from(vp.osc_b_semi) + vp.osc_b_fine * 0.5 + m.osc_b_pitch * 24.0;
+                    let hz_b = (base_hz * 2.0_f32.powf(b_semi / 12.0)).clamp(16.0, sr * 0.44);
+                    let pos_b = (vp.osc_b_pos + m.osc_b_pos).clamp(0.0, 1.0);
+                    let uni_b = usize::from(vp.osc_b_unison.clamp(1, MAX_UNISON as u8));
+                    let det_b = vp.osc_b_detune * 0.025;
+                    let norm_b = 1.0 / (uni_b as f32).sqrt();
+                    for u in 0..uni_b {
+                        let frac = if uni_b == 1 {
+                            0.0
+                        } else {
+                            (u as f32 / (uni_b - 1) as f32) * 2.0 - 1.0
+                        };
+                        let f_u = hz_b * (1.0 + frac * det_b);
+                        v.osc_b_uni[u] = (v.osc_b_uni[u] + f_u * inv_sr).fract();
+                        let s = self.wt.sample(vp.osc_b_table, pos_b, v.osc_b_uni[u]);
+                        if u == 0 {
+                            ob_mono = s;
+                        }
+                        let pan_u = frac * 0.65;
+                        ob_l += s * (1.0 - pan_u).min(1.0);
+                        ob_r += s * (1.0 + pan_u).min(1.0);
+                    }
+                    ob_l *= norm_b;
+                    ob_r *= norm_b;
+                }
+
+                // ── OSC A (7 motores originales + 8º motor Wavetable estilo Vital) ──
                 let (mut sl, mut sr_ch) = match params.engine {
                     SynthEngineKind::Sub808 => {
-                        let drop_semi = params.shape * 18.0 * v.pitch_env;
+                        let drop_semi = shape_eff * 18.0 * v.pitch_env;
                         let f = hz * 2.0_f32.powf(drop_semi / 12.0);
                         v.phase[0] = (v.phase[0] + f * inv_sr).fract();
                         let s0 = (v.phase[0] * TAU).sin();
-                        let s2 = ((v.phase[0] * 2.0).fract() * TAU).sin() * 0.28 * params.shape;
-                        let grit = 1.0 + params.shape * (2.2 + 2.5 * vel_eff);
+                        let s2 = ((v.phase[0] * 2.0).fract() * TAU).sin() * 0.28 * shape_eff;
+                        let grit = 1.0 + shape_eff * (2.2 + 2.5 * vel_eff);
                         let driven = ((s0 + s2) * grit).tanh();
                         let sub_w = params.body * 0.14 * lfo;
                         (driven * (1.0 - sub_w), driven * (1.0 + sub_w))
                     }
                     SynthEngineKind::Analog => {
-                        let det = 0.002 + params.body * 0.011;
+                        let det = 0.002 + (params.body + m.osc_a_detune).clamp(0.0, 1.0) * 0.011;
                         let freqs = [hz, hz * (1.0 - det), hz * (1.0 + det)];
                         let mut outs = [0.0_f32; 3];
                         for k in 0..3 {
@@ -609,7 +1141,7 @@ impl NativeSynthEngine {
                             v.phase[k] = (v.phase[k] + dt).fract();
                             let saw = polyblep_saw(v.phase[k], dt);
                             let tri = 4.0 * (v.phase[k] - 0.5).abs() - 1.0;
-                            outs[k] = tri * (1.0 - params.shape) + saw * params.shape;
+                            outs[k] = tri * (1.0 - shape_eff) + saw * shape_eff;
                         }
                         v.sub_phase = (v.sub_phase + (hz * 0.5) * inv_sr).fract();
                         let sub = (v.sub_phase * TAU).sin() * (0.28 * (1.0 - params.tone * 0.4));
@@ -631,61 +1163,60 @@ impl NativeSynthEngine {
                         let decay_fb = 0.968 + params.time * 0.029;
                         v.pluck_buf[idx] = v.pluck_lp * decay_fb;
                         v.pluck_idx = next;
-                        let stereo = (cur - v.pluck_lp) * params.body * 0.6;
-                        ((cur + stereo) * 1.15, (cur - stereo) * 1.15)
+                        let body_s = v.pluck_lp * (1.1 + params.body * 0.35);
+                        let micro_st = (v.pluck_buf[(idx + 7) % v.pluck_len]) * params.body * 0.22;
+                        (body_s + micro_st, body_s - micro_st)
                     }
                     SynthEngineKind::FmBell => {
-                        // Ratios musicales: 1.0 (warm) -> 2.0 (e-piano) -> 3.5 (bell) -> 5.4 (metal)
-                        let ratio = if params.shape < 0.33 {
-                            1.0 + (params.shape / 0.33)
-                        } else if params.shape < 0.66 {
-                            2.0 + ((params.shape - 0.33) / 0.33) * 1.5
-                        } else {
-                            3.5 + ((params.shape - 0.66) / 0.34) * 1.9
-                        };
-                        let mod_f = hz * ratio;
-                        v.mod_phase = (v.mod_phase + mod_f * inv_sr).fract();
+                        const RATIOS: [f32; 5] = [1.0, 2.0, 3.0, 3.5, 5.0];
+                        let rpos = shape_eff * 4.0;
+                        let ridx = (rpos.floor() as usize).min(3);
+                        let rfrac = rpos - ridx as f32;
+                        let ratio = RATIOS[ridx] + (RATIOS[ridx + 1] - RATIOS[ridx]) * rfrac;
+                        v.mod_phase = (v.mod_phase + (hz * ratio) * inv_sr).fract();
+                        let fm_index = (0.35 + shape_eff * 4.2) * (0.25 + 0.75 * v.timbre_env)
+                            * (0.4 + 0.6 * vel_eff);
+                        let mod_sig = (v.mod_phase * TAU).sin() * fm_index;
                         v.phase[0] = (v.phase[0] + hz * inv_sr).fract();
-                        v.phase[1] = (v.phase[1] + hz * (1.0 + params.body * 0.005) * inv_sr).fract();
-                        let index = (0.4 + params.tone * 3.8) * (0.35 + 0.65 * v.timbre_env) * vel_eff;
-                        let m = (v.mod_phase * TAU).sin() * index;
-                        let cl = (v.phase[0] * TAU + m).sin();
-                        let cr = (v.phase[1] * TAU + m * 0.94).sin();
-                        (cl * 0.78, cr * 0.78)
+                        let det = 1.0 + params.body * 0.004;
+                        v.phase[1] = (v.phase[1] + hz * det * inv_sr).fract();
+                        let cl = (v.phase[0] * TAU + mod_sig).sin();
+                        let cr = (v.phase[1] * TAU + mod_sig * 0.94).sin();
+                        (cl * 0.85, cr * 0.85)
                     }
                     SynthEngineKind::Vocal => {
-                        let dt = hz * inv_sr;
-                        v.phase[0] = (v.phase[0] + dt).fract();
-                        v.phase[1] = (v.phase[1] + dt * (1.0 + params.body * 0.006)).fract();
-                        let src = 0.55 * polyblep_saw(v.phase[0], dt)
-                            + 0.45 * polyblep_saw(v.phase[1], dt)
-                            + v.next_noise() * (0.04 + params.body * 0.06);
-                        let (f1, f2, f3) = vowel_formants(params.shape);
-                        let shift = 1.0 + (params.tone - 0.5) * 0.35 + lfo * params.motion * 0.04;
-                        let (_, b1) = v.formants[0].process(src, f1 * shift, 5.5, sr);
-                        let (_, b2) = v.formants[1].process(src, f2 * shift, 7.0, sr);
-                        let (_, b3) = v.formants[2].process(src, f3 * shift, 8.0, sr);
-                        let body_s = b1 * 0.70 + b2 * 0.55 + b3 * 0.32;
-                        let diff = (b2 - b3) * params.body * 0.35;
-                        ((body_s + diff) * 1.45, (body_s - diff) * 1.45)
+                        let dt0 = hz * inv_sr;
+                        let dt1 = (hz * (1.0 + params.body * 0.005)) * inv_sr;
+                        v.phase[0] = (v.phase[0] + dt0).fract();
+                        v.phase[1] = (v.phase[1] + dt1).fract();
+                        let glot_l = polyblep_saw(v.phase[0], dt0);
+                        let glot_r = polyblep_saw(v.phase[1], dt1);
+                        let breath = v.next_noise() * (0.04 + params.motion * 0.07);
+                        let src_l = glot_l * 0.75 + breath;
+                        let src_r = glot_r * 0.75 + breath;
+                        let (f1, f2, f3) = vowel_formants(shape_eff);
+                        let (_, b1) = v.formants[0].process(src_l, f1, 5.2, sr);
+                        let (_, b2) = v.formants[1].process(src_r, f2, 6.2, sr);
+                        let (_, b3) = v.formants[2].process(0.5 * (src_l + src_r), f3, 7.0, sr);
+                        let l = (b1 * 1.15 + b2 * 0.72 + b3 * 0.35) * 0.78;
+                        let r = (b1 * 0.95 + b2 * 0.92 + b3 * 0.42) * 0.78;
+                        (l, r)
                     }
                     SynthEngineKind::FoldAcid => {
                         let dt = hz * inv_sr;
                         v.phase[0] = (v.phase[0] + dt).fract();
-                        v.phase[1] = (v.phase[1] + dt * (1.0 + params.body * 0.007)).fract();
-                        let raw_l = 0.6 * polyblep_saw(v.phase[0], dt)
-                            + 0.4 * (v.phase[0] * TAU).sin();
-                        let raw_r = 0.6 * polyblep_saw(v.phase[1], dt)
-                            + 0.4 * (v.phase[1] * TAU).sin();
-                        let fold = 1.2 + params.shape * 4.5 * (0.4 + 0.6 * v.timbre_env);
-                        let fl = (raw_l * fold).sin();
-                        let fr = (raw_r * fold).sin();
-                        (fl * 0.78, fr * 0.78)
+                        v.phase[1] = (v.phase[1] + (hz * (1.0 + params.body * 0.007)) * inv_sr).fract();
+                        let raw_l = polyblep_saw(v.phase[0], dt);
+                        let raw_r = polyblep_saw(v.phase[1], dt);
+                        let fold = 1.0 + shape_eff * (2.6 + 2.4 * vel_eff);
+                        let fl = (raw_l * fold).sin() * 0.65 + (raw_l * (1.0 + shape_eff)).tanh() * 0.35;
+                        let fr = (raw_r * fold).sin() * 0.65 + (raw_r * (1.0 + shape_eff)).tanh() * 0.35;
+                        (fl * 0.85, fr * 0.85)
                     }
                     SynthEngineKind::Texture => {
                         let d1 = hz * inv_sr;
-                        let d2 = hz * 1.498 * (1.0 + lfo * 0.003) * inv_sr;
-                        let d3 = hz * 2.003 * (1.0 - lfo * 0.004) * inv_sr;
+                        let d2 = (hz * 1.5 * (1.0 + lfo * 0.004)) * inv_sr;
+                        let d3 = (hz * 2.0 * (1.0 - lfo * 0.004)) * inv_sr;
                         v.phase[0] = (v.phase[0] + d1).fract();
                         v.phase[1] = (v.phase[1] + d2).fract();
                         v.phase[2] = (v.phase[2] + d3).fract();
@@ -701,50 +1232,232 @@ impl NativeSynthEngine {
                             v.formants[0].process(n_l, (hz * 2.0).clamp(240.0, 6000.0), 2.2, sr);
                         let (_, air_r) =
                             v.formants[1].process(n_r, (hz * 3.0).clamp(320.0, 7500.0), 2.5, sr);
-                        let air_mix = 0.12 + params.shape * 0.45;
+                        let air_mix = 0.12 + shape_eff * 0.45;
                         (
                             tones_l * (1.0 - air_mix * 0.4) + air_l * air_mix * 1.5,
                             tones_r * (1.0 - air_mix * 0.4) + air_r * air_mix * 1.5,
                         )
                     }
+                    SynthEngineKind::Wavetable => {
+                        let uni_a = usize::from(vp.osc_a_unison.clamp(1, MAX_UNISON as u8));
+                        let det_a = (vp.osc_a_detune + m.osc_a_detune).clamp(0.0, 1.0) * 0.028;
+                        let spread_a = vp.osc_a_spread.clamp(0.0, 1.0);
+                        let warp_amt = (vp.osc_a_warp + m.osc_a_warp).clamp(0.0, 1.0);
+                        let norm_a = 1.0 / (uni_a as f32).sqrt();
+                        let mut al = 0.0_f32;
+                        let mut ar = 0.0_f32;
+                        for u in 0..uni_a {
+                            let frac = if uni_a == 1 {
+                                0.0
+                            } else {
+                                (u as f32 / (uni_a - 1) as f32) * 2.0 - 1.0
+                            };
+                            let f_u = hz * (1.0 + frac * det_a);
+                            v.osc_a_uni[u] = (v.osc_a_uni[u] + f_u * inv_sr).fract();
+                            let ph = v.osc_a_uni[u];
+                            let warped_ph = match vp.osc_a_warp_mode {
+                                WarpMode::Off | WarpMode::Fold | WarpMode::RingMod => ph,
+                                WarpMode::Sync => (ph * (1.0 + warp_amt * 5.0)).fract(),
+                                WarpMode::Bend => {
+                                    let exp = 2.0_f32.powf((warp_amt - 0.5) * 3.0);
+                                    ph.powf(exp)
+                                }
+                                WarpMode::FmFromB => (ph + ob_mono * warp_amt * 0.85).rem_euclid(1.0),
+                            };
+                            let mut s = self.wt.sample(vp.osc_a_table, shape_eff, warped_ph);
+                            match vp.osc_a_warp_mode {
+                                WarpMode::Fold => {
+                                    s = (s * (1.0 + warp_amt * 4.5)).sin();
+                                }
+                                WarpMode::RingMod => {
+                                    s = s * (1.0 - warp_amt) + (s * ob_mono) * warp_amt;
+                                }
+                                _ => {}
+                            }
+                            let pan_u = frac * spread_a;
+                            al += s * (1.0 - pan_u).min(1.0);
+                            ar += s * (1.0 + pan_u).min(1.0);
+                        }
+                        (al * norm_a * 0.82, ar * norm_a * 0.82)
+                    }
                 };
 
-                // Piel / Filtro acoplado a `tone` + `velocity * touch` + `timbre_env` + `motion`.
-                let base_cut = 160.0 * (80.0_f32).powf(params.tone);
-                let env_mod = 1.0 + v.timbre_env * (0.4 + 2.4 * vel_eff);
+                sl *= osc_a_lvl;
+                sr_ch *= osc_a_lvl;
+
+                // Sumar OSC B audible
+                if osc_b_lvl > 0.001 {
+                    sl += ob_l * osc_b_lvl * 0.72;
+                    sr_ch += ob_r * osc_b_lvl * 0.72;
+                }
+
+                // Sumar SUB dedicado (-1 o -2 oct)
+                let sub_lvl = (vp.sub_level + m.sub_level).clamp(0.0, 1.5);
+                if sub_lvl > 0.001 {
+                    let sub_div = if vp.sub_octave == 0 { 0.5 } else { 0.25 };
+                    v.sub_phase = (v.sub_phase + (base_hz * sub_div) * inv_sr).fract();
+                    let sub_sig = (v.sub_phase * TAU).sin() * sub_lvl * 0.55;
+                    sl += sub_sig;
+                    sr_ch += sub_sig;
+                }
+
+                // Sumar NOISE / AIR dedicado
+                let noise_lvl = (vp.noise_level + m.noise_level).clamp(0.0, 1.5);
+                if noise_lvl > 0.001 {
+                    let raw_n = v.next_noise();
+                    let n_cut = 300.0 * (45.0_f32).powf(vp.noise_color);
+                    let n_a = (TAU * n_cut * inv_sr).clamp(0.01, 0.99);
+                    v.noise_lp += (raw_n - v.noise_lp) * n_a;
+                    let n_sig = if vp.noise_color > 0.72 {
+                        raw_n - v.noise_lp * 0.55
+                    } else {
+                        v.noise_lp
+                    };
+                    sl += n_sig * noise_lvl * 0.35;
+                    sr_ch += n_sig * noise_lvl * 0.35;
+                }
+
+                // ── Filtro TPT SVF (LP12 / LP24 / BP12 / HP12 / Notch) + Drive pre-filtro ──
+                let pre_drive = (vp.filter_drive + m.filter_drive).clamp(0.0, 1.0);
+                if pre_drive > 0.005 {
+                    let g = 1.0 + pre_drive * 3.8;
+                    sl = (sl * g).tanh();
+                    sr_ch = (sr_ch * g).tanh();
+                }
+
+                let tone_eff = (params.tone + m.filter_cutoff * 0.85).clamp(0.0, 1.0);
+                let base_cut = 70.0 * (250.0_f32).powf(tone_eff);
+                let env_mod = 1.0 + v.timbre_env * (0.35 + 2.1 * vel_eff);
                 let lfo_mod = 1.0 + lfo * params.motion * 0.18;
-                // Keytracking físico suave: notas agudas abren ligeramente el aire.
-                let key_scale = (hz / 261.63).powf(0.28).clamp(0.65, 2.4);
-                let cutoff = (base_cut * env_mod * lfo_mod * key_scale).clamp(60.0, 18_500.0);
+                let key_scale = (hz / 261.63)
+                    .powf(vp.filter_keytrack.clamp(0.0, 1.0))
+                    .clamp(0.45, 3.2);
+                let cutoff = (base_cut * env_mod * lfo_mod * key_scale).clamp(30.0, 19_000.0);
+                let res_eff = (vp.filter_res + m.filter_res).clamp(0.0, 1.0);
                 let q = if params.engine == SynthEngineKind::FoldAcid {
-                    1.2 + params.shape * 4.2
+                    1.0 + shape_eff * 3.5 + res_eff * 4.5
                 } else {
-                    0.72 + params.shape * 0.55
+                    0.65 + res_eff * 7.5
                 };
-                if params.engine != SynthEngineKind::Pluck {
-                    (sl, _) = v.svf_l.process(sl, cutoff, q, sr);
-                    (sr_ch, _) = v.svf_r.process(sr_ch, cutoff, q, sr);
+
+                if params.engine != SynthEngineKind::Pluck || vp.filter_kind != FilterKind::Lp12 || res_eff > 0.15 {
+                    let (lp_l, bp_l, hp_l, nt_l) = v.svf_l.process_all(sl, cutoff, q, sr);
+                    let (lp_r, bp_r, hp_r, nt_r) = v.svf_r.process_all(sr_ch, cutoff, q, sr);
+                    match vp.filter_kind {
+                        FilterKind::Lp12 => {
+                            sl = lp_l;
+                            sr_ch = lp_r;
+                        }
+                        FilterKind::Lp24 => {
+                            let (lp2_l, _, _, _) =
+                                v.svf2_l.process_all(lp_l, cutoff, (q * 0.72).max(0.65), sr);
+                            let (lp2_r, _, _, _) =
+                                v.svf2_r.process_all(lp_r, cutoff, (q * 0.72).max(0.65), sr);
+                            sl = lp2_l;
+                            sr_ch = lp2_r;
+                        }
+                        FilterKind::Bp12 => {
+                            sl = bp_l * 1.35;
+                            sr_ch = bp_r * 1.35;
+                        }
+                        FilterKind::Hp12 => {
+                            sl = hp_l;
+                            sr_ch = hp_r;
+                        }
+                        FilterKind::Notch => {
+                            sl = nt_l;
+                            sr_ch = nt_r;
+                        }
+                    }
                 }
 
                 // Calor analógico suave con la intensidad del toque.
-                let drive = 1.0 + vel_eff * (0.18 + params.body * 0.35);
+                let drive = 1.0 + vel_eff * (0.16 + params.body * 0.30);
                 sl = (sl * drive).tanh();
                 sr_ch = (sr_ch * drive).tanh();
 
                 let amp = v.env * (0.28 + 0.72 * vel_eff);
-                let pan_l = (1.0 - v.pan).min(1.0);
-                let pan_r = (1.0 + v.pan).min(1.0);
+                let voice_pan = (v.pan + m.pan).clamp(-1.0, 1.0);
+                let pan_l = (1.0 - voice_pan).min(1.0);
+                let pan_r = (1.0 + voice_pan).min(1.0);
                 sum_l += sl * amp * pan_l;
                 sum_r += sr_ch * amp * pan_r;
             }
 
-            let (out_l, out_r) =
-                self.space
-                    .process(sum_l, sum_r, params.room, params.distance, sr);
-            left[i] = (out_l * out_gain).tanh();
-            right[i] = (out_r * out_gain).tanh();
+            let inv_v = if bus_mod_voices > 0 {
+                1.0 / bus_mod_voices as f32
+            } else {
+                0.0
+            };
+
+            // ── Bus FX 1: Distortion ──
+            let dist_drive = (vp.dist_drive + bus_dist_mod * inv_v).clamp(0.0, 1.0);
+            let dist_mix = vp.dist_mix.clamp(0.0, 1.0);
+            if dist_mix > 0.001 && dist_drive > 0.001 {
+                sum_l = apply_distortion(sum_l, vp.dist_mode, dist_drive, dist_mix);
+                sum_r = apply_distortion(sum_r, vp.dist_mode, dist_drive, dist_mix);
+            }
+
+            // ── Bus FX 2: Stereo Chorus ──
+            let chorus_mix = (vp.chorus_mix + bus_chorus_mod * inv_v).clamp(0.0, 1.0);
+            let (ch_l, ch_r) = self
+                .chorus
+                .process(sum_l, sum_r, chorus_mix, vp.chorus_rate, sr);
+
+            // ── Bus FX 3: Espacio (Room + Distance + absorción de aire) ──
+            let dist_eff = (params.distance + bus_dist_space_mod * inv_v).clamp(0.0, 1.0);
+            let (out_l, out_r) = self.space.process(ch_l, ch_r, params.room, dist_eff, sr);
+
+            let final_gain = (base_out_gain * (1.0 + bus_out_mod * inv_v * 0.65)).clamp(0.0, 1.6);
+            left[i] = (out_l * final_gain).tanh();
+            right[i] = (out_r * final_gain).tanh();
         }
     }
+}
+
+#[inline]
+fn eval_lfo(shape: LfoShape, phase: f32, sh: f32) -> f32 {
+    match shape {
+        LfoShape::Sine => (phase * TAU).sin(),
+        LfoShape::Tri => 4.0 * (phase - 0.5).abs() - 1.0,
+        LfoShape::SawUp => phase * 2.0 - 1.0,
+        LfoShape::SawDown => 1.0 - phase * 2.0,
+        LfoShape::Square => {
+            if phase < 0.5 {
+                1.0
+            } else {
+                -1.0
+            }
+        }
+        LfoShape::Random => sh,
+    }
+}
+
+#[inline]
+fn lfo_rate_hz(rate: f32, sync: bool, bpm: f32) -> f32 {
+    if sync {
+        // Divisiones musicales: 4 bars, 2 bars, 1 bar, 1/2, 1/4, 1/8, 1/16, 1/32
+        const MULT: [f32; 8] = [0.0625, 0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0];
+        let idx = ((rate * 7.0).round() as usize).min(7);
+        (bpm / 60.0) * MULT[idx]
+    } else {
+        0.05 * (320.0_f32).powf(rate) // 0.05 Hz .. 16 Hz
+    }
+}
+
+#[inline]
+fn apply_distortion(x: f32, mode: DistMode, drive: f32, mix: f32) -> f32 {
+    let g = 1.0 + drive * 8.0;
+    let wet = match mode {
+        DistMode::Soft => (x * g).tanh(),
+        DistMode::Hard => (x * g).clamp(-0.92, 0.92),
+        DistMode::Fold => (x * (1.0 + drive * 4.5)).sin(),
+        DistMode::Bitcrush => {
+            let steps = (32.0 - drive * 26.0).max(4.0);
+            ((x * (1.0 + drive * 2.0)) * steps).round() / steps
+        }
+    };
+    x * (1.0 - mix) + wet * mix
 }
 
 #[inline]
@@ -795,7 +1508,7 @@ fn vowel_formants(shape: f32) -> (f32, f32, f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use elevate::devices::synth::FACTORY_PRESETS;
+    use elevate::devices::synth::{FACTORY_PRESETS, ModSlot, vital_factory_presets};
 
     #[test]
     fn all_factory_presets_render_clean_balanced_audio() {
@@ -832,8 +1545,36 @@ mod tests {
     }
 
     #[test]
+    fn all_vital_factory_presets_render_clean_balanced_audio() {
+        let sr = 48_000u32;
+        for (name, _, params) in vital_factory_presets() {
+            let mut engine = NativeSynthEngine::new(params, sr);
+            engine.note_on(48, 110, 0.0);
+            let mut left = vec![0.0; 24_000];
+            let mut right = vec![0.0; 24_000];
+            engine.render(&mut left[..12_000], &mut right[..12_000]);
+            engine.note_off(48);
+            engine.render(&mut left[12_000..], &mut right[12_000..]);
+
+            let mut peak = 0.0_f32;
+            let mut sum_sq = 0.0_f64;
+            for (&l, &r) in left.iter().zip(&right) {
+                assert!(l.is_finite() && r.is_finite(), "NaN/Inf in {name}");
+                peak = peak.max(l.abs().max(r.abs()));
+                sum_sq += f64::from(l) * f64::from(l) + f64::from(r) * f64::from(r);
+            }
+            let rms = (sum_sq / (left.len() as f64 * 2.0)).sqrt() as f32;
+            let rms_db = 20.0 * rms.max(1e-6).log10();
+            assert!(
+                rms_db > -34.0 && rms_db < -2.0 && peak <= 1.0,
+                "Vital preset {name} out of range: rms_db={rms_db:.1}, peak={peak:.3}"
+            );
+        }
+    }
+
+    #[test]
     fn touch_couples_velocity_to_loudness_and_brightness() {
-        let mut params = FACTORY_PRESETS[4].to_params(); // Lo-Fi Tape Keys
+        let mut params = FACTORY_PRESETS[4].to_params();
         params.touch = 0.9;
         let render_rms = |vel: u8| {
             let mut engine = NativeSynthEngine::new(params.clone(), 48_000);
@@ -846,5 +1587,34 @@ mod tests {
         let soft = render_rms(35);
         let hard = render_rms(120);
         assert!(hard > soft * 1.8, "soft={soft}, hard={hard}");
+    }
+
+    #[test]
+    fn mod_matrix_cross_maps_macro_distance_to_cutoff() {
+        let mut base = vital_factory_presets()[0].2.clone();
+        base.tone = 0.15;
+        base.distance = 0.85;
+        base.voice.matrix = [ModSlot::default(); 12];
+
+        let mut mapped = base.clone();
+        mapped.voice.matrix[0] = ModSlot {
+            source: ModSource::Distance,
+            target: ModTarget::FilterCutoff,
+            amount: 0.95,
+        };
+
+        let brightness = |p: SynthParams| {
+            let mut engine = NativeSynthEngine::new(p, 48_000);
+            engine.note_on(60, 100, 0.0);
+            let mut l = vec![0.0; 8192];
+            let mut r = vec![0.0; 8192];
+            engine.render(&mut l, &mut r);
+            // Energía de alta frecuencia aproximada por diferencias consecutivas.
+            l.windows(2).map(|w| (w[1] - w[0]).abs()).sum::<f32>() / l.len() as f32
+        };
+
+        let dark = brightness(base);
+        let bright = brightness(mapped);
+        assert!(bright > dark * 1.5, "dark={dark}, bright={bright}");
     }
 }

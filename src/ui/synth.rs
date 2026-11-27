@@ -1,11 +1,15 @@
-//! Controlador UI de Hay Synth (estado de UI, presets de usuario y enrutamiento de audio).
+//! Controlador UI de Hay Synth (Stage + Voice Lab + Mod Matrix, presets JSON y audio).
 use crate::{
     instruments::synth::{SYNTH_ID, Synth},
     ui::DawApp,
 };
 use elevate::{
-    devices::synth::{
-        EnvelopeMode, FACTORY_PRESETS, RoomKind, SynthEngineKind, SynthParams, cc,
+    devices::{
+        synth::{
+            EnvelopeMode, FACTORY_PRESETS, MATRIX_SLOTS, ModSlot, ModSource, ModTarget, RoomKind,
+            SynthEngineKind, SynthParams, VoiceParams, cc, param, vital_factory_presets,
+        },
+        vital_import::{self, VitalPresetEntry},
     },
     musical::{
         midi::MidiMessage,
@@ -13,21 +17,38 @@ use elevate::{
         track::{TrackEdit, TrackKind},
     },
 };
-use gpui::{Bounds, Pixels, Point};
+use gpui::{Bounds, Context, PathPromptOptions, Pixels, Point, Task};
 use std::{cell::Cell, path::PathBuf, rc::Rc};
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(in crate::ui) enum SynthTab {
+    #[default]
+    Stage,
+    Voice,
+    Matrix,
+}
 
 #[derive(Clone)]
 pub(in crate::ui) struct SynthPresetEntry {
     pub name: String,
     pub category: String,
     pub params: SynthParams,
-    pub user: bool,
+}
+
+#[derive(Clone, Copy)]
+pub(in crate::ui) struct SynthKnobDrag {
+    pub param_id: u16,
+    pub origin_y: Pixels,
+    pub start_val: f32,
+    pub min: f32,
+    pub max: f32,
 }
 
 #[derive(Default)]
 pub(super) struct SynthUi {
-    /// Arrastre vertical de deslizador/perilla: `(cc, y_inicial, valor_inicial)`.
-    pub slider_drag: Option<(u8, Pixels, f32)>,
+    pub tab: SynthTab,
+    /// Arrastre vertical de deslizador/perilla (`u16` del espacio `param::*`).
+    pub knob_drag: Option<SynthKnobDrag>,
     /// Arrastre activo sobre el mapa XY (Espacio × Tono).
     pub stage_drag: bool,
     /// Límites en pantalla del mapa XY para traducir posición del ratón.
@@ -35,19 +56,27 @@ pub(super) struct SynthUi {
     /// Presets guardados por el usuario en `~/.local/share/jap-studio/presets/synth/`.
     pub user_presets: Vec<SynthPresetEntry>,
     pub user_presets_loaded: bool,
+    /// Presets `.vital` descubiertos en `~/.local/share/vital`, `~/library` y unidades montadas.
+    pub vital_library: Vec<VitalPresetEntry>,
+    pub vital_library_loaded: bool,
+    pub vital_index: Option<usize>,
+    pub vital_picker: Option<Task<()>>,
 }
 
 impl SynthUi {
     pub fn dragging(&self) -> bool {
-        self.slider_drag.is_some() || self.stage_drag
+        self.knob_drag.is_some() || self.stage_drag
     }
 
     pub fn ensure_user_presets_loaded(&mut self) {
-        if self.user_presets_loaded {
-            return;
+        if !self.user_presets_loaded {
+            self.user_presets_loaded = true;
+            self.user_presets = load_user_presets();
         }
-        self.user_presets_loaded = true;
-        self.user_presets = load_user_presets();
+        if !self.vital_library_loaded {
+            self.vital_library_loaded = true;
+            self.vital_library = vital_import::discover_vital_presets();
+        }
     }
 
     pub fn all_presets(&self) -> Vec<SynthPresetEntry> {
@@ -57,9 +86,15 @@ impl SynthUi {
                 name: p.name.to_owned(),
                 category: p.category.to_owned(),
                 params: p.to_params(),
-                user: false,
             })
             .collect();
+        for (name, cat, params) in vital_factory_presets() {
+            list.push(SynthPresetEntry {
+                name: name.to_owned(),
+                category: cat.to_owned(),
+                params,
+            });
+        }
         list.extend(self.user_presets.iter().cloned());
         list
     }
@@ -108,11 +143,10 @@ fn load_user_presets() -> Vec<SynthPresetEntry> {
         let engine = SynthEngineKind::from_u8(
             val.get("engine").and_then(|v| v.as_u64()).unwrap_or(1) as u8,
         );
-        let room =
-            RoomKind::from_u8(val.get("room").and_then(|v| v.as_u64()).unwrap_or(1) as u8);
+        let room = RoomKind::from_u8(val.get("room").and_then(|v| v.as_u64()).unwrap_or(1) as u8);
         let mode =
             EnvelopeMode::from_u8(val.get("mode").and_then(|v| v.as_u64()).unwrap_or(1) as u8);
-        let params = SynthParams {
+        let mut params = SynthParams {
             engine,
             room,
             distance: read_f("distance", 0.25),
@@ -126,12 +160,20 @@ fn load_user_presets() -> Vec<SynthPresetEntry> {
             glide: read_f("glide", 0.0),
             gain: read_f("gain", 0.80),
             preset_name: name.clone(),
+            voice: VoiceParams::default(),
         };
+        if let Some(voice_map) = val.get("voice_params").and_then(|v| v.as_object()) {
+            for (k, v) in voice_map {
+                if let (Ok(pid), Some(f)) = (k.parse::<u16>(), v.as_f64()) {
+                    params.set_param(pid, f as f32);
+                }
+            }
+        }
+        params.clamp_all();
         entries.push(SynthPresetEntry {
             name,
             category: "User".into(),
             params,
-            user: true,
         });
     }
     entries.sort_by(|a, b| a.name.cmp(&b.name));
@@ -140,7 +182,7 @@ fn load_user_presets() -> Vec<SynthPresetEntry> {
 
 fn live_midi_cc_for(cc_id: u8, value: f32) -> Option<MidiMessage> {
     let (midi_cc, midi_val) = match cc_id {
-        cc::ENGINE => (102, (value.round() as i32).clamp(0, 6) as u8),
+        cc::ENGINE => (102, (value.round() as i32).clamp(0, 7) as u8),
         cc::ROOM => (103, (value.round() as i32).clamp(0, 3) as u8),
         cc::DISTANCE => (104, (value.clamp(0.0, 1.0) * 127.0).round() as u8),
         cc::SHAPE => (105, (value.clamp(0.0, 1.0) * 127.0).round() as u8),
@@ -158,6 +200,24 @@ fn live_midi_cc_for(cc_id: u8, value: f32) -> Option<MidiMessage> {
         cc: midi_cc,
         value: midi_val,
     })
+}
+
+fn stage_cc_for_param(param_id: u16) -> Option<u8> {
+    match param_id {
+        param::ENGINE => Some(cc::ENGINE),
+        param::ROOM => Some(cc::ROOM),
+        param::DISTANCE => Some(cc::DISTANCE),
+        param::SHAPE => Some(cc::SHAPE),
+        param::TONE => Some(cc::TONE),
+        param::BODY => Some(cc::BODY),
+        param::MOTION => Some(cc::MOTION),
+        param::MODE => Some(cc::MODE),
+        param::TIME => Some(cc::TIME),
+        param::TOUCH => Some(cc::TOUCH),
+        param::GLIDE => Some(cc::GLIDE),
+        param::GAIN => Some(cc::GAIN),
+        _ => None,
+    }
 }
 
 impl DawApp {
@@ -377,73 +437,49 @@ impl DawApp {
         }
     }
 
+    /// Actualiza cualquier parámetro `param::*` (Stage, Voice Lab o Mod Matrix) en vivo sin bloqueos.
+    pub(in crate::ui) fn set_synth_voice_param(&mut self, param_id: u16, value: f32) {
+        self.synth.params.set_param(param_id, value);
+        let clamped = self.synth.params.get_param(param_id);
+        self.synth.update_live_voice_param(param_id, clamped);
+        if let Some(cc_id) = stage_cc_for_param(param_id) {
+            self.push_synth_live_cc(cc_id, clamped);
+        }
+        self.track_revision = self.track_revision.wrapping_add(1);
+    }
+
     pub(in crate::ui) fn set_synth_param(&mut self, cc_id: u8, raw_value: f32) {
-        let v = raw_value.clamp(0.0, 1.0);
-        let label = match cc_id {
-            cc::DISTANCE => {
-                self.synth.params.distance = v;
-                "Distance"
-            }
-            cc::SHAPE => {
-                self.synth.params.shape = v;
-                self.synth.params.engine.shape_hint()
-            }
-            cc::TONE => {
-                self.synth.params.tone = v;
-                "Tone"
-            }
-            cc::BODY => {
-                self.synth.params.body = v;
-                "Body"
-            }
-            cc::MOTION => {
-                self.synth.params.motion = v;
-                "Motion"
-            }
-            cc::TIME => {
-                self.synth.params.time = v;
-                "Time"
-            }
-            cc::TOUCH => {
-                self.synth.params.touch = v;
-                "Touch"
-            }
-            cc::GLIDE => {
-                self.synth.params.glide = v;
-                "Glide"
-            }
-            cc::GAIN => {
-                self.synth.params.gain = v;
-                "Gain"
-            }
+        let param_id = match cc_id {
+            cc::DISTANCE => param::DISTANCE,
+            cc::SHAPE => param::SHAPE,
+            cc::TONE => param::TONE,
+            cc::BODY => param::BODY,
+            cc::MOTION => param::MOTION,
+            cc::TIME => param::TIME,
+            cc::TOUCH => param::TOUCH,
+            cc::GLIDE => param::GLIDE,
+            cc::GAIN => param::GAIN,
             _ => return,
         };
-        self.synth.update_live_param(cc_id, v);
-        self.push_synth_live_cc(cc_id, v);
-        self.track_revision = self.track_revision.wrapping_add(1);
+        self.set_synth_voice_param(param_id, raw_value);
+        let v = self.synth.params.get_param(param_id);
+        let label = match cc_id {
+            cc::DISTANCE => "Distance",
+            cc::SHAPE => self.synth.params.engine.shape_hint(),
+            cc::TONE => "Tone",
+            cc::BODY => "Body",
+            cc::MOTION => "Motion",
+            cc::TIME => "Time",
+            cc::TOUCH => "Touch",
+            cc::GLIDE => "Glide",
+            cc::GAIN => "Out",
+            _ => "Param",
+        };
         self.status_message = format!("Hay Synth · {label}: {:.0}%", v * 100.0);
     }
 
-    pub(in crate::ui) fn synth_param_value(&self, cc_id: u8) -> f32 {
-        match cc_id {
-            cc::DISTANCE => self.synth.params.distance,
-            cc::SHAPE => self.synth.params.shape,
-            cc::TONE => self.synth.params.tone,
-            cc::BODY => self.synth.params.body,
-            cc::MOTION => self.synth.params.motion,
-            cc::TIME => self.synth.params.time,
-            cc::TOUCH => self.synth.params.touch,
-            cc::GLIDE => self.synth.params.glide,
-            cc::GAIN => self.synth.params.gain,
-            _ => 0.5,
-        }
-    }
-
     pub(in crate::ui) fn set_synth_engine(&mut self, engine: SynthEngineKind) {
-        self.synth.params.engine = engine;
-        self.synth.update_live_param(cc::ENGINE, engine as u8 as f32);
-        self.push_synth_live_cc(cc::ENGINE, engine as u8 as f32);
-        self.track_revision = self.track_revision.wrapping_add(1);
+        self.set_synth_voice_param(param::ENGINE, engine as u8 as f32);
         self.status_message = format!(
             "Hay Synth · Motor: {} (Shape = {})",
             engine.label(),
@@ -452,19 +488,130 @@ impl DawApp {
     }
 
     pub(in crate::ui) fn set_synth_room(&mut self, room: RoomKind) {
-        self.synth.params.room = room;
-        self.synth.update_live_param(cc::ROOM, room as u8 as f32);
-        self.push_synth_live_cc(cc::ROOM, room as u8 as f32);
-        self.track_revision = self.track_revision.wrapping_add(1);
+        self.set_synth_voice_param(param::ROOM, room as u8 as f32);
         self.status_message = format!("Hay Synth · Room: {}", room.label());
     }
 
     pub(in crate::ui) fn set_synth_mode(&mut self, mode: EnvelopeMode) {
-        self.synth.params.mode = mode;
-        self.synth.update_live_param(cc::MODE, mode as u8 as f32);
-        self.push_synth_live_cc(cc::MODE, mode as u8 as f32);
-        self.track_revision = self.track_revision.wrapping_add(1);
+        self.set_synth_voice_param(param::MODE, mode as u8 as f32);
         self.status_message = format!("Hay Synth · Mode: {}", mode.label());
+    }
+
+    pub(in crate::ui) fn step_matrix_source(&mut self, slot: usize, delta: isize) {
+        if slot >= MATRIX_SLOTS {
+            return;
+        }
+        let cur = self.synth.params.voice.matrix[slot].source as u8 as isize;
+        let len = ModSource::ALL.len() as isize;
+        let next = (cur + delta).rem_euclid(len) as u8;
+        self.set_synth_voice_param(param::matrix_source(slot), f32::from(next));
+        if self.synth.params.voice.matrix[slot].amount.abs() < 0.01 && next != 0 {
+            self.set_synth_voice_param(param::matrix_amount(slot), 0.35);
+        }
+        let s = self.synth.params.voice.matrix[slot].source.label();
+        self.status_message = format!("Matrix #{} · Fuente: {s}", slot + 1);
+    }
+
+    pub(in crate::ui) fn step_matrix_target(&mut self, slot: usize, delta: isize) {
+        if slot >= MATRIX_SLOTS {
+            return;
+        }
+        let cur = self.synth.params.voice.matrix[slot].target as u8 as isize;
+        let len = ModTarget::ALL.len() as isize;
+        let next = (cur + delta).rem_euclid(len) as u8;
+        self.set_synth_voice_param(param::matrix_target(slot), f32::from(next));
+        if self.synth.params.voice.matrix[slot].amount.abs() < 0.01 && next != 0 {
+            self.set_synth_voice_param(param::matrix_amount(slot), 0.35);
+        }
+        let t = self.synth.params.voice.matrix[slot].target.label();
+        self.status_message = format!("Matrix #{} · Destino: {t}", slot + 1);
+    }
+
+    pub(in crate::ui) fn clear_matrix_slot(&mut self, slot: usize) {
+        if slot >= MATRIX_SLOTS {
+            return;
+        }
+        self.set_synth_voice_param(param::matrix_source(slot), 0.0);
+        self.set_synth_voice_param(param::matrix_target(slot), 0.0);
+        self.set_synth_voice_param(param::matrix_amount(slot), 0.0);
+        self.status_message = format!("Matrix #{} limpiada", slot + 1);
+    }
+
+    pub(in crate::ui) fn apply_matrix_template(&mut self, template: usize) {
+        let slots: &[ModSlot] = match template {
+            0 => &[
+                ModSlot {
+                    source: ModSource::Lfo1,
+                    target: ModTarget::FilterCutoff,
+                    amount: 0.55,
+                },
+                ModSlot {
+                    source: ModSource::Lfo1,
+                    target: ModTarget::OscAPos,
+                    amount: 0.40,
+                },
+                ModSlot {
+                    source: ModSource::Velocity,
+                    target: ModTarget::DistDrive,
+                    amount: 0.35,
+                },
+            ],
+            1 => &[
+                ModSlot {
+                    source: ModSource::Distance,
+                    target: ModTarget::NoiseLevel,
+                    amount: 0.42,
+                },
+                ModSlot {
+                    source: ModSource::Distance,
+                    target: ModTarget::ChorusMix,
+                    amount: 0.50,
+                },
+                ModSlot {
+                    source: ModSource::Distance,
+                    target: ModTarget::OscADetune,
+                    amount: 0.30,
+                },
+                ModSlot {
+                    source: ModSource::Tone,
+                    target: ModTarget::OscAWarp,
+                    amount: 0.45,
+                },
+            ],
+            _ => &[
+                ModSlot {
+                    source: ModSource::Velocity,
+                    target: ModTarget::OscAPos,
+                    amount: 0.55,
+                },
+                ModSlot {
+                    source: ModSource::Velocity,
+                    target: ModTarget::FilterCutoff,
+                    amount: 0.45,
+                },
+                ModSlot {
+                    source: ModSource::Env2,
+                    target: ModTarget::OscAWarp,
+                    amount: 0.50,
+                },
+                ModSlot {
+                    source: ModSource::Random,
+                    target: ModTarget::Pan,
+                    amount: 0.25,
+                },
+            ],
+        };
+        for i in 0..MATRIX_SLOTS {
+            let s = slots.get(i).copied().unwrap_or_default();
+            self.set_synth_voice_param(param::matrix_source(i), s.source as u8 as f32);
+            self.set_synth_voice_param(param::matrix_target(i), s.target as u8 as f32);
+            self.set_synth_voice_param(param::matrix_amount(i), s.amount);
+        }
+        self.status_message = match template {
+            0 => "Matrix · Plantilla «Vital Wobble» aplicada".into(),
+            1 => "Matrix · Plantilla «XY Space Morph» aplicada (arrastra en Stage XY)".into(),
+            _ => "Matrix · Plantilla «Expressive Touch» aplicada".into(),
+        };
     }
 
     pub(in crate::ui) fn current_synth_preset_index(&self) -> Option<usize> {
@@ -503,6 +650,106 @@ impl DawApp {
         self.apply_synth_preset_index(next);
     }
 
+    pub(in crate::ui) fn step_vital_preset(&mut self, delta: isize) {
+        self.synth_ui.ensure_user_presets_loaded();
+        let len = self.synth_ui.vital_library.len();
+        if len == 0 {
+            self.status_message =
+                "No se encontraron presets .vital en librería · usa «Importar .vital»".into();
+            return;
+        }
+        let next = match self.synth_ui.vital_index {
+            Some(cur) => (cur as isize + delta).rem_euclid(len as isize) as usize,
+            None => {
+                if delta < 0 {
+                    len - 1
+                } else {
+                    0
+                }
+            }
+        };
+        let entry = self.synth_ui.vital_library[next].clone();
+        self.synth_ui.vital_index = Some(next);
+        self.import_vital_path(entry.path);
+    }
+
+    pub(in crate::ui) fn choose_vital_file(&mut self, cx: &mut Context<Self>) {
+        if self.synth_ui.vital_picker.is_some() {
+            return;
+        }
+        let prompt = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some("Importar preset .vital o banco .vitalbank".into()),
+        });
+        self.synth_ui.vital_picker = Some(cx.spawn(async move |this, cx| {
+            let result = prompt.await;
+            let _ = this.update(cx, |this, cx| {
+                this.synth_ui.vital_picker = None;
+                match result {
+                    Ok(Ok(Some(paths))) => {
+                        if let Some(path) = paths.first() {
+                            this.import_vital_path(path.clone());
+                        }
+                    }
+                    Ok(Ok(None)) => {}
+                    _ => {
+                        this.status_message =
+                            "No se pudo abrir el selector de archivos .vital".into()
+                    }
+                }
+                cx.notify();
+            });
+        }));
+    }
+
+    pub(in crate::ui) fn import_vital_path(&mut self, path: PathBuf) {
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if ext == "vitalbank" || ext == "bank" || ext == "zip" {
+            match vital_import::extract_vitalbank(&path) {
+                Ok(entries) if !entries.is_empty() => {
+                    let count = entries.len();
+                    let first = entries[0].path.clone();
+                    self.synth_ui.vital_library = vital_import::discover_vital_presets();
+                    self.synth_ui.vital_library_loaded = true;
+                    self.synth_ui.vital_index = self
+                        .synth_ui
+                        .vital_library
+                        .iter()
+                        .position(|e| e.path == first);
+                    self.import_vital_path(first);
+                    self.status_message = format!(
+                        "Banco .vitalbank importado ({count} presets) · {}",
+                        self.synth.name()
+                    );
+                }
+                Ok(_) => {
+                    self.status_message =
+                        "El archivo .vitalbank no contenía presets .vital".into();
+                }
+                Err(e) => self.status_message = format!("Importar .vitalbank: {e}"),
+            }
+            return;
+        }
+        match vital_import::load_vital_file(&path) {
+            Ok((params, summary)) => {
+                self.synth.params = params;
+                self.push_all_synth_live();
+                self.track_revision = self.track_revision.wrapping_add(1);
+                self.status_message = format!(
+                    "Vital importado · {} ({}) · {} mod(s) · WT: {}",
+                    summary.name, summary.style, summary.mapped_mods, summary.osc_a_wt
+                );
+            }
+            Err(e) => self.status_message = format!("Importar .vital: {e}"),
+        }
+    }
+
     pub(in crate::ui) fn save_user_synth_preset(&mut self) {
         self.synth_ui.ensure_user_presets_loaded();
         let Some(dir) = user_presets_dir() else {
@@ -518,8 +765,14 @@ impl DawApp {
         let name = format!("Custom {engine_short} #{n}");
         self.synth.params.preset_name = name.clone();
         let p = &self.synth.params;
+        let mut voice_map = serde_json::Map::new();
+        for (pid, val) in p.all_param_pairs() {
+            if pid >= 20 {
+                voice_map.insert(pid.to_string(), serde_json::json!(val));
+            }
+        }
         let payload = serde_json::json!({
-            "version": 1,
+            "version": 2,
             "preset_name": p.preset_name,
             "engine": p.engine as u8,
             "room": p.room as u8,
@@ -533,6 +786,7 @@ impl DawApp {
             "touch": p.touch,
             "glide": p.glide,
             "gain": p.gain,
+            "voice_params": voice_map,
         });
         let slug: String = name
             .chars()
@@ -569,15 +823,9 @@ impl DawApp {
         let h = f32::from(bounds.size.height).max(1.0);
         let nx = ((f32::from(position.x) - f32::from(bounds.origin.x)) / w).clamp(0.0, 1.0);
         let ny = ((f32::from(position.y) - f32::from(bounds.origin.y)) / h).clamp(0.0, 1.0);
-        // X = Tone (Oscuro -> Brillante), Y invertida = Proximidad (abajo = en el pecho, arriba = lejos).
         let distance = (1.0 - ny).clamp(0.0, 1.0);
-        self.synth.params.tone = nx;
-        self.synth.params.distance = distance;
-        self.synth.update_live_param(cc::TONE, nx);
-        self.synth.update_live_param(cc::DISTANCE, distance);
-        self.push_synth_live_cc(cc::TONE, nx);
-        self.push_synth_live_cc(cc::DISTANCE, distance);
-        self.track_revision = self.track_revision.wrapping_add(1);
+        self.set_synth_voice_param(param::TONE, nx);
+        self.set_synth_voice_param(param::DISTANCE, distance);
         self.status_message = format!(
             "Hay Synth · Tone {:.0}% · Distance {:.0}%",
             nx * 100.0,
@@ -598,10 +846,16 @@ impl DawApp {
         if self.synth_ui.stage_drag {
             return self.update_synth_stage_drag(position);
         }
-        if let Some((cc_id, origin_y, start_val)) = self.synth_ui.slider_drag {
+        if let Some(drag) = self.synth_ui.knob_drag {
             let scale = if fine { 900.0 } else { 150.0 };
-            let delta = f32::from(origin_y - position.y) / scale;
-            self.set_synth_param(cc_id, start_val + delta);
+            let span = (drag.max - drag.min).max(1e-4);
+            let delta = (f32::from(drag.origin_y - position.y) / scale) * span;
+            let next = (drag.start_val + delta).clamp(drag.min, drag.max);
+            self.set_synth_voice_param(drag.param_id, next);
+            self.status_message = format!(
+                "Hay Synth · {}",
+                format_synth_param_value(drag.param_id, next)
+            );
             return true;
         }
         false
@@ -610,7 +864,19 @@ impl DawApp {
     pub(in crate::ui) fn finish_synth_drag(&mut self) -> bool {
         let had = self.synth_ui.dragging();
         self.synth_ui.stage_drag = false;
-        self.synth_ui.slider_drag = None;
+        self.synth_ui.knob_drag = None;
         had
+    }
+}
+
+pub(in crate::ui) fn format_synth_param_value(param_id: u16, value: f32) -> String {
+    match param_id {
+        param::OSC_A_SEMI | param::OSC_B_SEMI => format!("{:+.0} st", value.round()),
+        param::OSC_B_FINE => format!("{:+.0} ct", value * 50.0),
+        param::OSC_A_UNISON | param::OSC_B_UNISON => format!("{}x", value.round() as u8),
+        other if other >= param::MATRIX_BASE && (other - param::MATRIX_BASE) % 3 == 2 => {
+            format!("{:+.0}%", value * 100.0)
+        }
+        _ => format!("{:.0}%", value * 100.0),
     }
 }

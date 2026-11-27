@@ -34,6 +34,11 @@ impl InstrumentVoice {
                 SynthBackend::NativeSynth(synth) => synth.control(cc, value),
                 _ => {}
             },
+            NoteCommand::SynthControl(id, value) => {
+                if let SynthBackend::NativeSynth(synth) = &mut self.synth {
+                    synth.control_param(id, value);
+                }
+            }
             NoteCommand::On { note, velocity } => {
                 self.synth.midi(0x90 | self.channel, note, velocity);
             }

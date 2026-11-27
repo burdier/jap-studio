@@ -57,8 +57,8 @@ impl Synth {
     pub fn update_live(&mut self) {
         self.params.clamp_all();
         if let Some(player) = &self.player {
-            for (cc, v) in self.params.live_controls() {
-                player.sampler_control(cc, v);
+            for (id, v) in self.params.all_param_pairs() {
+                player.synth_control(id, v);
             }
         }
     }
@@ -66,6 +66,12 @@ impl Synth {
     pub fn update_live_param(&mut self, cc: u8, value: f32) {
         if let Some(player) = &self.player {
             player.sampler_control(cc, value);
+        }
+    }
+
+    pub fn update_live_voice_param(&mut self, id: u16, value: f32) {
+        if let Some(player) = &self.player {
+            player.synth_control(id, value);
         }
     }
 

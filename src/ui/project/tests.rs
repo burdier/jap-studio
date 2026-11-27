@@ -405,7 +405,7 @@ fn synth_roundtrips_in_project_doc() {
     let mut state = snapshot();
     let synth_id = InstrumentId(4);
     state.tracks[1].instrument = Some(synth_id);
-    let params = elevate::devices::synth::FACTORY_PRESETS[12].to_params();
+    let params = elevate::devices::synth::vital_factory_presets()[1].2.clone(); // Reese Growl (Voice + Matrix)
     state.synths.push(elevate::project::ProjectSynth {
         id: synth_id,
         params: params.clone(),

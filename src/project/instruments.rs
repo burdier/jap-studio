@@ -296,7 +296,7 @@ impl ProjectDoc {
     }
 }
 
-use crate::devices::synth::{EnvelopeMode, RoomKind, SynthEngineKind, SynthParams};
+use crate::devices::synth::{EnvelopeMode, RoomKind, SynthEngineKind, SynthParams, VoiceParams};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ProjectSynth {
@@ -312,15 +312,13 @@ impl ProjectDoc {
                 return Err("Estado de Hay Synth inválido".into());
             }
             let p = &synth.params;
-            for v in [
-                p.distance, p.shape, p.tone, p.body, p.motion, p.time, p.touch, p.glide, p.gain,
-            ] {
+            for (_, v) in p.all_param_pairs() {
                 if !v.is_finite() {
                     return Err("Parámetro de Hay Synth no finito".into());
                 }
             }
             let map = self.doc.get_map(format!("synth:{}", synth.id.0));
-            map.insert("version", 1_i64).map_err(|e| e.to_string())?;
+            map.insert("version", 2_i64).map_err(|e| e.to_string())?;
             map.insert("engine", i64::from(p.engine as u8))
                 .map_err(|e| e.to_string())?;
             map.insert("room", i64::from(p.room as u8))
@@ -343,6 +341,13 @@ impl ProjectDoc {
                 map.insert(key, f64::from(value))
                     .map_err(|e| e.to_string())?;
             }
+            // Capa Voice Lab + Mod Matrix: pares `p:<id>` estables y compactos.
+            for (pid, val) in p.all_param_pairs() {
+                if pid >= 20 {
+                    map.insert(&format!("p:{pid}"), f64::from(val))
+                        .map_err(|e| e.to_string())?;
+                }
+            }
         }
         Ok(())
     }
@@ -359,7 +364,8 @@ impl ProjectDoc {
             if map.get("version").is_none() || synths.iter().any(|s: &ProjectSynth| s.id == id) {
                 continue;
             }
-            if read_i64(&map, "version")? != 1 {
+            let ver = read_i64(&map, "version")?;
+            if ver != 1 && ver != 2 {
                 return Err("Versión de Hay Synth no compatible".into());
             }
             let read_f = |key: &str, default: f32| -> Result<f32, String> {
@@ -375,7 +381,7 @@ impl ProjectDoc {
                     _ => Err(format!("Parámetro de Hay Synth inválido: {key}")),
                 }
             };
-            let engine = SynthEngineKind::from_u8(read_i64(&map, "engine")?.clamp(0, 6) as u8);
+            let engine = SynthEngineKind::from_u8(read_i64(&map, "engine")?.clamp(0, 7) as u8);
             let room = RoomKind::from_u8(read_i64(&map, "room")?.clamp(0, 3) as u8);
             let mode = EnvelopeMode::from_u8(read_i64(&map, "mode")?.clamp(0, 2) as u8);
             let preset_name = match map.get("preset_name") {
@@ -396,7 +402,26 @@ impl ProjectDoc {
                 glide: read_f("glide", 0.0)?,
                 gain: read_f("gain", 0.80)?,
                 preset_name,
+                voice: VoiceParams::default(),
             };
+            if ver >= 2 {
+                let ids: Vec<u16> = params
+                    .all_param_pairs()
+                    .into_iter()
+                    .filter(|(pid, _)| *pid >= 20)
+                    .map(|(pid, _)| pid)
+                    .collect();
+                for pid in ids {
+                    if let Some(loro::ValueOrContainer::Value(loro::LoroValue::Double(v))) =
+                        map.get(&format!("p:{pid}"))
+                    {
+                        let v = v as f32;
+                        if v.is_finite() {
+                            params.set_param(pid, v);
+                        }
+                    }
+                }
+            }
             params.clamp_all();
             synths.push(ProjectSynth { id, params });
         }

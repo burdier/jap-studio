@@ -32,12 +32,13 @@ use std::sync::{
 };
 pub(crate) use voice::{PreparedArrangementVoice, VoiceSource};
 
-const COMMAND_QUEUE_CAP: usize = 512;
+const COMMAND_QUEUE_CAP: usize = 1024;
 
 #[derive(Clone)]
 enum NoteCommand {
     Filter(elevate::devices::filter::FilterSettings),
     SamplerControl(u8, f32),
+    SynthControl(u16, f32),
     On {
         note: u8,
         velocity: u8,
@@ -250,6 +251,9 @@ impl PianoPlayer {
     }
     pub fn sampler_control(&self, cc: u8, value: f32) {
         self.push(NoteCommand::SamplerControl(cc, value));
+    }
+    pub fn synth_control(&self, id: u16, value: f32) {
+        self.push(NoteCommand::SynthControl(id, value));
     }
     pub fn note_on(&self, note: u8, velocity: u8) {
         self.push(NoteCommand::On { note, velocity });
