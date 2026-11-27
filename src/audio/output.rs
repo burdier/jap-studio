@@ -118,6 +118,9 @@ pub(super) fn write_stereo<T: cpal::SizedSample + cpal::FromSample<f32>>(
     first: usize,
 ) {
     output.fill(T::from_sample(0.0));
+    if channels < 2 || first + 1 >= channels {
+        return;
+    }
     for (destination, frame) in output.chunks_exact_mut(channels).zip(frames) {
         destination[first] = T::from_sample(soft_ceiling(frame[0]));
         destination[first + 1] = T::from_sample(soft_ceiling(frame[1]));
