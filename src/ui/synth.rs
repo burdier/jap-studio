@@ -30,6 +30,36 @@ pub(in crate::ui) enum SynthTab {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(in crate::ui) enum PresetSource {
+    #[default]
+    HayNative,
+    ExternalVital,
+    SerumFxp,
+    User,
+    Components,
+}
+
+impl PresetSource {
+    pub const ALL: [Self; 5] = [
+        Self::HayNative,
+        Self::ExternalVital,
+        Self::SerumFxp,
+        Self::User,
+        Self::Components,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::HayNative => "Hay Synth",
+            Self::ExternalVital => "Bancos (.vital)",
+            Self::SerumFxp => "Serum (.fxp)",
+            Self::User => "User",
+            Self::Components => "Efectos FX",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(in crate::ui) enum PresetCategory {
     #[default]
     All,
@@ -41,13 +71,10 @@ pub(in crate::ui) enum PresetCategory {
     Vocal,
     Texture,
     FxSeq,
-    User,
-    Library,
-    Components,
 }
 
 impl PresetCategory {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 9] = [
         Self::All,
         Self::Bass,
         Self::Lead,
@@ -57,9 +84,6 @@ impl PresetCategory {
         Self::Vocal,
         Self::Texture,
         Self::FxSeq,
-        Self::User,
-        Self::Library,
-        Self::Components,
     ];
 
     pub fn label(self) -> &'static str {
@@ -73,18 +97,12 @@ impl PresetCategory {
             Self::Vocal => "Vocal",
             Self::Texture => "Texture",
             Self::FxSeq => "FX / Seq",
-            Self::User => "User",
-            Self::Library => "Librería",
-            Self::Components => "Efectos FX",
         }
     }
 
-    pub fn matches(self, name: &str, raw_cat: &str, is_user: bool, is_library: bool) -> bool {
+    pub fn matches(self, name: &str, raw_cat: &str) -> bool {
         match self {
             Self::All => true,
-            Self::User => is_user,
-            Self::Library => is_library,
-            Self::Components => false,
             _ => classify_preset_category(name, raw_cat) == self,
         }
     }
@@ -163,6 +181,7 @@ pub(in crate::ui) struct SynthKnobDrag {
 pub(super) struct SynthUi {
     pub tab: SynthTab,
     pub preset_menu_open: bool,
+    pub preset_source: PresetSource,
     pub preset_category: PresetCategory,
     /// Arrastre vertical de deslizador/perilla (`u16` del espacio `param::*`).
     pub knob_drag: Option<SynthKnobDrag>,

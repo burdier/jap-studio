@@ -6,7 +6,7 @@ use crate::ui::{
         keyboard::{NotePress, midi_keyboard},
         knob::{KnobSpec, rotary_knob},
     },
-    synth::{PresetCategory, SynthKnobDrag, SynthTab, format_synth_param_value},
+    synth::{PresetCategory, PresetSource, SynthKnobDrag, SynthTab, format_synth_param_value},
 };
 use elevate::devices::synth::{
     DistMode, EnvelopeMode, FACTORY_PRESETS, FilterKind, LfoShape, MATRIX_SLOTS, ModSource,
@@ -273,17 +273,10 @@ impl DawApp {
                     .child(self.render_window_button(cx)),
             );
 
-        // ── Selector de los 8 motores + acceso rápido a librería de presets externos ──
-        let vital_count = self.synth_ui.vital_library.len();
-        let vital_label = if let Some(idx) = self.synth_ui.vital_index
-            && let Some(entry) = self.synth_ui.vital_library.get(idx)
-        {
-            format!("{} ({}/{vital_count})", entry.name, idx + 1)
-        } else if vital_count > 0 {
-            format!("Librería ({vital_count})")
-        } else {
-            String::new()
-        };
+        // ── Selector de motor + Flujo de señal claro (qué capas están sonando hacia Stage) ──
+        let osc_b_on = params.voice.osc_b_level > 0.01;
+        let sub_on = params.voice.sub_level > 0.01;
+        let noise_on = params.voice.noise_level > 0.01;
         let engine_bar = div()
             .flex_shrink_0()
             .flex()
@@ -308,7 +301,7 @@ impl DawApp {
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(rgb(ds.muted))
                             .mr_1()
-                            .child("MOTOR"),
+                            .child("FUENTE"),
                     )
                     .children(SynthEngineKind::ALL.into_iter().map(|engine| {
                         let active = params.engine == engine;
@@ -333,20 +326,77 @@ impl DawApp {
                         )
                     })),
             )
-            .when(vital_count > 0, |bar| {
-                bar.child(
-                    div()
-                        .w(px(236.))
-                        .flex_shrink_0()
-                        .child(self.step_selector(
-                            "vital-lib",
-                            &vital_label,
-                            ds.cyan,
-                            cx,
-                            |this, delta| this.step_vital_preset(delta),
-                        )),
-                )
-            });
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(4.))
+                    .child(
+                        div()
+                            .text_size(px(9.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(rgb(ds.muted))
+                            .child("CAPAS:"),
+                    )
+                    .child(
+                        pill_button(ds, if osc_b_on { "OSC B ON" } else { "OSC B" }, osc_b_on, ds.cyan)
+                            .id("synth-flow-oscb")
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |this, _, _, cx| {
+                                    let next = if this.synth.params.voice.osc_b_level > 0.01 { 0.0 } else { 0.48 };
+                                    this.set_synth_voice_param(param::OSC_B_LEVEL, next);
+                                    this.status_message = format!(
+                                        "Hay Synth · OSC B {}",
+                                        if next > 0.0 { "activado" } else { "silenciado" }
+                                    );
+                                    cx.stop_propagation();
+                                    cx.notify();
+                                }),
+                            ),
+                    )
+                    .child(
+                        pill_button(ds, if sub_on { "SUB ON" } else { "SUB" }, sub_on, ds.accent)
+                            .id("synth-flow-sub")
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |this, _, _, cx| {
+                                    let next = if this.synth.params.voice.sub_level > 0.01 { 0.0 } else { 0.45 };
+                                    this.set_synth_voice_param(param::SUB_LEVEL, next);
+                                    this.status_message = format!(
+                                        "Hay Synth · SUB {}",
+                                        if next > 0.0 { "activado" } else { "silenciado" }
+                                    );
+                                    cx.stop_propagation();
+                                    cx.notify();
+                                }),
+                            ),
+                    )
+                    .child(
+                        pill_button(ds, if noise_on { "NOISE ON" } else { "NOISE" }, noise_on, ds.muted)
+                            .id("synth-flow-noise")
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |this, _, _, cx| {
+                                    let next = if this.synth.params.voice.noise_level > 0.01 { 0.0 } else { 0.18 };
+                                    this.set_synth_voice_param(param::NOISE_LEVEL, next);
+                                    this.status_message = format!(
+                                        "Hay Synth · Noise {}",
+                                        if next > 0.0 { "activado" } else { "silenciado" }
+                                    );
+                                    cx.stop_propagation();
+                                    cx.notify();
+                                }),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(9.))
+                            .text_color(rgb(ds.cyan))
+                            .ml(px(2.))
+                            .child("→ STAGE"),
+                    ),
+            );
 
         let tab_content = match tab {
             SynthTab::Stage => self
@@ -900,17 +950,82 @@ impl DawApp {
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // Menú flotante de Presets por Categorías + Efectos nativos del componente
+    // Menú flotante estilo Add: pestañas separadas por origen (Hay Synth | Bancos | Serum | User | FX)
+    // y categorías limpias dentro de cada origen.
     // ──────────────────────────────────────────────────────────────────────────
     fn render_synth_preset_menu(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let ds = &self.ds;
+        let active_src = self.synth_ui.preset_source;
         let active_cat = self.synth_ui.preset_category;
         let active_name = self.synth.params.preset_name.clone();
         let all_native = self.synth_ui.all_presets();
         let factory_count = FACTORY_PRESETS.len() + vital_factory_presets().len();
+        let user_count = self.synth_ui.user_presets.len();
+        let vital_count = self
+            .synth_ui
+            .vital_library
+            .iter()
+            .filter(|e| {
+                e.path
+                    .extension()
+                    .and_then(|x| x.to_str())
+                    .is_some_and(|x| x.eq_ignore_ascii_case("vital"))
+            })
+            .count();
+        let serum_count = self
+            .synth_ui
+            .vital_library
+            .iter()
+            .filter(|e| {
+                e.path
+                    .extension()
+                    .and_then(|x| x.to_str())
+                    .is_some_and(|x| x.eq_ignore_ascii_case("fxp"))
+            })
+            .count();
 
+        let source_tabs = div()
+            .flex_shrink_0()
+            .px_2()
+            .py(px(5.))
+            .bg(rgb(ds.panel_dark))
+            .border_b_1()
+            .border_color(rgb(ds.border))
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap_1()
+            .children(PresetSource::ALL.into_iter().map(|src| {
+                let selected = active_src == src;
+                let count_tag = match src {
+                    PresetSource::HayNative => format!("{} ({factory_count})", src.label()),
+                    PresetSource::ExternalVital => format!("{} ({vital_count})", src.label()),
+                    PresetSource::SerumFxp => format!("{} ({serum_count})", src.label()),
+                    PresetSource::User => format!("{} ({user_count})", src.label()),
+                    PresetSource::Components => src.label().to_owned(),
+                };
+                let color = match src {
+                    PresetSource::HayNative => ds.accent,
+                    PresetSource::ExternalVital | PresetSource::SerumFxp => ds.cyan,
+                    PresetSource::User => ds.text,
+                    PresetSource::Components => ds.cyan,
+                };
+                pill_button(ds, &count_tag, selected, color)
+                    .id(("synth-menu-src", src as usize))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, _, cx| {
+                            this.synth_ui.preset_source = src;
+                            this.synth_ui.preset_category = PresetCategory::All;
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    )
+            }));
+
+        let show_categories = active_src != PresetSource::Components;
         let categories_col = div()
-            .w(px(138.))
+            .w(px(124.))
             .flex_shrink_0()
             .p_2()
             .border_r_1()
@@ -921,11 +1036,6 @@ impl DawApp {
             .gap(px(3.))
             .children(PresetCategory::ALL.into_iter().map(|cat| {
                 let selected = active_cat == cat;
-                let accent = if cat == PresetCategory::Components {
-                    ds.cyan
-                } else {
-                    ds.accent
-                };
                 div()
                     .id(("synth-menu-cat", cat as usize))
                     .w_full()
@@ -935,14 +1045,14 @@ impl DawApp {
                     .cursor_pointer()
                     .bg(rgb(if selected { ds.panel } else { ds.panel_dark }))
                     .border_1()
-                    .border_color(rgb(if selected { accent } else { ds.panel_dark }))
+                    .border_color(rgb(if selected { ds.accent } else { ds.panel_dark }))
                     .text_size(px(10.5))
                     .font_weight(if selected {
                         FontWeight::BOLD
                     } else {
                         FontWeight::NORMAL
                     })
-                    .text_color(rgb(if selected { accent } else { ds.text }))
+                    .text_color(rgb(if selected { ds.accent } else { ds.text }))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |this, _, _, cx| {
@@ -954,243 +1064,287 @@ impl DawApp {
                     .child(cat.label())
             }));
 
-        let list_body: gpui::AnyElement = if active_cat == PresetCategory::Components {
-            let track_chain = self
-                .synth_track()
-                .and_then(|idx| self.tracks.get(idx))
-                .map(|t| &t.chain);
-            let mut components: Vec<(String, String, String)> = self
-                .lua_components
-                .registry
-                .values()
-                .map(|c| (c.id.clone(), c.name.clone(), c.description.clone()))
-                .collect();
-            components.push((
-                elevate::musical::fx::cabinet::ID.to_owned(),
-                "Hey Convolver".into(),
-                "Convolución de cabinas e impulsos IR".into(),
-            ));
-            components.sort_by(|a, b| a.1.cmp(&b.1));
-            div()
-                .id("synth-menu-fx-list")
-                .flex_1()
-                .min_h_0()
-                .overflow_y_scroll()
-                .p_2()
-                .flex()
-                .flex_col()
-                .gap(px(4.))
-                .child(
-                    div()
-                        .text_size(px(9.5))
-                        .text_color(rgb(ds.muted))
-                        .pb_1()
-                        .child("Haz clic en un componente para insertarlo en la cadena FX de esta pista:"),
-                )
-                .children(components.into_iter().enumerate().map(|(i, (id, name, desc))| {
-                    let already = track_chain.is_some_and(|chain| {
-                        chain.nodes().iter().any(|n| match &n.kind {
-                            elevate::musical::fx::FxKind::Effect {
-                                plugin_id:
-                                    elevate::musical::track::TrackDevice::Hay { catalog_id },
-                                ..
-                            } => catalog_id == &id,
-                            _ => false,
-                        })
-                    });
-                    let fx_id = id.clone();
-                    div()
-                        .id(("synth-menu-fx", i))
-                        .w_full()
-                        .px_2()
-                        .py(px(6.))
-                        .rounded(px(ds.radius_sm))
-                        .bg(rgb(ds.panel_dark))
-                        .border_1()
-                        .border_color(rgb(if already { ds.cyan } else { ds.border }))
-                        .cursor_pointer()
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .gap_2()
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(move |this, _, _, cx| {
-                                this.add_synth_track_fx(&fx_id);
-                                cx.stop_propagation();
-                                cx.notify();
-                            }),
-                        )
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
-                                .flex()
-                                .flex_col()
-                                .child(
-                                    div()
-                                        .font_weight(FontWeight::MEDIUM)
-                                        .text_color(rgb(ds.text))
-                                        .child(name),
-                                )
-                                .child(
-                                    div()
-                                        .text_size(px(9.))
-                                        .text_color(rgb(ds.muted))
-                                        .truncate()
-                                        .child(desc),
-                                ),
-                        )
-                        .child(
-                            div()
-                                .flex_shrink_0()
-                                .px(px(6.))
-                                .py(px(2.))
-                                .rounded(px(3.))
-                                .bg(rgb(ds.bg))
-                                .text_size(px(9.5))
-                                .text_color(rgb(if already { ds.cyan } else { ds.accent }))
-                                .child(if already { "+ Otro" } else { "+ Añadir" }),
-                        )
-                }))
-                .into_any_element()
-        } else {
-            let mut rows: Vec<gpui::AnyElement> = Vec::new();
-            for (idx, p) in all_native.iter().enumerate() {
-                let is_user = idx >= factory_count;
-                if !active_cat.matches(&p.name, &p.category, is_user, false) {
-                    continue;
-                }
-                let is_cur = p.name.eq_ignore_ascii_case(&active_name);
-                let name = p.name.clone();
-                let cat_lbl = p.category.clone();
-                let eng_lbl = p.params.engine.label();
-                rows.push(
-                    div()
-                        .id(("synth-menu-native", idx))
-                        .w_full()
-                        .px_2()
-                        .py(px(5.))
-                        .rounded(px(ds.radius_sm))
-                        .bg(rgb(if is_cur { ds.panel } else { ds.panel_dark }))
-                        .border_1()
-                        .border_color(rgb(if is_cur { ds.accent } else { ds.border }))
-                        .cursor_pointer()
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .gap_2()
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(move |this, _, _, cx| {
-                                this.synth_ui.vital_index = None;
-                                this.apply_synth_preset_index(idx);
-                                cx.stop_propagation();
-                                cx.notify();
-                            }),
-                        )
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
-                                .text_color(rgb(if is_cur { ds.accent } else { ds.text }))
-                                .font_weight(if is_cur {
-                                    FontWeight::BOLD
-                                } else {
-                                    FontWeight::NORMAL
-                                })
-                                .truncate()
-                                .child(name),
-                        )
-                        .child(
-                            div()
-                                .flex_shrink_0()
-                                .text_size(px(9.))
-                                .text_color(rgb(ds.muted))
-                                .child(format!("{cat_lbl} · {eng_lbl}")),
-                        )
-                        .into_any_element(),
-                );
+        let list_body: gpui::AnyElement = match active_src {
+            PresetSource::Components => {
+                let track_chain = self
+                    .synth_track()
+                    .and_then(|idx| self.tracks.get(idx))
+                    .map(|t| &t.chain);
+                let mut components: Vec<(String, String, String)> = self
+                    .lua_components
+                    .registry
+                    .values()
+                    .map(|c| (c.id.clone(), c.name.clone(), c.description.clone()))
+                    .collect();
+                components.push((
+                    elevate::musical::fx::cabinet::ID.to_owned(),
+                    "Hey Convolver".into(),
+                    "Convolución de cabinas e impulsos IR".into(),
+                ));
+                components.sort_by(|a, b| a.1.cmp(&b.1));
+                div()
+                    .id("synth-menu-fx-list")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .p_2()
+                    .flex()
+                    .flex_col()
+                    .gap(px(4.))
+                    .child(
+                        div()
+                            .text_size(px(9.5))
+                            .text_color(rgb(ds.muted))
+                            .pb_1()
+                            .child("Haz clic en un componente para insertarlo en la cadena FX de esta pista:"),
+                    )
+                    .children(components.into_iter().enumerate().map(|(i, (id, name, desc))| {
+                        let already = track_chain.is_some_and(|chain| {
+                            chain.nodes().iter().any(|n| match &n.kind {
+                                elevate::musical::fx::FxKind::Effect {
+                                    plugin_id:
+                                        elevate::musical::track::TrackDevice::Hay { catalog_id },
+                                    ..
+                                } => catalog_id == &id,
+                                _ => false,
+                            })
+                        });
+                        let fx_id = id.clone();
+                        div()
+                            .id(("synth-menu-fx", i))
+                            .w_full()
+                            .px_2()
+                            .py(px(6.))
+                            .rounded(px(ds.radius_sm))
+                            .bg(rgb(ds.panel_dark))
+                            .border_1()
+                            .border_color(rgb(if already { ds.cyan } else { ds.border }))
+                            .cursor_pointer()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .gap_2()
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |this, _, _, cx| {
+                                    this.add_synth_track_fx(&fx_id);
+                                    cx.stop_propagation();
+                                    cx.notify();
+                                }),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .flex()
+                                    .flex_col()
+                                    .child(
+                                        div()
+                                            .font_weight(FontWeight::MEDIUM)
+                                            .text_color(rgb(ds.text))
+                                            .child(name),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(9.))
+                                            .text_color(rgb(ds.muted))
+                                            .truncate()
+                                            .child(desc),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .flex_shrink_0()
+                                    .px(px(6.))
+                                    .py(px(2.))
+                                    .rounded(px(3.))
+                                    .bg(rgb(ds.bg))
+                                    .text_size(px(9.5))
+                                    .text_color(rgb(if already { ds.cyan } else { ds.accent }))
+                                    .child(if already { "+ Otro" } else { "+ Añadir" }),
+                            )
+                    }))
+                    .into_any_element()
             }
-            // Presets externos de librería filtrados por categoría (hasta 140 visibles para render ágil).
-            let mut ext_shown = 0usize;
-            for (vidx, entry) in self.synth_ui.vital_library.iter().enumerate() {
-                if ext_shown >= 140 {
-                    break;
+            PresetSource::HayNative | PresetSource::User => {
+                let mut rows: Vec<gpui::AnyElement> = Vec::new();
+                for (idx, p) in all_native.iter().enumerate() {
+                    let is_user = idx >= factory_count;
+                    if (active_src == PresetSource::User && !is_user)
+                        || (active_src == PresetSource::HayNative && is_user)
+                    {
+                        continue;
+                    }
+                    if !active_cat.matches(&p.name, &p.category) {
+                        continue;
+                    }
+                    let is_cur = p.name.eq_ignore_ascii_case(&active_name);
+                    let name = p.name.clone();
+                    let cat_lbl = p.category.clone();
+                    let eng_lbl = p.params.engine.label();
+                    rows.push(
+                        div()
+                            .id(("synth-menu-native", idx))
+                            .w_full()
+                            .px_2()
+                            .py(px(5.))
+                            .rounded(px(ds.radius_sm))
+                            .bg(rgb(if is_cur { ds.panel } else { ds.panel_dark }))
+                            .border_1()
+                            .border_color(rgb(if is_cur { ds.accent } else { ds.border }))
+                            .cursor_pointer()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .gap_2()
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |this, _, _, cx| {
+                                    this.synth_ui.vital_index = None;
+                                    this.apply_synth_preset_index(idx);
+                                    cx.stop_propagation();
+                                    cx.notify();
+                                }),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .text_color(rgb(if is_cur { ds.accent } else { ds.text }))
+                                    .font_weight(if is_cur {
+                                        FontWeight::BOLD
+                                    } else {
+                                        FontWeight::NORMAL
+                                    })
+                                    .truncate()
+                                    .child(name),
+                            )
+                            .child(
+                                div()
+                                    .flex_shrink_0()
+                                    .text_size(px(9.))
+                                    .text_color(rgb(ds.muted))
+                                    .child(format!("{cat_lbl} · {eng_lbl}")),
+                            )
+                            .into_any_element(),
+                    );
                 }
-                if !active_cat.matches(&entry.name, &entry.pack, false, true) {
-                    continue;
+                if rows.is_empty() {
+                    rows.push(
+                        div()
+                            .p_3()
+                            .text_color(rgb(ds.muted))
+                            .child(if active_src == PresetSource::User {
+                                "Aún no guardaste presets propios · pulsa «Guardar»"
+                            } else {
+                                "Sin presets en esta categoría"
+                            })
+                            .into_any_element(),
+                    );
                 }
-                ext_shown += 1;
-                let is_cur = self.synth_ui.vital_index == Some(vidx);
-                let path = entry.path.clone();
-                let name = entry.name.clone();
-                let pack = entry.pack.clone();
-                rows.push(
-                    div()
-                        .id(("synth-menu-lib", vidx))
-                        .w_full()
-                        .px_2()
-                        .py(px(5.))
-                        .rounded(px(ds.radius_sm))
-                        .bg(rgb(if is_cur { ds.panel } else { ds.panel_dark }))
-                        .border_1()
-                        .border_color(rgb(if is_cur { ds.cyan } else { ds.border }))
-                        .cursor_pointer()
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .gap_2()
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(move |this, _, _, cx| {
-                                this.synth_ui.vital_index = Some(vidx);
-                                this.import_vital_path(path.clone());
-                                cx.stop_propagation();
-                                cx.notify();
-                            }),
-                        )
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
-                                .text_color(rgb(if is_cur { ds.cyan } else { ds.text }))
-                                .truncate()
-                                .child(name),
-                        )
-                        .child(
-                            div()
-                                .w(px(120.))
-                                .flex_shrink_0()
-                                .text_right()
-                                .text_size(px(9.))
-                                .text_color(rgb(ds.muted))
-                                .truncate()
-                                .child(pack),
-                        )
-                        .into_any_element(),
-                );
+                div()
+                    .id("synth-menu-preset-list")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .p_2()
+                    .flex()
+                    .flex_col()
+                    .gap(px(4.))
+                    .children(rows)
+                    .into_any_element()
             }
-            if rows.is_empty() {
-                rows.push(
-                    div()
-                        .p_3()
-                        .text_color(rgb(ds.muted))
-                        .child("Sin presets en esta categoría")
-                        .into_any_element(),
-                );
+            PresetSource::ExternalVital | PresetSource::SerumFxp => {
+                let want_ext = if active_src == PresetSource::SerumFxp {
+                    "fxp"
+                } else {
+                    "vital"
+                };
+                let mut rows: Vec<gpui::AnyElement> = Vec::new();
+                let mut shown = 0usize;
+                for (vidx, entry) in self.synth_ui.vital_library.iter().enumerate() {
+                    if shown >= 200 {
+                        break;
+                    }
+                    let ext_ok = entry
+                        .path
+                        .extension()
+                        .and_then(|x| x.to_str())
+                        .is_some_and(|x| x.eq_ignore_ascii_case(want_ext));
+                    if !ext_ok || !active_cat.matches(&entry.name, &entry.pack) {
+                        continue;
+                    }
+                    shown += 1;
+                    let is_cur = self.synth_ui.vital_index == Some(vidx);
+                    let path = entry.path.clone();
+                    let name = entry.name.clone();
+                    let pack = entry.pack.clone();
+                    rows.push(
+                        div()
+                            .id(("synth-menu-lib", vidx))
+                            .w_full()
+                            .px_2()
+                            .py(px(5.))
+                            .rounded(px(ds.radius_sm))
+                            .bg(rgb(if is_cur { ds.panel } else { ds.panel_dark }))
+                            .border_1()
+                            .border_color(rgb(if is_cur { ds.cyan } else { ds.border }))
+                            .cursor_pointer()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .gap_2()
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |this, _, _, cx| {
+                                    this.synth_ui.vital_index = Some(vidx);
+                                    this.import_vital_path(path.clone());
+                                    cx.stop_propagation();
+                                    cx.notify();
+                                }),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .text_color(rgb(if is_cur { ds.cyan } else { ds.text }))
+                                    .truncate()
+                                    .child(name),
+                            )
+                            .child(
+                                div()
+                                    .w(px(140.))
+                                    .flex_shrink_0()
+                                    .text_right()
+                                    .text_size(px(9.))
+                                    .text_color(rgb(ds.muted))
+                                    .truncate()
+                                    .child(pack),
+                            )
+                            .into_any_element(),
+                    );
+                }
+                if rows.is_empty() {
+                    rows.push(
+                        div()
+                            .p_3()
+                            .text_color(rgb(ds.muted))
+                            .child("Sin presets en esta categoría · usa «Importar…» para añadir bancos")
+                            .into_any_element(),
+                    );
+                }
+                div()
+                    .id("synth-menu-preset-list")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .p_2()
+                    .flex()
+                    .flex_col()
+                    .gap(px(4.))
+                    .children(rows)
+                    .into_any_element()
             }
-            div()
-                .id("synth-menu-preset-list")
-                .flex_1()
-                .min_h_0()
-                .overflow_y_scroll()
-                .p_2()
-                .flex()
-                .flex_col()
-                .gap(px(4.))
-                .children(rows)
-                .into_any_element()
         };
 
         // Overlay posicionado absolutamente: nunca empuja ni altera el layout subyacente.
@@ -1199,8 +1353,8 @@ impl DawApp {
             .absolute()
             .top(px(40.))
             .left(px(12.))
-            .w(px(540.))
-            .h(px(330.))
+            .w(px(620.))
+            .h(px(360.))
             .rounded(px(ds.radius_md))
             .bg(rgb(ds.bg))
             .border_1()
@@ -1230,7 +1384,7 @@ impl DawApp {
                             .font_weight(FontWeight::BOLD)
                             .text_size(px(10.5))
                             .text_color(rgb(ds.cyan))
-                            .child(format!("NAVEGADOR · {}", active_cat.label())),
+                            .child(format!("NAVEGADOR · {}", active_src.label())),
                     )
                     .child(
                         pill_button(ds, "Cerrar ✕", false, ds.muted)
@@ -1245,12 +1399,13 @@ impl DawApp {
                             ),
                     ),
             )
+            .child(source_tabs)
             .child(
                 div()
                     .flex_1()
                     .min_h_0()
                     .flex()
-                    .child(categories_col)
+                    .when(show_categories, |row| row.child(categories_col))
                     .child(list_body),
             )
     }
