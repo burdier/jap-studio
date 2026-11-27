@@ -1,13 +1,16 @@
 //! Control del editor independiente de GPUI y de la representación de parámetros.
+#[cfg(target_os = "linux")]
 mod frame;
 mod handler;
 mod latency;
 pub(super) mod session;
+#[cfg(target_os = "linux")]
 mod shortcut;
 mod state;
 mod stream;
 pub(crate) use state::{PendingState, PluginState};
 mod window;
+#[cfg(target_os = "linux")]
 mod x11;
 use elevate::musical::fx::VstPreset;
 pub(super) use handler::{Edit, Handler};

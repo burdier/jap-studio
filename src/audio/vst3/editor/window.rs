@@ -1,41 +1,43 @@
 //! Ventana original devuelta por createView("editor"), sin reconstruir controles.
-use super::{
-    EditorHandle, EditorMidiKey,
-    frame::{Frame, valid},
-    shortcut::SpaceShortcut,
-    x11::X11,
-};
-use std::{ptr, rc::Rc, sync::atomic::Ordering};
-use vst3::{
-    ComPtr, ComWrapper,
-    Steinberg::{Vst::*, *},
-};
-pub(super) struct Window {
-    view: ComPtr<IPlugView>,
-    frame: ComWrapper<Frame>,
-    _frame_interface: ComPtr<IPlugFrame>,
-    x11: Rc<X11>,
-    attached: bool,
-    space: SpaceShortcut,
-    midi_enabled: bool,
-    midi_held: [Option<u8>; 256],
-}
-impl Window {
-    pub fn open(controller: &ComPtr<IEditController>, name: &str) -> Result<Self, String> {
-        unsafe {
-            let view = ComPtr::from_raw(controller.createView(c"editor".as_ptr()))
-                .ok_or("Este plugin no ofrece un editor gráfico")?;
-            super::super::check(
-                view.isPlatformTypeSupported(c"X11EmbedWindowID".as_ptr()),
-                "editor X11/XWayland",
-            )?;
+#[cfg(target_os = "linux")]
+mod platform {
+    use super::super::{
+        EditorHandle, EditorMidiKey,
+        frame::{Frame, valid},
+        shortcut::SpaceShortcut,
+        x11::X11,
+    };
+    use std::{ptr, rc::Rc, sync::atomic::Ordering};
+    use vst3::{
+        ComPtr, ComWrapper,
+        Steinberg::{Vst::*, *},
+    };
+    pub(crate) struct Window {
+        view: ComPtr<IPlugView>,
+        frame: ComWrapper<Frame>,
+        _frame_interface: ComPtr<IPlugFrame>,
+        x11: Rc<X11>,
+        attached: bool,
+        space: SpaceShortcut,
+        midi_enabled: bool,
+        midi_held: [Option<u8>; 256],
+    }
+    impl Window {
+        pub fn open(controller: &ComPtr<IEditController>, name: &str) -> Result<Self, String> {
+            unsafe {
+                let view = ComPtr::from_raw(controller.createView(c"editor".as_ptr()))
+                    .ok_or("Este plugin no ofrece un editor gráfico")?;
+                super::super::super::check(
+                    view.isPlatformTypeSupported(c"X11EmbedWindowID".as_ptr()),
+                    "editor X11/XWayland",
+                )?;
             let mut rect = ViewRect {
                 left: 0,
                 top: 0,
                 right: 800,
                 bottom: 600,
             };
-            super::super::check(view.getSize(&mut rect), "tamaño del editor")?;
+            super::super::super::check(view.getSize(&mut rect), "tamaño del editor")?;
             let size = (rect.right - rect.left, rect.bottom - rect.top);
             if !valid(size) {
                 return Err("El plugin devolvió un tamaño de editor inválido".into());
@@ -58,11 +60,11 @@ impl Window {
                 midi_held: [None; 256],
             };
             window.x11.raise();
-            super::super::check(
+            super::super::super::check(
                 window.view.setFrame(window._frame_interface.as_ptr()),
                 "setFrame",
             )?;
-            super::super::check(
+            super::super::super::check(
                 window
                     .view
                     .attached(window.x11.window as *mut _, c"X11EmbedWindowID".as_ptr()),
@@ -194,17 +196,40 @@ impl Window {
         true
     }
 }
-impl Drop for Window {
-    fn drop(&mut self) {
-        unsafe {
-            if self.attached {
-                self.view.onFocus(0);
-                self.view.removed();
+    impl Drop for Window {
+        fn drop(&mut self) {
+            unsafe {
+                if self.attached {
+                    self.view.onFocus(0);
+                    self.view.removed();
+                }
+                self.view.setFrame(ptr::null_mut());
             }
-            self.view.setFrame(ptr::null_mut());
+            // El plugin puede retener el frame. La ventana se destruye al cerrar
+            // la vista aunque el frame viva más tiempo.
+            self.x11.close_window();
         }
-        // El plugin puede retener el frame. La ventana se destruye al cerrar
-        // la vista aunque el frame viva más tiempo.
-        self.x11.close_window();
     }
 }
+
+#[cfg(not(target_os = "linux"))]
+mod platform {
+    use super::super::EditorHandle;
+    use vst3::{ComPtr, Steinberg::Vst::IEditController};
+
+    pub(crate) struct Window;
+
+    impl Window {
+        pub fn open(_controller: &ComPtr<IEditController>, _name: &str) -> Result<Self, String> {
+            Err("El editor gráfico VST3 nativo aún está en preparación para esta plataforma; el audio y los parámetros siguen activos".into())
+        }
+
+        pub fn raise(&self) {}
+
+        pub fn tick(&mut self, _handle: &EditorHandle) -> bool {
+            false
+        }
+    }
+}
+
+pub(super) use platform::Window;

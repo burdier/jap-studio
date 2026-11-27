@@ -27,19 +27,10 @@ pub(in crate::ui) fn detect_recovery() -> Option<(PathBuf, String)> {
     let modified = meta.modified().ok().unwrap_or(SystemTime::now());
     let secs = modified
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0) as libc::time_t;
-    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
-    unsafe {
-        libc::localtime_r(&secs, &mut tm);
-    }
-    let stamp = format!(
-        "{:02}/{:02} {:02}:{:02}",
-        tm.tm_mday,
-        tm.tm_mon + 1,
-        tm.tm_hour,
-        tm.tm_min
-    );
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let (_, mon, day, hour, min, _) = crate::ui::history::unix_to_calendar(secs);
+    let stamp = format!("{day:02}/{mon:02} {hour:02}:{min:02}");
     Some((path, stamp))
 }
 

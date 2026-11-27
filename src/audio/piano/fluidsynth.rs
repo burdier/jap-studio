@@ -1,10 +1,12 @@
-//! Adaptador FFI aislado para `libfluidsynth` (`dlopen` dinámico en tiempo de ejecución).
-//! Si `libfluidsynth.so.3` está disponible en el sistema, se usa como motor SoundFont C;
+//! Adaptador FFI aislado para `libfluidsynth` (carga dinámica multiplataforma).
+//! Si está disponible en el sistema, se usa como motor SoundFont C;
 //! si no está instalado, `audio/piano` cae automáticamente a `rustysynth` sin romper la compilación.
-use libc::{
-    RTLD_LAZY, RTLD_LOCAL, c_char, c_double, c_float, c_int, c_uint, c_void, dlopen, dlsym,
+use crate::audio::dynlib::DynLib;
+use std::{
+    ffi::{CStr, CString, c_char, c_double, c_float, c_int, c_uint, c_void},
+    path::Path,
+    sync::OnceLock,
 };
-use std::{ffi::CString, path::Path, sync::OnceLock};
 
 mod voices;
 
@@ -14,6 +16,7 @@ type FluidSettings = c_void;
 type FluidSynth = c_void;
 
 struct FluidApi {
+    _lib: DynLib,
     new_settings: unsafe extern "C" fn() -> *mut FluidSettings,
     delete_settings: unsafe extern "C" fn(*mut FluidSettings),
     settings_setnum: unsafe extern "C" fn(*mut FluidSettings, *const c_char, c_double) -> c_int,
@@ -56,49 +59,51 @@ unsafe impl Sync for FluidApi {}
 
 static API: OnceLock<Option<FluidApi>> = OnceLock::new();
 
-unsafe fn sym<T>(handle: *mut c_void, name: &[u8]) -> Option<T> {
-    let ptr = unsafe { dlsym(handle, name.as_ptr() as *const c_char) };
-    if ptr.is_null() {
-        None
-    } else {
-        Some(unsafe { std::mem::transmute_copy(&ptr) })
-    }
+unsafe fn sym<T: Copy>(lib: &DynLib, name: &CStr) -> Option<T> {
+    unsafe { lib.symbol(name) }.ok()
 }
 
 fn api() -> Option<&'static FluidApi> {
     API.get_or_init(|| unsafe {
-        let candidates = [c"libfluidsynth.so.3".as_ptr(), c"libfluidsynth.so".as_ptr()];
-        let handle = candidates
+        #[cfg(target_os = "linux")]
+        let candidates: [&CStr; 2] = [c"libfluidsynth.so.3", c"libfluidsynth.so"];
+        #[cfg(target_os = "macos")]
+        let candidates: [&CStr; 2] = [c"libfluidsynth.3.dylib", c"libfluidsynth.dylib"];
+        #[cfg(target_os = "windows")]
+        let candidates: [&CStr; 2] = [c"libfluidsynth-3.dll", c"fluidsynth.dll"];
+        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+        let candidates: [&CStr; 0] = [];
+        let lib = candidates
             .into_iter()
-            .map(|name| dlopen(name, RTLD_LAZY | RTLD_LOCAL))
-            .find(|h| !h.is_null())?;
+            .find_map(|name| DynLib::open(name).ok())?;
         Some(FluidApi {
-            new_settings: sym(handle, b"new_fluid_settings\0")?,
-            delete_settings: sym(handle, b"delete_fluid_settings\0")?,
-            settings_setnum: sym(handle, b"fluid_settings_setnum\0")?,
-            settings_setint: sym(handle, b"fluid_settings_setint\0")?,
-            new_synth: sym(handle, b"new_fluid_synth\0")?,
-            delete_synth: sym(handle, b"delete_fluid_synth\0")?,
-            sfload: sym(handle, b"fluid_synth_sfload\0")?,
-            get_voicelist: sym(handle, b"fluid_synth_get_voicelist\0")?,
-            voice_get_id: sym(handle, b"fluid_voice_get_id\0")?,
-            voice_gen_incr: sym(handle, b"fluid_voice_gen_incr\0")?,
-            voice_update_param: sym(handle, b"fluid_voice_update_param\0")?,
-            noteon: sym(handle, b"fluid_synth_noteon\0")?,
-            noteoff: sym(handle, b"fluid_synth_noteoff\0")?,
-            all_notes_off: sym(handle, b"fluid_synth_all_notes_off\0")?,
-            cc: sym(handle, b"fluid_synth_cc\0")?,
-            channel_pressure: sym(handle, b"fluid_synth_channel_pressure\0")?,
-            pitch_bend: sym(handle, b"fluid_synth_pitch_bend\0")?,
-            pitch_wheel_sens: sym(handle, b"fluid_synth_pitch_wheel_sens\0")?,
-            bank_select: sym(handle, b"fluid_synth_bank_select\0")?,
-            program_change: sym(handle, b"fluid_synth_program_change\0")?,
-            set_gain: sym(handle, b"fluid_synth_set_gain\0")?,
-            set_polyphony: sym(handle, b"fluid_synth_set_polyphony\0")?,
-            reverb_on: sym(handle, b"fluid_synth_reverb_on\0")?,
-            chorus_on: sym(handle, b"fluid_synth_chorus_on\0")?,
-            set_gen: sym(handle, b"fluid_synth_set_gen\0")?,
-            write_float: sym(handle, b"fluid_synth_write_float\0")?,
+            new_settings: sym(&lib, c"new_fluid_settings")?,
+            delete_settings: sym(&lib, c"delete_fluid_settings")?,
+            settings_setnum: sym(&lib, c"fluid_settings_setnum")?,
+            settings_setint: sym(&lib, c"fluid_settings_setint")?,
+            new_synth: sym(&lib, c"new_fluid_synth")?,
+            delete_synth: sym(&lib, c"delete_fluid_synth")?,
+            sfload: sym(&lib, c"fluid_synth_sfload")?,
+            get_voicelist: sym(&lib, c"fluid_synth_get_voicelist")?,
+            voice_get_id: sym(&lib, c"fluid_voice_get_id")?,
+            voice_gen_incr: sym(&lib, c"fluid_voice_gen_incr")?,
+            voice_update_param: sym(&lib, c"fluid_voice_update_param")?,
+            noteon: sym(&lib, c"fluid_synth_noteon")?,
+            noteoff: sym(&lib, c"fluid_synth_noteoff")?,
+            all_notes_off: sym(&lib, c"fluid_synth_all_notes_off")?,
+            cc: sym(&lib, c"fluid_synth_cc")?,
+            channel_pressure: sym(&lib, c"fluid_synth_channel_pressure")?,
+            pitch_bend: sym(&lib, c"fluid_synth_pitch_bend")?,
+            pitch_wheel_sens: sym(&lib, c"fluid_synth_pitch_wheel_sens")?,
+            bank_select: sym(&lib, c"fluid_synth_bank_select")?,
+            program_change: sym(&lib, c"fluid_synth_program_change")?,
+            set_gain: sym(&lib, c"fluid_synth_set_gain")?,
+            set_polyphony: sym(&lib, c"fluid_synth_set_polyphony")?,
+            reverb_on: sym(&lib, c"fluid_synth_reverb_on")?,
+            chorus_on: sym(&lib, c"fluid_synth_chorus_on")?,
+            set_gen: sym(&lib, c"fluid_synth_set_gen")?,
+            write_float: sym(&lib, c"fluid_synth_write_float")?,
+            _lib: lib,
         })
     })
     .as_ref()

@@ -24,7 +24,18 @@ pub(super) struct Writer {
 
 impl Writer {
     pub fn new(file: File, options: &ExportOptions) -> Result<Self, String> {
-        let library = Library::open(c"libmp3lame.so.0")?;
+        #[cfg(target_os = "linux")]
+        let candidates: &[&std::ffi::CStr] = &[c"libmp3lame.so.0", c"libmp3lame.so"];
+        #[cfg(target_os = "macos")]
+        let candidates: &[&std::ffi::CStr] = &[c"libmp3lame.0.dylib", c"libmp3lame.dylib"];
+        #[cfg(target_os = "windows")]
+        let candidates: &[&std::ffi::CStr] = &[c"libmp3lame.dll", c"mp3lame.dll"];
+        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+        let candidates: &[&std::ffi::CStr] = &[];
+        let library = candidates
+            .iter()
+            .find_map(|name| Library::open(name).ok())
+            .ok_or("No se encontró la biblioteca LAME (MP3) en el sistema")?;
         // SAFETY: firmas de lame.h. Todos los símbolos se resuelven antes de crear el handle.
         unsafe {
             let init: unsafe extern "C" fn() -> *mut c_void = library.symbol(c"lame_init")?;

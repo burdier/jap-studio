@@ -1,0 +1,58 @@
+name: Build Windows (Jap Studio)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - "feat/**"
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-windows:
+    name: Windows x64 Release
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run headless library tests
+        run: cargo test --lib
+
+      - name: Build release binary (ui + p2p)
+        run: cargo build --release --features ui,p2p
+
+      - name: Package portable Windows bundle
+        shell: pwsh
+        run: |
+          $stage = "dist\JapStudio-Windows-x64"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item "target\release\daw-gpui.exe" "$stage\jap-studio.exe"
+          if (Test-Path "assets") {
+            Copy-Item -Recurse "assets" "$stage\assets"
+          }
+          if (Test-Path "README.md") {
+            Copy-Item "README.md" "$stage\README.md"
+          }
+          Compress-Archive -Path "$stage\*" -DestinationPath "JapStudio-Windows-x64.zip" -Force
+          Get-Item "JapStudio-Windows-x64.zip" | Select-Object Name, Length
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: JapStudio-Windows-x64
+          path: JapStudio-Windows-x64.zip
+          retention-days: 30

@@ -1,7 +1,14 @@
-//! Preparación del lanzador antes de crear hilos. También cubre cargo run y el binario directo.
+//! Preparación del lanzador antes de crear hilos (exclusivo Linux/Wine/X11).
+#[cfg(not(target_os = "linux"))]
+pub(crate) fn configure() -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
 use std::{io::Write, os::unix::fs::OpenOptionsExt, path::PathBuf};
 
 /// Llamar únicamente desde el arranque, antes de GPUI/CPAL o cualquier worker.
+#[cfg(target_os = "linux")]
 pub(crate) fn configure() -> Result<(), String> {
     configure_webkit_x11();
     if std::env::var_os("WINELOADER").is_some()
@@ -39,6 +46,7 @@ pub(crate) fn configure() -> Result<(), String> {
     }
     Ok(())
 }
+#[cfg(target_os = "linux")]
 fn configure_webkit_x11() {
     // En sesiones Wayland o con GPU NVIDIA/híbrida, el renderer DMA-BUF de WebKitGTK
     // falla al asignar buffers GBM en ventanas X11 embebidas (ej. plugins calfNXT),
@@ -57,6 +65,7 @@ fn configure_webkit_x11() {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn on_path(name: &str) -> bool {
     std::env::var_os("PATH")
         .is_some_and(|paths| std::env::split_paths(&paths).any(|dir| dir.join(name).is_file()))

@@ -22,7 +22,18 @@ pub(crate) fn resample(
     if from == 0 || to == 0 {
         return Err("Frecuencia de fuente inválida".into());
     }
-    let library = Library::open(c"libsoxr.so.0")?;
+    #[cfg(target_os = "linux")]
+    let candidates: &[&CStr] = &[c"libsoxr.so.0", c"libsoxr.so"];
+    #[cfg(target_os = "macos")]
+    let candidates: &[&CStr] = &[c"libsoxr.0.dylib", c"libsoxr.dylib"];
+    #[cfg(target_os = "windows")]
+    let candidates: &[&CStr] = &[c"libsoxr.dll", c"soxr.dll"];
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    let candidates: &[&CStr] = &[];
+    let library = candidates
+        .iter()
+        .find_map(|name| Library::open(name).ok())
+        .ok_or("No se encontró la biblioteca libsoxr en el sistema")?;
     let length = (input.len() as u128 * to as u128).div_ceil(from as u128);
     let length = usize::try_from(length).map_err(|_| "Audio demasiado largo")?;
     let capacity = length.checked_add(32).ok_or("Audio demasiado largo")?;

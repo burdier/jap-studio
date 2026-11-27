@@ -1,10 +1,13 @@
 //! ABI C de sfizz 1.2.x. La biblioteca y sus símbolos viven tanto como el motor.
-use libc::{c_char, c_void};
-use std::{ffi::CString, sync::Arc};
+use crate::audio::dynlib::DynLib;
+use std::{
+    ffi::{CStr, CString, c_char, c_void},
+    sync::Arc,
+};
 
 pub(super) type Synth = c_void;
 pub(super) struct Api {
-    handle: *mut c_void,
+    _lib: DynLib,
     pub create: unsafe extern "C" fn() -> *mut Synth,
     pub cut: unsafe extern "C" fn(*mut Synth),
     pub free: unsafe extern "C" fn(*mut Synth),
@@ -22,80 +25,72 @@ pub(super) struct Api {
     pub bend: unsafe extern "C" fn(*mut Synth, i32, i32),
     pub render: unsafe extern "C" fn(*mut Synth, *mut *mut f32, i32, i32),
 }
-// Solo contiene funciones inmutables y un handle de dlopen; el synth tiene dueño exclusivo.
+// Solo contiene funciones inmutables y un DynLib; el synth tiene dueño exclusivo.
 unsafe impl Send for Api {}
 unsafe impl Sync for Api {}
-impl Drop for Api {
-    fn drop(&mut self) {
-        unsafe {
-            libc::dlclose(self.handle);
-        }
-    }
-}
 impl Api {
     pub fn open() -> Result<Arc<Self>, String> {
         let mut candidates = Vec::new();
         if let Ok(path) = std::env::var("HAY_SFIZZ") {
             candidates.push(path);
         }
-        candidates.extend(["libsfizz.so.1", "libsfizz.so", "libsfizz.dylib"].map(str::to_owned));
+        #[cfg(target_os = "windows")]
+        candidates.extend(["sfizz.dll", "libsfizz.dll"].map(str::to_owned));
+        #[cfg(target_os = "macos")]
+        candidates.extend(["libsfizz.dylib", "libsfizz.1.dylib"].map(str::to_owned));
+        #[cfg(target_os = "linux")]
+        candidates.extend(["libsfizz.so.1", "libsfizz.so"].map(str::to_owned));
         if let Ok(cwd) = std::env::current_dir() {
-            candidates.push(
-                cwd.join(".local/sfizz/lib/libsfizz.so")
-                    .to_string_lossy()
-                    .into_owned(),
-            );
-            candidates.push(
-                cwd.join(".local/sfizz/lib64/libsfizz.so")
-                    .to_string_lossy()
-                    .into_owned(),
-            );
+            #[cfg(target_os = "windows")]
+            candidates.push(cwd.join("sfizz.dll").to_string_lossy().into_owned());
+            #[cfg(target_os = "linux")]
+            {
+                candidates.push(
+                    cwd.join(".local/sfizz/lib/libsfizz.so")
+                        .to_string_lossy()
+                        .into_owned(),
+                );
+                candidates.push(
+                    cwd.join(".local/sfizz/lib64/libsfizz.so")
+                        .to_string_lossy()
+                        .into_owned(),
+                );
+            }
         }
         for path in candidates {
             let Ok(path) = CString::new(path) else {
                 continue;
             };
-            let handle = unsafe { libc::dlopen(path.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL) };
-            if handle.is_null() {
+            let Ok(lib) = DynLib::open(&path) else {
                 continue;
-            }
-            let result = unsafe { Self::from_handle(handle) };
-            if result.is_err() {
-                unsafe {
-                    libc::dlclose(handle);
-                }
-            }
-            return result.map(Arc::new);
+            };
+            return unsafe { Self::from_lib(lib) }.map(Arc::new);
         }
-        Err("sfizz no está instalado. Ejecuta scripts/build-sfizz.sh o configura HAY_SFIZZ con la biblioteca compartida".into())
+        Err("sfizz no está instalado. Configura HAY_SFIZZ con la biblioteca compartida".into())
     }
-    unsafe fn from_handle(handle: *mut c_void) -> Result<Self, String> {
-        unsafe fn symbol<T: Copy>(handle: *mut c_void, name: &std::ffi::CStr) -> Result<T, String> {
-            let ptr = unsafe { libc::dlsym(handle, name.as_ptr()) };
-            if ptr.is_null() {
-                return Err(format!("sfizz: falta {}", name.to_string_lossy()));
-            }
-            Ok(unsafe { std::mem::transmute_copy(&ptr) })
+    unsafe fn from_lib(lib: DynLib) -> Result<Self, String> {
+        unsafe fn sym<T: Copy>(lib: &DynLib, name: &CStr) -> Result<T, String> {
+            unsafe { lib.symbol(name) }.map_err(|_| format!("sfizz: falta {}", name.to_string_lossy()))
         }
         unsafe {
             Ok(Self {
-                handle,
-                create: symbol(handle, c"sfizz_create_synth")?,
-                cut: symbol(handle, c"sfizz_all_sound_off")?,
-                free: symbol(handle, c"sfizz_free")?,
-                load: symbol(handle, c"sfizz_load_string")?,
-                rate: symbol(handle, c"sfizz_set_sample_rate")?,
-                block: symbol(handle, c"sfizz_set_samples_per_block")?,
-                voices: symbol(handle, c"sfizz_set_num_voices")?,
-                volume: symbol(handle, c"sfizz_set_volume")?,
-                active_voices: symbol(handle, c"sfizz_get_num_active_voices")?,
-                on: symbol(handle, c"sfizz_send_note_on")?,
-                off: symbol(handle, c"sfizz_send_note_off")?,
-                cc: symbol(handle, c"sfizz_send_cc")?,
-                hdcc: symbol(handle, c"sfizz_send_hdcc")?,
-                pressure: symbol(handle, c"sfizz_send_channel_aftertouch")?,
-                bend: symbol(handle, c"sfizz_send_pitch_wheel")?,
-                render: symbol(handle, c"sfizz_render_block")?,
+                create: sym(&lib, c"sfizz_create_synth")?,
+                cut: sym(&lib, c"sfizz_all_sound_off")?,
+                free: sym(&lib, c"sfizz_free")?,
+                load: sym(&lib, c"sfizz_load_string")?,
+                rate: sym(&lib, c"sfizz_set_sample_rate")?,
+                block: sym(&lib, c"sfizz_set_samples_per_block")?,
+                voices: sym(&lib, c"sfizz_set_num_voices")?,
+                volume: sym(&lib, c"sfizz_set_volume")?,
+                active_voices: sym(&lib, c"sfizz_get_num_active_voices")?,
+                on: sym(&lib, c"sfizz_send_note_on")?,
+                off: sym(&lib, c"sfizz_send_note_off")?,
+                cc: sym(&lib, c"sfizz_send_cc")?,
+                hdcc: sym(&lib, c"sfizz_send_hdcc")?,
+                pressure: sym(&lib, c"sfizz_send_channel_aftertouch")?,
+                bend: sym(&lib, c"sfizz_send_pitch_wheel")?,
+                render: sym(&lib, c"sfizz_render_block")?,
+                _lib: lib,
             })
         }
     }

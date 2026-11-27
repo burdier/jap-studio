@@ -1,7 +1,9 @@
-//! Carga del módulo Linux (también wrappers yabridge). Nunca desde el callback.
+//! Carga dinámica multiplataforma de módulos VST3 (Linux .so / yabridge, Windows .vst3, macOS).
+//! Nunca desde el callback RT.
+use crate::audio::dynlib::{DynLib, close_raw, symbol_raw};
 use std::{
     collections::HashMap,
-    ffi::{CStr, CString, c_void},
+    ffi::{CString, c_void},
     path::{Path, PathBuf},
     ptr,
     sync::{Mutex, OnceLock},
@@ -16,15 +18,17 @@ struct Loaded {
     handle: usize,
     users: usize,
     factory: unsafe extern "C" fn() -> *mut IPluginFactory,
-    exit: unsafe extern "C" fn() -> bool,
+    exit: Option<unsafe extern "C" fn() -> bool>,
 }
 // ModuleEntry/Exit pertenecen al bundle. Un bounce puede solaparse con Play y con otros editores.
 fn libraries() -> &'static Mutex<HashMap<PathBuf, Loaded>> {
     static TABLE: OnceLock<Mutex<HashMap<PathBuf, Loaded>>> = OnceLock::new();
     TABLE.get_or_init(Default::default)
 }
-impl Module {
-    pub fn open(bundle: &Path) -> Result<Self, String> {
+
+fn resolve_vst3_binary(bundle: &Path) -> Result<PathBuf, String> {
+    #[cfg(target_os = "linux")]
+    {
         if bundle
             .components()
             .any(|part| part.as_os_str() == "yabridge")
@@ -42,10 +46,45 @@ impl Module {
             );
         }
         let name = bundle.file_stem().ok_or("Bundle VST3 inválido")?;
-        let binary = bundle
+        Ok(bundle
             .join("Contents")
             .join(format!("{}-linux", std::env::consts::ARCH))
-            .join(format!("{}.so", name.to_string_lossy()));
+            .join(format!("{}.so", name.to_string_lossy())))
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if bundle.is_file() {
+            return Ok(bundle.to_path_buf());
+        }
+        let name = bundle.file_stem().ok_or("Bundle VST3 inválido")?;
+        let arch = match std::env::consts::ARCH {
+            "x86_64" => "x86_64-win",
+            "aarch64" => "arm64-win",
+            other => other,
+        };
+        Ok(bundle
+            .join("Contents")
+            .join(arch)
+            .join(format!("{}.vst3", name.to_string_lossy())))
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let name = bundle.file_stem().ok_or("Bundle VST3 inválido")?;
+        Ok(bundle
+            .join("Contents")
+            .join("MacOS")
+            .join(name.to_string_lossy().as_ref()))
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+    {
+        let _ = bundle;
+        Err("Carga de módulos VST3 no soportada en esta plataforma".into())
+    }
+}
+
+impl Module {
+    pub fn open(bundle: &Path) -> Result<Self, String> {
+        let binary = resolve_vst3_binary(bundle)?;
         let key = binary
             .canonicalize()
             .map_err(|e| format!("{}: {e}", binary.display()))?;
@@ -59,48 +98,52 @@ impl Module {
                 path: key,
             });
         }
-        let path =
-            CString::new(binary.as_os_str().as_encoded_bytes()).map_err(|e| e.to_string())?;
+        let path = CString::new(binary.to_string_lossy().as_bytes()).map_err(|e| e.to_string())?;
+        let lib = DynLib::open(&path)?;
+        let handle = lib.raw();
         unsafe {
-            let handle = libc::dlopen(path.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL);
-            if handle.is_null() {
-                let error = libc::dlerror();
-                return Err(if error.is_null() {
-                    "No se pudo cargar VST3".into()
-                } else {
-                    CStr::from_ptr(error).to_string_lossy().into_owned()
-                });
-            }
-            let symbols = (|| {
-                Ok::<_, String>((
-                    symbol::<unsafe extern "C" fn(*mut c_void) -> bool>(handle, c"ModuleEntry")?,
-                    symbol::<unsafe extern "C" fn() -> bool>(handle, c"ModuleExit")?,
-                    symbol::<unsafe extern "C" fn() -> *mut IPluginFactory>(
-                        handle,
-                        c"GetPluginFactory",
-                    )?,
-                ))
-            })();
-            let (entry, exit, factory) = match symbols {
-                Ok(s) => s,
-                Err(e) => {
-                    libc::dlclose(handle);
-                    return Err(e);
+            let factory: unsafe extern "C" fn() -> *mut IPluginFactory =
+                symbol_raw(handle, c"GetPluginFactory")?;
+
+            #[cfg(target_os = "linux")]
+            let exit = {
+                let entry: unsafe extern "C" fn(*mut c_void) -> bool =
+                    symbol_raw(handle, c"ModuleEntry")?;
+                let exit: unsafe extern "C" fn() -> bool = symbol_raw(handle, c"ModuleExit")?;
+                if !entry(handle) {
+                    return Err("VST3: ModuleEntry falló".into());
                 }
+                Some(exit)
             };
-            if !entry(handle) {
-                libc::dlclose(handle);
-                return Err("VST3: ModuleEntry falló".into());
-            }
+            #[cfg(target_os = "windows")]
+            let exit = {
+                if let Ok(init_dll) = symbol_raw::<unsafe extern "C" fn() -> bool>(handle, c"InitDll") {
+                    if !init_dll() {
+                        return Err("VST3: InitDll falló".into());
+                    }
+                }
+                symbol_raw::<unsafe extern "C" fn() -> bool>(handle, c"ExitDll").ok()
+            };
+            #[cfg(target_os = "macos")]
+            let exit = {
+                let _ = symbol_raw::<unsafe extern "C" fn(*mut c_void) -> bool>(handle, c"bundleEntry")
+                    .map(|entry| entry(handle));
+                symbol_raw::<unsafe extern "C" fn() -> bool>(handle, c"bundleExit").ok()
+            };
+            #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+            let exit: Option<unsafe extern "C" fn() -> bool> = None;
+
             let Some(interface) = ComPtr::from_raw(factory()) else {
-                exit();
-                libc::dlclose(handle);
+                if let Some(exit_fn) = exit {
+                    exit_fn();
+                }
                 return Err("VST3: fábrica vacía".into());
             };
+            let raw_handle = lib.into_raw();
             libraries.insert(
                 key.clone(),
                 Loaded {
-                    handle: handle as usize,
+                    handle: raw_handle as usize,
                     users: 1,
                     factory,
                     exit,
@@ -162,20 +205,15 @@ impl Drop for Module {
             lib.users -= 1;
             if lib.users == 0 {
                 unsafe {
-                    (lib.exit)();
-                    libc::dlclose(lib.handle as *mut c_void);
+                    if let Some(exit_fn) = lib.exit {
+                        exit_fn();
+                    }
+                    close_raw(lib.handle as *mut c_void);
                 }
                 libraries.remove(&self.path);
             }
         }
     }
-}
-unsafe fn symbol<T: Copy>(handle: *mut c_void, name: &CStr) -> Result<T, String> {
-    let pointer = unsafe { libc::dlsym(handle, name.as_ptr()) };
-    if pointer.is_null() {
-        return Err(format!("VST3: falta {}", name.to_string_lossy()));
-    }
-    Ok(unsafe { std::mem::transmute_copy(&pointer) })
 }
 
 pub(super) struct ClassInfo {

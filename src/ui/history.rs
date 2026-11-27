@@ -87,38 +87,62 @@ pub(in crate::ui) fn unix_now_secs() -> i64 {
         .unwrap_or(0)
 }
 
+pub(in crate::ui) fn unix_to_calendar(unix_secs: i64) -> (i32, u32, u32, u32, u32, u32) {
+    #[cfg(unix)]
+    {
+        let t = unix_secs as libc::time_t;
+        let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+        unsafe {
+            libc::localtime_r(&t, &mut tm);
+        }
+        (
+            tm.tm_year + 1900,
+            (tm.tm_mon + 1).max(1) as u32,
+            tm.tm_mday.max(1) as u32,
+            tm.tm_hour.clamp(0, 23) as u32,
+            tm.tm_min.clamp(0, 59) as u32,
+            tm.tm_sec.clamp(0, 59) as u32,
+        )
+    }
+    #[cfg(not(unix))]
+    {
+        // Conversión civil pura (Howard Hinnant, UTC) sin FFI dependiente de CRT.
+        let secs = unix_secs.max(0);
+        let days = secs / 86_400;
+        let rem = (secs % 86_400) as u32;
+        let hour = rem / 3600;
+        let min = (rem % 3600) / 60;
+        let sec = rem % 60;
+        let z = days + 719_468;
+        let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+        let doe = (z - era * 146_097) as u64;
+        let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+        let y = (yoe as i64) + era * 400;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+        let m = (if mp < 10 { mp + 3 } else { mp - 9 }) as u32;
+        let year = (y + i64::from(m <= 2)) as i32;
+        (year, m, d, hour, min, sec)
+    }
+}
+
 pub(in crate::ui) fn format_commit_time(unix_secs: i64) -> String {
     if unix_secs <= 0 {
         return "—".into();
     }
-    let now = unix_now_secs() as libc::time_t;
-    let t = unix_secs as libc::time_t;
-    let mut tm_now: libc::tm = unsafe { std::mem::zeroed() };
-    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
-    unsafe {
-        libc::localtime_r(&now, &mut tm_now);
-        libc::localtime_r(&t, &mut tm);
-    }
-    if tm.tm_year == tm_now.tm_year && tm.tm_yday == tm_now.tm_yday {
-        format!("{:02}:{:02}:{:02}", tm.tm_hour, tm.tm_min, tm.tm_sec)
+    let (ny, nm, nd, _, _, _) = unix_to_calendar(unix_now_secs());
+    let (y, m, d, h, min, sec) = unix_to_calendar(unix_secs);
+    if y == ny && m == nm && d == nd {
+        format!("{h:02}:{min:02}:{sec:02}")
     } else {
-        format!(
-            "{:02}/{:02} {:02}:{:02}",
-            tm.tm_mday,
-            tm.tm_mon + 1,
-            tm.tm_hour,
-            tm.tm_min
-        )
+        format!("{d:02}/{m:02} {h:02}:{min:02}")
     }
 }
 
 pub(in crate::ui) fn local_hhmm() -> String {
-    let t = unix_now_secs() as libc::time_t;
-    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
-    unsafe {
-        libc::localtime_r(&t, &mut tm);
-    }
-    format!("{:02}:{:02}", tm.tm_hour, tm.tm_min)
+    let (_, _, _, h, min, _) = unix_to_calendar(unix_now_secs());
+    format!("{h:02}:{min:02}")
 }
 
 impl DawApp {

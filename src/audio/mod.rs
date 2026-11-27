@@ -10,6 +10,7 @@ pub(crate) mod crossfade;
 pub(crate) mod device;
 pub(crate) mod device_probe;
 pub(crate) mod drums;
+pub(crate) mod dynlib;
 pub(crate) mod export;
 pub(crate) mod fundamental;
 mod fx_gain;

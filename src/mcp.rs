@@ -2,12 +2,15 @@
 //! Sin puertos de red ni dependencias externas: comunica clientes IA con la instancia abierta del DAW.
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+#[cfg(unix)]
+use std::os::unix::{
+    fs::PermissionsExt,
+    net::{UnixListener, UnixStream},
+};
+#[cfg(not(unix))]
+use std::net::{TcpListener, TcpStream};
 use std::{
     io::{self, BufRead, BufReader, Write},
-    os::unix::{
-        fs::PermissionsExt,
-        net::{UnixListener, UnixStream},
-    },
     path::{Path, PathBuf},
     sync::mpsc,
     thread,
@@ -72,9 +75,22 @@ impl McpHost {
             let _ = std::fs::create_dir_all(parent);
         }
         let _ = std::fs::remove_file(&path);
-        let listener = UnixListener::bind(&path)
-            .map_err(|e| format!("No se pudo abrir el socket MCP {}: {e}", path.display()))?;
-        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+        #[cfg(unix)]
+        let listener = {
+            let listener = UnixListener::bind(&path)
+                .map_err(|e| format!("No se pudo abrir el socket MCP {}: {e}", path.display()))?;
+            let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+            listener
+        };
+        #[cfg(not(unix))]
+        let listener = {
+            let listener = TcpListener::bind("127.0.0.1:0")
+                .map_err(|e| format!("No se pudo abrir el puerto local MCP: {e}"))?;
+            let addr = listener.local_addr().map_err(|e| e.to_string())?;
+            std::fs::write(&path, addr.to_string())
+                .map_err(|e| format!("No se pudo escribir {}: {e}", path.display()))?;
+            listener
+        };
         let (tx, rx) = mpsc::channel::<IncomingMcpCall>();
         thread::Builder::new()
             .name("mcp-ipc-host".into())
@@ -92,7 +108,12 @@ impl McpHost {
     }
 }
 
-fn handle_ipc_client(mut stream: UnixStream, tx: mpsc::Sender<IncomingMcpCall>) {
+#[cfg(unix)]
+type IpcStream = UnixStream;
+#[cfg(not(unix))]
+type IpcStream = TcpStream;
+
+fn handle_ipc_client(mut stream: IpcStream, tx: mpsc::Sender<IncomingMcpCall>) {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(20)));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(10)));
     let Ok(reader_stream) = stream.try_clone() else {
@@ -142,12 +163,24 @@ fn handle_ipc_client(mut stream: UnixStream, tx: mpsc::Sender<IncomingMcpCall>) 
 }
 
 fn call_daw(path: &Path, request: &IpcRequest) -> Result<IpcResponse, String> {
+    #[cfg(unix)]
     let mut stream = UnixStream::connect(path).map_err(|_| {
         format!(
             "Jap Studio no está abierto (no se encontró el socket {}). Inicia hay-daw primero.",
             path.display()
         )
     })?;
+    #[cfg(not(unix))]
+    let mut stream = {
+        let addr = std::fs::read_to_string(path).map_err(|_| {
+            format!(
+                "Jap Studio no está abierto (no se encontró {}). Inicia jap-studio.exe primero.",
+                path.display()
+            )
+        })?;
+        TcpStream::connect(addr.trim())
+            .map_err(|e| format!("No se pudo conectar con Jap Studio ({}): {e}", addr.trim()))?
+    };
     let _ = stream.set_read_timeout(Some(Duration::from_secs(20)));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(10)));
     let encoded = serde_json::to_string(request).map_err(|e| e.to_string())?;
