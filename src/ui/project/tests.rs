@@ -403,7 +403,7 @@ fn midi_bindings_round_trip_through_loro() {
 fn synth_roundtrips_in_project_doc() {
     let fixture = Fixture::new();
     let mut state = snapshot();
-    let synth_id = InstrumentId(3);
+    let synth_id = InstrumentId(4);
     state.tracks[1].instrument = Some(synth_id);
     let params = elevate::devices::synth::FACTORY_PRESETS[12].to_params();
     state.synths.push(elevate::project::ProjectSynth {

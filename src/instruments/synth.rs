@@ -6,7 +6,7 @@ use elevate::{
 };
 use std::collections::HashSet;
 
-pub(crate) const SYNTH_ID: InstrumentId = InstrumentId(3);
+pub(crate) const SYNTH_ID: InstrumentId = InstrumentId(4);
 
 pub(crate) struct Synth {
     pub params: SynthParams,
