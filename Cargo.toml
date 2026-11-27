@@ -51,3 +51,11 @@ serde_json = { version = "1", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 cpal = { version = "0.18.2", optional = true, features = ["pipewire"] }
+
+[profile.windows-cross]
+inherits = "release"
+opt-level = 3
+# gpui-pre-windows compila shaders HLSL al arrancar vía D3DCompile cuando debug-assertions = true,
+# lo que permite cross-compilar Windows x64 MSVC desde Linux sin necesitar fxc.exe.
+debug-assertions = true
+strip = "symbols"
