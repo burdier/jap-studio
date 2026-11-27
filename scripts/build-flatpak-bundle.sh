@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_ID="io.github.burdier.JapStudio"
+APP_ID="dev.sevenpitch.jap"
 VERSION="0.8.0"
 RUNTIME="org.freedesktop.Platform"
 SDK="org.freedesktop.Platform"
@@ -94,10 +94,12 @@ flatpak build-finish "$BUILD_DIR" \
   --socket=wayland \
   --socket=fallback-x11 \
   --socket=pulseaudio \
-  --device=all \
+  --device=dri \
   --filesystem=xdg-run/pipewire-0 \
-  --filesystem=home \
-  --talk-name=org.freedesktop.portal.Desktop
+  --filesystem=xdg-music \
+  --filesystem=xdg-documents \
+  --filesystem=~/.vst3:ro \
+  --filesystem=~/.clap:ro
 
 echo "==> Exportando repositorio OSTree y generando bundle único..."
 flatpak build-export "$REPO_DIR" "$BUILD_DIR"

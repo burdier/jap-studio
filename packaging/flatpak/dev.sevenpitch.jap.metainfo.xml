@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>dev.sevenpitch.jap</id>
+  <name>Jap Studio</name>
+  <summary>Native GPU-accelerated DAW in a single canvas</summary>
+  <summary xml:lang="es">DAW nativo acelerado por GPU en un solo lienzo</summary>
+  <developer id="dev.sevenpitch">
+    <name>SevenPitch (burdier)</name>
+  </developer>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <launchable type="desktop-id">dev.sevenpitch.jap.desktop</launchable>
+  <url type="homepage">https://jap.sevenpitch.dev/</url>
+  <url type="bugtracker">https://github.com/burdier/jap-studio/issues</url>
+  <url type="vcs-browser">https://github.com/burdier/jap-studio</url>
+  <url type="donation">https://paypal.me/burhub</url>
+  <description>
+    <p>
+      Jap Studio (Hay / Elevate) is a native Rust and GPUI digital audio workstation built
+      around a single-canvas workflow so you can compose, design sounds, mix, and collaborate
+      without jumping between windows.
+    </p>
+    <p xml:lang="es">
+      Jap Studio (Hay / Elevate) es un DAW nativo en Rust y GPUI diseñado en un solo lienzo
+      para componer, diseñar sonidos, mezclar y colaborar sin saltar entre ventanas.
+    </p>
+    <ul>
+      <li>Low-latency PipeWire and ALSA audio engine with live monitoring and multi-track recording</li>
+      <li>Hay Synth native wavetable synthesizer supporting .vital, .vitalbank, and .fxp presets</li>
+      <li>Click-free PCM Drums Sampler and 4x4 MPC Pads with 16 Levels, Note Repeat RT, and transient Chop</li>
+      <li>Native FX rack (Hay EQ, Comp with real Sidechain, Limiter, Echo, Reverb, Filter, Spectrum) plus VST3 hosting</li>
+      <li>Acoustic Explorer (offline DSP analysis), Piano Roll with MPE pitch curves, and Lua Tejer routing</li>
+      <li>Live P2P collaboration over Loro CRDT and Iroh QUIC plus built-in MCP server for AI tools</li>
+    </ul>
+  </description>
+  <branding>
+    <color type="primary" scheme_preference="light">#f1e8d4</color>
+    <color type="primary" scheme_preference="dark">#1b1a18</color>
+  </branding>
+  <screenshots>
+    <screenshot type="default">
+      <image type="source" width="1920" height="1080">https://jap.sevenpitch.dev/screenshots/daw-cuaderno-oscuro.png</image>
+      <caption>Multi-track Arrangement, native FX rack, and Spectrum in the Cuaderno Oscuro theme</caption>
+      <caption xml:lang="es">Arrangement multipista, cadena FX nativa y Spectrum en el tema Cuaderno Oscuro</caption>
+    </screenshot>
+    <screenshot>
+      <image type="source" width="1920" height="1080">https://jap.sevenpitch.dev/screenshots/overview-canvas.png</image>
+      <caption>Single-canvas workflow uniting Arrangement, Piano Roll, Sampler, FX, MPC, and MCP</caption>
+      <caption xml:lang="es">Flujo en un solo lienzo con Arrangement, Piano Roll, Sampler, FX, MPC y MCP</caption>
+    </screenshot>
+    <screenshot>
+      <image type="source" width="1920" height="1080">https://jap.sevenpitch.dev/screenshots/mpc-pads-drums.png</image>
+      <caption>4x4 MPC Pads and click-free PCM Drums Sampler with 16 Levels and Note Repeat RT</caption>
+      <caption xml:lang="es">Pads MPC 4×4 y sampler de batería PCM sin clics con 16 Levels y Note Repeat RT</caption>
+    </screenshot>
+  </screenshots>
+  <categories>
+    <category>AudioVideo</category>
+    <category>Audio</category>
+    <category>Music</category>
+    <category>Midi</category>
+    <category>Sequencer</category>
+  </categories>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+  <recommends>
+    <display_length compare="ge">768</display_length>
+  </recommends>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="0.8.0" date="2026-11-27">
+      <url type="details">https://jap.sevenpitch.dev/</url>
+      <description>
+        <p>First Flathub release of Jap Studio featuring Hay Synth (.vital/.fxp), click-free PCM Drums and 4x4 MPC Pads, Clip Warp, native FX with Sidechain, Acoustic Explorer, live P2P collaboration, MCP AI server, and Cuaderno Light/Dark themes.</p>
+      </description>
+    </release>
+  </releases>
+</component>

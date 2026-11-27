@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=Jap Studio
+GenericName=Digital Audio Workstation
+GenericName[es]=Estación de trabajo de audio digital
+Comment=Native GPU-accelerated DAW with Hay Synth, MPC Pads, Lua FX, P2P Collab, and MCP AI
+Comment[es]=DAW nativo acelerado por GPU con Hay Synth, Pads MPC, FX en Lua, P2P e IA MCP
+Exec=jap-studio %F
+Icon=dev.sevenpitch.jap
+Terminal=false
+Categories=AudioVideo;Audio;Music;Midi;Sequencer;
+Keywords=DAW;Audio;Music;MIDI;Synthesizer;Drums;MPC;Sequencer;Sampler;VST3;
+StartupNotify=true
+StartupWMClass=hay-daw
+MimeType=audio/wav;audio/flac;audio/mpeg;audio/ogg;audio/midi;
