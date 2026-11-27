@@ -1,19 +1,32 @@
-name: Release (Linux + Windows)
+name: Release (Linux + Windows + R2)
 
 on:
   push:
+    branches:
+      - main
     tags:
       - "v*"
+    paths-ignore:
+      - "landing/**"
+      - "cloudflare/**"
+      - "wrangler.jsonc"
+      - "docs/**"
+      - "assets/video-sfx/**"
+      - "scripts/render_video.py"
+      - "scripts/gen_video_foley.py"
+      - "README.md"
+      - "LICENSE"
+      - ".github/workflows/deploy-landing.yml"
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag de release (ej. v0.9.0)"
-        required: true
+        description: "Tag de release (ej. v0.9.1 o vacío para latest)"
+        required: false
         type: string
 
 concurrency:
   group: release-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 permissions:
   contents: write
@@ -22,21 +35,51 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
   CARGO_PROFILE_RELEASE_DEBUG: "0"
+  CF_ACCOUNT_ID: "5cdf8bf2a8971c17014c8573798d4b7e"
+  R2_BUCKET: "jap-studio-releases"
 
 jobs:
+  meta:
+    name: Resolve release metadata
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.calc.outputs.tag }}
+      version: ${{ steps.calc.outputs.version }}
+      is_versioned: ${{ steps.calc.outputs.is_versioned }}
+    steps:
+      - id: calc
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ inputs.tag }}" ]]; then
+            TAG="${{ inputs.tag }}"
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            TAG="${GITHUB_REF_NAME}"
+          else
+            TAG="latest"
+          fi
+          VER="${TAG#v}"
+          if [[ "$TAG" == v* ]]; then
+            IS_VER="true"
+          else
+            IS_VER="false"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "is_versioned=$IS_VER" >> "$GITHUB_OUTPUT"
+
   build-linux:
-    name: Linux x86_64 Release
+    name: Linux x86_64 (Flatpak + Tarball)
+    needs: [meta]
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install native audio and graphics build dependencies
+      - name: Install native audio, graphics, and Flatpak dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            pkg-config clang libclang-dev cmake ninja-build \
+            pkg-config clang libclang-dev cmake ninja-build flatpak \
             libasound2-dev libpipewire-0.3-dev libspa-0.2-dev \
             libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev \
             libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
@@ -68,15 +111,29 @@ jobs:
           tar -C dist -cJf JapStudio-Linux-x86_64.tar.xz JapStudio-Linux-x86_64
           ls -lh JapStudio-Linux-x86_64.tar.xz
 
-      - name: Upload Linux artifact
+      - name: Build single-file Flatpak bundle
+        run: |
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y --noninteractive flathub org.freedesktop.Platform//25.08
+          VERSION="${{ needs.meta.outputs.version }}" bash scripts/build-flatpak-bundle.sh
+          cp "dist/jap-studio-${{ needs.meta.outputs.version }}-x86_64.flatpak" jap-studio-x86_64.flatpak
+          if [[ "${{ needs.meta.outputs.is_versioned }}" == "true" ]]; then
+            cp "dist/jap-studio-${{ needs.meta.outputs.version }}-x86_64.flatpak" "jap-studio-${{ needs.meta.outputs.version }}-x86_64.flatpak"
+          fi
+          ls -lh *.flatpak
+
+      - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: JapStudio-Linux-x86_64
-          path: JapStudio-Linux-x86_64.tar.xz
+          name: linux-release
+          path: |
+            JapStudio-Linux-x86_64.tar.xz
+            jap-studio-*.flatpak
           retention-days: 14
 
   build-windows:
-    name: Windows x64 Release
+    name: Windows x64 Portable
+    needs: [meta]
     runs-on: windows-latest
     timeout-minutes: 90
     steps:
@@ -92,7 +149,7 @@ jobs:
           save-if: "true"
 
       - name: Build release binary (ui + p2p)
-        run: cargo build --release --features ui,p2p
+        run: cargo build --release --features ui,p2p --bin daw-gpui
 
       - name: Package portable Windows bundle
         shell: pwsh
@@ -115,13 +172,13 @@ jobs:
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
-          name: JapStudio-Windows-x64
+          name: windows-release
           path: JapStudio-Windows-x64.zip
           retention-days: 14
 
   publish-release:
-    name: Publish GitHub Release
-    needs: [build-linux, build-windows]
+    name: Publish GitHub Release + Cloudflare R2
+    needs: [meta, build-linux, build-windows]
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
@@ -142,12 +199,60 @@ jobs:
       - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          TAG_NAME: ${{ needs.meta.outputs.tag }}
+          IS_VERSIONED: ${{ needs.meta.outputs.is_versioned }}
         run: |
-          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
-            gh release upload "$TAG_NAME" release-assets/* --clobber
+          if [[ "$IS_VERSIONED" == "true" ]]; then
+            if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+              gh release upload "$TAG_NAME" release-assets/* --clobber
+            else
+              gh release create "$TAG_NAME" release-assets/* \
+                --title "Jap Studio $TAG_NAME" \
+                --generate-notes
+            fi
           else
-            gh release create "$TAG_NAME" release-assets/* \
-              --title "Jap Studio $TAG_NAME" \
-              --generate-notes
+            # Rolling release 'latest' actualizado automáticamente en cada push a main
+            git tag -f latest HEAD
+            git push -f origin latest
+            if gh release view latest >/dev/null 2>&1; then
+              gh release upload latest release-assets/* --clobber
+              gh release edit latest --target main --title "Jap Studio (latest · main)" \
+                --notes "Compilación automática desde \`main\` (\`${GITHUB_SHA::7}\`). Descargas directas en https://jap.sevenpitch.dev/"
+            else
+              gh release create latest release-assets/* \
+                --target main \
+                --title "Jap Studio (latest · main)" \
+                --notes "Compilación automática desde \`main\` (\`${GITHUB_SHA::7}\`). Descargas directas en https://jap.sevenpitch.dev/"
+            fi
+          fi
+
+      - name: Upload packages to Cloudflare R2 (dl.sevenpitch.dev)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ env.CF_ACCOUNT_ID }}
+          TAG_NAME: ${{ needs.meta.outputs.tag }}
+          VER: ${{ needs.meta.outputs.version }}
+          IS_VERSIONED: ${{ needs.meta.outputs.is_versioned }}
+        run: |
+          if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]]; then
+            echo "::warning::Secret CLOUDFLARE_API_TOKEN no configurado en GitHub; se omitió la subida a R2 (dl.sevenpitch.dev). Añádelo con: gh secret set CLOUDFLARE_API_TOKEN"
+            exit 0
+          fi
+
+          # Actualizar siempre /latest/ para que jap.sevenpitch.dev sirva la última compilación
+          npx --yes wrangler@4 r2 object put "${R2_BUCKET}/latest/jap-studio-x86_64.flatpak" \
+            --file "release-assets/jap-studio-x86_64.flatpak" \
+            --content-type "application/vnd.flatpak" --remote
+          npx --yes wrangler@4 r2 object put "${R2_BUCKET}/latest/JapStudio-Windows-x64.zip" \
+            --file "release-assets/JapStudio-Windows-x64.zip" \
+            --content-type "application/zip" --remote
+
+          # Si es un tag versionado vX.Y.Z, publicar también bajo /vX.Y.Z/
+          if [[ "$IS_VERSIONED" == "true" ]]; then
+            npx --yes wrangler@4 r2 object put "${R2_BUCKET}/${TAG_NAME}/jap-studio-${VER}-x86_64.flatpak" \
+              --file "release-assets/jap-studio-${VER}-x86_64.flatpak" \
+              --content-type "application/vnd.flatpak" --remote
+            npx --yes wrangler@4 r2 object put "${R2_BUCKET}/${TAG_NAME}/JapStudio-Windows-x64.zip" \
+              --file "release-assets/JapStudio-Windows-x64.zip" \
+              --content-type "application/zip" --remote
           fi

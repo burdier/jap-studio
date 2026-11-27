@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "jap-studio",
+  "main": "cloudflare/worker.js",
+  "compatibility_date": "2026-01-01",
+  "assets": {
+    "directory": "./landing",
+    "binding": "ASSETS"
+  },
+  "routes": [
+    {
+      "pattern": "jap.sevenpitch.dev",
+      "custom_domain": true
+    }
+  ]
+}

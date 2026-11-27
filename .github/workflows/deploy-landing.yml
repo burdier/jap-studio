@@ -1,0 +1,43 @@
+name: Deploy Landing (jap.sevenpitch.dev)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "landing/**"
+      - "cloudflare/**"
+      - "wrangler.jsonc"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-landing
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy to Cloudflare Workers
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check Cloudflare secret
+        id: check
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [[ -n "${CLOUDFLARE_API_TOKEN:-}" ]]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Secret CLOUDFLARE_API_TOKEN no configurado en GitHub; se omitió el despliegue de jap.sevenpitch.dev. Añádelo con: gh secret set CLOUDFLARE_API_TOKEN"
+          fi
+
+      - name: Deploy landing to jap.sevenpitch.dev
+        if: steps.check.outputs.ok == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: "5cdf8bf2a8971c17014c8573798d4b7e"
+          wranglerVersion: "4"

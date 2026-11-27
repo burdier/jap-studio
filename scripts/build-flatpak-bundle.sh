@@ -2,7 +2,7 @@
 set -euo pipefail
 
 APP_ID="dev.sevenpitch.jap"
-VERSION="0.9.0"
+VERSION="${VERSION:-0.9.0}"
 RUNTIME="org.freedesktop.Platform"
 SDK="org.freedesktop.Platform"
 RUNTIME_VER="25.08"
@@ -69,16 +69,20 @@ cp -a "$ROOT_DIR/assets/soundfonts/UprightPianoKW-20220221.sf2" "$APP_SHARE/asse
 cp -a "$ROOT_DIR/assets/soundfonts/cc0.txt" "$APP_SHARE/assets/soundfonts/"
 cp -a "$ROOT_DIR/assets/soundfonts/readme.txt" "$APP_SHARE/assets/soundfonts/"
 mkdir -p "$APP_SHARE/assets/soundfonts/freepats"
-if [[ "$FULL_SOUNDFONTS" == "1" ]]; then
-  cp -a "$ROOT_DIR/assets/soundfonts/freepats/." "$APP_SHARE/assets/soundfonts/freepats/"
-else
-  for f in "$ROOT_DIR/assets/soundfonts/freepats/"*; do
-    base="$(basename "$f")"
-    case "$base" in
-      EGuitarFSBS-*|MuldjordKit*) continue ;;
-    esac
-    cp -a "$f" "$APP_SHARE/assets/soundfonts/freepats/"
-  done
+if [[ -d "$ROOT_DIR/assets/soundfonts/freepats" ]]; then
+  shopt -s nullglob
+  if [[ "$FULL_SOUNDFONTS" == "1" ]]; then
+    cp -a "$ROOT_DIR/assets/soundfonts/freepats/." "$APP_SHARE/assets/soundfonts/freepats/"
+  else
+    for f in "$ROOT_DIR/assets/soundfonts/freepats/"*; do
+      base="$(basename "$f")"
+      case "$base" in
+        EGuitarFSBS-*|MuldjordKit*) continue ;;
+      esac
+      cp -a "$f" "$APP_SHARE/assets/soundfonts/freepats/"
+    done
+  fi
+  shopt -u nullglob
 fi
 
 install -m 755 "$ROOT_DIR/packaging/flatpak/jap-studio-launcher.sh" "$FILES/bin/jap-studio"
