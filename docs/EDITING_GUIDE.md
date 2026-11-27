@@ -209,7 +209,7 @@ Tejer EQ por bandas: `musical/fx/bands.rs` valida los cruces, `audio/effects/cro
 | Reproducir el kit | `src/audio/drums/mix.rs` | Loop por frames en el mezclador común; `live.rs` publica ediciones durante Play |
 | Muestras, mezcla y picos de batería | `src/audio/drums/kit.rs` | Sampler sfizz con capas y offset de inicio guardado en `project/drums/kit.rs`, cortes entre piezas y bus Drums. `voice.rs` aporta la síntesis de respaldo |
 | Resaltar paso sonando | `src/ui/pattern_editor.rs` | `views/pattern.rs` |
-| Ejecutar la app | `scripts/run.sh` | `scripts/check.sh` |
+| Ejecutar la app | `scripts/run.sh` | `scripts/check.sh`, `scripts/build-release.sh` (compila release en `gpui-dev` y mantiene `.local/bin/hay-daw` enlazado a `target/release/daw-gpui`) |
 | Descargar bancos FreePats | `scripts/fetch_soundfonts.sh` | `scripts/soundfonts.txt`, `assets/soundfonts/freepats/` |
 | Descubrir/cargar SoundFonts y créditos | `src/audio/piano/soundfont.rs` | `HAY_SOUNDFONT`, `instruments/piano.rs` |
 | Render del piano | `src/audio/piano/render.rs` | Fachada `piano/mod.rs` |
