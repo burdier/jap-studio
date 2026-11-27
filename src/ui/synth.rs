@@ -28,6 +28,120 @@ pub(in crate::ui) enum SynthTab {
     Matrix,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(in crate::ui) enum PresetCategory {
+    #[default]
+    All,
+    Bass,
+    Lead,
+    Pad,
+    Keys,
+    Pluck,
+    Vocal,
+    Texture,
+    FxSeq,
+    User,
+    Library,
+    Components,
+}
+
+impl PresetCategory {
+    pub const ALL: [Self; 12] = [
+        Self::All,
+        Self::Bass,
+        Self::Lead,
+        Self::Pad,
+        Self::Keys,
+        Self::Pluck,
+        Self::Vocal,
+        Self::Texture,
+        Self::FxSeq,
+        Self::User,
+        Self::Library,
+        Self::Components,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::All => "Todos",
+            Self::Bass => "Bass",
+            Self::Lead => "Lead",
+            Self::Pad => "Pad",
+            Self::Keys => "Keys",
+            Self::Pluck => "Pluck / Bell",
+            Self::Vocal => "Vocal",
+            Self::Texture => "Texture",
+            Self::FxSeq => "FX / Seq",
+            Self::User => "User",
+            Self::Library => "Librería",
+            Self::Components => "Efectos FX",
+        }
+    }
+
+    pub fn matches(self, name: &str, raw_cat: &str, is_user: bool, is_library: bool) -> bool {
+        match self {
+            Self::All => true,
+            Self::User => is_user,
+            Self::Library => is_library,
+            Self::Components => false,
+            _ => classify_preset_category(name, raw_cat) == self,
+        }
+    }
+}
+
+pub(in crate::ui) fn classify_preset_category(name: &str, raw_cat: &str) -> PresetCategory {
+    let text = format!("{} {}", raw_cat.to_lowercase(), name.to_lowercase());
+    let upper = name.to_uppercase();
+    if text.contains("bass")
+        || text.contains("sub")
+        || text.contains("808")
+        || text.contains("reese")
+        || upper.starts_with("BA ")
+        || upper.starts_with("BS ")
+        || upper.contains(" - BA ")
+    {
+        PresetCategory::Bass
+    } else if text.contains("lead")
+        || text.contains("acid")
+        || upper.starts_with("LD ")
+        || upper.contains(" - LD ")
+    {
+        PresetCategory::Lead
+    } else if text.contains("pad")
+        || text.contains("swell")
+        || upper.starts_with("PD ")
+        || upper.contains(" - PD ")
+    {
+        PresetCategory::Pad
+    } else if text.contains("key")
+        || text.contains("piano")
+        || text.contains("organ")
+        || text.contains("rhodes")
+        || upper.starts_with("KY ")
+    {
+        PresetCategory::Keys
+    } else if text.contains("pluck")
+        || text.contains("bell")
+        || text.contains("harp")
+        || text.contains("guitar")
+        || text.contains("mallet")
+        || upper.starts_with("PL ")
+    {
+        PresetCategory::Pluck
+    } else if text.contains("vocal") || text.contains("choir") || text.contains("vox") {
+        PresetCategory::Vocal
+    } else if text.contains("seq")
+        || text.contains("arp")
+        || text.contains("sfx")
+        || text.contains("fx")
+        || text.contains("riser")
+    {
+        PresetCategory::FxSeq
+    } else {
+        PresetCategory::Texture
+    }
+}
+
 #[derive(Clone)]
 pub(in crate::ui) struct SynthPresetEntry {
     pub name: String,
@@ -47,6 +161,8 @@ pub(in crate::ui) struct SynthKnobDrag {
 #[derive(Default)]
 pub(super) struct SynthUi {
     pub tab: SynthTab,
+    pub preset_menu_open: bool,
+    pub preset_category: PresetCategory,
     /// Arrastre vertical de deslizador/perilla (`u16` del espacio `param::*`).
     pub knob_drag: Option<SynthKnobDrag>,
     /// Arrastre activo sobre el mapa XY (Espacio × Tono).
@@ -655,6 +771,38 @@ impl DawApp {
         let len = presets.len() as isize;
         let next = (current as isize + delta).rem_euclid(len) as usize;
         self.apply_synth_preset_index(next);
+    }
+
+    pub(in crate::ui) fn reset_synth_init(&mut self) {
+        self.synth.params = SynthParams::init_clean();
+        self.synth_ui.vital_index = None;
+        self.push_all_synth_live();
+        self.track_revision = self.track_revision.wrapping_add(1);
+        self.status_message = "Hay Synth · Reset a Init".into();
+    }
+
+    pub(in crate::ui) fn add_synth_track_fx(&mut self, fx_id: &str) {
+        let Some(track_idx) = self.synth_track() else {
+            self.status_message = "Asigna Hay Synth a una pista para insertar efectos".into();
+            return;
+        };
+        let track_id = self.tracks[track_idx].id;
+        let target = crate::ui::fx::FxTarget {
+            track: track_id,
+            node: None,
+        };
+        let res = if self.lua_components.registry.contains_key(fx_id) {
+            self.insert_lua_component(target, fx_id)
+        } else {
+            self.insert_fx(target, fx_id)
+        };
+        match res {
+            Ok(()) => {
+                self.show_fx();
+                self.refresh_project_dirty();
+            }
+            Err(e) => self.status_message = format!("FX: {e}"),
+        }
     }
 
     pub(in crate::ui) fn step_vital_preset(&mut self, delta: isize) {

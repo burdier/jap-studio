@@ -735,6 +735,30 @@ impl Default for SynthParams {
     }
 }
 
+impl SynthParams {
+    /// Punto de partida limpio y neutro (para el botón Reset / diseñar desde cero).
+    pub fn init_clean() -> Self {
+        Self {
+            engine: SynthEngineKind::Analog,
+            room: RoomKind::Close,
+            distance: 0.10,
+            shape: 0.50,
+            tone: 0.72,
+            body: 0.35,
+            motion: 0.0,
+            mode: EnvelopeMode::Hold,
+            time: 0.40,
+            touch: 0.50,
+            glide: 0.0,
+            gain: 0.78,
+            preset_name: "Init".into(),
+            voice: VoiceParams::default(),
+            custom_wt_a: None,
+            custom_wt_b: None,
+        }
+    }
+}
+
 /// Índices de control en vivo para actualización sin bloqueos hacia el motor RT.
 pub mod cc {
     pub const ENGINE: u8 = 200;

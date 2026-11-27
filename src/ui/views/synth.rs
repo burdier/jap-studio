@@ -6,7 +6,7 @@ use crate::ui::{
         keyboard::{NotePress, midi_keyboard},
         knob::{KnobSpec, rotary_knob},
     },
-    synth::{SynthKnobDrag, SynthTab, format_synth_param_value},
+    synth::{PresetCategory, SynthKnobDrag, SynthTab, format_synth_param_value},
 };
 use elevate::devices::synth::{
     DistMode, EnvelopeMode, FACTORY_PRESETS, FilterKind, LfoShape, MATRIX_SLOTS, ModSource,
@@ -53,12 +53,13 @@ impl DawApp {
             params.preset_name.clone()
         };
 
-        // ── Barra superior: identidad, presets, pestañas Stage | Voice | Matrix y guardado ──
+        // ── Barra superior: identidad, presets (clic abre menú), pestañas, Reset y Guardar ──
         let matrix_tab_label = if active_routes > 0 {
             format!("Matrix ({active_routes})")
         } else {
             "Matrix".into()
         };
+        let menu_open = self.synth_ui.preset_menu_open;
         let header = div()
             .flex_shrink_0()
             .flex()
@@ -85,12 +86,15 @@ impl DawApp {
                     )
                     .child(
                         div()
+                            .w(px(80.))
                             .px(px(6.))
                             .py(px(1.))
                             .rounded(px(3.))
                             .bg(rgb(ds.panel_dark))
+                            .text_center()
                             .text_size(px(10.))
                             .text_color(rgb(ds.cyan))
+                            .truncate()
                             .child(params.engine.label()),
                     )
                     .child(
@@ -113,19 +117,33 @@ impl DawApp {
                             )
                             .child(
                                 div()
-                                    .min_w(px(165.))
+                                    .id("synth-preset-menu-trigger")
+                                    .w(px(216.))
                                     .px_2()
                                     .py(px(3.))
                                     .rounded(px(ds.radius_sm))
                                     .bg(rgb(ds.panel_dark))
                                     .border_1()
-                                    .border_color(rgb(ds.border))
+                                    .border_color(rgb(if menu_open { ds.cyan } else { ds.border }))
+                                    .cursor_pointer()
                                     .flex()
                                     .items_center()
                                     .justify_between()
                                     .gap_2()
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(|this, _, _, cx| {
+                                            this.synth_ui.ensure_user_presets_loaded();
+                                            this.synth_ui.preset_menu_open =
+                                                !this.synth_ui.preset_menu_open;
+                                            cx.stop_propagation();
+                                            cx.notify();
+                                        }),
+                                    )
                                     .child(
                                         div()
+                                            .flex_1()
+                                            .min_w_0()
                                             .font_weight(FontWeight::MEDIUM)
                                             .text_color(rgb(ds.text))
                                             .truncate()
@@ -133,9 +151,14 @@ impl DawApp {
                                     )
                                     .child(
                                         div()
+                                            .flex_shrink_0()
                                             .text_size(px(9.5))
-                                            .text_color(rgb(ds.muted))
-                                            .child(preset_category),
+                                            .text_color(rgb(if menu_open {
+                                                ds.cyan
+                                            } else {
+                                                ds.muted
+                                            }))
+                                            .child(format!("{preset_category} ▾")),
                                     ),
                             )
                             .child(
@@ -160,6 +183,8 @@ impl DawApp {
                             .child(
                                 pill_button(ds, "Stage", tab == SynthTab::Stage, ds.accent)
                                     .id("synth-tab-stage")
+                                    .w(px(58.))
+                                    .justify_center()
                                     .on_mouse_down(
                                         MouseButton::Left,
                                         cx.listener(|this, _, _, cx| {
@@ -172,6 +197,8 @@ impl DawApp {
                             .child(
                                 pill_button(ds, "Voice", tab == SynthTab::Voice, ds.cyan)
                                     .id("synth-tab-voice")
+                                    .w(px(58.))
+                                    .justify_center()
                                     .on_mouse_down(
                                         MouseButton::Left,
                                         cx.listener(|this, _, _, cx| {
@@ -189,6 +216,8 @@ impl DawApp {
                                     ds.accent,
                                 )
                                 .id("synth-tab-matrix")
+                                .w(px(86.))
+                                .justify_center()
                                 .on_mouse_down(
                                     MouseButton::Left,
                                     cx.listener(|this, _, _, cx| {
@@ -204,9 +233,21 @@ impl DawApp {
                 div()
                     .flex()
                     .items_center()
-                    .gap_2()
+                    .gap_1()
                     .child(
-                        pill_button(ds, "Importar .vital…", false, ds.accent)
+                        pill_button(ds, "Reset", false, ds.muted)
+                            .id("synth-reset-init")
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _, _, cx| {
+                                    this.reset_synth_init();
+                                    cx.stop_propagation();
+                                    cx.notify();
+                                }),
+                            ),
+                    )
+                    .child(
+                        pill_button(ds, "Importar…", false, ds.accent)
                             .id("synth-import-vital")
                             .on_mouse_down(
                                 MouseButton::Left,
@@ -218,7 +259,7 @@ impl DawApp {
                             ),
                     )
                     .child(
-                        pill_button(ds, "Guardar preset", false, ds.cyan)
+                        pill_button(ds, "Guardar", false, ds.cyan)
                             .id("synth-save-preset")
                             .on_mouse_down(
                                 MouseButton::Left,
@@ -232,14 +273,14 @@ impl DawApp {
                     .child(self.render_window_button(cx)),
             );
 
-        // ── Selector de los 8 motores de síntesis + navegador de librería .vital ──
+        // ── Selector de los 8 motores + acceso rápido a librería de presets externos ──
         let vital_count = self.synth_ui.vital_library.len();
         let vital_label = if let Some(idx) = self.synth_ui.vital_index
             && let Some(entry) = self.synth_ui.vital_library.get(idx)
         {
-            format!("Vital ({}/{vital_count}): {}", idx + 1, entry.name)
+            format!("{} ({}/{vital_count})", entry.name, idx + 1)
         } else if vital_count > 0 {
-            format!("Vital Bank ({vital_count} presets)")
+            format!("Librería ({vital_count})")
         } else {
             String::new()
         };
@@ -295,9 +336,8 @@ impl DawApp {
             .when(vital_count > 0, |bar| {
                 bar.child(
                     div()
-                        .flex()
-                        .items_center()
-                        .gap_1()
+                        .w(px(236.))
+                        .flex_shrink_0()
                         .child(self.step_selector(
                             "vital-lib",
                             &vital_label,
@@ -330,8 +370,11 @@ impl DawApp {
             press,
         );
 
+        let preset_overlay = menu_open.then(|| self.render_synth_preset_menu(cx));
+
         div()
             .id("hay-synth")
+            .relative()
             .flex_1()
             .min_h_0()
             .min_w_0()
@@ -339,6 +382,15 @@ impl DawApp {
             .flex_col()
             .text_size(px(11.))
             .bg(rgb(ds.bg))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _, _, cx| {
+                    if this.synth_ui.preset_menu_open {
+                        this.synth_ui.preset_menu_open = false;
+                        cx.notify();
+                    }
+                }),
+            )
             .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
                 if !this.instrument_detached() {
                     return;
@@ -406,7 +458,365 @@ impl DawApp {
                     .border_t_1()
                     .border_color(rgb(ds.border))
                     .text_color(rgb(ds.muted))
+                    .truncate()
                     .child(self.status_message.clone()),
+            )
+            .when_some(preset_overlay, |root, overlay| root.child(overlay))
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Menú flotante de Presets por Categorías + Efectos nativos del componente
+    // ──────────────────────────────────────────────────────────────────────────
+    fn render_synth_preset_menu(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let ds = &self.ds;
+        let active_cat = self.synth_ui.preset_category;
+        let active_name = self.synth.params.preset_name.clone();
+        let all_native = self.synth_ui.all_presets();
+        let factory_count = FACTORY_PRESETS.len() + vital_factory_presets().len();
+
+        let categories_col = div()
+            .w(px(138.))
+            .flex_shrink_0()
+            .p_2()
+            .border_r_1()
+            .border_color(rgb(ds.border))
+            .bg(rgb(ds.panel_dark))
+            .flex()
+            .flex_col()
+            .gap(px(3.))
+            .children(PresetCategory::ALL.into_iter().map(|cat| {
+                let selected = active_cat == cat;
+                let accent = if cat == PresetCategory::Components {
+                    ds.cyan
+                } else {
+                    ds.accent
+                };
+                div()
+                    .id(("synth-menu-cat", cat as usize))
+                    .w_full()
+                    .px_2()
+                    .py(px(4.))
+                    .rounded(px(ds.radius_sm))
+                    .cursor_pointer()
+                    .bg(rgb(if selected { ds.panel } else { ds.panel_dark }))
+                    .border_1()
+                    .border_color(rgb(if selected { accent } else { ds.panel_dark }))
+                    .text_size(px(10.5))
+                    .font_weight(if selected {
+                        FontWeight::BOLD
+                    } else {
+                        FontWeight::NORMAL
+                    })
+                    .text_color(rgb(if selected { accent } else { ds.text }))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, _, cx| {
+                            this.synth_ui.preset_category = cat;
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    )
+                    .child(cat.label())
+            }));
+
+        let list_body: gpui::AnyElement = if active_cat == PresetCategory::Components {
+            let track_chain = self
+                .synth_track()
+                .and_then(|idx| self.tracks.get(idx))
+                .map(|t| &t.chain);
+            let mut components: Vec<(String, String, String)> = self
+                .lua_components
+                .registry
+                .values()
+                .map(|c| (c.id.clone(), c.name.clone(), c.description.clone()))
+                .collect();
+            components.push((
+                elevate::musical::fx::cabinet::ID.to_owned(),
+                "Hey Convolver".into(),
+                "Convolución de cabinas e impulsos IR".into(),
+            ));
+            components.sort_by(|a, b| a.1.cmp(&b.1));
+            div()
+                .id("synth-menu-fx-list")
+                .flex_1()
+                .min_h_0()
+                .overflow_y_scroll()
+                .p_2()
+                .flex()
+                .flex_col()
+                .gap(px(4.))
+                .child(
+                    div()
+                        .text_size(px(9.5))
+                        .text_color(rgb(ds.muted))
+                        .pb_1()
+                        .child("Haz clic en un componente para insertarlo en la cadena FX de esta pista:"),
+                )
+                .children(components.into_iter().enumerate().map(|(i, (id, name, desc))| {
+                    let already = track_chain.is_some_and(|chain| {
+                        chain.nodes().iter().any(|n| match &n.kind {
+                            elevate::musical::fx::FxKind::Effect {
+                                plugin_id:
+                                    elevate::musical::track::TrackDevice::Hay { catalog_id },
+                                ..
+                            } => catalog_id == &id,
+                            _ => false,
+                        })
+                    });
+                    let fx_id = id.clone();
+                    div()
+                        .id(("synth-menu-fx", i))
+                        .w_full()
+                        .px_2()
+                        .py(px(6.))
+                        .rounded(px(ds.radius_sm))
+                        .bg(rgb(ds.panel_dark))
+                        .border_1()
+                        .border_color(rgb(if already { ds.cyan } else { ds.border }))
+                        .cursor_pointer()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .gap_2()
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, _, _, cx| {
+                                this.add_synth_track_fx(&fx_id);
+                                cx.stop_propagation();
+                                cx.notify();
+                            }),
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .flex()
+                                .flex_col()
+                                .child(
+                                    div()
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .text_color(rgb(ds.text))
+                                        .child(name),
+                                )
+                                .child(
+                                    div()
+                                        .text_size(px(9.))
+                                        .text_color(rgb(ds.muted))
+                                        .truncate()
+                                        .child(desc),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .flex_shrink_0()
+                                .px(px(6.))
+                                .py(px(2.))
+                                .rounded(px(3.))
+                                .bg(rgb(ds.bg))
+                                .text_size(px(9.5))
+                                .text_color(rgb(if already { ds.cyan } else { ds.accent }))
+                                .child(if already { "+ Otro" } else { "+ Añadir" }),
+                        )
+                }))
+                .into_any_element()
+        } else {
+            let mut rows: Vec<gpui::AnyElement> = Vec::new();
+            for (idx, p) in all_native.iter().enumerate() {
+                let is_user = idx >= factory_count;
+                if !active_cat.matches(&p.name, &p.category, is_user, false) {
+                    continue;
+                }
+                let is_cur = p.name.eq_ignore_ascii_case(&active_name);
+                let name = p.name.clone();
+                let cat_lbl = p.category.clone();
+                let eng_lbl = p.params.engine.label();
+                rows.push(
+                    div()
+                        .id(("synth-menu-native", idx))
+                        .w_full()
+                        .px_2()
+                        .py(px(5.))
+                        .rounded(px(ds.radius_sm))
+                        .bg(rgb(if is_cur { ds.panel } else { ds.panel_dark }))
+                        .border_1()
+                        .border_color(rgb(if is_cur { ds.accent } else { ds.border }))
+                        .cursor_pointer()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .gap_2()
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, _, _, cx| {
+                                this.synth_ui.vital_index = None;
+                                this.apply_synth_preset_index(idx);
+                                cx.stop_propagation();
+                                cx.notify();
+                            }),
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .text_color(rgb(if is_cur { ds.accent } else { ds.text }))
+                                .font_weight(if is_cur {
+                                    FontWeight::BOLD
+                                } else {
+                                    FontWeight::NORMAL
+                                })
+                                .truncate()
+                                .child(name),
+                        )
+                        .child(
+                            div()
+                                .flex_shrink_0()
+                                .text_size(px(9.))
+                                .text_color(rgb(ds.muted))
+                                .child(format!("{cat_lbl} · {eng_lbl}")),
+                        )
+                        .into_any_element(),
+                );
+            }
+            // Presets externos de librería filtrados por categoría (hasta 140 visibles para render ágil).
+            let mut ext_shown = 0usize;
+            for (vidx, entry) in self.synth_ui.vital_library.iter().enumerate() {
+                if ext_shown >= 140 {
+                    break;
+                }
+                if !active_cat.matches(&entry.name, &entry.pack, false, true) {
+                    continue;
+                }
+                ext_shown += 1;
+                let is_cur = self.synth_ui.vital_index == Some(vidx);
+                let path = entry.path.clone();
+                let name = entry.name.clone();
+                let pack = entry.pack.clone();
+                rows.push(
+                    div()
+                        .id(("synth-menu-lib", vidx))
+                        .w_full()
+                        .px_2()
+                        .py(px(5.))
+                        .rounded(px(ds.radius_sm))
+                        .bg(rgb(if is_cur { ds.panel } else { ds.panel_dark }))
+                        .border_1()
+                        .border_color(rgb(if is_cur { ds.cyan } else { ds.border }))
+                        .cursor_pointer()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .gap_2()
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, _, _, cx| {
+                                this.synth_ui.vital_index = Some(vidx);
+                                this.import_vital_path(path.clone());
+                                cx.stop_propagation();
+                                cx.notify();
+                            }),
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .text_color(rgb(if is_cur { ds.cyan } else { ds.text }))
+                                .truncate()
+                                .child(name),
+                        )
+                        .child(
+                            div()
+                                .w(px(120.))
+                                .flex_shrink_0()
+                                .text_right()
+                                .text_size(px(9.))
+                                .text_color(rgb(ds.muted))
+                                .truncate()
+                                .child(pack),
+                        )
+                        .into_any_element(),
+                );
+            }
+            if rows.is_empty() {
+                rows.push(
+                    div()
+                        .p_3()
+                        .text_color(rgb(ds.muted))
+                        .child("Sin presets en esta categoría")
+                        .into_any_element(),
+                );
+            }
+            div()
+                .id("synth-menu-preset-list")
+                .flex_1()
+                .min_h_0()
+                .overflow_y_scroll()
+                .p_2()
+                .flex()
+                .flex_col()
+                .gap(px(4.))
+                .children(rows)
+                .into_any_element()
+        };
+
+        // Overlay posicionado absolutamente: nunca empuja ni altera el layout subyacente.
+        div()
+            .id("synth-preset-overlay")
+            .absolute()
+            .top(px(40.))
+            .left(px(12.))
+            .w(px(540.))
+            .h(px(330.))
+            .rounded(px(ds.radius_md))
+            .bg(rgb(ds.bg))
+            .border_1()
+            .border_color(rgb(ds.cyan))
+            .flex()
+            .flex_col()
+            .overflow_hidden()
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|_, _, _, cx| {
+                    cx.stop_propagation();
+                }),
+            )
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .px_3()
+                    .py(px(6.))
+                    .bg(rgb(ds.panel))
+                    .border_b_1()
+                    .border_color(rgb(ds.border))
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .child(
+                        div()
+                            .font_weight(FontWeight::BOLD)
+                            .text_size(px(10.5))
+                            .text_color(rgb(ds.cyan))
+                            .child(format!("NAVEGADOR · {}", active_cat.label())),
+                    )
+                    .child(
+                        pill_button(ds, "Cerrar ✕", false, ds.muted)
+                            .id("synth-menu-close")
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _, _, cx| {
+                                    this.synth_ui.preset_menu_open = false;
+                                    cx.stop_propagation();
+                                    cx.notify();
+                                }),
+                            ),
+                    ),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .child(categories_col)
+                    .child(list_body),
             )
     }
 
@@ -713,7 +1123,7 @@ impl DawApp {
                     .flex_wrap()
                     .items_center()
                     .gap_1()
-                    .child(self.step_selector(
+                    .child(div().w(px(148.)).flex_shrink_0().child(self.step_selector(
                         "osc-a-table",
                         &osc_a_wt_label,
                         ds.cyan,
@@ -727,8 +1137,8 @@ impl DawApp {
                                 this.synth.params.voice.osc_a_table.label()
                             );
                         },
-                    ))
-                    .child(self.step_selector(
+                    )))
+                    .child(div().w(px(110.)).flex_shrink_0().child(self.step_selector(
                         "osc-a-warp",
                         vp.osc_a_warp_mode.label(),
                         ds.accent,
@@ -742,21 +1152,21 @@ impl DawApp {
                                 this.synth.params.voice.osc_a_warp_mode.label()
                             );
                         },
-                    ))
-                    .when(!is_wt, |el| {
-                        el.child(
-                            pill_button(ds, "Usar Wavetable", false, ds.cyan)
-                                .id("osc-a-enable-wt")
-                                .on_mouse_down(
-                                    MouseButton::Left,
-                                    cx.listener(|this, _, _, cx| {
-                                        this.set_synth_engine(SynthEngineKind::Wavetable);
-                                        cx.stop_propagation();
-                                        cx.notify();
-                                    }),
-                                ),
-                        )
-                    }),
+                    )))
+                    .child(
+                        pill_button(ds, "Wavetable", is_wt, ds.cyan)
+                            .id("osc-a-enable-wt")
+                            .w(px(76.))
+                            .justify_center()
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _, _, cx| {
+                                    this.set_synth_engine(SynthEngineKind::Wavetable);
+                                    cx.stop_propagation();
+                                    cx.notify();
+                                }),
+                            ),
+                    ),
             )
             .child(
                 div()
@@ -855,7 +1265,7 @@ impl DawApp {
                     .flex_wrap()
                     .items_center()
                     .gap_1()
-                    .child(self.step_selector(
+                    .child(div().w(px(148.)).flex_shrink_0().child(self.step_selector(
                         "osc-b-table",
                         &osc_b_wt_label,
                         ds.cyan,
@@ -869,7 +1279,7 @@ impl DawApp {
                                 this.synth.params.voice.osc_b_table.label()
                             );
                         },
-                    ))
+                    )))
                     .child(
                         pill_button(
                             ds,
@@ -882,6 +1292,8 @@ impl DawApp {
                             ds.accent,
                         )
                         .id("synth-sub-oct")
+                        .w(px(80.))
+                        .justify_center()
                         .on_mouse_down(
                             MouseButton::Left,
                             cx.listener(|this, _, _, cx| {
@@ -1146,17 +1558,10 @@ impl DawApp {
                     .items_center()
                     .gap_2()
                     .child(
-                        pill_button(
-                            ds,
-                            if vp.env1_override {
-                                "ENV 1: ADSR Manual"
-                            } else {
-                                "ENV 1: Usar ADSR Manual"
-                            },
-                            vp.env1_override,
-                            ds.accent,
-                        )
-                        .id("synth-env1-override")
+                        pill_button(ds, "ADSR Manual", vp.env1_override, ds.accent)
+                            .id("synth-env1-override")
+                            .w(px(96.))
+                            .justify_center()
                         .on_mouse_down(
                             MouseButton::Left,
                             cx.listener(|this, _, _, cx| {
@@ -1566,6 +1971,10 @@ impl DawApp {
                         ))
                         .child(
                             div()
+                                .w(px(44.))
+                                .flex_shrink_0()
+                                .font_family("monospace")
+                                .text_right()
                                 .text_size(px(10.))
                                 .font_weight(FontWeight::MEDIUM)
                                 .text_color(rgb(if active { ds.cyan } else { ds.muted }))
@@ -1856,6 +2265,10 @@ impl DawApp {
                     )
                     .child(
                         div()
+                            .w(px(58.))
+                            .flex_shrink_0()
+                            .text_right()
+                            .font_family("monospace")
                             .text_size(px(9.5))
                             .text_color(rgb(if active_notes > 0 { ds.accent } else { ds.muted }))
                             .child(if active_notes > 0 {
@@ -1872,7 +2285,13 @@ impl DawApp {
                     .text_size(px(9.))
                     .text_color(rgb(ds.muted))
                     .child("FAR · Aire")
-                    .child(format!("Dist {:.0}%", params.distance * 100.0)),
+                    .child(
+                        div()
+                            .w(px(64.))
+                            .text_right()
+                            .font_family("monospace")
+                            .child(format!("Dist {:3.0}%", params.distance * 100.0)),
+                    ),
             )
             .child(xy_canvas)
             .child(
@@ -1889,11 +2308,12 @@ impl DawApp {
                 div()
                     .flex()
                     .justify_between()
+                    .font_family("monospace")
                     .text_size(px(9.5))
                     .text_color(rgb(ds.cyan))
-                    .child(format!("Tone {:.0}%", params.tone * 100.0))
-                    .child(format!("Body {:.0}%", params.body * 100.0))
-                    .child(format!("Motion {:.0}%", params.motion * 100.0)),
+                    .child(div().w(px(76.)).child(format!("Tone {:3.0}%", params.tone * 100.0)))
+                    .child(div().w(px(76.)).text_center().child(format!("Body {:3.0}%", params.body * 100.0)))
+                    .child(div().w(px(84.)).text_right().child(format!("Motion {:3.0}%", params.motion * 100.0))),
             )
     }
 
@@ -1910,6 +2330,9 @@ impl DawApp {
     ) -> impl IntoElement + use<F> {
         let ds = &self.ds;
         div()
+            .w_full()
+            .min_w_0()
+            .overflow_hidden()
             .flex()
             .items_center()
             .gap(px(2.))
@@ -1922,6 +2345,7 @@ impl DawApp {
             .child(
                 div()
                     .id((id, 0usize))
+                    .flex_shrink_0()
                     .px(px(4.))
                     .cursor_pointer()
                     .text_size(px(10.))
@@ -1940,7 +2364,7 @@ impl DawApp {
                 div()
                     .id((id, 1usize))
                     .flex_1()
-                    .min_w(px(64.))
+                    .min_w_0()
                     .cursor_pointer()
                     .text_center()
                     .text_size(px(10.))
@@ -1960,6 +2384,7 @@ impl DawApp {
             .child(
                 div()
                     .id((id, 2usize))
+                    .flex_shrink_0()
                     .px(px(4.))
                     .cursor_pointer()
                     .text_size(px(10.))
@@ -1996,7 +2421,7 @@ impl DawApp {
         let readout = format_synth_param_value(param_id, value);
         div()
             .id(("synth-vparam", param_id as usize))
-            .w(px(72.))
+            .w(px(76.))
             .flex_shrink_0()
             .flex()
             .flex_col()
@@ -2005,6 +2430,9 @@ impl DawApp {
             .cursor(gpui::CursorStyle::ResizeUpDown)
             .child(
                 div()
+                    .w_full()
+                    .text_center()
+                    .truncate()
                     .text_size(px(10.))
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(rgb(ds.text))
@@ -2021,12 +2449,17 @@ impl DawApp {
             ))
             .child(
                 div()
+                    .w_full()
+                    .text_center()
+                    .font_family("monospace")
                     .text_size(px(9.5))
                     .text_color(rgb(color))
                     .child(readout),
             )
             .child(
                 div()
+                    .w_full()
+                    .text_center()
                     .text_size(px(8.5))
                     .text_color(rgb(ds.muted))
                     .truncate()
