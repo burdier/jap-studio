@@ -41,7 +41,7 @@ jobs:
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          save-if: ${{ always() }}
+          save-if: "true"
 
       - name: Build release binary (ui + p2p)
         run: cargo build --release --features ui,p2p
