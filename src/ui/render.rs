@@ -17,6 +17,7 @@ impl Render for DawApp {
         self.tick_history();
         self.tick_autosave(cx);
         super::kit::sync_theme(&self.ds, cx);
+        window.set_rem_size(px(self.ds.rem_size()));
         self.validate_workspace_focus();
         self.sync_explorer(window, cx);
         self.sync_fx(window, cx);

@@ -46,6 +46,7 @@ impl DetachedPianoRoll {
 impl Render for DetachedPianoRoll {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.app.update(cx, |app, cx| {
+            window.set_rem_size(px(app.ds.rem_size()));
             app.sync_audio_selectors(window, cx);
             let content = app
                 .render_piano_roll(&self.focus_handle, cx)

@@ -301,7 +301,9 @@ impl DesignSystem {
             .copied()
             .map(ThemePreset::from_token)
             .unwrap_or_default();
-        const MIN_UI_FONT_SIZE: f32 = 12.0;
+        const DEFAULT_UI_FONT_SIZE: f32 = 12.0;
+        const MIN_UI_FONT_SIZE: f32 = 10.0;
+        const MAX_UI_FONT_SIZE: f32 = 20.0;
         let pal = theme.palette();
         let layout = theme.layout_defaults();
         let success = color("SUCCESS", pal.success);
@@ -349,7 +351,8 @@ impl DesignSystem {
             control_bar_height: get("CONTROL_BAR_HEIGHT", layout.control_bar_height),
             knob_size: get("KNOB_SIZE", 28.0).clamp(18.0, 36.0),
             transport_btn_size: get("TRANSPORT_BTN_SIZE", layout.transport_btn_size),
-            font_size_xs: get("FONT_SIZE_XS", MIN_UI_FONT_SIZE).max(MIN_UI_FONT_SIZE),
+            font_size_xs: get("FONT_SIZE_XS", DEFAULT_UI_FONT_SIZE)
+                .clamp(MIN_UI_FONT_SIZE, MAX_UI_FONT_SIZE),
             padding_xs: get("PADDING_XS", layout.padding_xs),
             padding_sm: get("PADDING_SM", layout.padding_sm),
             padding_lg: get("PADDING_LG", layout.padding_lg),
@@ -367,6 +370,15 @@ impl DesignSystem {
             track_header,
             track_color_override: vec![None; 8],
         }
+    }
+
+    /// Tamaño base `rem` de GPUI derivado de `font_size_xs` (12 px → 16 rem = 100%).
+    pub(in crate::ui) fn rem_size(&self) -> f32 {
+        (self.font_size_xs * (16.0 / 12.0)).clamp(13.0, 27.0)
+    }
+
+    pub(in crate::ui) fn font_scale_percent(&self) -> u32 {
+        ((self.font_size_xs / 12.0) * 100.0).round() as u32
     }
 
     /// Acerca el fondo al color de texto: aclara temas oscuros y oscurece temas claros.

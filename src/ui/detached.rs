@@ -39,7 +39,7 @@ impl DetachedPanel {
 
 impl Render for DetachedPanel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let (content, bg, text, loading) = self.app.update(cx, |app, cx| {
+        let (content, bg, text, rem_size, loading) = self.app.update(cx, |app, cx| {
             app.poll_live_midi();
             if !app.sampler_selected() && !app.vst_selected() && !app.synth_selected() {
                 app.instrument.request_resources();
@@ -49,6 +49,7 @@ impl Render for DetachedPanel {
                 app.render_instrument(cx).into_any_element(),
                 app.ds.bg,
                 app.ds.text,
+                app.ds.rem_size(),
                 app.instrument.loading()
                     || app.midi_hw.has_ports()
                     || app.instrument.is_running()
@@ -56,6 +57,7 @@ impl Render for DetachedPanel {
                     || app.vst.clip_playing(),
             )
         });
+        window.set_rem_size(px(rem_size));
         if loading {
             cx.on_next_frame(window, |_, _, cx| cx.notify());
             window.request_animation_frame();

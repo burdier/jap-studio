@@ -210,6 +210,21 @@ impl DawApp {
         self.save_appearance(format!("Contraste de selección: {:.0}%", value * 100.0));
     }
 
+    pub(in crate::ui) fn set_font_size(&mut self, size: f32) {
+        let clamped = (size * 2.0).round() * 0.5;
+        let clamped = clamped.clamp(10.0, 20.0);
+        self.ds.font_size_xs = clamped;
+        self.save_appearance(format!(
+            "Fuente: {:.1} px ({}%)",
+            clamped,
+            self.ds.font_scale_percent()
+        ));
+    }
+
+    pub(in crate::ui) fn step_font_size(&mut self, delta: f32) {
+        self.set_font_size(self.ds.font_size_xs + delta);
+    }
+
     fn save_appearance(&mut self, description: String) {
         match profile::save_appearance(&self.ds) {
             Ok(()) => {
