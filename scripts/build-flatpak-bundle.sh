@@ -10,8 +10,8 @@ ARCH="$(uname -m)"
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
-BUILD_DIR="$DIST_DIR/flatpak-build"
-REPO_DIR="$DIST_DIR/flatpak-repo"
+BUILD_DIR="/tmp/jap-flatpak-build"
+REPO_DIR="/tmp/jap-flatpak-repo"
 BUNDLE_PATH="$DIST_DIR/jap-studio-${VERSION}-${ARCH}.flatpak"
 FULL_SOUNDFONTS=0
 BIN_SRC="$ROOT_DIR/target/release/daw-gpui"
