@@ -6,6 +6,17 @@ on:
     branches:
       - main
       - "feat/**"
+    paths-ignore:
+      - "landing/**"
+      - "docs/**"
+      - "assets/video-sfx/**"
+      - "scripts/render_video.py"
+      - "scripts/gen_video_foley.py"
+      - "README.md"
+
+concurrency:
+  group: build-windows-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write

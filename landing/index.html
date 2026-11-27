@@ -383,6 +383,9 @@
   .intro-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
   .btn-accent{border-color:var(--carrot);background:var(--fill-o);color:var(--graphite)}
   .btn-accent:hover{background:var(--carrot);color:#fff}
+  .btn-coffee{border-color:#9a5b1a;background:var(--fill-y);color:var(--graphite);transition:transform .2s ease,background-color .2s ease,color .2s ease}
+  .btn-coffee:hover{background:#9a5b1a;color:#fff;transform:rotate(-1.5deg) scale(1.03)}
+  footer{padding:70px 28px 80px 84px;font-family:var(--hand);color:var(--footer);display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
   @media(max-width:640px){
     #introStage{padding:64px 14px 16px}
     .intro-top{padding-right:0}
@@ -441,6 +444,7 @@
       <button type="button" class="btn btn-accent" id="replayIntro">▶ Ver video de presentación</button>
       <a class="btn cta-link" href="#probar">↓ Instalar (Linux y Windows)</a>
       <a class="btn cta-link" href="#componentes">Ver los 12 componentes</a>
+      <a class="btn btn-coffee cta-link" href="https://paypal.me/burhub" target="_blank" rel="noopener noreferrer">☕ Regalar un café</a>
     </div>
     <div class="pill-row" aria-label="Resumen técnico">
       <span class="pill">Rust + GPUI</span>
@@ -531,6 +535,7 @@
     <div class="cta-row" style="margin:.9rem 0 .4rem">
       <a class="btn btn-accent cta-link" href="https://dl.sevenpitch.dev/v0.8.0/jap-studio-0.8.0-x86_64.flatpak" download>↓ Descargar Linux (.flatpak · 267 MB)</a>
       <a class="btn btn-accent cta-link" href="https://dl.sevenpitch.dev/v0.8.0/JapStudio-Windows-x64.zip" download>↓ Descargar Windows x64 (.zip · 77 MB)</a>
+      <a class="btn btn-coffee cta-link" href="https://paypal.me/burhub" target="_blank" rel="noopener noreferrer">☕ Regalar un café (PayPal)</a>
     </div>
     <div class="install-grid">
       <div class="install-box">
@@ -571,7 +576,10 @@ jap-studio.exe --mcp</code></pre>
   </section>
 </main>
 
-<footer>Jap Studio (Hay / Elevate) — DAW open source en Rust + GPUI. Hecho con grafito, DSP sin bloqueos y zanahorias. ✎</footer>
+<footer>
+  <span>Jap Studio (Hay / Elevate) — DAW open source en Rust + GPUI. Hecho con grafito, DSP sin bloqueos y zanahorias. ✎</span>
+  <a class="btn btn-coffee cta-link" href="https://paypal.me/burhub" target="_blank" rel="noopener noreferrer">☕ Regalar un café</a>
+</footer>
 
 <script>
 /* ---------- utilidades de trazo "a lápiz" ---------- */
