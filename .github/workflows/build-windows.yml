@@ -9,10 +9,13 @@ on:
     paths-ignore:
       - "landing/**"
       - "docs/**"
+      - "packaging/**"
       - "assets/video-sfx/**"
+      - "scripts/build-flatpak-bundle.sh"
       - "scripts/render_video.py"
       - "scripts/gen_video_foley.py"
       - "README.md"
+      - "LICENSE"
 
 concurrency:
   group: build-windows-${{ github.ref }}
