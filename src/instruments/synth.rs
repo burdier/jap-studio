@@ -57,9 +57,21 @@ impl Synth {
     pub fn update_live(&mut self) {
         self.params.clamp_all();
         if let Some(player) = &self.player {
+            player.set_synth_wavetable(0, self.params.custom_wt_a.clone());
+            player.set_synth_wavetable(1, self.params.custom_wt_b.clone());
             for (id, v) in self.params.all_param_pairs() {
                 player.synth_control(id, v);
             }
+        }
+    }
+
+    pub fn update_live_wavetable(
+        &mut self,
+        slot: u8,
+        table: Option<std::sync::Arc<elevate::devices::synth::CustomWavetable>>,
+    ) {
+        if let Some(player) = &self.player {
+            player.set_synth_wavetable(slot, table);
         }
     }
 

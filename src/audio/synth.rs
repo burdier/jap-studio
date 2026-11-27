@@ -1,10 +1,11 @@
 //! Motor DSP polifónico en tiempo real de Hay Synth (Stage + Voice Lab estilo Vital + Mod Matrix).
 //! 0 asignaciones en render, 0 bloqueos, 0 dependencias externas.
 use elevate::devices::synth::{
-    DistMode, EnvelopeMode, FilterKind, LfoShape, ModSource, ModTarget, RoomKind, SynthEngineKind,
-    SynthParams, WarpMode, WavetableKind, cc,
+    CustomWavetable, DistMode, EnvelopeMode, FilterKind, LfoShape, ModSource, ModTarget, RoomKind,
+    SynthEngineKind, SynthParams, WarpMode, WavetableKind, cc,
 };
 use std::f32::consts::{PI, TAU};
+use std::sync::Arc;
 
 const MAX_VOICES: usize = 12;
 const MAX_UNISON: usize = 7;
@@ -212,6 +213,31 @@ impl WavetableBank {
 
         let b0 = self.data[t][f1][i0];
         let b1 = self.data[t][f1][i1];
+        let s1 = b0 + (b1 - b0) * pf;
+
+        s0 + (s1 - s0) * ff
+    }
+
+    #[inline]
+    fn sample_custom(wt: &CustomWavetable, frame_pos: f32, phase: f32) -> f32 {
+        let fp = frame_pos.clamp(0.0, 1.0) * (WT_FRAMES - 1) as f32;
+        let f0 = (fp.floor() as usize).min(WT_FRAMES - 2);
+        let f1 = f0 + 1;
+        let ff = fp - f0 as f32;
+
+        let p = phase.fract();
+        let p = if p < 0.0 { p + 1.0 } else { p };
+        let idx_f = p * WT_SIZE as f32;
+        let i0 = (idx_f as usize) & (WT_SIZE - 1);
+        let i1 = (i0 + 1) & (WT_SIZE - 1);
+        let pf = idx_f - idx_f.floor();
+
+        let a0 = wt.frames[f0][i0];
+        let a1 = wt.frames[f0][i1];
+        let s0 = a0 + (a1 - a0) * pf;
+
+        let b0 = wt.frames[f1][i0];
+        let b1 = wt.frames[f1][i1];
         let s1 = b0 + (b1 - b0) * pf;
 
         s0 + (s1 - s0) * ff
@@ -700,6 +726,14 @@ impl NativeSynthEngine {
         self.params.set_param(id, value);
     }
 
+    pub fn set_custom_wavetable(&mut self, slot: u8, table: Option<Arc<CustomWavetable>>) {
+        match slot {
+            0 => self.params.custom_wt_a = table,
+            1 => self.params.custom_wt_b = table,
+            _ => {}
+        }
+    }
+
     pub fn set_master_volume(&mut self, volume: f32) {
         self.master_volume = volume.clamp(0.0, 2.0);
     }
@@ -1107,7 +1141,11 @@ impl NativeSynthEngine {
                         };
                         let f_u = hz_b * (1.0 + frac * det_b);
                         v.osc_b_uni[u] = (v.osc_b_uni[u] + f_u * inv_sr).fract();
-                        let s = self.wt.sample(vp.osc_b_table, pos_b, v.osc_b_uni[u]);
+                        let s = if let Some(custom) = &params.custom_wt_b {
+                            WavetableBank::sample_custom(custom, pos_b, v.osc_b_uni[u])
+                        } else {
+                            self.wt.sample(vp.osc_b_table, pos_b, v.osc_b_uni[u])
+                        };
                         if u == 0 {
                             ob_mono = s;
                         }
@@ -1264,7 +1302,11 @@ impl NativeSynthEngine {
                                 }
                                 WarpMode::FmFromB => (ph + ob_mono * warp_amt * 0.85).rem_euclid(1.0),
                             };
-                            let mut s = self.wt.sample(vp.osc_a_table, shape_eff, warped_ph);
+                            let mut s = if let Some(custom) = &params.custom_wt_a {
+                                WavetableBank::sample_custom(custom, shape_eff, warped_ph)
+                            } else {
+                                self.wt.sample(vp.osc_a_table, shape_eff, warped_ph)
+                            };
                             match vp.osc_a_warp_mode {
                                 WarpMode::Fold => {
                                     s = (s * (1.0 + warp_amt * 4.5)).sin();

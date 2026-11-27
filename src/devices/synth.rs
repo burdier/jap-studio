@@ -1,5 +1,46 @@
-//! Modelo headless de Hay Synth: Espacio + Cuerpo + Intención/Toque.
+//! Modelo headless de Hay Synth: Espacio + Cuerpo + Intención/Toque + Voice Lab estilo Vital.
 //! Sin GPUI ni CPAL; serializable en proyectos `.loro`, P2P y presets JSON.
+use std::sync::Arc;
+
+pub const CUSTOM_WT_FRAMES: usize = 8;
+pub const CUSTOM_WT_SIZE: usize = 256;
+
+/// Wavetable custom de 8 frames × 256 muestras (importada desde `.vital` u otra fuente).
+#[derive(Clone, Debug, PartialEq)]
+pub struct CustomWavetable {
+    pub name: String,
+    pub frames: [[f32; CUSTOM_WT_SIZE]; CUSTOM_WT_FRAMES],
+}
+
+impl CustomWavetable {
+    /// Codifica de forma compacta en `i16` little-endian (4 KB por tabla) para `.loro` y P2P.
+    pub fn to_i16_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(CUSTOM_WT_FRAMES * CUSTOM_WT_SIZE * 2);
+        for frame in &self.frames {
+            for &s in frame {
+                let q = (s.clamp(-1.0, 1.0) * 32767.0).round() as i16;
+                out.extend_from_slice(&q.to_le_bytes());
+            }
+        }
+        out
+    }
+
+    pub fn from_i16_bytes(name: String, bytes: &[u8]) -> Option<Self> {
+        if bytes.len() != CUSTOM_WT_FRAMES * CUSTOM_WT_SIZE * 2 {
+            return None;
+        }
+        let mut frames = [[0.0_f32; CUSTOM_WT_SIZE]; CUSTOM_WT_FRAMES];
+        let mut idx = 0;
+        for frame in &mut frames {
+            for sample in frame.iter_mut() {
+                let v = i16::from_le_bytes([bytes[idx], bytes[idx + 1]]);
+                *sample = f32::from(v) / 32767.0;
+                idx += 2;
+            }
+        }
+        Some(Self { name, frames })
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum SynthEngineKind {
@@ -683,6 +724,9 @@ pub struct SynthParams {
     pub preset_name: String,
     /// Capa de diseño sonoro estilo Vital (OSC A/B, Unison, Warp, Filtro 12/24dB, Envs, LFOs, FX, Matrix).
     pub voice: VoiceParams,
+    /// Wavetables reales decodificadas desde `.vital` (si `Some`, reemplazan la tabla fija de OSC A/B).
+    pub custom_wt_a: Option<Arc<CustomWavetable>>,
+    pub custom_wt_b: Option<Arc<CustomWavetable>>,
 }
 
 impl Default for SynthParams {
@@ -1109,6 +1153,8 @@ impl FactoryPreset {
             gain: self.gain,
             preset_name: self.name.to_owned(),
             voice: VoiceParams::default(),
+            custom_wt_a: None,
+            custom_wt_b: None,
         }
     }
 }
@@ -1492,6 +1538,8 @@ pub fn vital_factory_presets() -> Vec<(&'static str, &'static str, SynthParams)>
             glide: 0.0,
             gain: 0.70,
             preset_name: "Vital Supersaw".into(),
+            custom_wt_a: None,
+            custom_wt_b: None,
             voice: VoiceParams {
                 osc_a_table: WavetableKind::AnalogWarm,
                 osc_a_unison: 7,
@@ -1548,6 +1596,8 @@ pub fn vital_factory_presets() -> Vec<(&'static str, &'static str, SynthParams)>
             glide: 0.48,
             gain: 0.72,
             preset_name: "Reese Growl".into(),
+            custom_wt_a: None,
+            custom_wt_b: None,
             voice: VoiceParams {
                 osc_a_table: WavetableKind::GrowlBass,
                 osc_a_unison: 5,
@@ -1607,6 +1657,8 @@ pub fn vital_factory_presets() -> Vec<(&'static str, &'static str, SynthParams)>
             glide: 0.0,
             gain: 0.74,
             preset_name: "Crystal FM Pluck".into(),
+            custom_wt_a: None,
+            custom_wt_b: None,
             voice: VoiceParams {
                 osc_a_table: WavetableKind::DigitalGlass,
                 osc_a_unison: 3,
@@ -1666,6 +1718,8 @@ pub fn vital_factory_presets() -> Vec<(&'static str, &'static str, SynthParams)>
             glide: 0.25,
             gain: 0.72,
             preset_name: "Formant Talk Bass".into(),
+            custom_wt_a: None,
+            custom_wt_b: None,
             voice: VoiceParams {
                 osc_a_table: WavetableKind::VocalFormant,
                 osc_a_unison: 3,
@@ -1722,6 +1776,8 @@ pub fn vital_factory_presets() -> Vec<(&'static str, &'static str, SynthParams)>
             glide: 0.14,
             gain: 0.68,
             preset_name: "Glass Motion Pad".into(),
+            custom_wt_a: None,
+            custom_wt_b: None,
             voice: VoiceParams {
                 osc_a_table: WavetableKind::OrganBell,
                 osc_a_unison: 5,
@@ -1782,6 +1838,8 @@ pub fn vital_factory_presets() -> Vec<(&'static str, &'static str, SynthParams)>
             glide: 0.34,
             gain: 0.68,
             preset_name: "Acid Warp Lead".into(),
+            custom_wt_a: None,
+            custom_wt_b: None,
             voice: VoiceParams {
                 osc_a_table: WavetableKind::HarshFold,
                 osc_a_unison: 2,
@@ -1829,6 +1887,8 @@ pub fn vital_factory_presets() -> Vec<(&'static str, &'static str, SynthParams)>
             glide: 0.04,
             gain: 0.74,
             preset_name: "Lo-Fi Drift Keys".into(),
+            custom_wt_a: None,
+            custom_wt_b: None,
             voice: VoiceParams {
                 osc_a_table: WavetableKind::PluckString,
                 osc_a_unison: 3,

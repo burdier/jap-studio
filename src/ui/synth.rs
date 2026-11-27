@@ -161,6 +161,8 @@ fn load_user_presets() -> Vec<SynthPresetEntry> {
             gain: read_f("gain", 0.80),
             preset_name: name.clone(),
             voice: VoiceParams::default(),
+            custom_wt_a: None,
+            custom_wt_b: None,
         };
         if let Some(voice_map) = val.get("voice_params").and_then(|v| v.as_object()) {
             for (k, v) in voice_map {
@@ -440,6 +442,11 @@ impl DawApp {
     /// Actualiza cualquier parámetro `param::*` (Stage, Voice Lab o Mod Matrix) en vivo sin bloqueos.
     pub(in crate::ui) fn set_synth_voice_param(&mut self, param_id: u16, value: f32) {
         self.synth.params.set_param(param_id, value);
+        if param_id == param::OSC_A_TABLE && self.synth.params.custom_wt_a.take().is_some() {
+            self.synth.update_live_wavetable(0, None);
+        } else if param_id == param::OSC_B_TABLE && self.synth.params.custom_wt_b.take().is_some() {
+            self.synth.update_live_wavetable(1, None);
+        }
         let clamped = self.synth.params.get_param(param_id);
         self.synth.update_live_voice_param(param_id, clamped);
         if let Some(cc_id) = stage_cc_for_param(param_id) {
@@ -742,8 +749,8 @@ impl DawApp {
                 self.push_all_synth_live();
                 self.track_revision = self.track_revision.wrapping_add(1);
                 self.status_message = format!(
-                    "Vital importado · {} ({}) · {} mod(s) · WT: {}",
-                    summary.name, summary.style, summary.mapped_mods, summary.osc_a_wt
+                    "Vital · {} ({}) · {} mod(s) · {} WT real(es) ({})",
+                    summary.name, summary.style, summary.mapped_mods, summary.decoded_wts, summary.osc_a_wt
                 );
             }
             Err(e) => self.status_message = format!("Importar .vital: {e}"),

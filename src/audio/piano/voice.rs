@@ -39,6 +39,11 @@ impl InstrumentVoice {
                     synth.control_param(id, value);
                 }
             }
+            NoteCommand::SynthWavetable { slot, table } => {
+                if let SynthBackend::NativeSynth(synth) = &mut self.synth {
+                    synth.set_custom_wavetable(slot, table);
+                }
+            }
             NoteCommand::On { note, velocity } => {
                 self.synth.midi(0x90 | self.channel, note, velocity);
             }

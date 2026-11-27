@@ -39,6 +39,10 @@ enum NoteCommand {
     Filter(elevate::devices::filter::FilterSettings),
     SamplerControl(u8, f32),
     SynthControl(u16, f32),
+    SynthWavetable {
+        slot: u8,
+        table: Option<Arc<elevate::devices::synth::CustomWavetable>>,
+    },
     On {
         note: u8,
         velocity: u8,
@@ -254,6 +258,13 @@ impl PianoPlayer {
     }
     pub fn synth_control(&self, id: u16, value: f32) {
         self.push(NoteCommand::SynthControl(id, value));
+    }
+    pub fn set_synth_wavetable(
+        &self,
+        slot: u8,
+        table: Option<Arc<elevate::devices::synth::CustomWavetable>>,
+    ) {
+        self.push(NoteCommand::SynthWavetable { slot, table });
     }
     pub fn note_on(&self, note: u8, velocity: u8) {
         self.push(NoteCommand::On { note, velocity });

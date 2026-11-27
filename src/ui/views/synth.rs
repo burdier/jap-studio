@@ -701,6 +701,11 @@ impl DawApp {
         };
 
         // ── OSC A ──
+        let osc_a_wt_label = params
+            .custom_wt_a
+            .as_ref()
+            .map(|w| format!("★ {}", w.name))
+            .unwrap_or_else(|| vp.osc_a_table.label().to_owned());
         let osc_a_card = card("OSC A · WAVETABLE / WARP / UNISON", ds.accent)
             .child(
                 div()
@@ -710,7 +715,7 @@ impl DawApp {
                     .gap_1()
                     .child(self.step_selector(
                         "osc-a-table",
-                        vp.osc_a_table.label(),
+                        &osc_a_wt_label,
                         ds.cyan,
                         cx,
                         |this, delta| {
@@ -838,6 +843,11 @@ impl DawApp {
             );
 
         // ── OSC B + SUB + NOISE ──
+        let osc_b_wt_label = params
+            .custom_wt_b
+            .as_ref()
+            .map(|w| format!("★ {}", w.name))
+            .unwrap_or_else(|| vp.osc_b_table.label().to_owned());
         let osc_b_card = card("OSC B · WAVETABLE / FM SOURCE + SUB / NOISE", ds.cyan)
             .child(
                 div()
@@ -847,7 +857,7 @@ impl DawApp {
                     .gap_1()
                     .child(self.step_selector(
                         "osc-b-table",
-                        vp.osc_b_table.label(),
+                        &osc_b_wt_label,
                         ds.cyan,
                         cx,
                         |this, delta| {

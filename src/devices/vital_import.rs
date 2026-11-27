@@ -2,11 +2,13 @@
 //! Headless: sin GPUI ni CPAL; traduce OSC 1/2/3, Noise, Filter 1, ENV 1/2/3, LFO 1/2,
 //! Chorus, Distortion, Reverb (Room + Distance), Portamento y Mod Matrix (12 slots).
 use super::synth::{
-    DistMode, EnvelopeMode, FilterKind, LfoShape, MATRIX_SLOTS, ModSlot, ModSource, ModTarget,
-    RoomKind, SynthEngineKind, SynthParams, VoiceParams, WarpMode, WavetableKind,
+    CUSTOM_WT_FRAMES, CUSTOM_WT_SIZE, CustomWavetable, DistMode, EnvelopeMode, FilterKind,
+    LfoShape, MATRIX_SLOTS, ModSlot, ModSource, ModTarget, RoomKind, SynthEngineKind, SynthParams,
+    VoiceParams, WarpMode, WavetableKind,
 };
 use serde_json::Value;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub struct VitalImportSummary {
@@ -15,6 +17,7 @@ pub struct VitalImportSummary {
     pub mapped_mods: usize,
     pub osc_a_wt: String,
     pub osc_b_wt: String,
+    pub decoded_wts: u8,
 }
 
 #[derive(Clone, Debug)]
@@ -69,10 +72,9 @@ pub fn parse_vital_json(
         .trim()
         .to_owned();
 
-    // Wavetables por nombre (Vital guarda hasta 3 wavetables en `settings.wavetables`).
-    let wt_names: Vec<String> = s
-        .get("wavetables")
-        .and_then(Value::as_array)
+    // Wavetables por nombre + decodificación directa de `wave_data` base64 (f32[2048]) cuando viene embebido.
+    let wt_objs = s.get("wavetables").and_then(Value::as_array);
+    let wt_names: Vec<String> = wt_objs
         .map(|arr| {
             arr.iter()
                 .map(|w| {
@@ -92,6 +94,13 @@ pub fn parse_vital_json(
         .get(1)
         .cloned()
         .unwrap_or_else(|| "Analog Warm".into());
+    let custom_wt_a = wt_objs
+        .and_then(|arr| arr.first())
+        .and_then(|w| extract_vital_wavetable(w, &wt_a_name));
+    let custom_wt_b = wt_objs
+        .and_then(|arr| arr.get(1))
+        .and_then(|w| extract_vital_wavetable(w, &wt_b_name));
+    let decoded_wts = u8::from(custom_wt_a.is_some()) + u8::from(custom_wt_b.is_some());
 
     let mut voice = VoiceParams::default();
 
@@ -346,6 +355,8 @@ pub fn parse_vital_json(
         gain: 0.72,
         preset_name: name.clone(),
         voice,
+        custom_wt_a,
+        custom_wt_b,
     };
     params.clamp_all();
 
@@ -357,8 +368,145 @@ pub fn parse_vital_json(
             mapped_mods,
             osc_a_wt: wt_a_name,
             osc_b_wt: wt_b_name,
+            decoded_wts,
         },
     ))
+}
+
+/// Extrae y remuestrea los keyframes `wave_data` (base64 f32[2048] o i16[2048]) de una wavetable Vital.
+fn extract_vital_wavetable(wt: &Value, name: &str) -> Option<Arc<CustomWavetable>> {
+    let groups = wt.get("groups")?.as_array()?;
+    let mut keyframes: Vec<(f32, [f32; CUSTOM_WT_SIZE])> = Vec::new();
+    for g in groups {
+        let Some(comps) = g.get("components").and_then(Value::as_array) else {
+            continue;
+        };
+        for c in comps {
+            let Some(kfs) = c.get("keyframes").and_then(Value::as_array) else {
+                continue;
+            };
+            for kf in kfs {
+                let Some(b64) = kf.get("wave_data").and_then(Value::as_str) else {
+                    continue;
+                };
+                if b64.len() < 32 {
+                    continue;
+                }
+                let Some(frame) = decode_vital_wave_frame(b64) else {
+                    continue;
+                };
+                let pos = kf
+                    .get("position")
+                    .and_then(Value::as_f64)
+                    .map(|p| (p as f32 / 256.0).clamp(0.0, 1.0))
+                    .unwrap_or(0.0);
+                keyframes.push((pos, frame));
+            }
+        }
+    }
+    if keyframes.is_empty() {
+        return None;
+    }
+    keyframes.sort_by(|a, b| a.0.total_cmp(&b.0));
+
+    let mut frames = [[0.0_f32; CUSTOM_WT_SIZE]; CUSTOM_WT_FRAMES];
+    for (fi, dst) in frames.iter_mut().enumerate() {
+        let target_pos = fi as f32 / (CUSTOM_WT_FRAMES - 1) as f32;
+        if keyframes.len() == 1 || target_pos <= keyframes[0].0 {
+            *dst = keyframes[0].1;
+        } else if target_pos >= keyframes[keyframes.len() - 1].0 {
+            *dst = keyframes[keyframes.len() - 1].1;
+        } else {
+            let mut right_idx = 1;
+            while right_idx < keyframes.len() - 1 && keyframes[right_idx].0 < target_pos {
+                right_idx += 1;
+            }
+            let (p0, ref f0) = keyframes[right_idx - 1];
+            let (p1, ref f1) = keyframes[right_idx];
+            let t = ((target_pos - p0) / (p1 - p0).max(1e-5)).clamp(0.0, 1.0);
+            for i in 0..CUSTOM_WT_SIZE {
+                dst[i] = f0[i] + (f1[i] - f0[i]) * t;
+            }
+        }
+        // Quitar DC y normalizar suavemente cada frame.
+        let mean = dst.iter().sum::<f32>() / CUSTOM_WT_SIZE as f32;
+        let mut peak = 1e-5_f32;
+        for s in dst.iter_mut() {
+            *s -= mean;
+            peak = peak.max(s.abs());
+        }
+        if peak > 0.02 {
+            let inv = 0.95 / peak;
+            for s in dst.iter_mut() {
+                *s = (*s * inv).clamp(-1.0, 1.0);
+            }
+        }
+    }
+
+    Some(Arc::new(CustomWavetable {
+        name: name.to_owned(),
+        frames,
+    }))
+}
+
+fn decode_vital_wave_frame(b64: &str) -> Option<[f32; CUSTOM_WT_SIZE]> {
+    let bytes = decode_base64(b64)?;
+    let mut out = [0.0_f32; CUSTOM_WT_SIZE];
+    if bytes.len() == 2048 * 4 {
+        // 2048 f32 LE -> promedio 8:1 a 256 muestras (anti-aliasing limpio).
+        for (i, dst) in out.iter_mut().enumerate() {
+            let mut acc = 0.0_f32;
+            let base = i * 8 * 4;
+            for k in 0..8 {
+                let o = base + k * 4;
+                let s = f32::from_le_bytes([bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]]);
+                if s.is_finite() {
+                    acc += s.clamp(-4.0, 4.0);
+                }
+            }
+            *dst = acc * 0.125;
+        }
+        Some(out)
+    } else if bytes.len() == 2048 * 2 {
+        for (i, dst) in out.iter_mut().enumerate() {
+            let mut acc = 0.0_f32;
+            let base = i * 8 * 2;
+            for k in 0..8 {
+                let o = base + k * 2;
+                let s = i16::from_le_bytes([bytes[o], bytes[o + 1]]);
+                acc += f32::from(s) / 32768.0;
+            }
+            *dst = acc * 0.125;
+        }
+        Some(out)
+    } else {
+        None
+    }
+}
+
+fn decode_base64(input: &str) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity((input.len() * 3) / 4);
+    let mut buf = 0u32;
+    let mut bits = 0u8;
+    for b in input.bytes() {
+        let val = match b {
+            b'A'..=b'Z' => b - b'A',
+            b'a'..=b'z' => b - b'a' + 26,
+            b'0'..=b'9' => b - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            b'=' => break,
+            b' ' | b'\n' | b'\r' | b'\t' => continue,
+            _ => return None,
+        };
+        buf = (buf << 6) | u32::from(val);
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push(((buf >> bits) & 0xff) as u8);
+        }
+    }
+    Some(out)
 }
 
 fn map_wavetable_name(name: &str, style: &str, secondary: bool) -> WavetableKind {
@@ -591,5 +739,38 @@ mod tests {
         assert_eq!(params.voice.matrix[0].source, ModSource::Lfo1);
         assert_eq!(params.voice.matrix[0].target, ModTarget::FilterCutoff);
         assert!((params.voice.matrix[0].amount - 0.6).abs() < 1e-4);
+    }
+
+    #[test]
+    fn decodes_vital_wave_data_base64_keyframes() {
+        // Genera una onda seno de 2048 f32 LE, codifica en base64 y valida la decodificación.
+        let mut raw = Vec::with_capacity(2048 * 4);
+        for i in 0..2048 {
+            let s = ((i as f32 / 2048.0) * std::f32::consts::TAU).sin();
+            raw.extend_from_slice(&s.to_le_bytes());
+        }
+        const ALPHA: &[u8; 64] =
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut b64 = String::new();
+        for chunk in raw.chunks(3) {
+            let b0 = u32::from(chunk[0]);
+            let b1 = if chunk.len() > 1 { u32::from(chunk[1]) } else { 0 };
+            let b2 = if chunk.len() > 2 { u32::from(chunk[2]) } else { 0 };
+            let n = (b0 << 16) | (b1 << 8) | b2;
+            b64.push(ALPHA[((n >> 18) & 63) as usize] as char);
+            b64.push(ALPHA[((n >> 12) & 63) as usize] as char);
+            b64.push(if chunk.len() > 1 { ALPHA[((n >> 6) & 63) as usize] as char } else { '=' });
+            b64.push(if chunk.len() > 2 { ALPHA[(n & 63) as usize] as char } else { '=' });
+        }
+        let sample = format!(
+            r#"{{"preset_name":"SineWT","settings":{{"osc_1_on":1.0,"wavetables":[{{"name":"Custom Sine","groups":[{{"components":[{{"type":"Wave Source","keyframes":[{{"position":0,"wave_data":"{b64}"}}]}}]}}]}}]}}}}"#
+        );
+        let (params, summary) = parse_vital_json(&sample, "fallback").unwrap();
+        assert_eq!(summary.decoded_wts, 1);
+        let wt = params.custom_wt_a.expect("custom wavetable decoded");
+        assert_eq!(wt.name, "Custom Sine");
+        // En el cuarto de ciclo (índice 64 de 256) el seno debe estar cerca de +0.95.
+        assert!(wt.frames[0][64] > 0.85, "val={}", wt.frames[0][64]);
+        assert!(wt.frames[0][192] < -0.85, "val={}", wt.frames[0][192]);
     }
 }

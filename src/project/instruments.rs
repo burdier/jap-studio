@@ -296,7 +296,9 @@ impl ProjectDoc {
     }
 }
 
-use crate::devices::synth::{EnvelopeMode, RoomKind, SynthEngineKind, SynthParams, VoiceParams};
+use crate::devices::synth::{
+    CustomWavetable, EnvelopeMode, RoomKind, SynthEngineKind, SynthParams, VoiceParams,
+};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ProjectSynth {
@@ -346,6 +348,20 @@ impl ProjectDoc {
                 if pid >= 20 {
                     map.insert(&format!("p:{pid}"), f64::from(val))
                         .map_err(|e| e.to_string())?;
+                }
+            }
+            for (bin_key, name_key, wt) in [
+                ("wt_a", "wt_a_name", &p.custom_wt_a),
+                ("wt_b", "wt_b_name", &p.custom_wt_b),
+            ] {
+                if let Some(table) = wt {
+                    map.insert(name_key, table.name.as_str())
+                        .map_err(|e| e.to_string())?;
+                    map.insert(bin_key, table.to_i16_bytes())
+                        .map_err(|e| e.to_string())?;
+                } else {
+                    let _ = map.delete(bin_key);
+                    let _ = map.delete(name_key);
                 }
             }
         }
@@ -403,6 +419,8 @@ impl ProjectDoc {
                 gain: read_f("gain", 0.80)?,
                 preset_name,
                 voice: VoiceParams::default(),
+                custom_wt_a: None,
+                custom_wt_b: None,
             };
             if ver >= 2 {
                 let ids: Vec<u16> = params
@@ -421,6 +439,21 @@ impl ProjectDoc {
                         }
                     }
                 }
+                let read_wt = |bin_key: &str, name_key: &str| {
+                    let bytes = map
+                        .get(bin_key)
+                        .map(|v| v.get_deep_value())
+                        .and_then(|v| v.as_binary().map(|b| b.to_vec()))?;
+                    let name = match map.get(name_key) {
+                        Some(loro::ValueOrContainer::Value(loro::LoroValue::String(s))) => {
+                            s.to_string()
+                        }
+                        _ => "Vital WT".into(),
+                    };
+                    CustomWavetable::from_i16_bytes(name, &bytes).map(std::sync::Arc::new)
+                };
+                params.custom_wt_a = read_wt("wt_a", "wt_a_name");
+                params.custom_wt_b = read_wt("wt_b", "wt_b_name");
             }
             params.clamp_all();
             synths.push(ProjectSynth { id, params });
