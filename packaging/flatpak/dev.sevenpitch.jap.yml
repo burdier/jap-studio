@@ -74,5 +74,5 @@ modules:
       - type: git
         url: https://github.com/burdier/jap-studio.git
         tag: v0.8.0
-        commit: REPLACE_WITH_RELEASE_TAG_COMMIT
+        commit: 002df6fe15a9b95f13430e7766349da9ba828d9a
       - cargo-sources.json
