@@ -1054,6 +1054,7 @@ impl DawApp {
         }));
         let card = div()
             .w(px(362.))
+            .max_w(gpui::relative(0.92))
             .p_4()
             .rounded(px(self.ds.radius_lg))
             .bg(rgb(self.ds.panel_dark))

@@ -163,7 +163,7 @@ impl DawApp {
     }
 
     /// Estado inicial limpio: sin paneles ni controles hasta que se suelte o cargue un sample.
-    fn render_drum_empty_state(&self, cx: &mut Context<Self>) -> Div {
+    fn render_drum_empty_state(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         let ds = &self.ds;
         let dark = ds.is_dark();
         let pad = |lit: bool| {
@@ -199,18 +199,23 @@ impl DawApp {
             );
 
         div()
+            .id("drums-empty-scroll")
             .flex_1()
+            .min_w_0()
             .size_full()
             .flex()
             .items_center()
             .justify_center()
-            .p(px(24.0))
+            .p(px(16.0))
+            .overflow_y_scroll()
             .child(
                 div()
-                    .w(px(400.0))
-                    .max_w_full()
-                    .px(px(28.0))
-                    .py(px(26.0))
+                    .w_full()
+                    .max_w(px(460.0))
+                    .min_w_0()
+                    .overflow_hidden()
+                    .px(px(20.0))
+                    .py(px(22.0))
                     .rounded(px(14.0))
                     .bg(rgb(ds.panel))
                     .border_1()
@@ -223,6 +228,7 @@ impl DawApp {
                     .child(pad_emblem)
                     .child(
                         div()
+                            .text_center()
                             .text_size(px(14.0))
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(rgb(ds.text))
@@ -239,9 +245,12 @@ impl DawApp {
                     )
                     .child(
                         div()
+                            .w_full()
                             .pt(px(4.0))
                             .flex()
+                            .flex_wrap()
                             .items_center()
+                            .justify_center()
                             .gap(px(8.0))
                             .child(
                                 flat_control(ds, true, ds.accent)

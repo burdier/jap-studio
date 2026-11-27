@@ -804,7 +804,7 @@ impl Render for DawApp {
                 root.child(banner)
             })
             .child(self.render_center(cx))
-            .child(self.render_status_bar())
+            .child(self.render_status_bar(window))
             .when_some(self.render_history_panel(cx), |root, panel| {
                 root.child(panel)
             })

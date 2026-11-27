@@ -29,6 +29,7 @@ impl DawApp {
             }))
             .child(
                 div()
+                    .max_w_full()
                     .flex()
                     .flex_col()
                     .items_center()
@@ -58,12 +59,14 @@ impl DawApp {
                     )
                     .child(
                         div()
+                            .text_center()
                             .text_lg()
                             .text_color(rgb(ds.text))
                             .child("Añadir una pista"),
                     )
                     .child(
                         div()
+                            .text_center()
                             .text_sm()
                             .text_color(rgb(ds.muted))
                             .child("Arrastra audio aquí o pulsa A para añadir una pista"),

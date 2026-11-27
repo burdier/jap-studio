@@ -32,8 +32,8 @@ impl DawApp {
             div()
                 .w(px(960.0))
                 .h(px(680.0))
-                .max_w_full()
-                .max_h_full()
+                .max_w(gpui::relative(0.94))
+                .max_h(gpui::relative(0.92))
                 .p_4()
                 .flex()
                 .flex_col()
@@ -45,8 +45,10 @@ impl DawApp {
                 .child(
                     div()
                         .flex()
+                        .flex_wrap()
                         .items_center()
                         .justify_between()
+                        .gap_2()
                         .child(
                             div()
                                 .text_base()

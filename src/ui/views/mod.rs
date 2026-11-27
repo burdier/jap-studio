@@ -49,6 +49,8 @@ use super::{
         button::{flat_control, led_dot},
         splitter::{SplitDrag, vertical_splitter},
     },
+    i18n::UiText,
+    shortcuts::ShortcutAction,
     toolbar::ToolbarAction,
 };
 use gpui::{
@@ -145,6 +147,7 @@ impl DawApp {
                 .when(active, |el| el.child(led_dot(accent, 4.5, true)))
                 .child(label)
         };
+        let preset = self.settings.shortcut_preset;
         div()
             .flex_1()
             .min_h_0()
@@ -154,39 +157,46 @@ impl DawApp {
             .gap(px(6.0))
             .bg(rgb(ds.gutter_color()))
             .child(
-                // Barra continua sobre el chasis: pestañas y botones emergen como objetos físicos.
+                // Barra continua sobre el chasis: pestañas y botones emergen como objetos físicos
+                // y se repliegan con `flex_wrap` en ventanas estrechas para no recortarse.
                 div()
-                    .h(px(ds.timeline_bar_height.max(30.0)))
+                    .w_full()
+                    .min_w_0()
+                    .min_h(px(ds.timeline_bar_height.max(30.0)))
+                    .py(px(2.0))
                     .flex_shrink_0()
                     .flex()
+                    .flex_wrap()
                     .items_center()
                     .justify_between()
-                    .gap_2()
+                    .gap_x(px(8.0))
+                    .gap_y(px(4.0))
                     .px(px(6.0))
                     .child(
                         div()
+                            .min_w_0()
                             .flex()
+                            .flex_wrap()
                             .items_center()
                             .gap(px(6.0))
-                            .flex_shrink_0()
                             .child(view_tab(
                                 "view-tab-arrangement",
-                                "Arrangement",
-                                "F1",
+                                self.tr(UiText::ViewArrangement),
+                                preset.hint(ShortcutAction::ViewArrangement),
                                 CenterView::Arrangement,
                                 cx,
                             ))
                             .child(view_tab(
                                 "view-tab-drums",
-                                "Drums",
-                                "F2",
+                                self.tr(UiText::ViewDrums),
+                                preset.hint(ShortcutAction::ViewDrums),
                                 CenterView::Session,
                                 cx,
                             ))
                             .child(view_tab(
                                 "view-tab-mixer",
-                                "Mixer",
-                                "F3",
+                                self.tr(UiText::ViewMixer),
+                                preset.hint(ShortcutAction::ViewMixer),
                                 CenterView::Mixer,
                                 cx,
                             )),
@@ -194,7 +204,7 @@ impl DawApp {
                     .child(
                         div()
                             .flex_1()
-                            .min_w_0()
+                            .min_w(px(120.0))
                             .flex()
                             .items_center()
                             .justify_center()
@@ -218,15 +228,16 @@ impl DawApp {
                     )
                     .child(
                         div()
+                            .min_w_0()
                             .flex()
+                            .flex_wrap()
                             .items_center()
                             .gap(px(6.0))
-                            .flex_shrink_0()
                             .child(
                                 panel_toggle(
                                     "panel-toggle-explorer",
-                                    "Explorador",
-                                    "Mostrar / ocultar explorador de bibliotecas (Ctrl+E)",
+                                    self.tr(UiText::ViewExplorer),
+                                    "Mostrar / ocultar explorador de bibliotecas",
                                     explorer_open,
                                     ds.cyan,
                                 )
@@ -334,6 +345,8 @@ impl DawApp {
             .child(
                 self.render_pattern(cx)
                     .flex_basis(relative(ratio))
+                    .min_w_0()
+                    .overflow_hidden()
                     .flex_grow_0()
                     .flex_shrink_0(),
             )

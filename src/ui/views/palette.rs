@@ -274,7 +274,8 @@ impl DawApp {
             on_close,
             div()
                 .w(px(660.0))
-                .max_h(px(520.0))
+                .max_w(gpui::relative(0.94))
+                .max_h(gpui::relative(0.88))
                 .flex()
                 .flex_col()
                 .overflow_hidden()

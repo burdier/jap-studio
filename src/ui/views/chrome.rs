@@ -413,8 +413,9 @@ impl DawApp {
         ]
     }
 
-    pub(in crate::ui) fn render_status_bar(&self) -> impl IntoElement {
+    pub(in crate::ui) fn render_status_bar(&self, window: &Window) -> impl IntoElement {
         let ds = &self.ds;
+        let show_hints = f32::from(window.viewport_size().width) >= 1120.0;
         let active_panel = self.workspace_focus.active.label(self.center_view);
         let badge_label = if self.command_open {
             "COMANDO".to_string()
@@ -483,36 +484,47 @@ impl DawApp {
                                 }
                             }),
                     )
-                    .children(
-                        [
-                            "Espacio: Play",
-                            "Flechas: navegar",
-                            "Ctrl+P / :: comandos",
-                            "Ctrl+E: explorador",
-                            "F11: ampliar",
-                            "Delete: borrar",
-                        ]
-                        .into_iter()
-                        .map(|label| div().text_color(rgb(ds.muted)).child(label)),
-                    ),
+                    .when(show_hints, |row| {
+                        row.children(
+                            [
+                                "Espacio: Play",
+                                "Flechas: navegar",
+                                "Ctrl+P / :: comandos",
+                                "Ctrl+E: explorador",
+                                "F11: ampliar",
+                                "Delete: borrar",
+                            ]
+                            .into_iter()
+                            .map(|label| div().flex_shrink_0().text_color(rgb(ds.muted)).child(label)),
+                        )
+                    }),
             )
             .child(
                 div()
                     .flex_shrink_0()
+                    .max_w(px(320.0))
+                    .overflow_hidden()
                     .flex()
                     .items_center()
                     .gap_3()
                     .text_xs()
                     .child(if self.command_open {
                         div()
+                            .truncate()
                             .text_color(rgb(ds.pink))
                             .child(format!(":{}", self.command_buffer))
                     } else {
                         div()
+                            .truncate()
                             .text_color(rgb(ds.success))
                             .child(self.status_message.clone())
                     })
-                    .child(div().text_color(rgb(ds.grid)).child(self.last_key.clone())),
+                    .child(
+                        div()
+                            .flex_shrink_0()
+                            .text_color(rgb(ds.grid))
+                            .child(self.last_key.clone()),
+                    ),
             )
     }
 }

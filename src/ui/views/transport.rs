@@ -54,9 +54,10 @@ impl DawApp {
                 }),
             );
         // Sin caja alrededor: los controles emergen directamente del chasis base continuo.
-        // `flex_wrap` evita recortes en pantallas estrechas (laptops 1280px, Steam Deck, split-screen).
+        // `flex_wrap` sin `flex_shrink_0` en el bloque interno evita recortes en pantallas estrechas.
         div()
             .id("transport-main-bar")
+            .w_full()
             .min_w_0()
             .min_h(px(ds.transport_height))
             .mb(px(4.0))
@@ -64,13 +65,12 @@ impl DawApp {
             .flex()
             .flex_wrap()
             .items_center()
-            .gap_x(px(10.0))
+            .gap_x(px(8.0))
             .gap_y(px(4.0))
             .px(px(6.0))
             .child(
                 div()
                     .min_w_0()
-                    .flex_shrink_0()
                     .flex()
                     .flex_wrap()
                     .items_center()
@@ -651,10 +651,12 @@ impl DawApp {
 
 fn transport_group(ds: &DesignSystem) -> Div {
     div()
-        .h(px(ds.transport_btn_size + 6.0))
+        .min_w_0()
+        .min_h(px(ds.transport_btn_size + 6.0))
         .px(px(5.0))
-        .flex_shrink_0()
+        .py(px(2.0))
         .flex()
+        .flex_wrap()
         .items_center()
         .gap(px(4.0))
         .rounded(px(10.0))

@@ -339,21 +339,30 @@ impl DawApp {
                             .child("CAPAS:"),
                     )
                     .child(
-                        pill_button(ds, if osc_b_on { "OSC B ON" } else { "OSC B" }, osc_b_on, ds.cyan)
-                            .id("synth-flow-oscb")
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(move |this, _, _, cx| {
-                                    let next = if this.synth.params.voice.osc_b_level > 0.01 { 0.0 } else { 0.48 };
-                                    this.set_synth_voice_param(param::OSC_B_LEVEL, next);
-                                    this.status_message = format!(
-                                        "Hay Synth · OSC B {}",
-                                        if next > 0.0 { "activado" } else { "silenciado" }
-                                    );
-                                    cx.stop_propagation();
-                                    cx.notify();
-                                }),
-                            ),
+                        pill_button(
+                            ds,
+                            if osc_b_on { "OSC B ON" } else { "OSC B" },
+                            osc_b_on,
+                            ds.cyan,
+                        )
+                        .id("synth-flow-oscb")
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, _, _, cx| {
+                                let next = if this.synth.params.voice.osc_b_level > 0.01 {
+                                    0.0
+                                } else {
+                                    0.48
+                                };
+                                this.set_synth_voice_param(param::OSC_B_LEVEL, next);
+                                this.status_message = format!(
+                                    "Hay Synth · OSC B {}",
+                                    if next > 0.0 { "activado" } else { "silenciado" }
+                                );
+                                cx.stop_propagation();
+                                cx.notify();
+                            }),
+                        ),
                     )
                     .child(
                         pill_button(ds, if sub_on { "SUB ON" } else { "SUB" }, sub_on, ds.accent)
@@ -361,7 +370,11 @@ impl DawApp {
                             .on_mouse_down(
                                 MouseButton::Left,
                                 cx.listener(move |this, _, _, cx| {
-                                    let next = if this.synth.params.voice.sub_level > 0.01 { 0.0 } else { 0.45 };
+                                    let next = if this.synth.params.voice.sub_level > 0.01 {
+                                        0.0
+                                    } else {
+                                        0.45
+                                    };
                                     this.set_synth_voice_param(param::SUB_LEVEL, next);
                                     this.status_message = format!(
                                         "Hay Synth · SUB {}",
@@ -373,21 +386,30 @@ impl DawApp {
                             ),
                     )
                     .child(
-                        pill_button(ds, if noise_on { "NOISE ON" } else { "NOISE" }, noise_on, ds.muted)
-                            .id("synth-flow-noise")
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(move |this, _, _, cx| {
-                                    let next = if this.synth.params.voice.noise_level > 0.01 { 0.0 } else { 0.18 };
-                                    this.set_synth_voice_param(param::NOISE_LEVEL, next);
-                                    this.status_message = format!(
-                                        "Hay Synth · Noise {}",
-                                        if next > 0.0 { "activado" } else { "silenciado" }
-                                    );
-                                    cx.stop_propagation();
-                                    cx.notify();
-                                }),
-                            ),
+                        pill_button(
+                            ds,
+                            if noise_on { "NOISE ON" } else { "NOISE" },
+                            noise_on,
+                            ds.muted,
+                        )
+                        .id("synth-flow-noise")
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, _, _, cx| {
+                                let next = if this.synth.params.voice.noise_level > 0.01 {
+                                    0.0
+                                } else {
+                                    0.18
+                                };
+                                this.set_synth_voice_param(param::NOISE_LEVEL, next);
+                                this.status_message = format!(
+                                    "Hay Synth · Noise {}",
+                                    if next > 0.0 { "activado" } else { "silenciado" }
+                                );
+                                cx.stop_propagation();
+                                cx.notify();
+                            }),
+                        ),
                     )
                     .child(
                         div()
@@ -530,7 +552,9 @@ impl DawApp {
             self.synth_ui.scope_wave.clone()
         } else if let Some(custom) = &params.custom_wt_a {
             let fi = ((params.shape.clamp(0.0, 1.0) * 7.0).round() as usize).min(7);
-            (0..128).map(|i| custom.frames[fi][(i * 2).min(255)] * 0.72).collect()
+            (0..128)
+                .map(|i| custom.frames[fi][(i * 2).min(255)] * 0.72)
+                .collect()
         } else {
             (0..128)
                 .map(|i| {
@@ -563,7 +587,9 @@ impl DawApp {
             match params.mode {
                 EnvelopeMode::Hit => (0.004, 0.08 + t * t * 2.2, 0.0, 0.04 + t * 0.45),
                 EnvelopeMode::Hold => (0.004 + t * 0.035, 0.14 + t * 0.9, 0.76, 0.08 + t * 1.1),
-                EnvelopeMode::Swell => (0.12 + t * t * 1.6, 0.30 + t * 1.2, 0.85, 0.28 + t * t * 2.6),
+                EnvelopeMode::Swell => {
+                    (0.12 + t * t * 1.6, 0.30 + t * 1.2, 0.85, 0.28 + t * t * 2.6)
+                }
             }
         };
 
@@ -637,7 +663,11 @@ impl DawApp {
                 } else {
                     rgba((muted_col << 8) | 0x24)
                 };
-                let stroke = if live_audio { rgb(cyan_col) } else { rgba((cyan_col << 8) | 0x88) };
+                let stroke = if live_audio {
+                    rgb(cyan_col)
+                } else {
+                    rgba((cyan_col << 8) | 0x88)
+                };
                 for i in 0..n {
                     let s = wave[i].clamp(-1.0, 1.0);
                     let y = mid - s * (mid - 4.0);
@@ -714,7 +744,11 @@ impl DawApp {
                         rgba((border_col << 8) | 0x70),
                     ));
                     let mh = (lv.clamp(0.0, 1.0).sqrt() * (h - 4.0)).max(1.0);
-                    let mcol = if lv > 0.85 { rgb(accent_col) } else { rgb(cyan_col) };
+                    let mcol = if lv > 0.85 {
+                        rgb(accent_col)
+                    } else {
+                        rgb(cyan_col)
+                    };
                     window.paint_quad(fill(
                         Bounds::new(
                             point(bounds.left() + px(cx_pos), bounds.top() + px(h - 2.0 - mh)),
@@ -765,7 +799,10 @@ impl DawApp {
                     ));
                     window.paint_quad(fill(
                         Bounds::new(
-                            point(bounds.left() + px(i as f32 * dx), bounds.top() + px(y - 1.0)),
+                            point(
+                                bounds.left() + px(i as f32 * dx),
+                                bounds.top() + px(y - 1.0),
+                            ),
                             size(px((dx + 0.8).max(1.6)), px(2.0)),
                         ),
                         rgb(accent_col),
@@ -784,7 +821,10 @@ impl DawApp {
                     ));
                     window.paint_quad(quad(
                         Bounds::new(
-                            point(bounds.left() + px(px_x - 4.0), bounds.top() + px(py_y - 4.0)),
+                            point(
+                                bounds.left() + px(px_x - 4.0),
+                                bounds.top() + px(py_y - 4.0),
+                            ),
                             size(px(8.0), px(8.0)),
                         ),
                         Corners::all(px(4.0)),
@@ -848,11 +888,13 @@ impl DawApp {
                             .child(
                                 div()
                                     .font_family("monospace")
-                                    .text_color(rgb(if active_notes > 0 || self.midi_last_note.is_some() {
-                                        ds.cyan
-                                    } else {
-                                        ds.muted
-                                    }))
+                                    .text_color(rgb(
+                                        if active_notes > 0 || self.midi_last_note.is_some() {
+                                            ds.cyan
+                                        } else {
+                                            ds.muted
+                                        },
+                                    ))
                                     .child(if let Some(badge) = self.midi_live_pitch_badge() {
                                         if active_notes > 0 {
                                             format!("{badge} · {active_notes}v")
@@ -934,11 +976,7 @@ impl DawApp {
                                     .flex()
                                     .items_center()
                                     .gap(px(4.))
-                                    .child(
-                                        div()
-                                            .text_color(rgb(ds.muted))
-                                            .child("LFO"),
-                                    )
+                                    .child(div().text_color(rgb(ds.muted)).child("LFO"))
                                     .child(
                                         div()
                                             .w(px(34.))
@@ -1364,7 +1402,9 @@ impl DawApp {
             .top(px(40.))
             .left(px(12.))
             .w(px(620.))
+            .max_w(gpui::relative(0.94))
             .h(px(360.))
+            .max_h(gpui::relative(0.85))
             .rounded(px(ds.radius_md))
             .bg(rgb(ds.bg))
             .border_1()
@@ -1434,8 +1474,11 @@ impl DawApp {
 
         let stage = self.render_synth_stage(active_notes, last_vel, cx);
 
-        let room_pills = div().flex().flex_wrap().gap_1().children(
-            RoomKind::ALL.into_iter().map(|room| {
+        let room_pills = div()
+            .flex()
+            .flex_wrap()
+            .gap_1()
+            .children(RoomKind::ALL.into_iter().map(|room| {
                 let active = params.room == room;
                 pill_button(ds, room.label(), active, ds.cyan)
                     .id(("synth-room", room as usize))
@@ -1447,61 +1490,64 @@ impl DawApp {
                             cx.notify();
                         }),
                     )
-            }),
-        );
+            }));
 
-        let mode_pills = div().flex().flex_wrap().gap_1().children(
-            EnvelopeMode::ALL.into_iter().map(|mode| {
-                let active = params.mode == mode;
-                pill_button(ds, mode.label(), active, ds.accent)
-                    .id(("synth-mode", mode as usize))
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |this, _, _, cx| {
-                            this.set_synth_mode(mode);
-                            cx.stop_propagation();
-                            cx.notify();
-                        }),
-                    )
-            }),
-        );
+        let mode_pills =
+            div()
+                .flex()
+                .flex_wrap()
+                .gap_1()
+                .children(EnvelopeMode::ALL.into_iter().map(|mode| {
+                    let active = params.mode == mode;
+                    pill_button(ds, mode.label(), active, ds.accent)
+                        .id(("synth-mode", mode as usize))
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, _, _, cx| {
+                                this.set_synth_mode(mode);
+                                cx.stop_propagation();
+                                cx.notify();
+                            }),
+                        )
+                }));
 
-        let space_card = div()
-            .flex()
-            .flex_col()
-            .gap_2()
-            .p(px(10.))
-            .rounded(px(ds.radius_md))
-            .bg(rgb(ds.panel_dark))
-            .border_1()
-            .border_color(rgb(ds.border))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .child(
-                        div()
-                            .text_size(px(10.))
-                            .font_weight(FontWeight::BOLD)
-                            .text_color(rgb(ds.cyan))
-                            .child("ESPACIO"),
-                    )
-                    .child(room_pills),
-            )
-            .child(div().flex().flex_wrap().items_center().gap_3().child(
-                self.synth_param_knob(
-                    param::DISTANCE,
-                    "Distance",
-                    "Pecho ↔ Aire",
-                    0.0,
-                    1.0,
-                    0.25,
-                    false,
-                    ds.cyan,
-                    cx,
-                ),
-            ));
+        let space_card =
+            div()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .p(px(10.))
+                .rounded(px(ds.radius_md))
+                .bg(rgb(ds.panel_dark))
+                .border_1()
+                .border_color(rgb(ds.border))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .child(
+                            div()
+                                .text_size(px(10.))
+                                .font_weight(FontWeight::BOLD)
+                                .text_color(rgb(ds.cyan))
+                                .child("ESPACIO"),
+                        )
+                        .child(room_pills),
+                )
+                .child(div().flex().flex_wrap().items_center().gap_3().child(
+                    self.synth_param_knob(
+                        param::DISTANCE,
+                        "Distance",
+                        "Pecho ↔ Aire",
+                        0.0,
+                        1.0,
+                        0.25,
+                        false,
+                        ds.cyan,
+                        cx,
+                    ),
+                ));
 
         let body_card = div()
             .flex()
@@ -2006,22 +2052,29 @@ impl DawApp {
 
         // ── FILTER (TPT SVF) ──
         let filter_card = card("FILTER · TPT SVF 12 / 24 dB", ds.accent)
-            .child(div().flex().flex_wrap().gap_1().children(
-                FilterKind::ALL.into_iter().map(|kind| {
-                    pill_button(ds, kind.label(), vp.filter_kind == kind, ds.accent)
-                        .id(("synth-filter-kind", kind as usize))
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(move |this, _, _, cx| {
-                                this.set_synth_voice_param(param::FILTER_KIND, kind as u8 as f32);
-                                this.status_message =
-                                    format!("Hay Synth · Filtro: {}", kind.label());
-                                cx.stop_propagation();
-                                cx.notify();
-                            }),
-                        )
-                }),
-            ))
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap_1()
+                    .children(FilterKind::ALL.into_iter().map(|kind| {
+                        pill_button(ds, kind.label(), vp.filter_kind == kind, ds.accent)
+                            .id(("synth-filter-kind", kind as usize))
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |this, _, _, cx| {
+                                    this.set_synth_voice_param(
+                                        param::FILTER_KIND,
+                                        kind as u8 as f32,
+                                    );
+                                    this.status_message =
+                                        format!("Hay Synth · Filtro: {}", kind.label());
+                                    cx.stop_propagation();
+                                    cx.notify();
+                                }),
+                            )
+                    })),
+            )
             .child(
                 div()
                     .flex()
@@ -2075,30 +2128,34 @@ impl DawApp {
 
         // ── FX BUS (Chorus + Distortion + Space) ──
         let fx_card = card("FX BUS · DISTORTION / CHORUS / SPACE", ds.cyan)
-            .child(div().flex().flex_wrap().gap_1().children(
-                DistMode::ALL.into_iter().map(|mode| {
-                    pill_button(
-                        ds,
-                        mode.label(),
-                        vp.dist_mode == mode && vp.dist_mix > 0.01,
-                        ds.accent,
-                    )
-                    .id(("synth-dist-mode", mode as usize))
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |this, _, _, cx| {
-                            this.set_synth_voice_param(param::DIST_MODE, mode as u8 as f32);
-                            if this.synth.params.voice.dist_mix < 0.05 {
-                                this.set_synth_voice_param(param::DIST_MIX, 0.40);
-                                this.set_synth_voice_param(param::DIST_DRIVE, 0.35);
-                            }
-                            this.status_message = format!("Distortion · {}", mode.label());
-                            cx.stop_propagation();
-                            cx.notify();
-                        }),
-                    )
-                }),
-            ))
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap_1()
+                    .children(DistMode::ALL.into_iter().map(|mode| {
+                        pill_button(
+                            ds,
+                            mode.label(),
+                            vp.dist_mode == mode && vp.dist_mix > 0.01,
+                            ds.accent,
+                        )
+                        .id(("synth-dist-mode", mode as usize))
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, _, _, cx| {
+                                this.set_synth_voice_param(param::DIST_MODE, mode as u8 as f32);
+                                if this.synth.params.voice.dist_mix < 0.05 {
+                                    this.set_synth_voice_param(param::DIST_MIX, 0.40);
+                                    this.set_synth_voice_param(param::DIST_DRIVE, 0.35);
+                                }
+                                this.status_message = format!("Distortion · {}", mode.label());
+                                cx.stop_propagation();
+                                cx.notify();
+                            }),
+                        )
+                    })),
+            )
             .child(
                 div()
                     .flex()
@@ -2151,17 +2208,20 @@ impl DawApp {
             );
 
         // ── ENVELOPES (ENV 1 + ENV 2 + ENV 3) ──
-        let env_card = card("ENVELOPES · ENV 1 (AMP) / ENV 2 (MOD) / ENV 3 (PUNCH)", ds.text)
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .child(
-                        pill_button(ds, "ADSR Manual", vp.env1_override, ds.accent)
-                            .id("synth-env1-override")
-                            .w(px(96.))
-                            .justify_center()
+        let env_card = card(
+            "ENVELOPES · ENV 1 (AMP) / ENV 2 (MOD) / ENV 3 (PUNCH)",
+            ds.text,
+        )
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(
+                    pill_button(ds, "ADSR Manual", vp.env1_override, ds.accent)
+                        .id("synth-env1-override")
+                        .w(px(96.))
+                        .justify_center()
                         .on_mouse_down(
                             MouseButton::Left,
                             cx.listener(|this, _, _, cx| {
@@ -2175,108 +2235,108 @@ impl DawApp {
                                 cx.notify();
                             }),
                         ),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(9.))
-                            .text_color(rgb(ds.muted))
-                            .child("ENV 2 y ENV 3 siempre disponibles en Matrix"),
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap_1()
-                    .child(self.synth_param_knob(
-                        param::ENV1_ATTACK,
-                        "E1 Atk",
-                        "Amp",
-                        0.0,
-                        1.0,
-                        0.02,
-                        false,
-                        ds.accent,
-                        cx,
-                    ))
-                    .child(self.synth_param_knob(
-                        param::ENV1_DECAY,
-                        "E1 Dec",
-                        "Amp",
-                        0.0,
-                        1.0,
-                        0.35,
-                        false,
-                        ds.accent,
-                        cx,
-                    ))
-                    .child(self.synth_param_knob(
-                        param::ENV1_SUSTAIN,
-                        "E1 Sus",
-                        "Amp",
-                        0.0,
-                        1.0,
-                        0.75,
-                        false,
-                        ds.accent,
-                        cx,
-                    ))
-                    .child(self.synth_param_knob(
-                        param::ENV1_RELEASE,
-                        "E1 Rel",
-                        "Amp",
-                        0.0,
-                        1.0,
-                        0.30,
-                        false,
-                        ds.accent,
-                        cx,
-                    ))
-                    .child(self.synth_param_knob(
-                        param::ENV2_ATTACK,
-                        "E2 Atk",
-                        "Mod",
-                        0.0,
-                        1.0,
-                        0.01,
-                        false,
-                        ds.cyan,
-                        cx,
-                    ))
-                    .child(self.synth_param_knob(
-                        param::ENV2_DECAY,
-                        "E2 Dec",
-                        "Mod",
-                        0.0,
-                        1.0,
-                        0.32,
-                        false,
-                        ds.cyan,
-                        cx,
-                    ))
-                    .child(self.synth_param_knob(
-                        param::ENV2_SUSTAIN,
-                        "E2 Sus",
-                        "Mod",
-                        0.0,
-                        1.0,
-                        0.0,
-                        false,
-                        ds.cyan,
-                        cx,
-                    ))
-                    .child(self.synth_param_knob(
-                        param::ENV3_DECAY,
-                        "E3 Punch",
-                        "Pitch",
-                        0.0,
-                        1.0,
-                        0.12,
-                        false,
-                        ds.text,
-                        cx,
-                    )),
-            );
+                )
+                .child(
+                    div()
+                        .text_size(px(9.))
+                        .text_color(rgb(ds.muted))
+                        .child("ENV 2 y ENV 3 siempre disponibles en Matrix"),
+                ),
+        )
+        .child(
+            div()
+                .flex()
+                .flex_wrap()
+                .gap_1()
+                .child(self.synth_param_knob(
+                    param::ENV1_ATTACK,
+                    "E1 Atk",
+                    "Amp",
+                    0.0,
+                    1.0,
+                    0.02,
+                    false,
+                    ds.accent,
+                    cx,
+                ))
+                .child(self.synth_param_knob(
+                    param::ENV1_DECAY,
+                    "E1 Dec",
+                    "Amp",
+                    0.0,
+                    1.0,
+                    0.35,
+                    false,
+                    ds.accent,
+                    cx,
+                ))
+                .child(self.synth_param_knob(
+                    param::ENV1_SUSTAIN,
+                    "E1 Sus",
+                    "Amp",
+                    0.0,
+                    1.0,
+                    0.75,
+                    false,
+                    ds.accent,
+                    cx,
+                ))
+                .child(self.synth_param_knob(
+                    param::ENV1_RELEASE,
+                    "E1 Rel",
+                    "Amp",
+                    0.0,
+                    1.0,
+                    0.30,
+                    false,
+                    ds.accent,
+                    cx,
+                ))
+                .child(self.synth_param_knob(
+                    param::ENV2_ATTACK,
+                    "E2 Atk",
+                    "Mod",
+                    0.0,
+                    1.0,
+                    0.01,
+                    false,
+                    ds.cyan,
+                    cx,
+                ))
+                .child(self.synth_param_knob(
+                    param::ENV2_DECAY,
+                    "E2 Dec",
+                    "Mod",
+                    0.0,
+                    1.0,
+                    0.32,
+                    false,
+                    ds.cyan,
+                    cx,
+                ))
+                .child(self.synth_param_knob(
+                    param::ENV2_SUSTAIN,
+                    "E2 Sus",
+                    "Mod",
+                    0.0,
+                    1.0,
+                    0.0,
+                    false,
+                    ds.cyan,
+                    cx,
+                ))
+                .child(self.synth_param_knob(
+                    param::ENV3_DECAY,
+                    "E3 Punch",
+                    "Pitch",
+                    0.0,
+                    1.0,
+                    0.12,
+                    false,
+                    ds.text,
+                    cx,
+                )),
+        );
 
         // ── LFO 1 & LFO 2 ──
         let lfo_card = card("LFO 1 & LFO 2 · MODULADORES", ds.cyan).child(
@@ -2313,9 +2373,30 @@ impl DawApp {
             .flex_col()
             .gap_2()
             .p_3()
-            .child(div().flex().flex_wrap().gap_2().child(osc_a_card).child(osc_b_card))
-            .child(div().flex().flex_wrap().gap_2().child(filter_card).child(fx_card))
-            .child(div().flex().flex_wrap().gap_2().child(env_card).child(lfo_card))
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap_2()
+                    .child(osc_a_card)
+                    .child(osc_b_card),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap_2()
+                    .child(filter_card)
+                    .child(fx_card),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap_2()
+                    .child(env_card)
+                    .child(lfo_card),
+            )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2522,35 +2603,30 @@ impl DawApp {
                         .text_color(rgb(if active { ds.cyan } else { ds.muted }))
                         .child(format!("#{}", slot + 1)),
                 )
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w(px(120.))
-                        .child(self.step_selector(
-                            match slot {
-                                0 => "mx-s0",
-                                1 => "mx-s1",
-                                2 => "mx-s2",
-                                3 => "mx-s3",
-                                4 => "mx-s4",
-                                5 => "mx-s5",
-                                6 => "mx-s6",
-                                7 => "mx-s7",
-                                8 => "mx-s8",
-                                9 => "mx-s9",
-                                10 => "mx-s10",
-                                _ => "mx-s11",
-                            },
-                            entry.source.label(),
-                            if entry.source != ModSource::None {
-                                ds.accent
-                            } else {
-                                ds.muted
-                            },
-                            cx,
-                            move |this, delta| this.step_matrix_source(slot, delta),
-                        )),
-                )
+                .child(div().flex_1().min_w(px(120.)).child(self.step_selector(
+                    match slot {
+                        0 => "mx-s0",
+                        1 => "mx-s1",
+                        2 => "mx-s2",
+                        3 => "mx-s3",
+                        4 => "mx-s4",
+                        5 => "mx-s5",
+                        6 => "mx-s6",
+                        7 => "mx-s7",
+                        8 => "mx-s8",
+                        9 => "mx-s9",
+                        10 => "mx-s10",
+                        _ => "mx-s11",
+                    },
+                    entry.source.label(),
+                    if entry.source != ModSource::None {
+                        ds.accent
+                    } else {
+                        ds.muted
+                    },
+                    cx,
+                    move |this, delta| this.step_matrix_source(slot, delta),
+                )))
                 .child(
                     div()
                         .id(("matrix-amt", slot))
@@ -2610,35 +2686,30 @@ impl DawApp {
                         })),
                 )
                 .child(div().text_color(rgb(ds.muted)).child("→"))
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w(px(130.))
-                        .child(self.step_selector(
-                            match slot {
-                                0 => "mx-t0",
-                                1 => "mx-t1",
-                                2 => "mx-t2",
-                                3 => "mx-t3",
-                                4 => "mx-t4",
-                                5 => "mx-t5",
-                                6 => "mx-t6",
-                                7 => "mx-t7",
-                                8 => "mx-t8",
-                                9 => "mx-t9",
-                                10 => "mx-t10",
-                                _ => "mx-t11",
-                            },
-                            entry.target.label(),
-                            if entry.target != ModTarget::None {
-                                ds.cyan
-                            } else {
-                                ds.muted
-                            },
-                            cx,
-                            move |this, delta| this.step_matrix_target(slot, delta),
-                        )),
-                )
+                .child(div().flex_1().min_w(px(130.)).child(self.step_selector(
+                    match slot {
+                        0 => "mx-t0",
+                        1 => "mx-t1",
+                        2 => "mx-t2",
+                        3 => "mx-t3",
+                        4 => "mx-t4",
+                        5 => "mx-t5",
+                        6 => "mx-t6",
+                        7 => "mx-t7",
+                        8 => "mx-t8",
+                        9 => "mx-t9",
+                        10 => "mx-t10",
+                        _ => "mx-t11",
+                    },
+                    entry.target.label(),
+                    if entry.target != ModTarget::None {
+                        ds.cyan
+                    } else {
+                        ds.muted
+                    },
+                    cx,
+                    move |this, delta| this.step_matrix_target(slot, delta),
+                )))
                 .child(
                     pill_button(ds, "×", false, ds.muted)
                         .id(("matrix-clear", slot))
@@ -2668,13 +2739,14 @@ impl DawApp {
             .gap_1()
             .children((MATRIX_SLOTS / 2..MATRIX_SLOTS).map(|i| render_row(i, cx)));
 
-        div()
-            .flex()
-            .flex_col()
-            .gap_2()
-            .p_3()
-            .child(toolbar)
-            .child(div().flex().flex_wrap().gap_2().child(left_col).child(right_col))
+        div().flex().flex_col().gap_2().p_3().child(toolbar).child(
+            div()
+                .flex()
+                .flex_wrap()
+                .gap_2()
+                .child(left_col)
+                .child(right_col),
+        )
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -2784,9 +2856,8 @@ impl DawApp {
                             + params.body * 14.0
                             + pulse * 14.0)
                             .min(w.min(h) * 0.45);
-                        let halo_alpha =
-                            ((0x16 as f32) + params.distance * 24.0 + pulse * 36.0)
-                                .clamp(16.0, 110.0) as u32;
+                        let halo_alpha = ((0x16 as f32) + params.distance * 24.0 + pulse * 36.0)
+                            .clamp(16.0, 110.0) as u32;
                         window.paint_quad(quad(
                             Bounds::new(
                                 point(
@@ -2803,8 +2874,7 @@ impl DawApp {
                         ));
 
                         let body_r = 10.0 + params.body * 14.0 + pulse * 6.0;
-                        let body_alpha =
-                            ((0x2c as f32) + pulse * 52.0).clamp(32.0, 150.0) as u32;
+                        let body_alpha = ((0x2c as f32) + pulse * 52.0).clamp(32.0, 150.0) as u32;
                         window.paint_quad(quad(
                             Bounds::new(
                                 point(
@@ -2870,7 +2940,11 @@ impl DawApp {
                             .text_right()
                             .font_family("monospace")
                             .text_size(px(9.5))
-                            .text_color(rgb(if active_notes > 0 { ds.accent } else { ds.muted }))
+                            .text_color(rgb(if active_notes > 0 {
+                                ds.accent
+                            } else {
+                                ds.muted
+                            }))
                             .child(if active_notes > 0 {
                                 format!("{active_notes} voz")
                             } else {
@@ -2911,9 +2985,23 @@ impl DawApp {
                     .font_family("monospace")
                     .text_size(px(9.5))
                     .text_color(rgb(ds.cyan))
-                    .child(div().w(px(76.)).child(format!("Tone {:3.0}%", params.tone * 100.0)))
-                    .child(div().w(px(76.)).text_center().child(format!("Body {:3.0}%", params.body * 100.0)))
-                    .child(div().w(px(84.)).text_right().child(format!("Motion {:3.0}%", params.motion * 100.0))),
+                    .child(
+                        div()
+                            .w(px(76.))
+                            .child(format!("Tone {:3.0}%", params.tone * 100.0)),
+                    )
+                    .child(
+                        div()
+                            .w(px(76.))
+                            .text_center()
+                            .child(format!("Body {:3.0}%", params.body * 100.0)),
+                    )
+                    .child(
+                        div()
+                            .w(px(84.))
+                            .text_right()
+                            .child(format!("Motion {:3.0}%", params.motion * 100.0)),
+                    ),
             )
     }
 
