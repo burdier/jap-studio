@@ -312,6 +312,7 @@ impl DawApp {
                 let instrument_name = match track.instrument {
                     Some(id) if self.is_vst_id(id) => self.vst_name(id),
                     Some(id) if self.is_sampler_id(id) => "Hay Sampler",
+                    Some(id) if self.is_synth_id(id) => "Hay Synth",
                     _ => "Piano SoundFont",
                 };
                 tree.sync(

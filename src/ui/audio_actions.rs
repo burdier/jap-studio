@@ -187,6 +187,8 @@ impl DawApp {
                 self.activate_piano(id);
             } else if self.is_sampler_id(id) {
                 self.activate_sampler(id);
+            } else if self.is_synth_id(id) {
+                self.activate_synth(id);
             } else if self.is_vst_id(id) {
                 self.activate_vst(id);
             }
@@ -633,6 +635,65 @@ impl DawApp {
                         }
                     }
                 }
+                MidiTarget::Instrument(id) if self.is_synth_id(id) => {
+                    if id == self.active_synth_id {
+                        self.synth_midi(message);
+                    } else if self.synth_instances.contains_key(&id) {
+                        let mix = self
+                            .tracks
+                            .iter()
+                            .position(|t| t.instrument == Some(id))
+                            .map(|t| {
+                                (
+                                    self.track_gain(t),
+                                    self.track_pan(t),
+                                    self.track_fx_gain(t),
+                                )
+                            });
+                        let utility = self.utility.clone();
+                        let player_has = self
+                            .player
+                            .as_ref()
+                            .is_some_and(|player| player.has_instrument(id));
+                        if let Some(synth) = self.synth_instances.get_mut(&id) {
+                            match message {
+                                MidiMessage::NoteOn { note, velocity } => {
+                                    if player_has {
+                                        if synth.note_on_shared(note, velocity)
+                                            && !self
+                                                .player
+                                                .as_ref()
+                                                .is_some_and(|p| p.send_live_midi(id, message))
+                                        {
+                                            synth.note_off_shared(note);
+                                        }
+                                    } else if let Some((gain, pan, fx)) = mix {
+                                        let _ = synth.note_on(
+                                            note, velocity, gain, utility, pan, fx,
+                                        );
+                                    }
+                                }
+                                MidiMessage::NoteOff { note } => {
+                                    if player_has {
+                                        if let Some(player) = &self.player {
+                                            player.send_live_midi(id, message);
+                                        }
+                                        synth.note_off_shared(note);
+                                    } else {
+                                        synth.note_off(note);
+                                    }
+                                }
+                                MidiMessage::AllNotesOff => {
+                                    if player_has && let Some(player) = &self.player {
+                                        player.send_live_midi(id, message);
+                                    }
+                                    synth.all_notes_off();
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
                 MidiTarget::Instrument(id) if self.is_vst_id(id) => {
                     self.vst_midi_to(id, message);
                 }
@@ -706,6 +767,10 @@ impl DawApp {
         }
         if self.sampler_selected() {
             self.sample_note_on(note, velocity);
+            return;
+        }
+        if self.synth_selected() {
+            self.synth_note_on(note, velocity);
             return;
         }
         self.sampler.silence();
@@ -791,6 +856,10 @@ impl DawApp {
             );
             return;
         }
+        if self.synth.held(note) {
+            self.synth_midi(MidiMessage::NoteOff { note });
+            return;
+        }
         self.piano_note_off(note);
     }
     fn piano_note_off(&mut self, note: u8) {
@@ -845,6 +914,14 @@ impl DawApp {
                 self.sampler.note_off(note);
             }
         }
+        if let Some(note) = self.synth.mouse.take() {
+            self.synth_midi(MidiMessage::NoteOff { note });
+        }
+        for synth in self.synth_instances.values_mut() {
+            if let Some(note) = synth.mouse.take() {
+                synth.note_off(note);
+            }
+        }
         if let Some(note) = self.instrument.take_mouse_note() {
             self.piano_note_off(note);
         }
@@ -870,6 +947,10 @@ impl DawApp {
             vst.all_off();
         }
         self.sampler.all_off();
+        self.synth.all_notes_off();
+        for synth in self.synth_instances.values_mut() {
+            synth.all_notes_off();
+        }
         let controller_off = self.controller.release_all();
         self.apply_midi(controller_off);
         let server_off = self.midi_server.release_all();
@@ -1110,6 +1191,10 @@ impl DawApp {
         for sampler in self.sampler_instances.values_mut() {
             sampler.silence();
         }
+        self.synth.silence();
+        for synth in self.synth_instances.values_mut() {
+            synth.silence();
+        }
         self.instrument.stop();
         for piano in self.piano_instances.values_mut() {
             piano.stop();
@@ -1289,6 +1374,35 @@ impl DawApp {
                 self.track_pan(track),
                 self.track_fx_gain(track),
             );
+        }
+        if let Some(track) = self.synth_track() {
+            self.synth.mix(
+                self.track_gain(track),
+                self.track_pan(track),
+                self.track_fx_gain(track),
+            );
+        }
+        let synth_mix: Vec<_> = self
+            .synth_instances
+            .keys()
+            .filter_map(|id| {
+                self.tracks
+                    .iter()
+                    .position(|track| track.instrument == Some(*id))
+                    .map(|index| {
+                        (
+                            *id,
+                            self.track_gain(index),
+                            self.track_pan(index),
+                            self.track_fx_gain(index),
+                        )
+                    })
+            })
+            .collect();
+        for (id, gain, pan, fx) in synth_mix {
+            if let Some(synth) = self.synth_instances.get(&id) {
+                synth.mix(gain, pan, fx);
+            }
         }
         if let Some(player) = &self.player {
             for (index, track) in self.tracks.iter().enumerate() {

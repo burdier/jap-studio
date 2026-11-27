@@ -36,9 +36,14 @@ impl DawApp {
                 .unwrap_or(self.vst.id);
         }
         if self.sampler_selected() {
+            return self.tracks[self.cursor_row]
+                .instrument
+                .unwrap_or(SAMPLER_ID);
+        }
+        if self.synth_selected() {
             self.tracks[self.cursor_row]
                 .instrument
-                .unwrap_or(SAMPLER_ID)
+                .unwrap_or(self.active_synth_id)
         } else {
             self.instrument.id()
         }
@@ -52,7 +57,10 @@ impl DawApp {
             );
         }
         if self.sampler_selected() {
-            self.sampler.name()
+            return self.sampler.name();
+        }
+        if self.synth_selected() {
+            self.synth.name()
         } else {
             self.instrument.active_name()
         }

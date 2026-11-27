@@ -73,6 +73,7 @@ impl Render for DawApp {
                 })
         }) || self.instrument_detached())
             && !self.sampler_selected()
+            && !self.synth_selected()
         {
             self.instrument.request_resources();
         }
@@ -195,6 +196,10 @@ impl Render for DawApp {
             self.sampler.stop();
             self.status_message = "La salida del sampler falló; vuelve a cargar el sample".into();
         }
+        if self.synth.failed() {
+            self.synth.stop();
+            self.status_message = "La salida de Hay Synth falló; vuelve a tocar para reiniciar".into();
+        }
         if self.instrument.failed() {
             self.status_message = format!(
                 "La salida de {} falló; consulta la consola",
@@ -218,6 +223,7 @@ impl Render for DawApp {
                 .is_some_and(|a| !a.paused() && a.finished() == Ok(false))
             || self.instrument.clip_playing()
             || self.sampler.clip_playing()
+            || self.synth.active_note_count() > 0
             || self.vst_any_clip_playing()
             || self.vst_any_ready()
             || self.vst_task.is_some()
@@ -492,6 +498,14 @@ impl Render for DawApp {
                         }
                         cx.notify();
                     }
+                    if this.update_synth_drag(
+                        event.position,
+                        event.dragging(),
+                        event.modifiers.shift,
+                    ) {
+                        cx.notify();
+                        return;
+                    }
                     this.cursor_fx.on_mouse_move(event.position);
                     if let Some(drag) = this.split_drag {
                         if !event.dragging() {
@@ -646,6 +660,7 @@ impl Render for DawApp {
                     let mixer_dragged = this.mixer_drag.take().is_some();
                     let offset_dragged = this.finish_drum_offset_drag();
                     this.finish_sample_drag(cx);
+                    this.finish_synth_drag();
                     this.timeline.sample_editor.anchor = None;
                     this.piano_ui.drag = None;
                     this.release_mouse_note();
@@ -700,6 +715,7 @@ impl Render for DawApp {
                     let mixer_dragged = this.mixer_drag.take().is_some();
                     let offset_dragged = this.finish_drum_offset_drag();
                     this.finish_sample_drag(cx);
+                    this.finish_synth_drag();
                     this.timeline.sample_editor.anchor = None;
                     this.piano_ui.drag = None;
                     this.release_mouse_note();

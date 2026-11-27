@@ -4,6 +4,7 @@
 pub(crate) mod piano;
 pub(crate) mod piano_params;
 pub(crate) mod sampler;
+pub(crate) mod synth;
 pub(crate) mod vst;
 
 pub(crate) use piano::Piano;

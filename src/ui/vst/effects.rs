@@ -513,6 +513,23 @@ impl DawApp {
             }
         }
         self.sampler.set_fx_rack(sampler_rack);
+        let synth_rack = self.synth_track().and_then(|i| self.effect_rack(i));
+        self.synth.set_fx_rack(synth_rack);
+        let synth_racks: Vec<_> = self
+            .synth_instances
+            .keys()
+            .filter_map(|id| {
+                self.tracks
+                    .iter()
+                    .position(|track| track.instrument == Some(*id))
+                    .map(|index| (*id, self.effect_rack(index)))
+            })
+            .collect();
+        for (id, rack) in synth_racks {
+            if let Some(synth) = self.synth_instances.get_mut(&id) {
+                synth.set_fx_rack(rack);
+            }
+        }
         let vst_rack = self.vst_track().and_then(|i| self.effect_rack(i));
         self.vst.set_fx_rack(vst_rack);
         let racks: Vec<_> = self

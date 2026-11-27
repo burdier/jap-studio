@@ -489,6 +489,11 @@ impl DawApp {
                 if self.tracks.is_empty() { self.edit_track_structure(elevate::musical::track::TrackEdit::Insert); }
                 if self.track_accepts_clips(self.cursor_row) { self.add_sampler(self.cursor_row); }
             }
+            "sy" | "track.insert_synth" => self.insert_synth_track(),
+            "synth" => {
+                if self.tracks.is_empty() { self.edit_track_structure(elevate::musical::track::TrackEdit::Insert); }
+                if self.track_accepts_clips(self.cursor_row) { self.add_synth(self.cursor_row); }
+            }
             "add" | "browse" | "insert" => self.open_palette(),
             "play" => self.play_context(),
             "stop" => self.stop_transport(),

@@ -42,6 +42,7 @@ mod sampler;
 mod scripting;
 mod settings;
 mod spectrum;
+mod synth;
 mod time_grid;
 mod timeline;
 mod timing;
@@ -112,6 +113,11 @@ struct DawApp {
     sampler_instances:
         HashMap<elevate::musical::model::InstrumentId, crate::instruments::sampler::Sampler>,
     sampler_ui: sampler::SamplerUi,
+    synth: crate::instruments::synth::Synth,
+    active_synth_id: elevate::musical::model::InstrumentId,
+    synth_instances:
+        HashMap<elevate::musical::model::InstrumentId, crate::instruments::synth::Synth>,
+    synth_ui: synth::SynthUi,
     vst: crate::instruments::vst::VstInstrument,
     vst_instances:
         HashMap<elevate::musical::model::InstrumentId, crate::instruments::vst::VstInstrument>,

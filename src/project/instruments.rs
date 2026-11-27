@@ -295,3 +295,112 @@ impl ProjectDoc {
         Ok(result)
     }
 }
+
+use crate::devices::synth::{EnvelopeMode, RoomKind, SynthEngineKind, SynthParams};
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProjectSynth {
+    pub id: InstrumentId,
+    pub params: SynthParams,
+}
+
+impl ProjectDoc {
+    pub fn set_synths(&self, synths: &[ProjectSynth]) -> Result<(), String> {
+        let mut ids = std::collections::HashSet::new();
+        for synth in synths {
+            if !ids.insert(synth.id) || synth.id.0 == u32::MAX {
+                return Err("Estado de Hay Synth inválido".into());
+            }
+            let p = &synth.params;
+            for v in [
+                p.distance, p.shape, p.tone, p.body, p.motion, p.time, p.touch, p.glide, p.gain,
+            ] {
+                if !v.is_finite() {
+                    return Err("Parámetro de Hay Synth no finito".into());
+                }
+            }
+            let map = self.doc.get_map(format!("synth:{}", synth.id.0));
+            map.insert("version", 1_i64).map_err(|e| e.to_string())?;
+            map.insert("engine", i64::from(p.engine as u8))
+                .map_err(|e| e.to_string())?;
+            map.insert("room", i64::from(p.room as u8))
+                .map_err(|e| e.to_string())?;
+            map.insert("mode", i64::from(p.mode as u8))
+                .map_err(|e| e.to_string())?;
+            map.insert("preset_name", p.preset_name.as_str())
+                .map_err(|e| e.to_string())?;
+            for (key, value) in [
+                ("distance", p.distance),
+                ("shape", p.shape),
+                ("tone", p.tone),
+                ("body", p.body),
+                ("motion", p.motion),
+                ("time", p.time),
+                ("touch", p.touch),
+                ("glide", p.glide),
+                ("gain", p.gain),
+            ] {
+                map.insert(key, f64::from(value))
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn synths(&self) -> Result<Vec<ProjectSynth>, String> {
+        let mut synths = Vec::new();
+        for id in self
+            .tracks()?
+            .into_iter()
+            .filter_map(|track| track.instrument)
+            .map(InstrumentId)
+        {
+            let map = self.doc.get_map(format!("synth:{}", id.0));
+            if map.get("version").is_none() || synths.iter().any(|s: &ProjectSynth| s.id == id) {
+                continue;
+            }
+            if read_i64(&map, "version")? != 1 {
+                return Err("Versión de Hay Synth no compatible".into());
+            }
+            let read_f = |key: &str, default: f32| -> Result<f32, String> {
+                match map.get(key) {
+                    Some(loro::ValueOrContainer::Value(loro::LoroValue::Double(v))) => {
+                        let v = v as f32;
+                        if !v.is_finite() {
+                            return Err(format!("Parámetro de Hay Synth inválido: {key}"));
+                        }
+                        Ok(v.clamp(0.0, 1.0))
+                    }
+                    None => Ok(default),
+                    _ => Err(format!("Parámetro de Hay Synth inválido: {key}")),
+                }
+            };
+            let engine = SynthEngineKind::from_u8(read_i64(&map, "engine")?.clamp(0, 6) as u8);
+            let room = RoomKind::from_u8(read_i64(&map, "room")?.clamp(0, 3) as u8);
+            let mode = EnvelopeMode::from_u8(read_i64(&map, "mode")?.clamp(0, 2) as u8);
+            let preset_name = match map.get("preset_name") {
+                Some(loro::ValueOrContainer::Value(loro::LoroValue::String(s))) => s.to_string(),
+                _ => String::new(),
+            };
+            let mut params = SynthParams {
+                engine,
+                room,
+                distance: read_f("distance", 0.25)?,
+                shape: read_f("shape", 0.45)?,
+                tone: read_f("tone", 0.55)?,
+                body: read_f("body", 0.55)?,
+                motion: read_f("motion", 0.30)?,
+                mode,
+                time: read_f("time", 0.50)?,
+                touch: read_f("touch", 0.55)?,
+                glide: read_f("glide", 0.0)?,
+                gain: read_f("gain", 0.80)?,
+                preset_name,
+            };
+            params.clamp_all();
+            synths.push(ProjectSynth { id, params });
+        }
+        synths.sort_by_key(|s| s.id.0);
+        Ok(synths)
+    }
+}

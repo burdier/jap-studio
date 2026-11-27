@@ -379,6 +379,10 @@ impl DawApp {
             self.add_sampler(track);
             return;
         }
+        if entry.id == "instrument.synth" {
+            self.add_synth(track);
+            return;
+        }
         if entry.id != "instrument.piano" {
             self.status_message = format!("{} · instrumento sin implementación", entry.name);
             return;

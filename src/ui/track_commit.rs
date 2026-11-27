@@ -196,6 +196,26 @@ impl DawApp {
                 self.active_sampler_id = crate::instruments::sampler::SAMPLER_ID;
             }
         }
+        let live_synths: std::collections::HashSet<_> = self
+            .tracks
+            .iter()
+            .filter_map(|track| track.instrument)
+            .filter(|id| self.is_synth_id(*id))
+            .collect();
+        self.synth_instances
+            .retain(|id, _| live_synths.contains(id));
+        if !live_synths.contains(&self.active_synth_id) {
+            if let Some(next) = live_synths.iter().next().copied() {
+                let removed = self.active_synth_id;
+                self.activate_synth(next);
+                self.synth_instances.remove(&removed);
+            } else {
+                self.synth = Default::default();
+                self.active_synth_id = crate::instruments::synth::SYNTH_ID;
+                self.synth
+                    .configure_audio(self.settings.audio.saved.clone());
+            }
+        }
         self.prune_vst_instances();
         self.selected_tracks = if new_ids.is_empty() || !select_new {
             selected

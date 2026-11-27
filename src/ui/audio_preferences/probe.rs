@@ -16,6 +16,10 @@ impl DawApp {
             piano.stop();
         }
         self.sampler.stop();
+        self.synth.stop();
+        for synth in self.synth_instances.values_mut() {
+            synth.stop();
+        }
         self.settings.audio.busy = true;
         let config = self.settings.audio.draft.clone();
         let work = cx.background_spawn(async move { DeviceProbe::start(&config, input) });

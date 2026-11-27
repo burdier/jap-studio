@@ -10,7 +10,10 @@ use elevate::{
         time::{Meter, Tempo},
         track::{Track, TrackSnapshot},
     },
-    project::{ArrangementNavigation, ProjectCommit, ProjectDoc, ProjectPiano, ProjectSampler},
+    project::{
+        ArrangementNavigation, ProjectCommit, ProjectDoc, ProjectPiano, ProjectSampler,
+        ProjectSynth,
+    },
 };
 use gpui::{Context, MouseButton, div, prelude::*, px, rgb, rgba};
 use std::{
@@ -129,6 +132,7 @@ impl DawApp {
             || self.timeline.automation_dragging()
             || self.sampler_ui.drag.is_some()
             || self.sampler_ui.wave_drag.is_some()
+            || self.synth_ui.dragging()
     }
 
     fn capture_summary(&self) -> (HistorySummary, u64) {
@@ -173,6 +177,15 @@ impl DawApp {
         format!("{:?}", self.timeline.navigation).hash(&mut h);
         format!("{:?}", self.timeline.automation).hash(&mut h);
         format!("{:?}", self.master_chain.nodes()).hash(&mut h);
+        format!("{:?}", self.synth.params).hash(&mut h);
+        let mut synth_ids: Vec<_> = self.synth_instances.keys().copied().collect();
+        synth_ids.sort_by_key(|id| id.0);
+        for id in synth_ids {
+            id.0.hash(&mut h);
+            if let Some(s) = self.synth_instances.get(&id) {
+                format!("{:?}", s.params).hash(&mut h);
+            }
+        }
 
         let summary = HistorySummary {
             tracks: self.tracks.clone(),
@@ -292,6 +305,20 @@ impl DawApp {
         samplers.sort_by_key(|s| s.id.0);
         samplers.dedup_by_key(|s| s.id);
 
+        let mut synths = Vec::new();
+        for id in tracks
+            .iter()
+            .filter_map(|t| t.instrument)
+            .filter(|id| self.is_synth_id(*id))
+        {
+            synths.push(ProjectSynth {
+                id,
+                params: self.synth_snapshot(id),
+            });
+        }
+        synths.sort_by_key(|s| s.id.0);
+        synths.dedup_by_key(|s| s.id);
+
         let track_snapshot =
             TrackSnapshot::capture(&tracks, &self.track_levels, &self.track_pans, 0)?;
         doc.reconcile_tracks(&tracks)?;
@@ -314,6 +341,7 @@ impl DawApp {
         doc.reconcile_session_clips(&midi, &audio)?;
         doc.set_pianos(&pianos)?;
         doc.set_samplers(&samplers)?;
+        doc.set_synths(&synths)?;
         Ok(())
     }
 
@@ -420,6 +448,9 @@ impl DawApp {
                 let _ = doc.reconcile_session_clips(&midi, &audio);
                 let _ = doc.set_pianos(&pianos);
                 let _ = doc.set_samplers(&samplers);
+                if let Ok(synths) = past.synths() {
+                    let _ = doc.set_synths(&synths);
+                }
                 doc.commit_change(&format!("Volver a: {}", anchor.message), unix_now_secs());
             }
         }
@@ -692,6 +723,21 @@ impl DawApp {
         }
 
         self.pattern_editor.session = drums;
+        if let Ok(synths) = historical.synths() {
+            for state in synths {
+                if state.id == self.active_synth_id {
+                    self.synth.params = state.params;
+                    self.synth.update_live();
+                } else if let Some(s) = self.synth_instances.get_mut(&state.id) {
+                    s.params = state.params;
+                    s.update_live();
+                } else {
+                    let mut synth = crate::instruments::synth::Synth::from_params(state.params);
+                    synth.configure_audio(self.settings.audio.saved.clone());
+                    self.synth_instances.insert(state.id, synth);
+                }
+            }
+        }
         self.timeline.tempo = tempo;
         self.timeline.meter = meter;
         self.timeline.navigation = navigation;

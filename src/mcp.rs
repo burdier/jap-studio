@@ -304,12 +304,12 @@ fn tool_definitions() -> Value {
         },
         {
             "name": "add_track",
-            "description": "Crea una pista nueva en el Arrangement y opcionalmente le asigna un instrumento nativo (piano o sampler).",
+            "description": "Crea una pista nueva en el Arrangement y opcionalmente le asigna un instrumento nativo (piano, sampler o synth).",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "name": { "type": "string" },
-                    "instrument": { "type": "string", "enum": ["none", "piano", "sampler"] }
+                    "instrument": { "type": "string", "enum": ["none", "piano", "sampler", "synth"] }
                 }
             }
         },

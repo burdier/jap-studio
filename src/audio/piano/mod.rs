@@ -122,6 +122,28 @@ pub(crate) struct PianoPlayer {
 }
 
 impl PianoPlayer {
+    pub fn start_synth(
+        params: elevate::devices::synth::SynthParams,
+        gain: f32,
+        utility: elevate::devices::utility_slot::UtilitySlot,
+        pan: f32,
+        fx_gain: f32,
+        audio: &super::device::AudioConfig,
+    ) -> Result<Self, String> {
+        let device = audio.device(false)?;
+        let setup = choose_output_config(&device, audio)?;
+        let engine = crate::audio::synth::NativeSynthEngine::new(params, setup.config.sample_rate);
+        Self::start_backend(
+            device,
+            setup,
+            SynthBackend::NativeSynth(Box::new(engine)),
+            gain,
+            utility,
+            pan,
+            fx_gain,
+        )
+    }
+
     pub fn start_sampler(
         mut engine: crate::audio::sampler::SfizzEngine,
         gain: f32,

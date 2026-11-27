@@ -125,6 +125,19 @@ impl DawApp {
         }
         samplers.sort_by_key(|sampler| sampler.id.0);
         samplers.dedup_by_key(|sampler| sampler.id);
+        let mut synths = Vec::new();
+        for id in tracks
+            .iter()
+            .filter_map(|t| t.instrument)
+            .filter(|id| self.is_synth_id(*id))
+        {
+            synths.push(elevate::project::ProjectSynth {
+                id,
+                params: self.synth_snapshot(id),
+            });
+        }
+        synths.sort_by_key(|synth| synth.id.0);
+        synths.dedup_by_key(|synth| synth.id);
         let mut vsts = Vec::new();
         for id in tracks
             .iter()
@@ -181,6 +194,7 @@ impl DawApp {
             audio,
             pianos,
             samplers,
+            synths,
             vsts,
             drums: self.pattern_editor.session.clone(),
             tempo: self.timeline.tempo,

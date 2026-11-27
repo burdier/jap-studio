@@ -14,6 +14,9 @@ impl DawApp {
         if self.sampler_selected() {
             return self.render_sampler(cx).into_any_element();
         }
+        if self.synth_selected() {
+            return self.render_synth(cx).into_any_element();
+        }
         let ds = &self.ds;
         let header = div()
             .flex_shrink_0()

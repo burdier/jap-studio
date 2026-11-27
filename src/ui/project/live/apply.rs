@@ -73,6 +73,20 @@ impl DawApp {
             }
         }
         self.install_prepared_samplers(samplers);
+        for state in &next.synths {
+            if state.id == self.active_synth_id {
+                self.synth.params = state.params.clone();
+                self.synth.update_live();
+            } else if let Some(existing) = self.synth_instances.get_mut(&state.id) {
+                existing.params = state.params.clone();
+                existing.update_live();
+            } else {
+                let mut synth =
+                    crate::instruments::synth::Synth::from_params(state.params.clone());
+                synth.configure_audio(self.settings.audio.saved.clone());
+                self.synth_instances.insert(state.id, synth);
+            }
+        }
         for (id, prepared, name, bundle, class) in vsts {
             let track_idx = self.tracks.iter().position(|t| t.instrument == Some(id));
             let gain = track_idx.map_or(1.0, |idx| self.track_gain(idx));
@@ -103,7 +117,11 @@ impl DawApp {
                 self.piano_instances.insert(id, piano);
             }
         }
-        if tracks_changed || before.pianos != next.pianos || before.samplers != next.samplers {
+        if tracks_changed
+            || before.pianos != next.pianos
+            || before.samplers != next.samplers
+            || before.synths != next.synths
+        {
             self.sync_vst_effects();
             self.publish_track_fx();
             self.sync_midi_focus();

@@ -29,11 +29,11 @@ impl InstrumentVoice {
                 self.synth.panic();
                 self.channel = value;
             }
-            NoteCommand::SamplerControl(cc, value) => {
-                if let SynthBackend::Sampler(sampler) = &mut self.synth {
-                    sampler.control(cc, value);
-                }
-            }
+            NoteCommand::SamplerControl(cc, value) => match &mut self.synth {
+                SynthBackend::Sampler(sampler) => sampler.control(cc, value),
+                SynthBackend::NativeSynth(synth) => synth.control(cc, value),
+                _ => {}
+            },
             NoteCommand::On { note, velocity } => {
                 self.synth.midi(0x90 | self.channel, note, velocity);
             }
@@ -123,6 +123,7 @@ pub(super) struct PreparedVoices {
 pub(crate) enum VoiceSource {
     Piano(super::PianoSnapshot),
     Sampler(crate::audio::sampler::SamplerSnapshot),
+    Synth(elevate::devices::synth::SynthParams),
     Vst(Arc<SharedInstrument>),
 }
 
@@ -153,6 +154,12 @@ impl PreparedArrangementVoice {
             }
             VoiceSource::Sampler(snapshot) => (
                 SynthBackend::Sampler(crate::audio::sampler::SfizzEngine::prepare(snapshot, rate)?),
+                None,
+            ),
+            VoiceSource::Synth(params) => (
+                SynthBackend::NativeSynth(Box::new(crate::audio::synth::NativeSynthEngine::new(
+                    params, rate,
+                ))),
                 None,
             ),
             VoiceSource::Vst(shared) => {

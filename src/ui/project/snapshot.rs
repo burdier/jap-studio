@@ -8,7 +8,10 @@ use elevate::{
         time::{Meter, Tempo},
         track::Track,
     },
-    project::{ProjectAudioClip, ProjectDoc, ProjectPiano, ProjectSampler, ProjectVstInstrument},
+    project::{
+        ProjectAudioClip, ProjectDoc, ProjectPiano, ProjectSampler, ProjectSynth,
+        ProjectVstInstrument,
+    },
 };
 use std::{
     collections::HashMap,
@@ -23,6 +26,7 @@ pub(super) struct Snapshot {
     pub audio: Vec<ProjectAudioClip>,
     pub pianos: Vec<ProjectPiano>,
     pub samplers: Vec<ProjectSampler>,
+    pub synths: Vec<ProjectSynth>,
     pub vsts: Vec<ProjectVstInstrument>,
     pub drums: DrumSession,
     pub tempo: Tempo,
@@ -115,6 +119,7 @@ impl Snapshot {
         doc.reconcile_session_clips(&self.midi, &self.audio)?;
         doc.set_pianos(&self.pianos)?;
         doc.set_samplers(&self.samplers)?;
+        doc.set_synths(&self.synths)?;
         doc.set_vst_instruments(&self.vsts)?;
         Ok(())
     }
@@ -162,6 +167,7 @@ impl Snapshot {
             audio: doc.audio_clips()?,
             pianos: doc.pianos()?,
             samplers: doc.samplers()?,
+            synths: doc.synths()?,
             vsts: doc.vst_instruments()?,
             drums: doc.drum_session()?.unwrap_or_default(),
             tempo,
@@ -333,6 +339,7 @@ impl Snapshot {
             if let Some(id) = track.instrument {
                 if !self.pianos.iter().any(|p| p.id == id)
                     && !self.samplers.iter().any(|s| s.id == id)
+                    && !self.synths.iter().any(|s| s.id == id)
                     && !self.vsts.iter().any(|v| v.id == id)
                 {
                     return Err(format!(
@@ -415,6 +422,9 @@ impl Snapshot {
                 &remote.samplers,
                 |sampler| sampler.id,
             )
+            || competing_by_id(&self.synths, &local.synths, &remote.synths, |synth| {
+                synth.id
+            })
             || conflicting_mix(self, local, remote)
     }
 }

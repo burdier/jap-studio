@@ -74,6 +74,21 @@ impl DawApp {
         self.active_sampler_id = crate::instruments::sampler::SAMPLER_ID;
         self.sampler
             .configure_audio(self.settings.audio.saved.clone());
+        self.synth_instances.clear();
+        self.synth = Default::default();
+        self.active_synth_id = crate::instruments::synth::SYNTH_ID;
+        self.synth
+            .configure_audio(self.settings.audio.saved.clone());
+        for (i, state) in snapshot.synths.iter().enumerate() {
+            let mut synth = crate::instruments::synth::Synth::from_params(state.params.clone());
+            synth.configure_audio(self.settings.audio.saved.clone());
+            if i == 0 {
+                self.active_synth_id = state.id;
+                self.synth = synth;
+            } else {
+                self.synth_instances.insert(state.id, synth);
+            }
+        }
         self.midi_mapper =
             elevate::musical::midi_map::MidiMapper::from_bindings(snapshot.midi_bindings);
         self.midi_armed_tracks.clear();

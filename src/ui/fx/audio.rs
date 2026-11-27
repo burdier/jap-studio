@@ -62,6 +62,28 @@ impl DawApp {
                 self.track_fx_gain(track),
             );
         }
+        if let Some(track) = self.synth_track() {
+            self.synth.mix(
+                self.track_gain(track),
+                self.track_pan(track),
+                self.track_fx_gain(track),
+            );
+        }
+        let synth_gains: Vec<_> = self
+            .synth_instances
+            .keys()
+            .filter_map(|id| {
+                self.tracks
+                    .iter()
+                    .position(|track| track.instrument == Some(*id))
+                    .map(|index| (*id, self.track_fx_gain(index)))
+            })
+            .collect();
+        for (id, gain) in synth_gains {
+            if let Some(synth) = self.synth_instances.get(&id) {
+                synth.set_fx_gain(gain);
+            }
+        }
         if let Some(player) = &self.player {
             for (index, track) in self.tracks.iter().enumerate() {
                 player.set_fx_gain(track.id, self.own_track_fx_gain(index));

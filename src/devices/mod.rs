@@ -4,6 +4,7 @@ pub mod filter;
 pub mod fx_gain;
 pub mod sampler;
 pub mod spectrum;
+pub mod synth;
 pub mod utility;
 pub mod utility_slot;
 

@@ -16,7 +16,7 @@ mod collect;
 mod drums;
 pub use drums::{load_kit_preset, save_kit_preset};
 mod instruments;
-pub use instruments::{ProjectPiano, ProjectSampler, ProjectVstInstrument};
+pub use instruments::{ProjectPiano, ProjectSampler, ProjectSynth, ProjectVstInstrument};
 mod fx;
 mod midi;
 mod midi_controls;
@@ -571,6 +571,7 @@ impl ProjectDoc {
         self.master_utility()?;
         self.pianos()?;
         self.samplers()?;
+        self.synths()?;
         self.vst_instruments()?;
         self.drum_session()?;
         crate::musical::clip::ClipId::reserve_next_id(

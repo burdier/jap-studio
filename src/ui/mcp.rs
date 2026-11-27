@@ -183,6 +183,8 @@ impl DawApp {
                 let instrument = t.instrument.map(|id| {
                     if self.is_sampler_id(id) {
                         "sampler"
+                    } else if self.is_synth_id(id) {
+                        "synth"
                     } else if self.is_vst_id(id) {
                         "vst3"
                     } else {
@@ -382,6 +384,7 @@ impl DawApp {
             match inst {
                 "piano" => self.add_piano(index),
                 "sampler" => self.add_sampler(index),
+                "synth" => self.add_synth(index),
                 "none" | "" => {}
                 other => return Err(format!("Instrumento desconocido: {other}")),
             }

@@ -30,6 +30,7 @@ mod settings_export;
 mod settings_midi;
 mod settings_shortcuts;
 mod settings_tracks;
+mod synth;
 mod tejer;
 mod toolbar;
 mod track_color_menu;

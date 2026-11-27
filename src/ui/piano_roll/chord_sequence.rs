@@ -94,6 +94,10 @@ impl DawApp {
                     !self.sampler.held(note)
                 } else if let Some(sampler) = self.sampler_instances.get(&id) {
                     !sampler.held(note)
+                } else if id == self.active_synth_id {
+                    !self.synth.held(note)
+                } else if let Some(synth) = self.synth_instances.get(&id) {
+                    !synth.held(note)
                 } else if id == self.vst.id {
                     !self.vst.held.contains(&note)
                 } else if let Some(vst) = self.vst_instances.get(&id) {

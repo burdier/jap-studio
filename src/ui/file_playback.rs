@@ -242,9 +242,9 @@ impl DawApp {
                     self.vst_instances.get(&id).is_some_and(|vst| vst.ready())
                 }
             });
-            let live_internal = track
-                .instrument
-                .is_some_and(|id| self.is_piano_id(id) || self.is_sampler_id(id));
+            let live_internal = track.instrument.is_some_and(|id| {
+                self.is_piano_id(id) || self.is_sampler_id(id) || self.is_synth_id(id)
+            });
             let midi = if notes.is_empty()
                 && hilo.as_ref().is_none_or(|hilo| hilo.clips.is_empty())
                 && (selected.is_some() || (!live_vst && !live_internal))
@@ -261,6 +261,10 @@ impl DawApp {
                         self.sampler_snapshot(track.instrument.unwrap())
                             .map(VoiceSource::Sampler),
                     )
+                } else if track.instrument.is_some_and(|id| self.is_synth_id(id)) {
+                    Some(Ok(VoiceSource::Synth(
+                        self.synth_snapshot(track.instrument.unwrap()),
+                    )))
                 } else if let Some(id) = track.instrument.filter(|id| self.is_vst_id(*id)) {
                     let vst = if id == self.vst.id {
                         &self.vst

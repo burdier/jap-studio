@@ -51,6 +51,7 @@ fn snapshot() -> Snapshot {
         audio: vec![],
         pianos: vec![],
         samplers: vec![],
+        synths: vec![],
         vsts: vec![],
         drums: Default::default(),
         tempo: Tempo::new(97.5).unwrap(),
@@ -396,4 +397,23 @@ fn midi_bindings_round_trip_through_loro() {
     for expected in &state.midi_bindings {
         assert!(loaded.midi_bindings.contains(expected));
     }
+}
+
+#[test]
+fn synth_roundtrips_in_project_doc() {
+    let fixture = Fixture::new();
+    let mut state = snapshot();
+    let synth_id = InstrumentId(3);
+    state.tracks[1].instrument = Some(synth_id);
+    let params = elevate::devices::synth::FACTORY_PRESETS[12].to_params();
+    state.synths.push(elevate::project::ProjectSynth {
+        id: synth_id,
+        params: params.clone(),
+    });
+    let path = fixture.0.join("synth_session.loro");
+    state.document("SynthSession").unwrap().save(&path).unwrap();
+    let (loaded, _, _) = Snapshot::load(&path).unwrap();
+    assert_eq!(loaded.synths.len(), 1);
+    assert_eq!(loaded.synths[0].id, synth_id);
+    assert_eq!(loaded.synths[0].params, params);
 }

@@ -740,6 +740,9 @@ impl DawApp {
                             .map_or("Hay Sampler", |s| s.name())
                     };
                     format!("Sampler · {name}")
+                } else if track.instrument.is_some_and(|id| self.is_synth_id(id)) {
+                    let id = track.instrument.unwrap();
+                    format!("Synth · {}", self.synth_name(id))
                 } else if track.instrument.is_some_and(|id| self.is_piano_id(id)) {
                     let id = track.instrument.unwrap();
                     if id == self.instrument.id() {

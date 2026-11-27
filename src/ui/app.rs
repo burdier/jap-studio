@@ -76,6 +76,8 @@ impl DawApp {
         instrument.configure_audio(settings.audio.saved.clone());
         let mut sampler = crate::instruments::sampler::Sampler::default();
         sampler.configure_audio(settings.audio.saved.clone());
+        let mut synth = crate::instruments::synth::Synth::default();
+        synth.configure_audio(settings.audio.saved.clone());
         let initial_target = Some(MidiTarget::Instrument(instrument.id()));
         let explorer = super::explorer_host::ExplorerDock::new(&ds, cx);
         let fx = super::fx::FxDock::new((&ds).into(), cx);
@@ -164,6 +166,10 @@ impl DawApp {
             active_sampler_id: crate::instruments::sampler::SAMPLER_ID,
             sampler_instances: Default::default(),
             sampler_ui: Default::default(),
+            synth,
+            active_synth_id: crate::instruments::synth::SYNTH_ID,
+            synth_instances: Default::default(),
+            synth_ui: Default::default(),
             vst: Default::default(),
             vst_instances: Default::default(),
             vst_reloads: Default::default(),

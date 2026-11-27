@@ -6,6 +6,7 @@ use std::{path::Path, sync::Arc};
 pub(crate) enum SynthBackend {
     Vst(crate::audio::vst3::InstrumentVoice),
     Sampler(crate::audio::sampler::SfizzEngine),
+    NativeSynth(Box<crate::audio::synth::NativeSynthEngine>),
     Fluid(FluidEngine),
     Rusty(Synthesizer),
 }
@@ -73,6 +74,7 @@ impl SynthBackend {
         match self {
             Self::Vst(v) => v.midi(0x90 | channel as u8, note, velocity),
             Self::Sampler(s) => s.note_on(note, velocity),
+            Self::NativeSynth(s) => s.note_on(note, velocity, 0.0),
             Self::Fluid(f) => f.note_on(channel, i32::from(note), i32::from(velocity)),
             Self::Rusty(r) => r.note_on(channel, i32::from(note), i32::from(velocity)),
         }
@@ -91,6 +93,8 @@ impl SynthBackend {
                 i32::from(velocity),
                 expression.pan,
             );
+        } else if let Self::NativeSynth(synth) = self {
+            synth.note_on(note, velocity, expression.pan as f32 / 100.0);
         } else {
             // sfizz/RustySynth no exponen pan por voz en estos adaptadores.
             // No convertirlo a CC10: afectaría a las demás notas del canal.
@@ -101,6 +105,7 @@ impl SynthBackend {
         match self {
             Self::Vst(v) => v.midi(0x80 | channel as u8, note, release_velocity),
             Self::Sampler(s) => s.note_off_velocity(note, release_velocity),
+            Self::NativeSynth(s) => s.note_off(note),
             Self::Fluid(f) => f.note_off(channel, i32::from(note)),
             Self::Rusty(r) => r.note_off(channel, i32::from(note)),
         }
@@ -109,6 +114,7 @@ impl SynthBackend {
         match self {
             Self::Vst(v) => v.panic(),
             Self::Sampler(s) => s.all_off(),
+            Self::NativeSynth(s) => s.all_off(),
             Self::Fluid(f) => {
                 for channel in 0..16 {
                     f.note_off_all(channel);
@@ -118,13 +124,15 @@ impl SynthBackend {
         }
     }
     pub fn panic(&mut self) {
-        if let Self::Sampler(s) = self {
-            s.panic();
-        } else {
-            for channel in 0..16 {
-                self.midi(0xb0 | channel, 64, 0);
+        match self {
+            Self::Sampler(s) => s.panic(),
+            Self::NativeSynth(s) => s.panic(),
+            _ => {
+                for channel in 0..16 {
+                    self.midi(0xb0 | channel, 64, 0);
+                }
+                self.note_off_all();
             }
-            self.note_off_all();
         }
     }
     pub fn midi(&mut self, command: u8, data1: u8, data2: u8) {
@@ -141,6 +149,7 @@ impl SynthBackend {
         match self {
             Self::Vst(v) => v.midi(command | channel as u8, data1, data2),
             Self::Sampler(s) => s.midi(command, data1, data2),
+            Self::NativeSynth(s) => s.midi(command, data1, data2),
             Self::Fluid(f) => f.process_midi(channel, command, data1, data2),
             Self::Rusty(r) => r.process_midi_message(
                 channel,
@@ -153,6 +162,7 @@ impl SynthBackend {
     pub fn set_master_volume(&mut self, volume: f32) {
         match self {
             Self::Sampler(_) | Self::Vst(_) => {}
+            Self::NativeSynth(s) => s.set_master_volume(volume),
             Self::Fluid(f) => f.set_master_volume(volume),
             Self::Rusty(r) => r.set_master_volume(volume),
         }
@@ -188,6 +198,12 @@ impl SynthBackend {
         match self {
             Self::Vst(v) => v.render_params(left, right, time, params),
             Self::Sampler(s) => s.render(left, right),
+            Self::NativeSynth(s) => {
+                if let Some(ctx) = time {
+                    s.set_tempo(ctx.bpm as f32);
+                }
+                s.render(left, right);
+            }
             Self::Fluid(f) => f.render(left, right),
             Self::Rusty(r) => r.render(left, right),
         }

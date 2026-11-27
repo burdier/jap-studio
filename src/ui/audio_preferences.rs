@@ -161,6 +161,10 @@ impl DawApp {
                             piano.configure_audio(config.clone());
                         }
                         this.sampler.configure_audio(config.clone());
+                        this.synth.configure_audio(config.clone());
+                        for synth in this.synth_instances.values_mut() {
+                            synth.configure_audio(config.clone());
+                        }
                         this.vst_reloads = this
                             .tracks
                             .iter()
