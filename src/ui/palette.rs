@@ -29,6 +29,7 @@ impl PaletteCategory {
                     && !entry.is_tool
                     && (entry.id == "instrument.piano"
                         || entry.id == "instrument.sampler"
+                        || entry.id == "instrument.synth"
                         || entry.id.starts_with("hay.")
                         || entry.id.starts_with("hey.")
                         || entry
@@ -438,5 +439,25 @@ mod tests {
         assert_eq!(palette.target_track(), Some(3));
         palette.close();
         assert_eq!(palette.target_track(), None);
+    }
+
+    #[test]
+    fn hey_category_includes_hay_synth_piano_and_sampler() {
+        let mut palette = Palette::new();
+        palette.open_for_track(0);
+        palette.set_category(super::PaletteCategory::Hey);
+        let ids: Vec<&str> = palette.results().iter().map(|e| e.id.as_str()).collect();
+        assert!(
+            ids.contains(&"instrument.synth"),
+            "falta Hay Synth en categoría Hey: {ids:?}"
+        );
+        assert!(
+            ids.contains(&"instrument.piano"),
+            "falta Hay Piano en categoría Hey"
+        );
+        assert!(
+            ids.contains(&"instrument.sampler"),
+            "falta Hay Sampler en categoría Hey"
+        );
     }
 }
