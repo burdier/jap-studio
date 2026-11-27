@@ -7,6 +7,8 @@ export default {
     headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
     if (path.endsWith(".mp4") || path.endsWith(".png") || path.endsWith(".svg") || path.endsWith(".ico")) {
       headers.set("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
+    } else if (path.endsWith(".pdf")) {
+      headers.set("Cache-Control", "public, max-age=3600, stale-while-revalidate=86400");
     } else if (path === "/" || path.endsWith(".html")) {
       headers.set("Cache-Control", "public, max-age=300, stale-while-revalidate=3600");
     }

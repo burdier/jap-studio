@@ -1,0 +1,1127 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Jap Studio v0.9.0 — Manual de Uso</title>
+<style>
+  @page {
+    size: A4;
+    margin: 10.5mm 12.5mm 11mm 14.5mm;
+  }
+  @page :first {
+    margin: 0;
+  }
+  :root {
+    --paper: #f6f0e2;
+    --page: #fdfbf6;
+    --ink: #2a2825;
+    --muted: #5c574f;
+    --red: #b8321f;
+    --blue: #274973;
+    --carrot: #e8641f;
+    --surface: #f7f1e3;
+    --surface-blue: #eef3f9;
+    --surface-warm: #fdf2e6;
+    --border: #d8ceba;
+    --border-strong: #3a3835;
+    --code-bg: #ebe4d5;
+    --sans: "Noto Sans", "Liberation Sans", "DejaVu Sans", Arial, sans-serif;
+    --serif: "Noto Serif", "Liberation Serif", "DejaVu Serif", Georgia, serif;
+    --mono: "Liberation Mono", "DejaVu Sans Mono", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    color: var(--ink);
+    background: var(--page);
+    font-family: var(--sans);
+    font-weight: 400;
+    font-size: 8.55pt;
+    line-height: 1.38;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* ===== PORTADA ===== */
+  .cover {
+    width: 210mm;
+    height: 297mm;
+    padding: 18mm 18mm 16mm 22mm;
+    position: relative;
+    background:
+      radial-gradient(ellipse at 18% 0%, #ffffffb8 0, transparent 58%),
+      repeating-linear-gradient(0deg, transparent 0 25px, rgba(106,143,183,.11) 25px 26px),
+      var(--paper);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    page-break-after: always;
+    overflow: hidden;
+  }
+  .cover::before {
+    content: "";
+    position: absolute;
+    top: 0; bottom: 0; left: 13mm;
+    width: 1.6pt;
+    background: rgba(184, 50, 31, .38);
+  }
+  .cover-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1.2pt dashed rgba(58,56,53,.35);
+    padding-bottom: 5mm;
+  }
+  .cover-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .cover-brand strong {
+    font-size: 16pt;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+  }
+  .pill {
+    display: inline-block;
+    font-size: 8.2pt;
+    font-weight: 700;
+    color: var(--red);
+    border: 1pt solid var(--red);
+    background: rgba(184,50,31,.08);
+    padding: 2px 9px;
+    border-radius: 999px;
+  }
+  .pill-blue {
+    color: var(--blue);
+    border-color: var(--blue);
+    background: rgba(39,73,115,.08);
+  }
+  .cover-hero {
+    margin-top: 6mm;
+  }
+  .cover-kicker {
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    font-size: 8.5pt;
+    font-weight: 700;
+    color: var(--carrot);
+    margin: 0 0 3mm;
+  }
+  .cover h1 {
+    font-family: var(--serif);
+    font-size: 31pt;
+    line-height: 1.08;
+    margin: 0 0 4mm;
+    color: var(--ink);
+  }
+  .cover h1 span { color: var(--red); }
+  .cover-sub {
+    font-size: 11.2pt;
+    color: var(--muted);
+    max-width: 155mm;
+    margin: 0 0 7mm;
+    line-height: 1.45;
+  }
+  .cover-shot {
+    background: #1b1a18;
+    border: 1.4pt solid var(--border-strong);
+    border-radius: 8px;
+    padding: 5px;
+    box-shadow: 0 10px 24px -10px rgba(0,0,0,.35);
+  }
+  .cover-shot img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 5px;
+  }
+  .cover-toc {
+    margin-top: 7mm;
+    background: rgba(255,252,244,.86);
+    border: 1pt solid var(--border);
+    border-radius: 8px;
+    padding: 4.5mm 6mm;
+  }
+  .cover-toc h2 {
+    font-size: 9.5pt;
+    text-transform: uppercase;
+    letter-spacing: .09em;
+    color: var(--blue);
+    margin: 0 0 3mm;
+    border: none;
+    padding: 0;
+  }
+  .toc-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2.2mm 8mm;
+    font-size: 8.8pt;
+  }
+  .toc-item {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    border-bottom: 0.7pt dotted var(--border);
+    padding-bottom: 1.5mm;
+  }
+  .toc-num {
+    font-weight: 800;
+    color: var(--red);
+    min-width: 18px;
+  }
+  .toc-pg {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 8pt;
+    color: var(--muted);
+  }
+  .cover-foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 8.3pt;
+    color: var(--muted);
+    border-top: 1pt dashed rgba(58,56,53,.3);
+    padding-top: 3.5mm;
+  }
+
+  /* ===== CAPÍTULOS ===== */
+  .chapter {
+    page-break-before: always;
+    position: relative;
+  }
+  .chapter-first {
+    page-break-before: auto;
+  }
+  .ch-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    border-bottom: 1.5pt solid var(--border-strong);
+    padding-bottom: 2mm;
+    margin-bottom: 3.2mm;
+  }
+  .ch-num {
+    font-size: 8pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--carrot);
+    display: block;
+    margin-bottom: 0.6mm;
+  }
+  .ch-header h2 {
+    font-family: var(--serif);
+    font-size: 16.5pt;
+    margin: 0;
+    line-height: 1.12;
+    color: var(--ink);
+  }
+  .ch-tag {
+    font-family: var(--mono);
+    font-size: 7.5pt;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  h3 {
+    font-size: 10.3pt;
+    color: var(--blue);
+    margin: 3.2mm 0 1.4mm;
+    padding-bottom: 0.8mm;
+    border-bottom: 0.7pt dashed var(--border);
+  }
+  h4 {
+    font-size: 9pt;
+    color: var(--red);
+    margin: 1.8mm 0 0.8mm;
+  }
+  p { margin: 0 0 2mm; }
+  ul, ol { margin: 0 0 2.2mm; padding-left: 4.4mm; }
+  li { margin-bottom: 0.85mm; }
+
+  code {
+    font-family: var(--mono);
+    font-size: 7.7pt;
+    background: var(--code-bg);
+    padding: 0.4px 3.5px;
+    border-radius: 3px;
+    color: #26231f;
+  }
+  pre {
+    margin: 1.6mm 0 2.2mm;
+    padding: 2.2mm 3mm;
+    background: #23211e;
+    color: #f3ede0;
+    border-radius: 5px;
+    font-family: var(--mono);
+    font-size: 7.5pt;
+    line-height: 1.36;
+    white-space: pre-wrap;
+    break-inside: avoid;
+  }
+  pre code {
+    background: none;
+    color: inherit;
+    padding: 0;
+    font-size: inherit;
+  }
+
+  /* ===== COMPONENTES EDITORIALES ===== */
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 3.2mm;
+    margin: 2mm 0 2.6mm;
+  }
+  .grid-3 {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2.8mm;
+    margin: 2mm 0 2.6mm;
+  }
+  .card {
+    background: var(--surface);
+    border: 0.85pt solid var(--border);
+    border-radius: 5px;
+    padding: 2.4mm 3mm;
+    break-inside: avoid;
+  }
+  .card h4 { margin-top: 0; }
+  .card p:last-child, .card ul:last-child { margin-bottom: 0; }
+
+  .callout {
+    border-left: 2.8pt solid var(--carrot);
+    background: var(--surface-warm);
+    padding: 2.2mm 3.2mm;
+    border-radius: 0 5px 5px 0;
+    margin: 2.2mm 0 2.6mm;
+    break-inside: avoid;
+  }
+  .callout-blue {
+    border-left-color: var(--blue);
+    background: var(--surface-blue);
+  }
+  .callout strong.label {
+    display: inline-block;
+    font-size: 8pt;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--carrot);
+    margin-right: 4px;
+  }
+  .callout-blue strong.label { color: var(--blue); }
+
+  figure {
+    margin: 2.2mm 0 2.8mm;
+    text-align: center;
+    break-inside: avoid;
+  }
+  figure img {
+    display: block;
+    margin: 0 auto;
+    max-width: 100%;
+    max-height: 76mm;
+    width: auto;
+    height: auto;
+    border-radius: 5px;
+    border: 0.9pt solid var(--border-strong);
+  }
+  figcaption {
+    font-size: 7.6pt;
+    color: var(--muted);
+    margin-top: 1.2mm;
+    text-align: center;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.6mm 0 2.6mm;
+    font-size: 7.9pt;
+    break-inside: avoid;
+  }
+  th, td {
+    text-align: left;
+    padding: 1.25mm 2mm;
+    border-bottom: 0.55pt solid var(--border);
+    vertical-align: top;
+  }
+  th {
+    background: var(--surface);
+    color: var(--blue);
+    font-weight: 700;
+    border-bottom: 1.1pt solid var(--border-strong);
+    font-size: 7.5pt;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+  tr:nth-child(even) td { background: rgba(246,240,226,.35); }
+  .kbd {
+    font-family: var(--mono);
+    font-size: 7.2pt;
+    background: #fff;
+    border: 0.75pt solid #b8ae99;
+    border-bottom-width: 1.4pt;
+    border-radius: 3px;
+    padding: 0.3px 3.5px;
+    white-space: nowrap;
+    display: inline-block;
+  }
+
+  /* Diagrama SVG embebido */
+  .diagram {
+    background: var(--surface);
+    border: 0.85pt solid var(--border);
+    border-radius: 6px;
+    padding: 2.2mm;
+    margin: 2mm 0 2.6mm;
+    break-inside: avoid;
+  }
+  .diagram svg { display: block; width: 100%; height: auto; }
+
+  .page-foot {
+    margin-top: 3mm;
+    padding-top: 1.5mm;
+    border-top: 0.65pt dashed var(--border);
+    display: flex;
+    justify-content: space-between;
+    font-size: 7.4pt;
+    color: var(--muted);
+  }
+</style>
+</head>
+<body>
+
+<!-- ==================== PORTADA ==================== -->
+<section class="cover">
+  <div>
+    <div class="cover-top">
+      <div class="cover-brand">
+        <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true">
+          <path d="M14 5c.55 0 1 .45 1 1m-4-4c0-.55-.45-1-1-1m3 2 2-2M1 15l9.45-5.31A3.99 3.99 0 0 0 11.98 7.44c.12-.95-.19-1.9-.87-2.57A3.99 3.99 0 0 0 6.31 5.55L1 15Z" fill="#ff6b35aa" stroke="#e8641f" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <strong>Jap Studio</strong>
+        <span class="pill">Manual de Uso</span>
+      </div>
+      <div>
+        <span class="pill pill-blue">v0.9.0 · Linux &amp; Windows</span>
+      </div>
+    </div>
+
+    <div class="cover-hero">
+      <p class="cover-kicker">Guía oficial de producción musical</p>
+      <h1>Un DAW donde no tienes que <span>saltar de pantalla</span></h1>
+      <p class="cover-sub">
+        Guía completa para instalar, configurar, componer, diseñar sonidos con <b>MPE polifónico</b>,
+        producir baterías en <b>Pads MPC 4×4</b>, mezclar con <b>FX nativos y VST3</b>, colaborar por <b>P2P</b>
+        y conectar agentes de IA mediante <b>MCP</b>.
+      </p>
+    </div>
+
+    <div class="cover-shot">
+      <img src="../../landing/screenshots/overview-canvas.png" alt="Jap Studio — Vista general en un solo lienzo">
+    </div>
+
+    <div class="cover-toc">
+      <h2>Contenido del manual</h2>
+      <div class="toc-grid">
+        <div class="toc-item"><span class="toc-num">01</span><span>Instalación y primeros pasos</span><span class="toc-pg">p. 2</span></div>
+        <div class="toc-item"><span class="toc-num">02</span><span>Lienzo, transporte y comandos</span><span class="toc-pg">p. 3</span></div>
+        <div class="toc-item"><span class="toc-num">03</span><span>Arrangement, Warp y Freeze</span><span class="toc-pg">p. 4</span></div>
+        <div class="toc-item"><span class="toc-num">04</span><span>Piano Roll, MPE y Hay Chord</span><span class="toc-pg">p. 5</span></div>
+        <div class="toc-item"><span class="toc-num">05</span><span>Hay Synth, Sampler y Piano</span><span class="toc-pg">p. 6</span></div>
+        <div class="toc-item"><span class="toc-num">06</span><span>Drums PCM y Pads MPC 4×4</span><span class="toc-pg">p. 7</span></div>
+        <div class="toc-item"><span class="toc-num">07</span><span>FX, Sidechain, LFO, Tejer y Export</span><span class="toc-pg">p. 8</span></div>
+        <div class="toc-item"><span class="toc-num">08</span><span>Explorer acústico, P2P e IA (MCP)</span><span class="toc-pg">p. 9</span></div>
+        <div class="toc-item"><span class="toc-num">09</span><span>Atajos (Jap / Ableton / FL) y <code>:</code></span><span class="toc-pg">p. 10</span></div>
+        <div class="toc-item"><span class="toc-num">∞</span><span>Portal y actualizaciones</span><span class="toc-pg">jap.sevenpitch.dev</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cover-foot">
+    <span>Jap Studio (Hay / Elevate) · Rust + GPUI · Licencia GPL-3.0</span>
+    <span>https://jap.sevenpitch.dev · https://github.com/burdier/jap-studio</span>
+  </div>
+</section>
+
+<!-- ==================== CAPÍTULO 1 ==================== -->
+<section class="chapter chapter-first">
+  <div class="ch-header">
+    <div>
+      <span class="ch-num">Capítulo 01</span>
+      <h2>Instalación y primeros pasos</h2>
+    </div>
+    <span class="ch-tag">Linux Flatpak · Windows x64</span>
+  </div>
+
+  <p>
+    <b>Jap Studio</b> es una estación de trabajo de audio digital (DAW) nativa escrita en <b>Rust + GPUI</b>.
+    Su principio rector es trabajar en <b>un solo lienzo</b>: Arrangement, Piano Roll, Hay Synth, Sampler,
+    Drums/MPC, Track FX y Explorer viven acoplados en la misma ventana y comparten un único transporte con
+    motor de audio sin bloqueos.
+  </p>
+
+  <div class="grid-2">
+    <div class="card">
+      <h4>Linux (Flatpak único recomendado)</h4>
+      <p>Descarga <code>jap-studio-x86_64.flatpak</code> desde <code>jap.sevenpitch.dev</code>. Incluye el motor release, <code>libsfizz</code>, PipeWire/ALSA, P2P, MCP y bancos SoundFont listos:</p>
+      <pre><code>flatpak install --user jap-studio-x86_64.flatpak
+flatpak run dev.sevenpitch.jap</code></pre>
+      <p>También lee plugins instalados en <code>~/.vst3</code> y <code>~/.clap</code> (nativos o vía yabridge) y tus carpetas <code>~/Music</code> y <code>~/Documents</code>.</p>
+    </div>
+    <div class="card">
+      <h4>Windows x64 (paquete portable)</h4>
+      <p>Descarga <code>JapStudio-Windows-x64.zip</code> desde <code>jap.sevenpitch.dev</code>, descomprime en una carpeta y ejecuta:</p>
+      <pre><code>jap-studio.exe</code></pre>
+      <p>Incluye audio nativo <b>WASAPI</b>, exportación WAV con medición EBU R128, colaboración P2P y servidor MCP por TCP local (sin instalador ni dependencias externas).</p>
+    </div>
+  </div>
+
+  <h3>1.1 Configuración inicial (primer arranque)</h3>
+  <p>
+    La primera vez que abres Jap Studio aparece un asistente rápido donde puedes dejar el entorno a tu medida
+    en menos de diez segundos (todo se puede cambiar después en <b>Configuración</b> con <span class="kbd">Ctrl+,</span>):
+  </p>
+  <div class="grid-3">
+    <div class="card">
+      <h4>Idioma (5 disponibles)</h4>
+      <p><b>Español</b>, <b>English</b>, <b>Português</b>, <b>Français</b> y <b>日本語</b>. Cambio en vivo sin reiniciar, o con <code>:lang es|en|pt|fr|ja</code>.</p>
+    </div>
+    <div class="card">
+      <h4>Perfil de atajos</h4>
+      <p>Elige <b>Jap Studio</b>, <b>Ableton Live</b> o <b>FL Studio</b> según tu memoria muscular. Cambia al instante con <code>:keymap jap|ableton|fl</code>.</p>
+    </div>
+    <div class="card">
+      <h4>Tema y tamaño de fuente</h4>
+      <p>4 temas curados: <b>Cyberpunk Studio</b>, <b>Daylight Studio</b>, <b>Cuaderno Claro</b> y <b>Cuaderno Oscuro</b>, más tamaño global (<code>10–20 px</code>).</p>
+    </div>
+  </div>
+
+  <h3>1.2 Audio, MIDI y Rutas de librerías</h3>
+  <ul>
+    <li><b>Interfaz de audio:</b> abre <b>Configuración → Audio</b> (o escribe <code>:list device</code> y <code>:use device N</code>) para elegir tu salida y entrada PipeWire, ALSA o WASAPI y frecuencia de muestreo.</li>
+    <li><b>Controladores MIDI USB:</b> soporta conexión en caliente (<i>hot-plug</i>). Si conectas un teclado o pad después de abrir el DAW, usa <code>:midi-scan</code> o el botón de escaneo en <b>Configuración → MIDI</b>.</li>
+    <li><b>Rutas de contenido:</b> en <b>Configuración → Rutas</b> añade tus carpetas de <b>samples</b> (para el Explorer acústico), <b>SoundFonts (.sf2/.sfz)</b>, <b>presets de Vital/Serum (.vital/.fxp)</b>, <b>kits (.haykit)</b> y carpetas extra de <b>VST3</b>.</li>
+    <li><b>Apariencia:</b> en <b>Configuración → Apariencia</b> encontrarás 4 tarjetas limpias: <i>Tema</i> (con muestra de paleta), <i>Tamaño de texto</i> (<code>Compacto / Normal / Grande / Extra</code> + <code>A− / A+</code>), <i>Idioma</i> y <i>Legibilidad e interacción</i> (contraste de selección y efectos de cursor).</li>
+  </ul>
+
+  <div class="callout">
+    <strong class="label">Formato de proyecto (.loro):</strong>
+    Tus sesiones se guardan en un único archivo <code>.loro</code> (CRDT) con pistas, clips, curvas MPE, Drums,
+    cadena FX, automatización, LFOs y wavetables custom. Usa <span class="kbd">Ctrl+S</span> para guardar y
+    <span class="kbd">Ctrl+Shift+S</span> para guardar como copia.
+  </div>
+
+  <div class="page-foot"><span>Jap Studio v0.9.0 · Manual de Uso</span><span>Página 2</span></div>
+</section>
+
+<!-- ==================== CAPÍTULO 2 ==================== -->
+<section class="chapter">
+  <div class="ch-header">
+    <div>
+      <span class="ch-num">Capítulo 02</span>
+      <h2>Anatomía del lienzo, transporte y comandos</h2>
+    </div>
+    <span class="ch-tag">Un solo espacio de trabajo</span>
+  </div>
+
+  <p>
+    En lugar de abrir ventanas flotantes que tapan tu mezcla, Jap Studio organiza todo alrededor de una barra
+    superior de transporte, pestañas de vista principal y paneles acoplables que puedes maximizar en un toque
+    con <span class="kbd">F11</span> (y restaurar con <span class="kbd">Esc</span> o <span class="kbd">F11</span>).
+  </p>
+
+  <div class="diagram">
+    <svg viewBox="0 0 760 225" xmlns="http://www.w3.org/2000/svg">
+      <!-- Barra superior -->
+      <rect x="6" y="6" width="748" height="36" rx="6" fill="#252320"/>
+      <text x="18" y="28" fill="#ff8243" font-family="sans-serif" font-size="11" font-weight="700">Jap Studio</text>
+      <rect x="92" y="13" width="175" height="22" rx="4" fill="#36332e"/>
+      <text x="102" y="27" fill="#f3ede0" font-family="monospace" font-size="9.5">⏮ ▶ ■ ● | Mic | Mon | Loop</text>
+      <rect x="275" y="13" width="145" height="22" rx="4" fill="#36332e"/>
+      <text x="285" y="27" fill="#7ca7db" font-family="monospace" font-size="9.5">1:1.00 · 120 BPM · 4/4</text>
+      <rect x="428" y="13" width="110" height="22" rx="4" fill="#473424" stroke="#e8641f"/>
+      <text x="441" y="27" fill="#ffd4b8" font-family="monospace" font-size="9.2">TAP · +MIDI</text>
+      <rect x="546" y="13" width="200" height="22" rx="4" fill="#36332e"/>
+      <text x="556" y="27" fill="#e8e0d2" font-family="monospace" font-size="9.2">M-FX · LUFS · [+] · :Cmd</text>
+
+      <!-- Barra de pestañas -->
+      <rect x="6" y="48" width="748" height="24" rx="5" fill="#ebe4d5" stroke="#c8bda7"/>
+      <rect x="12" y="52" width="108" height="16" rx="3" fill="#b8321f"/>
+      <text x="20" y="63" fill="#fff" font-family="sans-serif" font-size="9" font-weight="700">Arrangement · F1</text>
+      <text x="130" y="63" fill="#3a3835" font-family="sans-serif" font-size="9" font-weight="600">Drums / MPC · F2</text>
+      <text x="235" y="63" fill="#3a3835" font-family="sans-serif" font-size="9" font-weight="600">Mixer · F3</text>
+      <text x="485" y="63" fill="#274973" font-family="sans-serif" font-size="9" font-weight="600">Explorer (Ctrl+E) · Track FX · Piano Roll (F4)</text>
+
+      <!-- Zona principal -->
+      <rect x="6" y="78" width="148" height="140" rx="6" fill="#eef3f9" stroke="#274973" stroke-dasharray="4 3"/>
+      <text x="16" y="96" fill="#274973" font-family="sans-serif" font-size="10" font-weight="700">Explorer acústico</text>
+      <text x="16" y="112" fill="#5c574f" font-family="sans-serif" font-size="8.5">• Carpetas de samples</text>
+      <text x="16" y="126" fill="#5c574f" font-family="sans-serif" font-size="8.5">• Preescucha al clic</text>
+      <text x="16" y="140" fill="#5c574f" font-family="sans-serif" font-size="8.5">• Ficha DSP 4 bandas</text>
+      <text x="16" y="154" fill="#5c574f" font-family="sans-serif" font-size="8.5">• Arrastrar a pista/pad</text>
+
+      <rect x="162" y="78" width="424" height="80" rx="6" fill="#fff" stroke="#3a3835"/>
+      <text x="174" y="96" fill="#b8321f" font-family="sans-serif" font-size="10.5" font-weight="700">Lienzo central (Arrangement / Drums / Mixer)</text>
+      <rect x="174" y="104" width="130" height="18" rx="3" fill="#ff6b3555" stroke="#e8641f"/>
+      <text x="182" y="116" fill="#2a2825" font-family="monospace" font-size="8.5">Clip MIDI · Hay Synth</text>
+      <rect x="314" y="104" width="150" height="18" rx="3" fill="#2f4f7a33" stroke="#274973"/>
+      <text x="322" y="116" fill="#2a2825" font-family="monospace" font-size="8.5">Clip WAV · Warp Complex</text>
+      <rect x="174" y="128" width="210" height="18" rx="3" fill="#f2c94c77" stroke="#9a5b1a"/>
+      <text x="182" y="140" fill="#2a2825" font-family="monospace" font-size="8.5">Hilo (Tejer) · Send → Return FX</text>
+
+      <rect x="162" y="164" width="424" height="54" rx="6" fill="#fdf2e6" stroke="#e8641f"/>
+      <text x="174" y="180" fill="#e8641f" font-family="sans-serif" font-size="9.8" font-weight="700">Dock inferior contextual (sin cambiar de ventana)</text>
+      <text x="174" y="195" fill="#5c574f" font-family="sans-serif" font-size="8.4">• Clic en clip MIDI: abre Piano Roll + MPE + Hay Chord</text>
+      <text x="174" y="209" fill="#5c574f" font-family="sans-serif" font-size="8.4">• Clic en WAV: Editor de Audio/Warp · Doble clic en cabecera: Instrumento</text>
+
+      <rect x="594" y="78" width="160" height="140" rx="6" fill="#f7f1e3" stroke="#b8321f" stroke-dasharray="4 3"/>
+      <text x="604" y="96" fill="#b8321f" font-family="sans-serif" font-size="10" font-weight="700">Track FX / M-FX</text>
+      <text x="604" y="112" fill="#5c574f" font-family="sans-serif" font-size="8.5">• Cadena serie / paralelo</text>
+      <text x="604" y="126" fill="#5c574f" font-family="sans-serif" font-size="8.5">• Hay EQ, Comp, Limiter</text>
+      <text x="604" y="140" fill="#5c574f" font-family="sans-serif" font-size="8.5">• Echo, Reverb, Spectrum</text>
+      <text x="604" y="154" fill="#5c574f" font-family="sans-serif" font-size="8.5">• Plugins VST3 + PDC</text>
+      <text x="604" y="168" fill="#5c574f" font-family="sans-serif" font-size="8.5">• LFO lock-free</text>
+    </svg>
+  </div>
+
+  <h3>2.1 Controles clave de la barra de transporte</h3>
+  <table>
+    <thead>
+      <tr><th style="width:24%">Control</th><th style="width:22%">Atajo / Comando</th><th>Qué hace</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><b>Play / Stop</b></td><td><span class="kbd">Espacio</span> · <span class="kbd">Mayús+Espacio</span></td><td>Inicia desde el cursor de edición y detiene dejando decaer colas de reverb/notas. <span class="kbd">Mayús+Espacio</span> retoma justo donde paraste.</td></tr>
+      <tr><td><b>Grabar MIDI / Audio</b></td><td><span class="kbd">R</span> · <span class="kbd">Alt+R</span> · <code>:rec.audio</code></td><td>Graba MIDI sobre la pista armada o audio desde tu micrófono/interfaz (alterna Mono/Estéreo con <code>:rec.stereo</code> y pre-cuenta con <code>:countin</code>).</td></tr>
+      <tr><td><b>Monitoreo (Mon)</b></td><td><span class="kbd">Alt+I</span> · <code>:mon</code></td><td>Escucha tu entrada en vivo a través de toda la cadena FX de la pista (<code>Off | IN | AUTO</code>) mostrando la <b>latencia real total en ms</b> (buffer + ring + PDC).</td></tr>
+      <tr><td><b>+MIDI (Recuperar)</b></td><td><code>:capture</code> · <b>Clic derecho</b></td><td>Captura retroactivamente las notas que improvisaste sin pulsar Rec y las inserta como clip. <b>Clic derecho</b> limpia el búfer MIDI al instante.</td></tr>
+      <tr><td><b>BPM y Tap Tempo</b></td><td><span class="kbd">Alt+T</span> · <code>:tap</code> · <code>:tempo</code></td><td>Cambia el BPM en tiempo real sin detener Play. Pulsa <b>TAP</b> al ritmo o escribe <code>:tempo 128</code>.</td></tr>
+      <tr><td><b>Loop y Metrónomo</b></td><td><span class="kbd">Ctrl+L</span> · <span class="kbd">Ctrl+K</span></td><td>Activa el bucle global (<code>:transport.loop inicio fin</code>) y el metrónomo con volumen ajustable (<code>:metro.vol 80</code>).</td></tr>
+      <tr><td><b>M-FX y LUFS</b></td><td><code>:mfx</code> · <code>:master.fx</code></td><td>Abre la cadena de efectos del Bus Master con medidor de sonoridad momentánea LUFS integrado.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>2.2 El buscador <code>[+]</code> y la línea de comandos <code>:</code></h3>
+  <p>
+    En Jap Studio toda operación es una acción unificada. Puedes usar el ratón, los atajos o escribir:
+  </p>
+  <ul>
+    <li><b>Buscador <code>[+]</code></b> (<span class="kbd">Ctrl+Shift+P</span> o <span class="kbd">Insert</span>): filtra instrumentos (categoría <b>Hey</b>: Hay Synth, Hay Piano, Hay Sampler, Drums/MPC y VST3), efectos nativos, herramientas Lua y comandos.</li>
+    <li><b>Línea de comandos <code>:</code></b> (<span class="kbd">Ctrl+P</span> o tecla <span class="kbd">:</span>): ejecuta acciones con autocompletado inmediato, por ejemplo <code>:sy</code> (nuevo Hay Synth), <code>:sa</code> (nuevo Hay Sampler), <code>:return</code> (bus FX), <code>:lfo.add pan 1/4 0.6 sine</code> o <code>:export -lufs -14</code>.</li>
+    <li><b>Teclado MIDI QWERTY:</b> pulsa la tecla <span class="kbd">M</span> (o escribe <code>:kbd</code>) para tocar notas desde tu teclado de ordenador cuando no tengas un controlador físico conectado.</li>
+  </ul>
+
+  <div class="page-foot"><span>Jap Studio v0.9.0 · Manual de Uso</span><span>Página 3</span></div>
+</section>
+
+<!-- ==================== CAPÍTULO 3 ==================== -->
+<section class="chapter">
+  <div class="ch-header">
+    <div>
+      <span class="ch-num">Capítulo 03</span>
+      <h2>Arrangement, audio, Warp y Freeze</h2>
+    </div>
+    <span class="ch-tag">F1 · Línea de tiempo multipista</span>
+  </div>
+
+  <p>
+    El <b>Arrangement</b> reúne pistas de audio, pistas MIDI/instrumento, grupos (<b>Hilos</b>) y buses
+    <b>Send / Return</b> en una mezcla multipista real con compensación automática de latencia (<b>PDC</b>).
+    Arrastra cualquier archivo WAV, FLAC, OGG, MP3 o MIDI desde tu sistema o desde el Explorer directamente al lienzo.
+  </p>
+
+  <figure>
+    <img src="../../landing/screenshots/daw-cuaderno-oscuro.png" alt="Arrangement multipista, cadena FX y Spectrum en Cuaderno Oscuro">
+    <figcaption>Arrangement multipista, rack de FX nativos y analizador Spectrum en el tema Cuaderno Oscuro.</figcaption>
+  </figure>
+
+  <div class="grid-2">
+    <div class="card">
+      <h4>Gestión de pistas y clips</h4>
+      <ul>
+        <li><b>Nueva pista:</b> <span class="kbd">Ctrl+T</span> (Audio), <span class="kbd">Ctrl+Shift+T</span> (MIDI), <span class="kbd">Ctrl+Alt+T</span> (Bus Return).</li>
+        <li><b>Agrupar en Hilo:</b> selecciona varias pistas y pulsa <span class="kbd">Ctrl+G</span>. El grupo suma su audio, admite FX propios y modo Tejer.</li>
+        <li><b>Editar clips:</b> dividir en cursor (<span class="kbd">Ctrl+Shift+X</span> o <span class="kbd">Ctrl+E</span> en Ableton), duplicar (<span class="kbd">Ctrl+D</span>), consolidar (<span class="kbd">Ctrl+J</span>), bounce MIDI a WAV (<span class="kbd">Ctrl+B</span>).</li>
+        <li><b>Abrir instrumento:</b> haz <b>doble clic</b> sobre el espacio vacío de la cabecera de una pista.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>Edición avanzada sobre ondas WAV</h4>
+      <ul>
+        <li><b>Ganancia en vivo:</b> mantén <span class="kbd">Ctrl+Mayús</span> y arrastra verticalmente sobre una onda durante Play.</li>
+        <li><b>Afinación instantánea:</b> pasa el puntero sobre cualquier onda para ver su nota fundamental estimada en Hz y desviación en cents.</li>
+        <li><b>Filas Z y Crossfades:</b> los clips solapados se apilan en filas <b>Z</b> plegables. Selecciona dos clips con <span class="kbd">Ctrl+clic</span> y pulsa <b>Crear cruce</b>; el deslizador mueve el centro del crossfade en vivo.</li>
+        <li><b>Editor de clip WAV:</b> un clic en el clip abre su editor con EQ de campana, recorte, afinación y Warp.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>3.1 Warp por clip (estilo Ableton) y Audio → MIDI</h3>
+  <p>
+    Cada clip de audio incluye estiramiento temporal no destructivo en su panel <b>Warp / Tono</b>, compartido
+    entre Play, preescucha y Exportación:
+  </p>
+  <ul>
+    <li><b>Modos Warp:</b> <code>Off</code> (sin estiramiento), <code>Re-Pitch</code> (cambia tono y velocidad juntos como vinilo), <code>Beats</code> (conserva transientes rítmicos) y <code>Complex</code> (polifónico para acordes, voces y mezclas).</li>
+    <li><b>BPM automático:</b> pulsa <b>Auto</b> para estimar el tempo original del loop y usa los accesos rápidos <code>=DAW</code>, <code>:2</code>, <code>1×</code> y <code>×2</code>. Si cambias el BPM del proyecto, los clips con Warp se adaptan automáticamente.</li>
+    <li><b>Audio → MIDI polifónico:</b> selecciona un clip de audio y ejecuta <code>:audio.to_midi</code> (o desde el menú contextual del clip) para transcribir melodías y acordes a un clip MIDI editable usando Basic Pitch offline.</li>
+  </ul>
+
+  <h3>3.2 Freeze / Unfreeze y Buses Send / Return</h3>
+  <ul>
+    <li><b>Freeze (<span class="kbd">Alt+F</span> o <code>:freeze</code>):</b> renderiza la pista (pre-fader / post-FX) a WAV 32-bit float en segundo plano. Libera la CPU de sintetizadores pesados y VST3 manteniendo vivos volumen, pan, mute, solo, automatización y envíos Return. La insignia <code>❄</code> permite descongelar al instante (<code>:unfreeze</code>).</li>
+    <li><b>Send / Return:</b> añade un Return con <span class="kbd">Ctrl+Alt+T</span> (<code>:return</code>), coloca en él una reverb o delay al 100% Wet y sube el envío post-fader (<code>0–100%</code>) desde cada pista o desde el Mixer (<span class="kbd">F3</span>). Los buses Return son <i>Solo Safe</i>.</li>
+  </ul>
+
+  <div class="page-foot"><span>Jap Studio v0.9.0 · Manual de Uso</span><span>Página 4</span></div>
+</section>
+
+<!-- ==================== CAPÍTULO 4 ==================== -->
+<section class="chapter">
+  <div class="ch-header">
+    <div>
+      <span class="ch-num">Capítulo 04</span>
+      <h2>Piano Roll, MPE polifónico y Hay Chord</h2>
+    </div>
+    <span class="ch-tag">F4 · Notas, expresión y progresiones</span>
+  </div>
+
+  <p>
+    Haz clic en cualquier clip MIDI del Arrangement (o pulsa <span class="kbd">F4</span>) para abrir el
+    <b>Piano Roll</b> acoplado debajo de la línea de tiempo. Incluye encuadre automático inteligente al abrir,
+    cuantización, escalas, afinación por clip (<code>±24 semitonos</code> y <code>±100 cents</code>),
+    <b>MPE polifónico</b> completo y el generador interactivo <b>Hay Chord</b>.
+  </p>
+
+  <h3>4.1 Expresión MPE polifónica (nuevo en v0.9.0)</h3>
+  <p>
+    <b>MPE</b> (<i>MIDI Polyphonic Expression</i>) permite que <b>cada nota individual</b> dentro de un mismo acorde
+    tenga su propia curva de tono, timbre y presión independientes, en lugar de afectar a todo el acorde a la vez.
+    Funciona de forma nativa en <b>Hay Synth</b> y se reenvía por canal independiente a plugins <b>VST3 compatibles</b>.
+  </p>
+
+  <div class="grid-2">
+    <div class="card">
+      <h4>Cómo activar y editar MPE</h4>
+      <ol>
+        <li>Pulsa el botón <b><code>〜 MPE</code></b> en la barra del Piano Roll (o abre la pestaña <b>MPE</b> del inspector lateral).</li>
+        <li>Selecciona una o varias notas y elige una curva rápida de un clic o dibuja/arrastra puntos directamente sobre la nota.</li>
+        <li>Usa los carriles inferiores para moldear <b>Slide Y</b> (brillo/filtro, CC74), <b>Pressure Z</b> (aftertouch/intensidad), <b>Velocity</b>, <b>Release Vel</b>, <b>Probabilidad</b> y <b>Note Pan</b>.</li>
+      </ol>
+    </div>
+    <div class="card">
+      <h4>Las 3 dimensiones MPE en Hay Synth</h4>
+      <ul>
+        <li><b>Pitch X (<code>±48 st</code>):</b> curva de tono por nota con rampa precisa muestra a muestra.</li>
+        <li><b>Slide Y (CC74):</b> movimiento vertical que abre/cierra filtro o timbres (valor neutro 64).</li>
+        <li><b>Pressure Z (Aftertouch):</b> presión sostenida que empuja intensidad, vibrato o modulación.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>4.2 Guía rápida de las curvas de Pitch MPE en un clic</h3>
+  <p>En la pestaña <b>MPE</b> del Piano Roll tienes generadores instantáneos para dar vida humana a leads, bajos 808 y cuerdas:</p>
+  <table>
+    <thead>
+      <tr><th style="width:22%">Botón</th><th style="width:26%">Movimiento musical</th><th>Cuándo usarlo</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>↗ +2 st</code> / <code>↘ −2 st</code></td><td>Deslizamiento de 1 tono arriba o abajo</td><td>Bends suaves tipo guitarra, voz o sinte expresivo.</td></tr>
+      <tr><td><code>↗ +12 st</code> / <code>↘ −12 st</code></td><td>Barrido de 1 octava completa</td><td>Slides de 808, subidas de energía o caídas de bajo.</td></tr>
+      <tr><td><code>⤴ Scoop</code></td><td>Empieza un poco grave y sube a la nota real</td><td>Ataque expresivo tipo saxofón, trompeta o voz R&amp;B.</td></tr>
+      <tr><td><code>⤵ Fall</code></td><td>Sostiene la nota y cae al final</td><td>Remate natural de metales, leads o notas largas antes de un silencio.</td></tr>
+      <tr><td><code>〜 Vib ±30c</code> / <code>±75c</code></td><td>Vibrato sutil o marcado alrededor de la nota</td><td>Dar calor orgánico a cuerdas, pads y leads (cents = centésimas de semitono).</td></tr>
+      <tr><td><code>⇝ Legato Slide</code></td><td>Conecta el final de una nota con la altura de la siguiente</td><td>Líneas de bajo 808 o leads deslizantes sin cortes bruscos entre notas.</td></tr>
+      <tr><td><code>Quantize st</code> / <code>Invert</code> / <code>Reset</code></td><td>Ajusta puntos a semitonos exactos, invierte o limpia</td><td>Corregir bends afinados, crear espejos melódicos o volver a tono recto.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>4.3 Hay Chord: progresiones rápidas por pads</h3>
+  <p>
+    La pestaña <b>Acordes (Hay Chord)</b> dentro del Piano Roll ofrece cuatro cuadros interactivos lado a lado
+    para construir y probar progresiones antes de volcarlas al clip:
+  </p>
+  <ul>
+    <li>Configura cada cuadro de forma independiente: <b>fundamental, color/calidad, voicing, bajo e inversión (▲/▼)</b>.</li>
+    <li>Mantén pulsado un cuadro para escucharlo en vivo con el instrumento de la pista.</li>
+    <li>Elige la distancia entre acordes (<i>Compás / Tiempo</i>) y pulsa <b>Insertar</b> para escribir toda la progresión desde el cursor del clip (o recupera lo que hayas tocado en vivo con <b>+MIDI</b>).</li>
+  </ul>
+
+  <div class="callout callout-blue">
+    <strong class="label">Herramientas MIDI en Lua:</strong>
+    Desde el Piano Roll o <code>[+]</code> puedes aplicar scripts recargables sin salir del editor:
+    <i>Subdividir</i>, <i>Acentuar (Hay Acent)</i>, <i>Fundamentales a acordes</i>, <code>:midi.swing</code>,
+    <code>:midi.gate</code> y <code>:midi.scale.clamp</code>.
+  </div>
+
+  <div class="page-foot"><span>Jap Studio v0.9.0 · Manual de Uso</span><span>Página 5</span></div>
+</section>
+
+<!-- ==================== CAPÍTULO 5 ==================== -->
+<section class="chapter">
+  <div class="ch-header">
+    <div>
+      <span class="ch-num">Capítulo 05</span>
+      <h2>Instrumentos nativos y plugins VST3</h2>
+    </div>
+    <span class="ch-tag">Hay Synth · Hay Sampler · Hay Piano · VST3</span>
+  </div>
+
+  <p>
+    Todos los instrumentos nativos viven en la categoría <b>Hey</b> del buscador <code>[+]</code> (<span class="kbd">Ctrl+Shift+P</span>)
+    y también pueden insertarse en un segundo desde la línea de comandos. Haz doble clic en la cabecera de la pista
+    para abrir o acoplar su panel, o escribe <code>:detach</code> / <code>:dock</code> para separarlo a una ventana propia.
+  </p>
+
+  <h3>5.1 Hay Synth (Voice Lab) — Wavetable Hi-Fi + MPE + .vital / .fxp</h3>
+  <div class="grid-2">
+    <div class="card">
+      <h4>Arquitectura y diseño sonoro</h4>
+      <ul>
+        <li><b>Cómo insertarlo:</b> categoría <b>Hey → Hay Synth</b> en <code>[+]</code> o comando <code>:sy</code>.</li>
+        <li><b>Motor Hi-Fi band-limited:</b> cero aliasing en tiempo real, legato real, micro-fade anti-click y visor vivo de osciloscopio, transiente y envolvente ADSR.</li>
+        <li><b>MPE polifónico por voz:</b> responde automáticamente a las curvas de pitch (<code>±48 st</code>), <b>Slide Y</b> y <b>Pressure Z</b> del Piano Roll y controladores MPE en vivo.</li>
+        <li><b>Macros musicales:</b> <b>Espacio</b>, <b>Cuerpo</b> e <b>Intención</b> más una <b>Mod Matrix de 12 slots</b>.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>Importador real de Vital y Serum</h4>
+      <ul>
+        <li>Carga presets individuales <code>.vital</code>, bancos completos <code>.vitalbank</code> y presets <code>.fxp</code> (Serum) conservando sus <b>wavetables reales</b>.</li>
+        <li>Añade tus carpetas de presets en <b>Configuración → Rutas</b> para navegarlas por origen dentro del propio sinte.</li>
+        <li>Las wavetables importadas se guardan dentro del proyecto <code>.loro</code> y se transfieren automáticamente por P2P si colaboras con otra persona.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>5.2 Hay Sampler y ✂ MPC Chop</h3>
+  <p>
+    Insértalo desde <code>[+]</code> o con <code>:sa</code>. Arrastra cualquier archivo de audio sobre su ventana y ya puedes tocarlo cromáticamente o como percusión:
+  </p>
+  <ul>
+    <li><b>Modos de disparo:</b> <b>Classic</b> (sustain mientras mantienes la nota), <b>Loop</b> (bucle continuo con puntos arrastrables) y <b>1-Shot</b> (reproduce el sample completo, ideal para baterías y 808s).</li>
+    <li><b>Modelado de señal:</b> filtro multimodo <b>LP / HP / BP</b> con curva interactiva, envolventes <b>AHD / ADSR</b> y detección automática de la nota raíz del sample.</li>
+    <li><b>Pestaña ✂ MPC Chop:</b> detecta transientes automáticamente o divide un loop en <b>4, 8 o 16 cortes</b> y los envía directos a los pads MPC con grupos de corte (<b>Choke</b>) listos para disparar.</li>
+    <li>Puedes usar múltiples instancias independientes de Hay Sampler a la vez en el Arrangement.</li>
+  </ul>
+
+  <h3>5.3 Hay Piano (SoundFonts SF2 / SFZ) y Plugins VST3</h3>
+  <div class="grid-2">
+    <div class="card">
+      <h4>Hay Piano y bancos SoundFont</h4>
+      <p>Insértalo desde <code>[+]</code> o con <code>:piano</code>. Viene listo con <i>Upright Piano KW</i> (CC0) y soporte para bancos <code>.sf2</code> y <code>.sfz</code> (vía <code>libsfizz</code> en Linux). Cada pista conserva su propia instancia e ID, compatible con Hilos y exportación de stems.</p>
+    </div>
+    <div class="card">
+      <h4>Hosting VST3 (Linux y Windows)</h4>
+      <p>Escanea tus plugins en <b>Configuración → Rutas</b> y cárgalos desde <code>[+]</code>. Abre su editor gráfico nativo (incluso editores X11 bajo Wayland), soporta <b>MIDI Learn</b> por último parámetro tocado (<code>:learn.vst</code>), automatización (<code>:auto.vst</code>), <b>PDC</b> y persistencia del estado en <code>.loro</code>.</p>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong class="label">Entrada MIDI multipista:</strong>
+    Pulsa el botón <b>MIDI</b> en la cabecera de una o varias pistas para armarlas y tocarlas en capas a la vez.
+    Si ninguna pista está armada, tu teclado/MIDI sigue automáticamente a la pista seleccionada (incluso mientras
+    reproduces el Arrangement).
+  </div>
+
+  <div class="page-foot"><span>Jap Studio v0.9.0 · Manual de Uso</span><span>Página 6</span></div>
+</section>
+
+<!-- ==================== CAPÍTULO 6 ==================== -->
+<section class="chapter">
+  <div class="ch-header">
+    <div>
+      <span class="ch-num">Capítulo 06</span>
+      <h2>Drums PCM y Pads MPC 4×4</h2>
+    </div>
+    <span class="ch-tag">F2 · Secuenciador de pasos + Pads</span>
+  </div>
+
+  <p>
+    Pulsa <span class="kbd">F2</span> para abrir la vista <b>Drums</b>, impulsada por un <b>motor PCM nativo
+    sin clics</b> (reproducción bit-exacta, micro-fade anti-click en grupos Choke y filtro TPT SVF). Ofrece dos
+    modos hermanos sobre el mismo kit: <b>Pasos</b> (secuenciador por compases) y <b>Pads MPC 4×4</b>.
+  </p>
+
+  <figure>
+    <img src="../../landing/screenshots/mpc-pads-drums.png" alt="Pads MPC 4x4 y secuenciador de batería PCM en Jap Studio">
+    <figcaption>Vista Drums con Pads MPC 4×4, bancos A–D, 16 Levels, Note Repeat RT y secuenciador con timing offset visual.</figcaption>
+  </figure>
+
+  <div class="grid-2">
+    <div class="card">
+      <h4>Pads MPC 4×4 (tocar y grabar beats)</h4>
+      <ul>
+        <li><b>4 bancos (A–D):</b> 64 pads totales. Arrastra cualquier WAV desde el Explorer o envía cortes desde <b>Hay Sampler → MPC Chop</b>.</li>
+        <li><b>Teclado QWERTY 4×4:</b> filas <code>ZXCV</code>, <code>ASDF</code>, <code>QWER</code> y <code>1234</code>, más entrada MIDI estándar (notas 36–51).</li>
+        <li><b>Full Level:</b> dispara todos los golpes a velocity 127 fija para pegada uniforme.</li>
+        <li><b>16 Levels (Vel / Pitch):</b> reparte el pad activo en los 16 pads con 16 intensidades o 16 alturas cromáticas (perfecto para redobles de hi-hat y líneas 808).</li>
+        <li><b>Note Repeat RT:</b> repetición sincronizada al frame en el motor de audio (<code>1/8</code>, <code>1/16</code>, <code>1/32</code>, <code>1/16T</code>).</li>
+        <li><b>Overdub:</b> graba capas encima del patrón en bucle sin borrar los golpes previos.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>Secuenciador de pasos y kits <code>.haykit</code></h4>
+      <ul>
+        <li><b>Gestos rápidos con rueda sobre cualquier paso:</b>
+          <ul>
+            <li><b>Rueda sola:</b> ajusta <i>Velocity</i> (intensidad).</li>
+            <li><b>Shift + Rueda:</b> ajusta <i>Probabilidad</i> (<code>5–100%</code>, evaluada por vuelta en RT).</li>
+            <li><b>Alt + Rueda:</b> ajusta <i>Pitch</i> por paso (<code>±24 semitonos</code>).</li>
+          </ul>
+        </li>
+        <li><b>Swing y micro-timing visual:</b> ajusta el swing del patrón (<code>0–75%</code> o <code>:drum.swing 35</code>); cada paso oscurece su borde izquierdo proporcionalmente a su micro-desfase.</li>
+        <li><b>Matriz Canción:</b> encadena patrones A, B, C… en una cuadrícula estilo Hydrogen sin scroll horizontal.</li>
+        <li><b>Guardar / cargar kits:</b> usa <code>:kit.save</code> y <code>:kit.load</code> (<code>.haykit</code>), o importa kits/canciones de Hydrogen con <code>:hydrogen.import</code>.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout callout-blue">
+    <strong class="label">Truco de producción:</strong>
+    Puedes usar el bus de <b>Drums</b> directamente como fuente de <b>Sidechain</b> en <b>Hay Comp</b> (o en
+    cualquier compresor VST3 con entrada auxiliar) para hacer bombear bajos y pads al pulso del bombo con latencia cero.
+  </div>
+
+  <div class="page-foot"><span>Jap Studio v0.9.0 · Manual de Uso</span><span>Página 7</span></div>
+</section>
+
+<!-- ==================== CAPÍTULO 7 ==================== -->
+<section class="chapter">
+  <div class="ch-header">
+    <div>
+      <span class="ch-num">Capítulo 07</span>
+      <h2>FX nativos, Sidechain, LFO, Tejer y Export Pro</h2>
+    </div>
+    <span class="ch-tag">Mezcla, modulación y masterización</span>
+  </div>
+
+  <p>
+    Pulsa <span class="kbd">Ctrl+Shift+F</span> para abrir la cadena <b>Track FX</b> de la pista, grupo o Return
+    seleccionado (o <code>:mfx</code> para el Bus Master). Puedes encadenar efectos nativos y VST3 en serie o
+    en ramas paralelas con compensación automática de latencia (<b>PDC</b>).
+  </p>
+
+  <h3>7.1 Catálogo de FX nativos incluidos</h3>
+  <table>
+    <thead>
+      <tr><th style="width:19%">Efecto</th><th>Capacidades principales</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><b>Hay Comp</b></td><td>Modos <code>Peak / RMS</code>, Umbral, Ratio, Ataque, Release, Soft Knee, Dry/Wet, curva interactiva, medidor GR y <b>Sidechain real</b> (<code>Audio From: Off | Drums | Pista …</code>) con filtro pasa-altos.</td></tr>
+      <tr><td><b>Hay Limiter</b></td><td>Ganancia de entrada, <b>Ceiling</b>, Release, lookahead seleccionable (<code>1.5 / 3.0 / 6.0 ms</code>) y medidor GR en vivo.</td></tr>
+      <tr><td><b>Hay Echo</b></td><td>Delay <code>Stereo | Ping Pong | Mid/Side</code>, modo <b>Time | Sync</b> al BPM (<code>1/16..1/1</code> con puntillo/tresillo por canal L/R), filtros HP/LP, <b>Drive</b> de cinta y <b>Wobble</b>.</td></tr>
+      <tr><td><b>Hay Reverb</b></td><td>FDN Hadamard de 8 canales, modo <b>Time | Sync</b> (Pre-Delay y Decay al BPM), Tamaño, Difusión, Low/High Cut, Damping y botón <b>Freeze</b> infinito.</td></tr>
+      <tr><td><b>Hay Filter / Utility</b></td><td>Filtro SVF FunDSP <code>LP / HP / BP</code> con curva de respuesta en vivo, más utilidad de ganancia, fase y panorama (<code>:utility</code>).</td></tr>
+      <tr><td><b>Tejer EQ</b></td><td>Divide el bus de una pista en bandas multibanda (<b>+ Banda</b>); cada banda crea una fila Z con sus propios efectos independientes.</td></tr>
+      <tr><td><b>Spectrum</b></td><td>Analizador de señal colocable en cualquier punto de la cadena (ej. <code>Spectrum → VST3 → Spectrum</code>): espectro, onda, espectrograma log/lineal y nivel estéreo con <code>&lt; &gt;</code>.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>7.2 Modulación LFO lock-free y MIDI Learn</h3>
+  <div class="grid-2">
+    <div class="card">
+      <h4>LFO en tiempo real (v0.9.0)</h4>
+      <p>Crea moduladores deterministas sin bloqueos hacia Volumen, Pan, envíos Return, parámetros FX o VST3. Soporta 6 formas (<code>sine</code>, <code>tri</code>, <code>saw</code>, <code>saw_down</code>, <code>square</code>, <code>sh</code>), velocidad en Hz o Sync (<code>4bars..1/32</code>) y polaridad <code>bipolar</code>/<code>unipolar</code>:</p>
+      <pre><code>:lfo.add pan 1/4 0.6 sine
+:lfo.rate 1/8
+:lfo.shape tri
+:lfo.list</code></pre>
+    </div>
+    <div class="card">
+      <h4>Automatización y MIDI Learn</h4>
+      <ul>
+        <li><b>Automatización (<span class="kbd">Ctrl+Shift+A</span>):</b> edita curvas de Volumen, Pan, envíos o parámetros FX/VST3 (<code>:auto.vst</code> automatiza el último control tocado).</li>
+        <li><b>MIDI Learn (<code>:learn</code> / <code>:learn.vst</code>):</b> mueve una perilla física para enlazarla a cualquier control.</li>
+        <li><b>Gestor (<code>:midi.map</code>):</b> abre <b>Configuración → MIDI Learn</b> para ajustar rangos <code>min/max</code>, invertirlos o desvincularlos.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>7.3 Tejer (Hilos) y Exportación Pro EBU R128</h3>
+  <ul>
+    <li><b>Tejer pistas (<span class="kbd">Ctrl+G</span> o <code>:tejer.selection</code>):</b> agrupa entre 2 y 16 instrumentos en un <b>Hilo</b> y elige en su menú <b>Capas</b> (<code>:hilo.layer</code>) o <b>Round Robin</b> (<code>:hilo.rr</code>) con secuencia editable o regla Lua opcional. Cada <i>NoteOff</i> regresa siempre a la rama correcta.</li>
+    <li><b>Exportar audio (<span class="kbd">Ctrl+Shift+R</span> o <code>:export</code>):</b> exporta máster o stems alineados con medición <b>EBU R128</b> (<code>LUFS-I</code>, <code>dBTP</code>, <code>LRA</code>), normalización en 2 pasadas (<code>:export -lufs -14</code>) y limitador True Peak 4× (<code>-tp -1</code>). Para MIDI usa <span class="kbd">Ctrl+Shift+E</span> (<code>:export.midi</code>).</li>
+  </ul>
+
+  <div class="page-foot"><span>Jap Studio v0.9.0 · Manual de Uso</span><span>Página 8</span></div>
+</section>
+
+<!-- ==================== CAPÍTULO 8 ==================== -->
+<section class="chapter">
+  <div class="ch-header">
+    <div>
+      <span class="ch-num">Capítulo 08</span>
+      <h2>Explorer acústico, colaboración P2P e IA (MCP)</h2>
+    </div>
+    <span class="ch-tag">DSP offline · Loro + Iroh · 22 herramientas IA</span>
+  </div>
+
+  <h3>8.1 Explorer acústico (ojos para tus samples)</h3>
+  <p>
+    Pulsa <span class="kbd">Ctrl+E</span> para abrir el <b>Explorer</b>. Además de navegar y preescuchar tus
+    carpetas de samples, ejecuta un <b>analizador DSP offline</b> (0% impacto en el motor RT, con caché por archivo)
+    que describe musicalmente cada muestra antes de arrastrarla al proyecto:
+  </p>
+  <div class="grid-3">
+    <div class="card">
+      <h4>Transiente y envolvente</h4>
+      <p>Clasifica si el golpe es <b>suave/débil</b> o <b>punchy</b>, midiendo tiempo de ataque y decay en milisegundos.</p>
+    </div>
+    <div class="card">
+      <h4>4 bandas de energía</h4>
+      <p>Barras visuales para <b>Sub</b>, <b>Graves (Grv)</b>, <b>Medios (Med)</b> y <b>Agudos (Agd)</b> + brillo espectral.</p>
+    </div>
+    <div class="card">
+      <h4>Tono fundamental</h4>
+      <p>Detecta automáticamente la nota musical (ej. <code>808.wav · C1</code>) para afinar bajos y melodías al instante.</p>
+    </div>
+  </div>
+
+  <h3>8.2 Colaboración P2P en vivo (sin cuentas ni servidores)</h3>
+  <p>
+    La colaboración en tiempo real está activada de serie usando <b>Loro CRDT + Iroh QUIC</b>. Dos o más
+    personas pueden editar la misma canción en vivo sin subir archivos a la nube:
+  </p>
+  <div class="grid-2">
+    <div class="card">
+      <h4>1 · Crear sesión (anfitrión)</h4>
+      <ol>
+        <li>Abre <b>Archivo → Compartir sesión</b>.</li>
+        <li>Jap Studio copia automáticamente tu token <code>hay-live:...</code> al portapapeles.</li>
+        <li>Envía ese token a tu colega por cualquier chat.</li>
+      </ol>
+    </div>
+    <div class="card">
+      <h4>2 · Unirse en vivo (invitado)</h4>
+      <ol>
+        <li>Abre <b>Archivo → Unirse a sesión</b> y pega el token <code>hay-live:...</code>.</li>
+        <li>Se sincronizan pistas, MIDI, curvas MPE, Drums, FX y automatización al instante.</li>
+        <li>Los WAVs y wavetables custom se transfieren solos por P2P; si falta un VST3, se aplica bypass elegante sin romper el proyecto.</li>
+      </ol>
+    </div>
+  </div>
+
+  <h3>8.3 Integración nativa con agentes de IA (Servidor MCP)</h3>
+  <p>
+    Jap Studio incluye un <b>servidor MCP integrado</b> con <b>22 herramientas</b> que se comunica en vivo con la
+    instancia abierta del DAW (socket Unix en Linux, TCP local en Windows, 0% CPU en reposo). Permite a clientes
+    como <b>Gemini CLI</b> o <b>Claude</b> navegar tu librería real, analizar acústicamente tus samples, cargar
+    instrumentos y FX, escribir clips MIDI y patrones de Drums, ajustar perillas y exportar audio.
+  </p>
+
+  <pre><code>{
+  "mcpServers": {
+    "jap-studio": {
+      "command": "flatpak",
+      "args": ["run", "dev.sevenpitch.jap", "--mcp"]
+    }
+  }
+}</code></pre>
+  <p style="font-size:8.4pt;color:var(--muted);margin-top:-1.5mm">
+    En Windows, sustituye <code>command</code> por la ruta a <code>jap-studio.exe</code> y <code>args</code> por <code>["--mcp"]</code>.
+  </p>
+
+  <table>
+    <thead>
+      <tr><th style="width:28%">Grupo de herramientas MCP</th><th>Ejemplos disponibles en vivo</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><b>Lectura y librería</b></td><td><code>get_project_state</code>, <code>browse_explorer</code>, <code>list_samples</code>, <code>analyze_sample</code></td></tr>
+      <tr><td><b>Pistas, mezcla y FX</b></td><td><code>add_track</code>, <code>set_track_mix</code>, <code>add_fx</code>, <code>set_fx_param</code>, <code>delete_track</code></td></tr>
+      <tr><td><b>Composición y Drums</b></td><td><code>write_midi_clip</code>, <code>write_drum_pattern</code>, <code>place_drum_pattern</code>, <code>add_drum_piece</code>, <code>load_drum_kit</code>, <code>trigger_mpc_pad</code></td></tr>
+      <tr><td><b>Sampler, audio y control</b></td><td><code>load_sampler_sample</code>, <code>insert_audio_clip</code>, <code>set_transport</code>, <code>set_view</code>, <code>run_command</code>, <code>export_audio</code></td></tr>
+    </tbody>
+  </table>
+
+  <div class="page-foot"><span>Jap Studio v0.9.0 · Manual de Uso</span><span>Página 9</span></div>
+</section>
+
+<!-- ==================== CAPÍTULO 9 ==================== -->
+<section class="chapter">
+  <div class="ch-header">
+    <div>
+      <span class="ch-num">Capítulo 09</span>
+      <h2>Referencia rápida: atajos y comandos <code>:</code></h2>
+    </div>
+    <span class="ch-tag">Jap Studio · Ableton Live · FL Studio</span>
+  </div>
+
+  <p>
+    Cambia de perfil en cualquier momento desde <b>Configuración → Atajos</b> o escribiendo
+    <code>:keymap jap</code>, <code>:keymap ableton</code> o <code>:keymap fl</code>. Pulsa <span class="kbd">Ctrl+/</span>
+    o <span class="kbd">?</span> dentro del DAW para abrir la chuleta interactiva.
+  </p>
+
+  <h3>9.1 Tabla comparativa de los 3 perfiles de atajos</h3>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:28%">Acción</th>
+        <th style="width:24%">Jap Studio (base)</th>
+        <th style="width:24%">Ableton Live</th>
+        <th style="width:24%">FL Studio</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>Paleta de comandos <code>:</code></td><td><span class="kbd">Ctrl+P</span> / <span class="kbd">:</span></td><td><span class="kbd">Ctrl+P</span> / <span class="kbd">:</span></td><td><span class="kbd">Ctrl+P</span> / <span class="kbd">:</span></td></tr>
+      <tr><td>Buscador de dispositivos <code>[+]</code></td><td><span class="kbd">Ctrl+Shift+P</span> / <span class="kbd">Ins</span></td><td><span class="kbd">Ctrl+F</span> / <span class="kbd">Ins</span></td><td><span class="kbd">F8</span> / <span class="kbd">Ins</span></td></tr>
+      <tr><td>Vista Arrangement</td><td><span class="kbd">F1</span></td><td><span class="kbd">Tab</span> / <span class="kbd">F1</span></td><td><span class="kbd">F5</span></td></tr>
+      <tr><td>Vista Drums / MPC</td><td><span class="kbd">F2</span></td><td><span class="kbd">F2</span></td><td><span class="kbd">F6</span></td></tr>
+      <tr><td>Vista Mixer</td><td><span class="kbd">F3</span></td><td><span class="kbd">Tab</span> / <span class="kbd">F3</span></td><td><span class="kbd">F9</span></td></tr>
+      <tr><td>Abrir/cerrar Piano Roll</td><td><span class="kbd">F4</span> / <span class="kbd">Ctrl+Shift+M</span></td><td><span class="kbd">Shift+Tab</span> / <span class="kbd">F4</span></td><td><span class="kbd">F7</span></td></tr>
+      <tr><td>Explorer acústico</td><td><span class="kbd">Ctrl+E</span></td><td><span class="kbd">Ctrl+Alt+B</span></td><td><span class="kbd">Alt+F8</span> / <span class="kbd">Ctrl+E</span></td></tr>
+      <tr><td>Track FX</td><td><span class="kbd">Ctrl+Shift+F</span></td><td><span class="kbd">Ctrl+Alt+L</span></td><td><span class="kbd">Alt+F9</span> / <span class="kbd">Ctrl+Shift+F</span></td></tr>
+      <tr><td>Configuración</td><td><span class="kbd">Ctrl+,</span></td><td><span class="kbd">Ctrl+,</span></td><td><span class="kbd">F10</span> / <span class="kbd">Ctrl+,</span></td></tr>
+      <tr><td>Dividir clip en cursor</td><td><span class="kbd">Ctrl+Shift+X</span></td><td><span class="kbd">Ctrl+E</span></td><td><span class="kbd">Ctrl+Shift+X</span></td></tr>
+      <tr><td>Duplicar / Consolidar</td><td><span class="kbd">Ctrl+D</span> · <span class="kbd">Ctrl+J</span></td><td><span class="kbd">Ctrl+D</span> · <span class="kbd">Ctrl+J</span></td><td><span class="kbd">Ctrl+B</span> · <span class="kbd">Ctrl+Alt+C</span></td></tr>
+      <tr><td>Automatización</td><td><span class="kbd">Ctrl+Shift+A</span></td><td><span class="kbd">A</span> / <span class="kbd">Ctrl+Shift+A</span></td><td><span class="kbd">Ctrl+Shift+A</span></td></tr>
+      <tr><td>Exportar Audio / MIDI</td><td><span class="kbd">Ctrl+Shift+R</span> · <span class="kbd">Ctrl+Shift+E</span></td><td><span class="kbd">Ctrl+Shift+R</span> · <span class="kbd">Ctrl+Shift+E</span></td><td><span class="kbd">Ctrl+R</span> · <span class="kbd">Ctrl+Shift+M</span></td></tr>
+      <tr><td>Grabar MIDI / Audio</td><td><span class="kbd">R</span> · <span class="kbd">Alt+R</span></td><td><span class="kbd">F9</span> / <span class="kbd">R</span> · <span class="kbd">Alt+R</span></td><td><span class="kbd">R</span> · <span class="kbd">Alt+R</span></td></tr>
+      <tr><td>Mute / Solo / Freeze pista</td><td><span class="kbd">Alt+M</span> · <span class="kbd">Alt+S</span> · <span class="kbd">Alt+F</span></td><td><span class="kbd">0</span> · <span class="kbd">S</span> · <span class="kbd">Alt+F</span></td><td><span class="kbd">Alt+M</span> · <span class="kbd">Alt+S</span> · <span class="kbd">Alt+F</span></td></tr>
+      <tr><td>Universales (todos)</td><td colspan="3"><span class="kbd">Ctrl+S</span> Guardar · <span class="kbd">Ctrl+O</span> Abrir · <span class="kbd">Ctrl+Z</span>/<span class="kbd">Y</span> Deshacer/Rehacer · <span class="kbd">Ctrl+H</span> Historial · <span class="kbd">Ctrl+T</span> Audio · <span class="kbd">Ctrl+Shift+T</span> MIDI · <span class="kbd">Ctrl+Alt+T</span> Return · <span class="kbd">Ctrl+G</span> Hilo · <span class="kbd">Ctrl+L</span> Loop · <span class="kbd">Alt+I</span> Mon · <span class="kbd">Alt+T</span> Tap · <span class="kbd">F11</span> Ampliar</td></tr>
+    </tbody>
+  </table>
+
+  <h3>9.2 Comandos esenciales en la barra <code>:</code></h3>
+  <div class="grid-2">
+    <div class="card">
+      <h4>Creación y flujo diario</h4>
+      <ul>
+        <li><code>:sy</code> / <code>:sa</code> / <code>:piano</code> — Insertar Synth, Sampler o Piano.</li>
+        <li><code>:return</code> — Nuevo bus auxiliar Return (FX).</li>
+        <li><code>:freeze</code> / <code>:unfreeze</code> — Congelar pista a WAV 32-bit.</li>
+        <li><code>:audio.to_midi</code> — Transcribir clip de audio a MIDI.</li>
+        <li><code>:capture</code> — Recuperar MIDI tocado sin Rec.</li>
+        <li><code>:note</code> — Abrir tu libreta persistente <i>Nota general</i>.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>Personalización, FX y exportación</h4>
+      <ul>
+        <li><code>:theme cuaderno|cuaderno-oscuro|cyberpunk|daylight</code></li>
+        <li><code>:lang es|en|pt|fr|ja</code> · <code>:keymap jap|ableton|fl</code></li>
+        <li><code>:lfo.add pan 1/4 0.6 sine</code> — Crear LFO en vivo.</li>
+        <li><code>:learn.vst</code> / <code>:auto.vst</code> — Enlazar/automatizar VST3.</li>
+        <li><code>:kit.save</code> / <code>:kit.load</code> — Kits de batería <code>.haykit</code>.</li>
+        <li><code>:export -lufs -14 -tp -1</code> — Exportación EBU R128.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong class="label">Actualizaciones y soporte:</strong>
+    Descarga siempre la última versión automática desde <b>https://jap.sevenpitch.dev</b>, reporta sugerencias
+    en <b>https://github.com/burdier/jap-studio/issues</b> y, si Jap Studio te ayuda a crear música, puedes apoyar
+    el proyecto con un café en <b>https://paypal.me/burhub</b>.
+  </div>
+
+  <div class="page-foot"><span>Jap Studio v0.9.0 · Manual de Uso</span><span>Página 10</span></div>
+</section>
+
+</body>
+</html>

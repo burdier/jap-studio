@@ -14,6 +14,7 @@ on:
       - "assets/video-sfx/**"
       - "scripts/render_video.py"
       - "scripts/gen_video_foley.py"
+      - "scripts/build-manual-pdf.sh"
       - "README.md"
       - "LICENSE"
       - ".github/workflows/deploy-landing.yml"
