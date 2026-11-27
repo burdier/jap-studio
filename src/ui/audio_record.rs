@@ -71,6 +71,31 @@ impl DawApp {
             .map_or(0.0, |m| m.monitor.input_peak().max(m.monitor.output_peak()))
     }
 
+    pub(in crate::ui) fn input_monitor_latency(
+        &self,
+    ) -> Option<crate::audio::input_monitor::MonitorLatency> {
+        self.input_monitor.as_ref().map(|m| m.monitor.latency())
+    }
+
+    pub(in crate::ui) fn estimated_monitor_latency(
+        &self,
+    ) -> crate::audio::input_monitor::MonitorLatency {
+        if let Some(live) = self.input_monitor_latency() {
+            return live;
+        }
+        let rate = self.settings.audio.saved.sample_rate.unwrap_or(48_000);
+        let buf = self.settings.audio.saved.buffer_frames.unwrap_or(256);
+        let fx_pdc = self
+            .effect_rack(self.cursor_row)
+            .map_or(0, |r| r.latency_samples().min(u64::from(u32::MAX)) as u32);
+        crate::audio::input_monitor::MonitorLatency {
+            sample_rate: rate,
+            io_buffer_frames: buf.saturating_mul(2),
+            ring_frames: buf,
+            fx_pdc_frames: fx_pdc,
+        }
+    }
+
     pub(in crate::ui) fn toggle_input_monitor(&mut self) {
         let current = self.active_monitor_mode();
         if current == MonitorMode::Off {

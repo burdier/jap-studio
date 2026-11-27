@@ -51,6 +51,47 @@ impl MonitorMode {
     }
 }
 
+/// Desglose de latencia de monitorización en vivo (buffer E/S + ring + PDC del rack FX).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct MonitorLatency {
+    pub sample_rate: u32,
+    pub io_buffer_frames: u32,
+    pub ring_frames: u32,
+    pub fx_pdc_frames: u32,
+}
+
+impl MonitorLatency {
+    pub fn total_frames(self) -> u32 {
+        self.io_buffer_frames
+            .saturating_add(self.ring_frames)
+            .saturating_add(self.fx_pdc_frames)
+    }
+
+    pub fn total_ms(self) -> f32 {
+        self.frames_to_ms(self.total_frames())
+    }
+
+    pub fn io_ms(self) -> f32 {
+        self.frames_to_ms(self.io_buffer_frames)
+    }
+
+    pub fn ring_ms(self) -> f32 {
+        self.frames_to_ms(self.ring_frames)
+    }
+
+    pub fn fx_pdc_ms(self) -> f32 {
+        self.frames_to_ms(self.fx_pdc_frames)
+    }
+
+    fn frames_to_ms(self, frames: u32) -> f32 {
+        if self.sample_rate == 0 {
+            0.0
+        } else {
+            frames as f32 * 1000.0 / self.sample_rate as f32
+        }
+    }
+}
+
 pub(crate) struct MonitorShared {
     active: AtomicBool,
     stereo: AtomicBool,
@@ -59,6 +100,8 @@ pub(crate) struct MonitorShared {
     fx: FxGain,
     in_peak: AtomicU32,
     out_peak: AtomicU32,
+    queued_frames: AtomicU32,
+    fx_latency_frames: AtomicU32,
     failed: AtomicBool,
 }
 
@@ -72,6 +115,8 @@ impl MonitorShared {
             fx: FxGain::new(1.0),
             in_peak: AtomicU32::new(0),
             out_peak: AtomicU32::new(0),
+            queued_frames: AtomicU32::new(0),
+            fx_latency_frames: AtomicU32::new(0),
             failed: AtomicBool::new(false),
         }
     }
@@ -119,6 +164,8 @@ impl MonitorProcessor {
                 }
             }
         }
+        let queued = self.consumer.slots().min(u32::MAX as usize) as u32;
+        shared.queued_frames.store(queued, Ordering::Relaxed);
 
         for frame in frames.iter_mut() {
             if let Ok(sample) = self.consumer.pop() {
@@ -168,6 +215,7 @@ pub(crate) struct InputMonitor {
     _output_stream: cpal::Stream,
     shared: Arc<MonitorShared>,
     pub output_rate: u32,
+    pub io_buffer_frames: u32,
     pub input_device_name: String,
 }
 
@@ -191,8 +239,22 @@ impl InputMonitor {
         let in_setup = choose_input_config(&in_device, config)?;
         let out_setup = choose_output_config(&out_device, config)?;
         let output_rate = out_setup.config.sample_rate;
+        let fallback_buf = config.buffer_frames.unwrap_or(256);
+        let in_buf = match in_setup.config.buffer_size {
+            cpal::BufferSize::Fixed(n) => n,
+            cpal::BufferSize::Default => fallback_buf,
+        };
+        let out_buf = match out_setup.config.buffer_size {
+            cpal::BufferSize::Fixed(n) => n,
+            cpal::BufferSize::Default => fallback_buf,
+        };
+        let io_buffer_frames = in_buf.saturating_add(out_buf);
 
         let shared = Arc::new(MonitorShared::new(stereo));
+        let fx_pdc = initial_rack
+            .as_ref()
+            .map_or(0, |r| r.latency_samples().min(u64::from(u32::MAX)) as u32);
+        shared.fx_latency_frames.store(fx_pdc, Ordering::Relaxed);
         shared.fx.set(initial_fx_gain);
         shared.fx.set_rack(initial_rack, output_rate);
         shared
@@ -291,6 +353,7 @@ impl InputMonitor {
             _output_stream: output_stream,
             shared,
             output_rate,
+            io_buffer_frames,
             input_device_name,
         })
     }
@@ -311,8 +374,23 @@ impl InputMonitor {
     }
 
     pub fn set_fx(&self, rack: Option<Arc<Rack>>, fx_gain: f32) {
+        let fx_pdc = rack
+            .as_ref()
+            .map_or(0, |r| r.latency_samples().min(u64::from(u32::MAX)) as u32);
+        self.shared
+            .fx_latency_frames
+            .store(fx_pdc, Ordering::Relaxed);
         self.shared.fx.set(fx_gain);
         self.shared.fx.set_rack(rack, self.output_rate);
+    }
+
+    pub fn latency(&self) -> MonitorLatency {
+        MonitorLatency {
+            sample_rate: self.output_rate,
+            io_buffer_frames: self.io_buffer_frames,
+            ring_frames: self.shared.queued_frames.load(Ordering::Relaxed),
+            fx_pdc_frames: self.shared.fx_latency_frames.load(Ordering::Relaxed),
+        }
     }
 
     pub fn input_peak(&self) -> f32 {
@@ -477,5 +555,28 @@ mod tests {
             "monitor desactivado debía silenciarse, obt {:?}",
             muted_out[511]
         );
+    }
+
+    #[test]
+    fn monitor_latency_reports_buffer_ring_and_fx_pdc_in_ms() {
+        let lat = MonitorLatency {
+            sample_rate: 48_000,
+            io_buffer_frames: 256,
+            ring_frames: 128,
+            fx_pdc_frames: 96,
+        };
+        assert_eq!(lat.total_frames(), 480);
+        assert!((lat.total_ms() - 10.0).abs() < 1e-4);
+        assert!((lat.fx_pdc_ms() - 2.0).abs() < 1e-4);
+
+        let (mut tx, rx) = RingBuffer::<[f32; 2]>::new(1024);
+        let shared = MonitorShared::new(false);
+        for _ in 0..320 {
+            tx.push([0.1, 0.1]).unwrap();
+        }
+        let mut proc = MonitorProcessor::new(rx, &shared, 48_000);
+        let mut out = [[0.0_f32; 2]; 128];
+        proc.render(&shared, &mut out);
+        assert_eq!(shared.queued_frames.load(Ordering::Relaxed), 320);
     }
 }

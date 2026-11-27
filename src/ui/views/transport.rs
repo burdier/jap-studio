@@ -110,16 +110,36 @@ impl DawApp {
         let mon_mode = self.active_monitor_mode();
         let mon_on = mon_mode != crate::audio::input_monitor::MonitorMode::Off;
         let mon_peak = self.input_monitor_peak();
+        let mon_lat = self.estimated_monitor_latency();
+        let mon_ms = mon_lat.total_ms();
         let mon_label = match mon_mode {
             crate::audio::input_monitor::MonitorMode::Off => "Mon".to_string(),
-            crate::audio::input_monitor::MonitorMode::In => "Mon IN".to_string(),
-            crate::audio::input_monitor::MonitorMode::Auto => "Mon AUTO".to_string(),
+            crate::audio::input_monitor::MonitorMode::In => format!("IN {mon_ms:.1}ms"),
+            crate::audio::input_monitor::MonitorMode::Auto => format!("AU {mon_ms:.1}ms"),
         };
-        let mon_color = match mon_mode {
-            crate::audio::input_monitor::MonitorMode::In => ds.success,
-            crate::audio::input_monitor::MonitorMode::Auto => ds.warning,
-            crate::audio::input_monitor::MonitorMode::Off => ds.muted,
+        let mon_color = if !mon_on {
+            ds.muted
+        } else if mon_ms >= 25.0 {
+            ds.danger
+        } else if mon_ms >= 12.0 {
+            ds.warning
+        } else {
+            match mon_mode {
+                crate::audio::input_monitor::MonitorMode::In => ds.success,
+                crate::audio::input_monitor::MonitorMode::Auto => ds.cyan,
+                crate::audio::input_monitor::MonitorMode::Off => ds.muted,
+            }
         };
+        let mon_width = if mon_on { 96.0 } else { 74.0 };
+        let mon_tooltip: SharedString = format!(
+            "Monitoreo en vivo ({:.1} ms @ {} Hz · E/S {:.1} ms + Ring {:.1} ms + FX PDC {:.1} ms) · Clic: In/Off · Clic derecho: Off/In/Auto",
+            mon_ms,
+            mon_lat.sample_rate,
+            mon_lat.io_ms(),
+            mon_lat.ring_ms(),
+            mon_lat.fx_pdc_ms(),
+        )
+        .into();
         let btn_h = (ds.transport_btn_size - 2.0).max(22.0);
         let midi_color = if self.midi_capture.has_notes() {
             ds.cyan
@@ -233,18 +253,13 @@ impl DawApp {
             .child(
                 capsule_toggle(ds, mon_label, mon_on, mon_color, btn_h)
                     .id("transport-input-monitor")
-                    .w(px(74.0))
+                    .w(px(mon_width))
                     .font_family("monospace")
                     .relative()
                     .overflow_hidden()
-                    .tooltip(|window, cx| {
-                        Tooltip::new(
-                            "Monitoreo en vivo (sin grabar) con FX de la pista · Clic: In/Off · Clic derecho: Off/In/Auto",
-                        )
-                        .build(window, cx)
-                    })
+                    .tooltip(move |window, cx| Tooltip::new(mon_tooltip.clone()).build(window, cx))
                     .when(mon_on, |btn| {
-                        let meter_w = (mon_peak.clamp(0.0, 1.0) * 74.0).round();
+                        let meter_w = (mon_peak.clamp(0.0, 1.0) * mon_width).round();
                         btn.child(
                             div()
                                 .absolute()
